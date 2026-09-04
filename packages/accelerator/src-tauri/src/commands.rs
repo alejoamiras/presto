@@ -394,7 +394,7 @@ pub fn set_theme(
     // would otherwise keep the old palette until it was closed and reopened. Windows built after
     // this pick the theme up from the config at build time instead.
     for (label, other) in app.webview_windows() {
-        if let Err(e) = other.eval(&theme_script(theme, ThemeSource::Authoritative)) {
+        if let Err(e) = other.eval(theme_script(theme, ThemeSource::Authoritative)) {
             // The config change is already persisted, so this is a partial application, not a
             // failure: report success and leave a trail rather than reverting the user's choice.
             tracing::warn!(window = %label, error = %e, "Could not repaint a window for the new theme");

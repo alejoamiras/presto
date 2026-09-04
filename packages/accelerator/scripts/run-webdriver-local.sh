@@ -11,7 +11,9 @@ cd "$PKG_DIR"
 OWNED_PGIDS=()
 cleanup() {
   for pgid in "${OWNED_PGIDS[@]:-}"; do
-    [ -n "$pgid" ] && kill -- "-$pgid" 2>/dev/null || true
+    if [ -n "$pgid" ]; then
+      kill -- "-$pgid" 2>/dev/null || true
+    fi
   done
 }
 trap cleanup EXIT INT TERM
