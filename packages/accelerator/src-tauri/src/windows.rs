@@ -120,7 +120,7 @@ fn open_or_focus_window(app: &AppHandle, config: WindowConfig) -> Option<tauri::
     };
     match WebviewWindowBuilder::new(app, config.label, WebviewUrl::App(config.url.into()))
         .title(config.title)
-        .initialization_script(&commands::theme_script(theme, commands::ThemeSource::PreferStored))
+        .initialization_script(commands::theme_script(theme, commands::ThemeSource::PreferStored))
         .inner_size(config.width, config.height)
         .resizable(false)
         .center()
@@ -152,7 +152,7 @@ fn open_or_focus_window(app: &AppHandle, config: WindowConfig) -> Option<tauri::
                     config::Theme::default()
                 }
             };
-            if let Err(e) = window.eval(&commands::theme_script(theme, commands::ThemeSource::Authoritative))
+            if let Err(e) = window.eval(commands::theme_script(theme, commands::ThemeSource::Authoritative))
             {
                 tracing::warn!(window = %window.label(), error = %e, "Could not re-assert the theme after a page load");
             }
