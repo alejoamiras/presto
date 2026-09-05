@@ -3,13 +3,13 @@ import { feedVersionToTag } from "./feed";
 
 // B6: the landing download button derives the live version from the SIGNED update feed, whose payload is
 // UNTRUSTED (the browser doesn't verify its signature). These pin the parse contract: only a strict stable
-// SemVer becomes a canonical `accelerator-v<version>` tag; everything else → null (caller falls back to the
+// SemVer becomes a canonical `presto-v<version>` tag; everything else → null (caller falls back to the
 // GitHub releases page). [mut: relax STABLE_SEMVER in feed.ts → the prerelease/injection rows fail.]
 
 describe("feedVersionToTag (untrusted feed → canonical tag)", () => {
   test("a stable X.Y.Z version maps to the canonical release tag", () => {
-    expect(feedVersionToTag({ version: "2.0.0" })).toBe("accelerator-v2.0.0");
-    expect(feedVersionToTag({ version: "10.20.30" })).toBe("accelerator-v10.20.30");
+    expect(feedVersionToTag({ version: "2.0.0" })).toBe("presto-v2.0.0");
+    expect(feedVersionToTag({ version: "10.20.30" })).toBe("presto-v10.20.30");
   });
 
   test("a prerelease version is REJECTED (the promoted feed never carries an RC — fixes RC-as-download)", () => {

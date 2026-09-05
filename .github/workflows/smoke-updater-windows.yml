@@ -53,10 +53,10 @@ jobs:
       UPDATER_SMOKE_MODE: ${{ inputs.mode || 'barrier' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-accelerator
+      - uses: ./.github/actions/setup-presto
         with:
-          rust-cache-key: accelerator-desktop-x86_64-pc-windows-msvc
-          rust-workspaces: packages/accelerator/src-tauri -> target
+          rust-cache-key: presto-desktop-x86_64-pc-windows-msvc
+          rust-workspaces: packages/presto/src-tauri -> target
           rust-components: ""
 
       # One ephemeral key signs EVERYTHING: N-1's artifacts, N's artifacts, and (in the smoke step,
@@ -64,7 +64,7 @@ jobs:
       # builds — swapping only the private key would fail verification (piece-2 audit correction).
       - name: Generate ephemeral signing key + patch pubkey into tauri.conf.json
         shell: bash
-        working-directory: packages/accelerator
+        working-directory: packages/presto
         run: |
           set -euo pipefail
           bunx tauri signer generate --ci -p "" -w ./eph.key
@@ -79,7 +79,7 @@ jobs:
 
       - name: Build synthetic N-1 (0.0.1, ephemeral pubkey, clean hooks)
         shell: bash
-        working-directory: packages/accelerator/src-tauri
+        working-directory: packages/presto/src-tauri
         run: |
           set -euo pipefail
           sed -i "s/^version = \".*\"/version = \"$N1_VERSION\"/" Cargo.toml
@@ -102,39 +102,39 @@ jobs:
           # only when the run-unique request file exists; emits p-status + ready, then waits for
           # release with a bounded fail-open that RECORDS itself (timed-out) so the smoke can
           # reject a lost window. hooks.nsi defines no PREINSTALL macro, so this APPENDS one.
-          cat >> packages/accelerator/src-tauri/nsis/hooks.nsi <<'NSI'
+          cat >> packages/presto/src-tauri/nsis/hooks.nsi <<'NSI'
 
           ; TEST-ONLY smoke barrier (CI-injected for the in-job N build; never committed).
           !macro NSIS_HOOK_PREINSTALL
-            ${If} ${FileExists} "$PROFILE\.aztec-accelerator\__PFX__-request"
+            ${If} ${FileExists} "$PROFILE\.presto\__PFX__-request"
               Push $R8
               Push $R9
-              ${If} ${FileExists} "$INSTDIR\AztecAccelerator.exe"
+              ${If} ${FileExists} "$INSTDIR\Presto.exe"
                 StrCpy $R8 "present"
               ${Else}
                 StrCpy $R8 "absent"
               ${EndIf}
               ClearErrors
-              FileOpen $R9 "$PROFILE\.aztec-accelerator\__PFX__-p-status" w
+              FileOpen $R9 "$PROFILE\.presto\__PFX__-p-status" w
               ${IfNot} ${Errors}
                 FileWrite $R9 $R8
                 FileClose $R9
               ${EndIf}
               ClearErrors
-              FileOpen $R9 "$PROFILE\.aztec-accelerator\__PFX__-ready" w
+              FileOpen $R9 "$PROFILE\.presto\__PFX__-ready" w
               ${IfNot} ${Errors}
                 FileWrite $R9 "ready"
                 FileClose $R9
               ${EndIf}
               StrCpy $R8 0
               ${Do}
-                ${If} ${FileExists} "$PROFILE\.aztec-accelerator\__PFX__-release"
+                ${If} ${FileExists} "$PROFILE\.presto\__PFX__-release"
                   ${Break}
                 ${EndIf}
                 IntOp $R8 $R8 + 1
                 ${If} $R8 > 240
                   ClearErrors
-                  FileOpen $R9 "$PROFILE\.aztec-accelerator\__PFX__-timed-out" w
+                  FileOpen $R9 "$PROFILE\.presto\__PFX__-timed-out" w
                   ${IfNot} ${Errors}
                     FileWrite $R9 "timed-out"
                     FileClose $R9
@@ -148,16 +148,16 @@ jobs:
             ${EndIf}
           !macroend
           NSI
-          sed -i "s/__PFX__/$PREFIX/g" packages/accelerator/src-tauri/nsis/hooks.nsi
+          sed -i "s/__PFX__/$PREFIX/g" packages/presto/src-tauri/nsis/hooks.nsi
           # Must-fire discipline: prove the macro is in the source NOW (a silently-failed injection
           # would surface only as a confusing no-ready timeout an hour later).
-          grep -q "NSIS_HOOK_PREINSTALL" packages/accelerator/src-tauri/nsis/hooks.nsi
-          grep -q -- "$PREFIX-ready" packages/accelerator/src-tauri/nsis/hooks.nsi
+          grep -q "NSIS_HOOK_PREINSTALL" packages/presto/src-tauri/nsis/hooks.nsi
+          grep -q -- "$PREFIX-ready" packages/presto/src-tauri/nsis/hooks.nsi
           echo "sentinel injected into NSIS_HOOK_PREINSTALL (prefix $PREFIX)"
 
       - name: Build N (${{ inputs.n-version || '9.9.9' }}, ephemeral pubkey, PREINSTALL sentinel)
         shell: bash
-        working-directory: packages/accelerator/src-tauri
+        working-directory: packages/presto/src-tauri
         run: |
           set -euo pipefail
           # N carries the sentinel (its installer is the mid-update actor). Drop N-1's bundle
@@ -176,7 +176,7 @@ jobs:
           $n1 = Get-ChildItem -Path "$env:RUNNER_TEMP\n1" -Filter "*-setup.exe" | Select-Object -First 1
           if (-not $n1) { Write-Error "N-1 installer not found"; exit 1 }
           if ($env:N1_VERSION -eq $env:N_VERSION) { Write-Error "N-1 == N ($env:N_VERSION) — a no-op update would pass trivially"; exit 1 }
-          & packages/accelerator/scripts/updater-smoke-windows.ps1 `
+          & packages/presto/scripts/updater-smoke-windows.ps1 `
             -NVersion $env:N_VERSION `
             -NArtifactsDir "$env:RUNNER_TEMP\n" `
             -N1Installer $n1.FullName `

@@ -10,7 +10,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { deployAndAssert, initSharedPage } from "./fullstack.helpers";
 
-const ACCELERATOR_URL = process.env.ACCELERATOR_URL || "";
+const PRESTO_URL = process.env.PRESTO_URL || "";
 
 let sharedPage: Page;
 
@@ -28,7 +28,7 @@ test.afterAll(async () => {
 
 test.describe("Accelerated", () => {
   test.beforeEach(() => {
-    test.skip(!ACCELERATOR_URL, "ACCELERATOR_URL env var not set");
+    test.skip(!PRESTO_URL, "PRESTO_URL env var not set");
   });
 
   test("deploys account", async () => {

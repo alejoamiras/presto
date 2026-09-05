@@ -29,12 +29,12 @@ jobs:
         # bash on every platform — Git Bash on windows-latest runs the same scripts
         # (the alternative, pwsh, would need every step rewritten).
         shell: bash
-        working-directory: packages/accelerator
+        working-directory: packages/presto
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       # ── Shared env setup (Bun, Rust toolchain + cache, Linux Tauri deps, bb sidecar) ──
-      - uses: ./.github/actions/setup-accelerator
+      - uses: ./.github/actions/setup-presto
         with:
           # F-012: -v2 busts the shared cache once — an earlier PR build could have cached a stale/empty
           # frontend asset embed (codegen output) that a later build restored instead of regenerating.
@@ -62,12 +62,12 @@ jobs:
       # ── Build (release mode only) ──
       - name: Build app (release)
         if: inputs.mode == 'release'
-        working-directory: packages/accelerator/src-tauri
+        working-directory: packages/presto/src-tauri
         run: cargo build --release --features webdriver
 
       # ── Build (built-debug — F-012/D8: a real `tauri build` enables tauri's custom-protocol feature, so
       #    the webdriver run exercises the SHIPPED asset/CSP path that `tauri dev` and raw `cargo build` skip.
-      #    Runs from packages/accelerator so tauri's beforeBuildCommand (bun run frontend:build) fires. ──
+      #    Runs from packages/presto so tauri's beforeBuildCommand (bun run frontend:build) fires. ──
       - name: Build app (built-debug)
         if: inputs.mode == 'built-debug'
         run: bunx tauri build --debug --no-bundle --features webdriver
@@ -78,8 +78,8 @@ jobs:
           EXE=""
           [ "$RUNNER_OS" = "Windows" ] && EXE=".exe"
           case "${{ inputs.mode }}" in
-            release)     APP_CMD="./src-tauri/target/release/AztecAccelerator$EXE" ;;
-            built-debug) APP_CMD="./src-tauri/target/debug/AztecAccelerator$EXE" ;;
+            release)     APP_CMD="./src-tauri/target/release/Presto$EXE" ;;
+            built-debug) APP_CMD="./src-tauri/target/debug/Presto$EXE" ;;
             dev)
               # Exercise the real developer command. Tauri injects a loopback devUrl for its built-in
               # static server; the dynamic-window navigation guard must admit that exact origin.
@@ -154,12 +154,12 @@ jobs:
             if [ -n "${TAURI_PID:-}" ]; then
               taskkill //F //PID "$TAURI_PID" //T 2>/dev/null || true
             fi
-            taskkill //F //IM AztecAccelerator.exe 2>/dev/null || true
+            taskkill //F //IM Presto.exe 2>/dev/null || true
             taskkill //F //IM msedgewebview2.exe 2>/dev/null || true
           else
             pkill -P "${TAURI_PID:-0}" 2>/dev/null || true
             kill "${TAURI_PID:-0}" 2>/dev/null || true
-            pkill -f "AztecAccelerator" 2>/dev/null || true
+            pkill -f "Presto" 2>/dev/null || true
             pkill -f stalonetray 2>/dev/null || true
             pkill -f Xvfb 2>/dev/null || true
             kill "$DBUS_SESSION_BUS_PID" 2>/dev/null || true

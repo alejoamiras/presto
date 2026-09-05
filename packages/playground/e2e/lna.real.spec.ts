@@ -81,7 +81,7 @@ test("harness proves a real denied and granted public-to-loopback fetch", async 
   const page = await context.newPage();
   await mockPlaygroundNode(page);
   await page.goto(PLAYGROUND_ORIGIN);
-  await expect(page.locator("#accelerator-permission-help")).toBeVisible();
+  await expect(page.locator("#presto-permission-help")).toBeVisible();
 
   const capabilities = await page.evaluate(() => ({
     secure: window.isSecureContext,
@@ -96,14 +96,14 @@ test("harness proves a real denied and granted public-to-loopback fetch", async 
 
   await grantLocalNetwork(context, PLAYGROUND_ORIGIN);
   expect(await permissionState(page)).toBe("granted");
-  await expect(page.locator("#accelerator-secure-help")).toBeVisible();
+  await expect(page.locator("#presto-secure-help")).toBeVisible();
   const automaticHits = await healthHits();
   expect(automaticHits).toBeGreaterThan(0);
   expect(await rawAnnotatedHealth(page)).toBe(true);
   expect(await healthHits()).toBe(automaticHits + 1);
-  await page.locator("#accelerator-use-http").click();
+  await page.locator("#presto-use-http").click();
   await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#accelerator-label")).toHaveText("running");
+  await expect(page.locator("#presto-label")).toHaveText("running");
   await context.close();
 });
 
@@ -116,19 +116,19 @@ test("playground denial gives guidance and same-context grant automatically reco
   await mockPlaygroundNode(page);
   await page.goto(PLAYGROUND_ORIGIN);
 
-  await expect(page.locator("#accelerator-label")).toHaveText("local access blocked");
-  await expect(page.locator("#accelerator-permission-help")).toBeVisible();
+  await expect(page.locator("#presto-label")).toHaveText("local access blocked");
+  await expect(page.locator("#presto-permission-help")).toBeVisible();
   await expect(page.locator("#accel-banner")).toBeHidden();
-  await expect(page.locator("#accelerator-cta")).toBeHidden();
+  await expect(page.locator("#presto-cta")).toBeHidden();
   expect(await healthHits()).toBe(0);
 
   await grantLocalNetwork(context, PLAYGROUND_ORIGIN);
-  await expect(page.locator("#accelerator-secure-help")).toBeVisible();
-  await page.locator("#accelerator-use-http").click();
+  await expect(page.locator("#presto-secure-help")).toBeVisible();
+  await page.locator("#presto-use-http").click();
   await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#accelerator-label")).toHaveText("running");
-  await expect(page.locator("#accelerator-permission-help")).toBeHidden();
-  await expect(page.locator("#accelerator-status")).toHaveAttribute("data-status", "online");
+  await expect(page.locator("#presto-label")).toHaveText("running");
+  await expect(page.locator("#presto-permission-help")).toBeHidden();
+  await expect(page.locator("#presto-status")).toHaveAttribute("data-status", "online");
   expect(await healthHits()).toBeGreaterThan(0);
   await context.close();
 });
@@ -167,17 +167,17 @@ test("playground automatically recovers when an open prompt is allowed after pro
 
   // The prompt remains unresolved longer than both bounded SDK rounds. This used to settle the UI as
   // offline permanently even after the browser later changed the permission to granted.
-  await expect(page.locator("#accelerator-secure-retry")).toBeEnabled({ timeout: 15_000 });
-  await expect(page.locator("#accelerator-label")).toContainText("secure connection unavailable");
+  await expect(page.locator("#presto-secure-retry")).toBeEnabled({ timeout: 15_000 });
+  await expect(page.locator("#presto-label")).toContainText("secure connection unavailable");
   expect(await permissionState(page)).toBe("prompt");
   expect(await healthHits()).toBe(0);
 
   await grantLocalNetwork(context, PLAYGROUND_ORIGIN);
-  await expect(page.locator("#accelerator-secure-help")).toBeVisible();
-  await page.locator("#accelerator-use-http").click();
+  await expect(page.locator("#presto-secure-help")).toBeVisible();
+  await page.locator("#presto-use-http").click();
   await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#accelerator-label")).toHaveText("running");
-  await expect(page.locator("#accelerator-status")).toHaveAttribute("data-status", "online");
+  await expect(page.locator("#presto-label")).toHaveText("running");
+  await expect(page.locator("#presto-status")).toHaveAttribute("data-status", "online");
   expect(await healthHits()).toBeGreaterThan(0);
   await context.close();
 });

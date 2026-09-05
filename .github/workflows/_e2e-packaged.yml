@@ -3,7 +3,7 @@ name: _Packaged E2E (reusable)
 # B4 items 2-3: the COMPOSED proof gate. A real browser (Playwright's Chromium) loads the playground
 # (built against the SDK) and drives the INSTALLED desktop app to a native `bb` proof over HTTPS, with
 # HTTP-downgrade + WASM-fallback disabled. The decisive assertion lives in the spec
-# (`packages/playground/e2e/accelerator.packaged-e2e.spec.ts`): a 200 https://127.0.0.1:59834/prove carrying
+# (`packages/playground/e2e/presto.packaged-e2e.spec.ts`): a 200 https://127.0.0.1:59834/prove carrying
 # `x-prove-duration-ms` (the server emits it only after a real bb::prove).
 #
 # Trust is seeded OUT-OF-BAND (the app's own enable_https install is interactive; see b4-impl.md): here on
@@ -22,22 +22,17 @@ on:
         description: Name of the uploaded Linux installer artifact (contains the .deb)
         required: false
         type: string
-        default: accelerator-linux-x86_64
+        default: presto-linux-x86_64
       macos_app_artifact:
         description: Name of the uploaded macOS arm64 installer artifact (contains the .dmg)
         required: false
         type: string
-        default: accelerator-macos-arm64
+        default: presto-macos-arm64
       aztec_node_url:
         description: Aztec node URL (skips local CLI install when not localhost)
         required: false
         type: string
         default: "http://localhost:8080"
-      prev_stable_tag:
-        description: The N-1 stable release tag for the 1.0.7→2.0.0 upgrade leg (its .deb is downloaded)
-        required: false
-        type: string
-        default: accelerator-v1.0.7
       release_tag:
         description: >-
           When set, download the app installers from THIS release's OWN assets (the draft-gate: prove the
@@ -70,7 +65,7 @@ jobs:
         run: |
           mkdir -p app-artifact
           # One pattern per OS leg. The Windows NSIS setup feeds the windows legs; the build-artifact-mode
-          # glob below (`accelerator-*x86_64`) already matches the windows build artifact, so this
+          # glob below (`presto-*x86_64`) already matches the windows build artifact, so this
           # release-asset list is the only place the Windows installer had to be added.
           gh release download "$TAG" --repo "$REPO" \
             --pattern '*Linux-x86_64.deb' --pattern '*macOS-Apple-Silicon.dmg' \
@@ -104,7 +99,7 @@ jobs:
         if: inputs.release_tag == ''
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: accelerator-*x86_64
+          pattern: presto-*x86_64
           path: app-artifact
           merge-multiple: true
       - name: Upload the staged installers (+ manifest) for the read-only E2E jobs
@@ -182,11 +177,11 @@ jobs:
       # ── Bootstrap: generate the app's real CA headlessly (no interactive trust install), then seed it
       #    into the browser's NSS store out-of-band. See --generate-certs-only in src-tauri/main.rs. ──
       - name: Generate certs (headless bootstrap)
-        run: AztecAccelerator --generate-certs-only
+        run: Presto --generate-certs-only
 
       - name: Seed CA into user NSS (browser trust)
         run: |
-          CA="$HOME/.aztec-accelerator/certs/ca.pem"
+          CA="$HOME/.presto/certs/ca.pem"
           test -f "$CA" || { echo "::error::$CA not generated"; exit 1; }
           mkdir -p "$HOME/.pki/nssdb"
           certutil -N --empty-password -d "sql:$HOME/.pki/nssdb" 2>/dev/null || true
@@ -195,16 +190,16 @@ jobs:
 
       - name: Write config (HTTPS on, localhost auto-approved)
         run: |
-          mkdir -p "$HOME/.aztec-accelerator"
+          mkdir -p "$HOME/.presto"
           # auto_approve_localhost:true auto-approves the localhost:5173 page (no /prove auth popup needed —
           # the headless GUI has no popup surface). config_version:2 matches the v2 schema (B4 item 1).
           printf '%s' '{"config_version":2,"https_enabled":true,"auto_approve_localhost":true}' \
-            > "$HOME/.aztec-accelerator/config.json"
+            > "$HOME/.presto/config.json"
 
       - name: Launch the installed app + wait for HTTPS
         run: |
-          dbus-launch AztecAccelerator >/tmp/accel.log 2>&1 &
-          echo "ACCEL_PID=$!" >> "$GITHUB_ENV"
+          dbus-launch Presto >/tmp/presto.log 2>&1 &
+          echo "PRESTO_PID=$!" >> "$GITHUB_ENV"
           # -k here only proves the app is SERVING TLS; the real trust check is the browser's fetch in the spec.
           for i in $(seq 1 45); do
             if curl -ksf https://127.0.0.1:59834/health >/dev/null 2>&1; then
@@ -214,7 +209,7 @@ jobs:
             sleep 2
           done
           echo "::error::App did not serve HTTPS within 90s"
-          cat /tmp/accel.log 2>/dev/null || true
+          cat /tmp/presto.log 2>/dev/null || true
           exit 1
 
       # Point the playground at the PACKED SDK tarball (not the workspace source), so the composed proof
@@ -234,7 +229,7 @@ jobs:
         with:
           name: packaged-e2e-linux-logs-attempt-${{ github.run_attempt }}
           path: |
-            /tmp/accel.log
+            /tmp/presto.log
             /tmp/xvfb.log
             /tmp/aztec-node.log
             /tmp/packaged-e2e-vite.log
@@ -245,7 +240,7 @@ jobs:
 
       - name: Cleanup
         if: always()
-        run: kill "$ACCEL_PID" 2>/dev/null || true
+        run: kill "$PRESTO_PID" 2>/dev/null || true
 
   packaged-e2e-macos:
     name: Packaged E2E (macos)
@@ -292,17 +287,17 @@ jobs:
             ls -laR app-artifact
             exit 1
           fi
-          hdiutil attach "$DMG" -nobrowse -mountpoint /Volumes/AztecAccelerator
-          APP=$(find /Volumes/AztecAccelerator -maxdepth 1 -name '*.app' | head -1)
-          test -n "$APP" || { echo "::error::.app not found in DMG"; find /Volumes/AztecAccelerator -type f; exit 1; }
+          hdiutil attach "$DMG" -nobrowse -mountpoint /Volumes/Presto
+          APP=$(find /Volumes/Presto -maxdepth 1 -name '*.app' | head -1)
+          test -n "$APP" || { echo "::error::.app not found in DMG"; find /Volumes/Presto -type f; exit 1; }
           cp -R "$APP" /Applications/
-          hdiutil detach /Volumes/AztecAccelerator || true
-          # Our .app's Contents/MacOS/ holds BOTH the main app (AztecAccelerator — the renamed cargo [[bin]],
+          hdiutil detach /Volumes/Presto || true
+          # Our .app's Contents/MacOS/ holds BOTH the main app (Presto — the renamed cargo [[bin]],
           # the one that has --generate-certs-only) AND the bundled `bb` prover sidecar, so a first-executable
           # `find | head -1` grabbed `bb` (whose clap parser rejects the flag, exit 109). Address the main
-          # binary BY NAME. The .app dir is <productName>.app ("Aztec Accelerator.app"); the binary is the bin.
+          # binary BY NAME. The .app dir is <productName>.app ("Presto.app"); the binary is the bin.
           APP_NAME=$(basename "$APP")
-          BIN="/Applications/$APP_NAME/Contents/MacOS/AztecAccelerator"
+          BIN="/Applications/$APP_NAME/Contents/MacOS/Presto"
           test -x "$BIN" || { echo "::error::main app binary not found at $BIN"; ls -la "/Applications/$APP_NAME/Contents/MacOS" 2>/dev/null; exit 1; }
           echo "APP_BIN=$BIN" >> "$GITHUB_ENV"
 
@@ -315,7 +310,7 @@ jobs:
       # Playwright's Chromium on macOS honours the System keychain for the browser fetch too.
       - name: Seed CA into the System keychain (app + browser trust)
         run: |
-          CA="$HOME/.aztec-accelerator/certs/ca.pem"
+          CA="$HOME/.presto/certs/ca.pem"
           test -f "$CA" || { echo "::error::$CA not generated"; exit 1; }
           sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$CA"
           # Fail loudly here (not later with a mysterious TLS error) if the seed did not take — this is the
@@ -324,14 +319,14 @@ jobs:
 
       - name: Write config (HTTPS on, localhost auto-approved)
         run: |
-          mkdir -p "$HOME/.aztec-accelerator"
+          mkdir -p "$HOME/.presto"
           printf '%s' '{"config_version":2,"https_enabled":true,"auto_approve_localhost":true}' \
-            > "$HOME/.aztec-accelerator/config.json"
+            > "$HOME/.presto/config.json"
 
       - name: Launch the installed app + wait for HTTPS
         run: |
-          "$APP_BIN" >/tmp/accel.log 2>&1 &
-          echo "ACCEL_PID=$!" >> "$GITHUB_ENV"
+          "$APP_BIN" >/tmp/presto.log 2>&1 &
+          echo "PRESTO_PID=$!" >> "$GITHUB_ENV"
           for i in $(seq 1 45); do
             if curl -ksf https://127.0.0.1:59834/health >/dev/null 2>&1; then
               echo "App serving HTTPS on :59834 (attempt $i)"
@@ -340,7 +335,7 @@ jobs:
             sleep 2
           done
           echo "::error::App did not serve HTTPS within 90s"
-          cat /tmp/accel.log 2>/dev/null || true
+          cat /tmp/presto.log 2>/dev/null || true
           exit 1
 
       - name: Pack the SDK + install the tarball into the playground
@@ -358,7 +353,7 @@ jobs:
         with:
           name: packaged-e2e-macos-logs-attempt-${{ github.run_attempt }}
           path: |
-            /tmp/accel.log
+            /tmp/presto.log
             /tmp/aztec-node.log
             /tmp/packaged-e2e-vite.log
             packages/playground/test-results
@@ -376,99 +371,42 @@ jobs:
         timeout-minutes: 3
         continue-on-error: true
         run: |
-          kill "$ACCEL_PID" 2>/dev/null || true
-          CA="$HOME/.aztec-accelerator/certs/ca.pem"
+          kill "$PRESTO_PID" 2>/dev/null || true
+          CA="$HOME/.presto/certs/ca.pem"
           if [ -f "$CA" ]; then
             sudo security remove-trusted-cert -d "$CA" 2>/dev/null || true
           fi
-          hdiutil detach /Volumes/AztecAccelerator 2>/dev/null || true
+          hdiutil detach /Volumes/Presto 2>/dev/null || true
 
-  # E: prove item-1's config migration on a REAL 1.0.7→2.0.0 upgrade (not just the unit test). A 1.0.7-shaped
-  # config (legacy `safari_support`, no `config_version`) must, after the in-place upgrade + first launch,
-  # migrate + PERSIST on disk: `config_version:2`, `safari_support` removed, origins preserved. (The persist
-  # happens via the launch-time MissingCertsReset save — see main.rs; `https_enabled` resets to false without
-  # certs, which is expected and not asserted here.)
-  upgrade-migration-linux:
-    name: 1.0.7 upgrade + config migration (linux)
+  # Fresh installs must leave historical state and OS integration fixtures byte-identical.
+  state-isolation-linux:
+    name: Fresh install + state isolation (linux)
     needs: stage-installers
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     permissions:
-      contents: read # the N-1 (1.0.7) is a PUBLISHED release (read-ok); the 2.0.0 draft comes via staging
+      contents: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ inputs.ref || github.ref }}
-
-      - name: Virtual display + tray
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y xvfb stalonetray dbus-x11
-          Xvfb :99 -screen 0 1280x1024x24 >/tmp/xvfb.log 2>&1 &
-          echo "DISPLAY=:99" >> "$GITHUB_ENV"
-          sleep 2
-          DISPLAY=:99 stalonetray >/tmp/stalonetray.log 2>&1 &
-
-      - name: Download N-1 (1.0.7) installer
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PREV_TAG: ${{ inputs.prev_stable_tag }}
-        run: gh release download "$PREV_TAG" --pattern '*.deb' --dir prev
-
-      # The 2.0.0 draft installer comes via the privileged stage-installers artifact (restores app-artifact/ +
-      # manifest/); this read-only job re-verifies below. (The N-1 1.0.7 .deb was fetched above from its
-      # PUBLISHED release, which read perms can see.)
-      - name: Download the staged installers (+ manifest)
+      - name: Download staged installers and manifest
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: staged-installers
-
-      - name: Verify installer bytes against the gated manifest (release-asset mode)
+      - name: Verify installer bytes
         if: inputs.release_tag != ''
         run: bash .github/scripts/packaged-e2e-verify-manifest.sh
-
-      - name: Install 1.0.7 + write a 1.0.7-shaped config
+      - name: Prepare virtual display
         run: |
-          PREV_DEB=$(find prev -name '*.deb' | head -1)
-          test -n "$PREV_DEB" || { echo "::error::no 1.0.7 .deb"; ls -laR prev; exit 1; }
-          sudo apt-get install -y "./$PREV_DEB"
-          mkdir -p "$HOME/.aztec-accelerator"
-          # 1.0.7 schema: legacy `safari_support`, NO `config_version`, plus a marker origin to prove survival.
-          printf '%s' '{"safari_support":true,"approved_origins":["http://preserved.example"]}' \
-            > "$HOME/.aztec-accelerator/config.json"
-
-      - name: Upgrade to 2.0.0 in place + launch
-        run: |
-          NEW_DEB=$(find app-artifact -name '*.deb' | head -1)
-          test -n "$NEW_DEB" || { echo "::error::no 2.0.0 .deb"; ls -laR app-artifact; exit 1; }
-          sudo apt-get install -y "./$NEW_DEB"
-          dbus-launch AztecAccelerator >/tmp/accel.log 2>&1 &
-          echo "ACCEL_PID=$!" >> "$GITHUB_ENV"
-          for i in $(seq 1 30); do
-            if curl -sf http://127.0.0.1:59833/health >/dev/null 2>&1; then
-              echo "2.0.0 up after upgrade (attempt $i)"; break
-            fi
-            sleep 2
-          done
-
-      - name: Assert the config migrated + survived on disk
-        run: |
-          CFG="$HOME/.aztec-accelerator/config.json"
-          # The migration persists via the launch-time reset save; poll until it lands.
-          for _ in $(seq 1 15); do
-            if jq -e '.config_version == 2' "$CFG" >/dev/null 2>&1; then break; fi
-            sleep 1
-          done
-          echo "Post-upgrade config:"; cat "$CFG"
-          jq -e '.config_version == 2' "$CFG" || { echo "::error::config_version not migrated to 2"; exit 1; }
-          jq -e 'has("safari_support") | not' "$CFG" || { echo "::error::legacy safari_support not removed"; exit 1; }
-          jq -e '.approved_origins | index("http://preserved.example")' "$CFG" \
-            || { echo "::error::approved_origins not preserved across upgrade"; exit 1; }
-          echo "OK: config_version=2, safari_support removed, origins preserved across the 1.0.7→2.0.0 upgrade"
-
-      - name: Cleanup
-        if: always()
-        run: kill "$ACCEL_PID" 2>/dev/null || true
+          sudo apt-get update
+          sudo apt-get install -y xvfb stalonetray dbus-x11
+          Xvfb :99 -screen 0 1280x1024x24 >/tmp/presto-isolation-xvfb.log 2>&1 &
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
+          sleep 2
+          DISPLAY=:99 stalonetray >/tmp/presto-isolation-tray.log 2>&1 &
+      - name: Assert install, first launch and uninstall preserve unrelated state
+        run: bash .github/scripts/packaged-e2e-state-isolation.sh
 
   # B5 packaged uninstall: the ownership-checked teardown runs on the INSTALLED app, then the package is
   # removed. Asserts the flow succeeds end-to-end + the binary is gone (the per-store cleanup detail is B5's
@@ -502,17 +440,17 @@ jobs:
           test -n "$NEW_DEB" || { echo "::error::no .deb"; ls -laR app-artifact; exit 1; }
           sudo apt-get update
           sudo apt-get install -y "./$NEW_DEB"
-          command -v AztecAccelerator >/dev/null || { echo "::error::binary not on PATH after install"; exit 1; }
+          command -v Presto >/dev/null || { echo "::error::binary not on PATH after install"; exit 1; }
           # The ownership-checked teardown (B5) — exits 0 on success (or a clean "another install owns it").
-          AztecAccelerator --prepare-uninstall
+          Presto --prepare-uninstall
           # Remove the package; the binary must be gone.
           PKG=$(dpkg-deb -f "$NEW_DEB" Package)
           sudo apt-get remove -y "$PKG"
-          # `command -v` consults bash's PATH hash, which cached AztecAccelerator's location from the
+          # `command -v` consults bash's PATH hash, which cached Presto's location from the
           # post-install check above; after removal that hash is STALE and would falsely report the binary as
           # still present. Clear it so the lookup re-checks the filesystem.
           hash -r
-          if command -v AztecAccelerator >/dev/null; then
+          if command -v Presto >/dev/null; then
             echo "::error::binary still present after package removal"; exit 1
           fi
           echo "OK: prepare-uninstall + package removal clean; binary gone"
@@ -520,8 +458,8 @@ jobs:
   # Windows counterpart — deliberately DEEPER than the linux leg above. Windows is the only OS with a NATIVE
   # uninstall hook pair (NSIS PREUNINSTALL primary -> `--prepare-uninstall`; POSTUNINSTALL "belt", an
   # ownership-checked native redo), and that logic has never run end-to-end against a real install: today's
-  # Windows CI proves the hooks only against a STUB exe (accelerator.yml's synthetic makensis harness) or
-  # installs without ever invoking the uninstaller (accelerator.yml's windows-build). This leg closes that gap
+  # Windows CI proves the hooks only against a STUB exe (presto.yml's synthetic makensis harness) or
+  # installs without ever invoking the uninstaller (presto.yml's windows-build). This leg closes that gap
   # — it is the "live Windows NSIS belt harness" B5 scoped as a release-gate item.
   #
   # Arming is by the PRODUCT, not by CI: `intent_enabled_now()` reads the Run-key artifact itself as the
@@ -564,7 +502,7 @@ jobs:
         timeout-minutes: 3
         shell: pwsh
         run: |
-          schtasks /Delete /TN "Aztec Accelerator Crash Recovery" /F 2>$null | Out-Null
-          Remove-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "Aztec Accelerator" -ErrorAction SilentlyContinue
-          Get-Process -Name "AztecAccelerator" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+          schtasks /Delete /TN "Presto Crash Recovery" /F 2>$null | Out-Null
+          Remove-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "Presto" -ErrorAction SilentlyContinue
+          Get-Process -Name "Presto" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
           exit 0

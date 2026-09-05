@@ -1,0 +1,219 @@
+import { afterEach, beforeEach, describe, expect, mock, test } from "bun:test";
+import {
+  detectPresto,
+  LandingDetectionController,
+  type LandingPrestoStatus,
+  watchLoopbackPermissionChanges,
+} from "./presto-detection";
+
+describe("landing presto detection", () => {
+  let originalFetch: typeof fetch;
+  let targetDescriptor: PropertyDescriptor | undefined;
+  let permissionsDescriptor: PropertyDescriptor | undefined;
+
+  beforeEach(() => {
+    originalFetch = globalThis.fetch;
+    targetDescriptor = Object.getOwnPropertyDescriptor(Request.prototype, "targetAddressSpace");
+    permissionsDescriptor = Object.getOwnPropertyDescriptor(navigator, "permissions");
+  });
+
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+    if (targetDescriptor) {
+      Object.defineProperty(Request.prototype, "targetAddressSpace", targetDescriptor);
+    } else {
+      delete (Request.prototype as Request & { targetAddressSpace?: string }).targetAddressSpace;
+    }
+    if (permissionsDescriptor) {
+      Object.defineProperty(navigator, "permissions", permissionsDescriptor);
+    } else {
+      Reflect.deleteProperty(navigator, "permissions");
+    }
+  });
+
+  const permissions = (
+    query: (descriptor: { name: string }) => Promise<{ state: PermissionState }>,
+  ) => Object.defineProperty(navigator, "permissions", { configurable: true, value: { query } });
+
+  test("accepts only the exact health identity", async () => {
+    globalThis.fetch = mock(async () => Response.json({ status: "ok", api_version: 1 })) as any;
+    expect(await detectPresto()).toBe("available");
+
+    for (const body of [
+      { status: "ok" },
+      { api_version: 1 },
+      { status: "ok", api_version: 2 },
+      { status: false, api_version: 1 },
+      [],
+    ]) {
+      globalThis.fetch = mock(async () => Response.json(body)) as any;
+      expect(await detectPresto()).toBe("error");
+    }
+  });
+
+  test("annotates HTTP only when supported and never annotates HTTPS", async () => {
+    Object.defineProperty(Request.prototype, "targetAddressSpace", {
+      configurable: true,
+      get: () => undefined,
+    });
+    const seen: Array<{ url: string; method?: string; annotation?: string }> = [];
+    globalThis.fetch = mock(async (input: string | URL | Request, init?: RequestInit) => {
+      seen.push({
+        url: String(input),
+        method: init?.method,
+        annotation: (init as RequestInit & { targetAddressSpace?: string })?.targetAddressSpace,
+      });
+      if (String(input).startsWith("https://")) throw new TypeError("TLS unavailable");
+      return Response.json({ status: "ok", api_version: 1 });
+    }) as any;
+    await detectPresto();
+    expect(seen).toEqual([
+      { url: "https://127.0.0.1:59834/health", method: "GET", annotation: undefined },
+      { url: "http://127.0.0.1:59833/health", method: "GET", annotation: "loopback" },
+    ]);
+  });
+
+  test("mirrors modern then legacy permission lookup and classifies only denied", async () => {
+    const names: string[] = [];
+    permissions(async ({ name }) => {
+      names.push(name);
+      if (name === "loopback-network") throw new TypeError("unsupported");
+      return { state: "denied" };
+    });
+    globalThis.fetch = mock(async () => {
+      throw new TypeError("blocked");
+    }) as any;
+    expect(await detectPresto()).toBe("permission-blocked");
+    expect(names).toEqual(["loopback-network", "local-network-access"]);
+
+    names.length = 0;
+    permissions(async ({ name }) => {
+      names.push(name);
+      return { state: "prompt" };
+    });
+    expect(await detectPresto()).toEqual({
+      reason: "secure-connection-unavailable",
+      diagnosis: "unconfirmed",
+    });
+    expect(names).toEqual(["loopback-network", "loopback-network"]);
+  });
+
+  test("healthy HTTPS is the default and never constructs the HTTP diagnostic", async () => {
+    const urls: string[] = [];
+    globalThis.fetch = mock(async (input: string | URL | Request) => {
+      urls.push(String(input));
+      return Response.json({ status: "ok", api_version: 1 });
+    }) as any;
+    expect(await detectPresto()).toBe("available");
+    expect(urls).toEqual(["https://127.0.0.1:59834/health"]);
+  });
+
+  test.each([
+    [
+      "https-disabled",
+      {
+        status: "ok",
+        api_version: 1,
+        version: "3.0.0",
+        aztec_version: "5.2.0",
+        available_versions: ["5.2.0"],
+        bb_available: true,
+      },
+    ],
+    [
+      "tls-or-trust-failure",
+      {
+        status: "ok",
+        api_version: 1,
+        version: "3.0.0",
+        aztec_version: "5.2.0",
+        available_versions: ["5.2.0"],
+        bb_available: true,
+        https_port: 59834,
+      },
+    ],
+    ["presto-reachable", { status: "ok", api_version: 1 }],
+    ["unconfirmed", { status: "ok", api_version: 1, version: "3.0.0" }],
+    ["unconfirmed", { status: "ok", api_version: 1, version: 3 }],
+    ["unconfirmed", { hello: "world" }],
+  ] as const)("classifies the witness-free HTTP diagnosis as %s", async (diagnosis, body) => {
+    globalThis.fetch = mock(async (input: string | URL | Request) => {
+      if (String(input).startsWith("https://")) throw new TypeError("TLS unavailable");
+      return Response.json(body);
+    }) as unknown as typeof fetch;
+
+    expect(await detectPresto()).toEqual({
+      reason: "secure-connection-unavailable",
+      diagnosis,
+    });
+  });
+
+  test("watches a delayed prompt decision and removes the listener on cleanup", async () => {
+    let state: PermissionState = "prompt";
+    const status = new EventTarget() as EventTarget & { readonly state: PermissionState };
+    Object.defineProperty(status, "state", { get: () => state });
+    const names: string[] = [];
+    Object.defineProperty(navigator, "permissions", {
+      configurable: true,
+      value: {
+        query: async ({ name }: { name: string }) => {
+          names.push(name);
+          return status;
+        },
+      },
+    });
+    const seen: PermissionState[] = [];
+
+    const stop = await watchLoopbackPermissionChanges((next) => seen.push(next));
+    state = "denied";
+    status.dispatchEvent(new Event("change"));
+    stop();
+    state = "granted";
+    status.dispatchEvent(new Event("change"));
+
+    expect(names).toEqual(["loopback-network"]);
+    expect(seen).toEqual(["denied"]);
+  });
+});
+
+test("landing Retry is uncached and stale results cannot overwrite recovery", async () => {
+  let resolveFirst!: (status: LandingPrestoStatus) => void;
+  const first = new Promise<LandingPrestoStatus>((resolve) => {
+    resolveFirst = resolve;
+  });
+  let calls = 0;
+  const rendered: LandingPrestoStatus[] = [];
+  const controller = new LandingDetectionController(
+    async () => (++calls === 1 ? first : "available"),
+    (status) => rendered.push(status),
+    () => {},
+  );
+  const startup = controller.refresh();
+  await controller.refresh();
+  resolveFirst("permission-blocked");
+  await startup;
+  expect(calls).toBe(2);
+  expect(rendered).toEqual(["available"]);
+});
+
+test("landing permission refresh starts an uncached probe and owns the display epoch", async () => {
+  let resolveFirst!: (status: LandingPrestoStatus) => void;
+  const first = new Promise<LandingPrestoStatus>((resolve) => {
+    resolveFirst = resolve;
+  });
+  let calls = 0;
+  const rendered: LandingPrestoStatus[] = [];
+  const controller = new LandingDetectionController(
+    async () => (++calls === 1 ? first : "permission-blocked"),
+    (status) => rendered.push(status),
+    () => {},
+  );
+
+  const startup = controller.refresh();
+  await controller.refreshAfterPermissionChange();
+  resolveFirst({ reason: "secure-connection-unavailable", diagnosis: "unconfirmed" });
+  await startup;
+
+  expect(calls).toBe(2);
+  expect(rendered).toEqual(["permission-blocked"]);
+});

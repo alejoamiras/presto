@@ -1,6 +1,6 @@
 name: Update Feed Health
 
-# The updater feed at aztec-accelerator.dev/releases/latest.json is what every INSTALLED app
+# The updater feed at presto-landing.alejo-amiras.workers.dev/releases/latest.json is what every INSTALLED app
 # polls to discover a new version. Historically it was silently dead for ~6 weeks after an old
 # S3 deployment wiped it. The current feed is isolated in Cloudflare KV, but
 # nothing surfaced it — the release pipeline only writes the feed, it never reads it back on a
@@ -31,7 +31,7 @@ jobs:
     steps:
       - name: Fetch and validate the live updater feed
         env:
-          FEED: https://aztec-accelerator.dev/releases/latest.json
+          FEED: https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
         run: |
@@ -68,10 +68,10 @@ jobs:
           #    stable release. This is the failure mode a naive uptime check cannot see.
           feed_ver=$(jq -r .version feed.json)
           latest_tag=$(gh release list --exclude-pre-releases --limit 20 --json tagName \
-            --jq '[.[].tagName | select(startswith("accelerator-v"))][0]')
-          latest_ver="${latest_tag#accelerator-v}"
+            --jq '[.[].tagName | select(startswith("presto-v"))][0]')
+          latest_ver="${latest_tag#presto-v}"
           if [ -z "$latest_ver" ]; then
-            echo "::error::could not resolve the latest stable accelerator release to compare against"
+            echo "::error::could not resolve the latest stable presto release to compare against"
             exit 1
           fi
           if [ "$feed_ver" != "$latest_ver" ]; then

@@ -1,11 +1,5 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import {
-  checkAcceleratorStatus,
-  checkAztecNode,
-  getAcceleratorProver,
-  setUiMode,
-  state,
-} from "./aztec";
+import { checkAztecNode, checkPrestoStatus, getPrestoProver, setUiMode, state } from "./aztec";
 
 // ── fetch mocking ──
 const originalFetch = globalThis.fetch;
@@ -73,8 +67,8 @@ describe.skipIf(!process.env.AZTEC_NODE_URL)("checkAztecNode (live node)", () =>
   );
 });
 
-// ── checkAcceleratorStatus ──
-describe("checkAcceleratorStatus", () => {
+// ── checkPrestoStatus ──
+describe("checkPrestoStatus", () => {
   test("returns the SDK status when the recognized health check succeeds", async () => {
     setFetchMock(() =>
       Promise.resolve(
@@ -85,12 +79,12 @@ describe("checkAcceleratorStatus", () => {
         }),
       ),
     );
-    expect((await checkAcceleratorStatus()).available).toBe(true);
+    expect((await checkPrestoStatus()).available).toBe(true);
   });
 
   test("returns an actionable secure status when browser HTTPS and its diagnostic fail", async () => {
     setFetchMock(() => Promise.reject(new Error("connection refused")));
-    expect(await checkAcceleratorStatus()).toMatchObject({
+    expect(await checkPrestoStatus()).toMatchObject({
       available: false,
       reason: "secure-connection-unavailable",
       diagnosis: "unconfirmed",
@@ -98,9 +92,9 @@ describe("checkAcceleratorStatus", () => {
   });
 
   test("startup checks and wallet/proving access reuse one lazy prover", () => {
-    const startup = getAcceleratorProver();
+    const startup = getPrestoProver();
     expect(state.prover).toBe(startup);
-    expect(getAcceleratorProver()).toBe(startup);
+    expect(getPrestoProver()).toBe(startup);
   });
 });
 

@@ -11,7 +11,7 @@
 import { expect, type Page, test } from "@playwright/test";
 import { deployAndAssert, initSharedPage, runTokenFlowAndAssert } from "./fullstack.helpers";
 
-const ACCELERATOR_URL = process.env.ACCELERATOR_URL || "";
+const PRESTO_URL = process.env.PRESTO_URL || "";
 
 let sharedPage: Page;
 
@@ -29,7 +29,7 @@ test.afterAll(async () => {
 
 test.describe("Accelerated", () => {
   test.beforeEach(() => {
-    test.skip(!ACCELERATOR_URL, "ACCELERATOR_URL env var not set");
+    test.skip(!PRESTO_URL, "PRESTO_URL env var not set");
   });
 
   test("deploys account", async () => {
@@ -40,8 +40,8 @@ test.describe("Accelerated", () => {
   });
 
   // Re-enabled at 5.0.1 (the "~7 min WASM regression" note was pre-5.0): the standards-token
-  // demo is the surface under test. Self-skips without ACCELERATOR_URL (the CI job doesn't
-  // provide the accelerator today). The 4-minute timeout IS the plan's CI-time budget —
+  // demo is the surface under test. Self-skips without PRESTO_URL (the CI job doesn't
+  // provide the presto today). The 4-minute timeout IS the plan's CI-time budget —
   // mechanized, not a comment asking a human to re-measure.
   test("runs full token flow", async () => {
     test.setTimeout(240_000);
@@ -81,7 +81,7 @@ test.describe("Local", () => {
   });
 
   test("local -> accelerated deploys successfully", async () => {
-    test.skip(!ACCELERATOR_URL, "ACCELERATOR_URL env var not set");
+    test.skip(!PRESTO_URL, "PRESTO_URL env var not set");
     const page = sharedPage;
     await expect(page.locator("#mode-local")).toHaveClass(/mode-active/);
     await page.click("#mode-accelerated");

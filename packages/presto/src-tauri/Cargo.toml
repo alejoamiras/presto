@@ -1,0 +1,121 @@
+[package]
+name = "presto"
+version = "1.0.0-rc.1"
+description = "Native prover for Aztec transactions"
+edition = "2021"
+rust-version = "1.77.2"
+default-run = "Presto"
+# Disable Cargo's `src/bin/*` auto-discovery. `tauri build` bundles every
+# `[[bin]]` defined in this crate into the desktop `.app`'s `MacOS/` folder.
+# A stray file under `src/bin/` would silently change the bundle signature
+# shape between releases — that is the root cause of the 1.0.1 macOS
+# auto-update breakage, where `presto-server.rs` was auto-discovered
+# and stowed alongside the main binary, breaking `amfid` revalidation on
+# in-place updates from 1.0.0. The standalone server now lives in a
+# sibling crate at `../server/` and is built separately.
+autobins = false
+
+[features]
+default = []
+webdriver = ["dep:tauri-plugin-webdriver"]
+
+[[bin]]
+# The DESKTOP executable name (Task Manager, Contents/MacOS/, NSIS ${MAINBINARYNAME}). Renamed at
+# the CARGO layer — not via tauri.conf mainBinaryName — so plain `cargo build` (which the
+# webdriver E2E legs use deliberately, F-012) produces the SAME name as tauri-driven builds.
+# Crate name (and so Cargo.lock + the release version-sed) stays presto.
+name = "Presto"
+path = "src/main.rs"
+
+[dependencies]
+presto-core = { path = "../core" }
+# F-004: SemVer comparison for the monotonic update version floor (same crate/major the core uses).
+semver = "1"
+# Marker transaction nonce (plan D18/D21). Already in the lock via presto-core.
+uuid = { version = "1", features = ["v4"] }
+# F-004 B2: cross-process advisory file lock serialising the updater transaction (check→install→
+# floor-commit) across concurrent app instances. Battle-tested, stable flock primitive.
+fs2 = "0.4"
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-webdriver = { version = "0.2", optional = true }
+axum = "0.8"
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+parking_lot = "0.12"
+serde_json = "1"
+base64 = "0.22"
+tempfile = "3"
+tracing = "0.1"
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
+dirs = "6"
+which = "7"
+tower-http = { version = "0.6", features = ["cors", "set-header"] }
+http = "1"
+# Owned autostart (plan D7 — replaces tauri-plugin-autostart, whose Windows enable() wrote the Run
+# value unquoted, a same-user persistence-hijack primitive). `plist` mutates ProgramArguments[0]
+# with a real parser (plan D15): it is ALREADY compiled into every build via tauri-utils, so this
+# direct dependency adds zero crates.
+plist = "1"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+reqwest = { version = "0.12", features = ["stream", "json"] }
+flate2 = "1"
+tar = "0.4"
+hex = "0.4"
+# F-016: `rcgen`'s `zeroize` feature makes `KeyPair` impl `Zeroize` (scrubs its serialized-DER copy). We
+# wrap the in-memory CA signing key in `Zeroizing` and early-drop it after leaf signing — best-effort
+# post-use scrubbing (the ring backend scalar/nonce + swap + core dumps are NOT covered; documented in
+# certs.rs). The CA key is never written to disk.
+rcgen = { version = "0.13", features = ["pem", "x509-parser", "zeroize"] }
+# Direct dep so we can name `Zeroizing` (rcgen does not re-export it); already locked at 1.8.2 transitively
+# via rcgen, so this adds no new package version.
+zeroize = "1"
+# `verify` gates X509Certificate::verify_signature, used to prove the live leaf is actually signed
+# by the live CA (a partial cert swap otherwise passes every other check). It pulls `ring`, which
+# tokio-rustls already brings in, so this adds no new package.
+x509-parser = { version = "0.18", features = ["verify"] }
+rustls-pemfile = "2"
+tokio-rustls = "0.26"
+time = "0.3"
+hyper = { version = "1", features = ["server", "http1"] }
+hyper-util = { version = "0.1", features = ["tokio", "server-auto", "service"] }
+urlencoding = "2"
+sha2 = "0.11"
+url = "2"
+
+# Linux-only: geteuid() for the certutil safe-path ownership check (already locked transitively).
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
+
+# Windows-only: direct HKCU Run / StartupApproved access for the owned autostart module (plan D7).
+# Replaces the winreg 0.10 the removed auto-launch crate pulled — 0.55 was already in the lock, so
+# the net crate count goes DOWN.
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+tokio = { version = "1", features = ["test-util"] }
+serial_test = "3"
+
+# L3 (tests/autostart_heal.rs): execute a healed Run value through REAL CreateProcessW — the same
+# semantics Run-key processing uses — so the quoting claim is proven against the OS, not against our
+# own candidate model (audit r4: "a model checked against itself"). Version already in the lock.
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_System_Threading",
+] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+serde_json = "1"
+sha2 = "0.10"
+hex = "0.4"
+
+[profile.release]
+strip = true
+lto = true
+codegen-units = 1
+panic = "abort"

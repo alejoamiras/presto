@@ -3,7 +3,7 @@ import { assertServicesAvailable } from "./fullstack.fixture";
 
 /**
  * Shared helpers for fullstack E2E tests (local-network, smoke).
- * Adapted from tee-rex for the accelerator's 2-mode architecture.
+ * Adapted from tee-rex for the presto's 2-mode architecture.
  */
 
 /**

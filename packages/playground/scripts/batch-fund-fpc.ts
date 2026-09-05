@@ -243,7 +243,7 @@ const wallet = await EW.create(node, {
   ephemeral: true,
   pxe: {
     proverEnabled: true,
-    // WASM proving (no accelerator in a script): the lazy BB prover loads bb.js on first use — same prover the SDK AcceleratorProver extends.
+    // WASM proving (no presto in a script): the lazy BB prover loads bb.js on first use — same prover the SDK PrestoProver extends.
     proverOrOptions: new BBLazyPrivateKernelProver(new WASMSimulator()),
   },
 });

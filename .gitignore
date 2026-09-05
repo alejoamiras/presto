@@ -42,5 +42,5 @@ yarn.lock
 .claude/scheduled_tasks.lock
 .playwright-mcp/
 
-# NSIS hook-guard harness build output (packages/accelerator/src-tauri/nsis/harness.test.nsi)
+# NSIS hook-guard harness build output (packages/presto/src-tauri/nsis/harness.test.nsi)
 hooks-harness-setup.exe

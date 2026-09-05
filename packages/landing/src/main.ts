@@ -1,10 +1,10 @@
-import {
-  detectAccelerator,
-  type LandingAcceleratorStatus,
-  LandingDetectionController,
-  watchLoopbackPermissionChanges,
-} from "./accelerator-detection";
 import { FEED_URL, feedVersionToTag } from "./feed";
+import {
+  detectPresto,
+  LandingDetectionController,
+  type LandingPrestoStatus,
+  watchLoopbackPermissionChanges,
+} from "./presto-detection";
 import { initRace } from "./race";
 
 // ── Scroll reveals ──
@@ -52,7 +52,7 @@ initNav();
 initRace();
 
 // ── OS-aware download button ──
-const REPO = "alejoamiras/aztec-accelerator";
+const REPO = "alejoamiras/presto";
 const RELEASES_URL = `https://github.com/${REPO}/releases`;
 
 interface OsInfo {
@@ -84,7 +84,7 @@ function detectOs(): OsInfo {
 // Resolve the live stable tag from the SIGNED KV-backed feed (single source of truth — B6), NOT a GitHub releases
 // list-scan (which had no prerelease filter). Best effort, non-blocking; the feed body is untrusted and
 // validated in `feedVersionToTag`.
-async function fetchLatestAcceleratorTag(): Promise<string | null> {
+async function fetchLatestPrestoTag(): Promise<string | null> {
   try {
     const res = await fetch(FEED_URL, { signal: AbortSignal.timeout(3000) });
     if (!res.ok) return null;
@@ -101,7 +101,7 @@ async function initDownload(): Promise<void> {
   const os = detectOs();
   btn.textContent = os.label;
 
-  const tag = await fetchLatestAcceleratorTag();
+  const tag = await fetchLatestPrestoTag();
   if (!tag) return;
 
   try {
@@ -130,7 +130,7 @@ const heroSub = document.querySelector(".hero-sub") as HTMLElement | null;
 const heroLink = heroSub?.querySelector("a") as HTMLAnchorElement | null;
 const originalHeroLink = heroLink ? Array.from(heroLink.childNodes, (n) => n.cloneNode(true)) : [];
 
-function renderAcceleratorStatus(status: LandingAcceleratorStatus): void {
+function renderPrestoStatus(status: LandingPrestoStatus): void {
   const blocked = status === "permission-blocked";
   const secureUnavailable = typeof status === "object";
   document.getElementById("landing-permission-help")?.classList.toggle("hidden", !blocked);
@@ -147,7 +147,7 @@ function renderAcceleratorStatus(status: LandingAcceleratorStatus): void {
         title: "Secure connection is not trusted",
         message: "Presto advertises HTTPS, but this browser could not establish it.",
       },
-      "accelerator-reachable": {
+      "presto-reachable": {
         title: "Presto is reachable",
         message: "Its public health response hides the exact HTTPS configuration.",
       },
@@ -179,22 +179,18 @@ function renderAcceleratorStatus(status: LandingAcceleratorStatus): void {
   }
 }
 
-const detection = new LandingDetectionController(
-  detectAccelerator,
-  renderAcceleratorStatus,
-  (pending) => {
-    for (const id of ["landing-permission-retry", "landing-secure-retry"]) {
-      const button = document.getElementById(id) as HTMLButtonElement | null;
-      if (!button) continue;
-      button.disabled = pending;
-      button.textContent = pending
-        ? "Checking…"
-        : id === "landing-secure-retry"
-          ? "Retry secure connection"
-          : "Retry";
-    }
-  },
-);
+const detection = new LandingDetectionController(detectPresto, renderPrestoStatus, (pending) => {
+  for (const id of ["landing-permission-retry", "landing-secure-retry"]) {
+    const button = document.getElementById(id) as HTMLButtonElement | null;
+    if (!button) continue;
+    button.disabled = pending;
+    button.textContent = pending
+      ? "Checking…"
+      : id === "landing-secure-retry"
+        ? "Retry secure connection"
+        : "Retry";
+  }
+});
 
 for (const id of ["landing-permission-retry", "landing-secure-retry"]) {
   document.getElementById(id)?.addEventListener("click", () => {

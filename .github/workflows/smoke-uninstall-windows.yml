@@ -5,7 +5,7 @@ name: Smoke — Windows full uninstall
 # enforces — it only differs in where the installer comes from: an already-PUBLISHED release instead of a
 # draft's staged assets.
 #
-# Why this exists at all: `release-accelerator.yml` refuses to run from a non-main ref (F-005: gate side
+# Why this exists at all: `release-presto.yml` refuses to run from a non-main ref (F-005: gate side
 # effects on main) and is the only caller of `_e2e-packaged.yml`, so without this entry point the uninstall
 # logic could only ever be exercised AFTER it was merged and already release-blocking. It is also the cheap
 # way to re-check the real uninstaller against any published build (~4 min, no release side effects).
@@ -15,9 +15,8 @@ on:
     inputs:
       release_tag:
         description: "Published release whose real Windows installer to install + uninstall"
-        required: false
+        required: true
         type: string
-        default: accelerator-v2.0.0
 
 permissions:
   contents: read
@@ -40,8 +39,8 @@ jobs:
           # `inputs.*` is EMPTY on a push trigger, and `gh release download ""` silently resolves to whatever
           # GitHub calls "Latest" — which this repo deliberately never updates (every release is published
           # --latest=false; the signed updater feed is the source of truth). That resolved to a 1.0.7 installer,
-          # whose binary still carries the pre-rename name, so the run failed looking for AztecAccelerator.exe.
-          TAG: ${{ inputs.release_tag || 'accelerator-v2.0.0' }}
+          # whose binary still carries the pre-rename name, so the run failed looking for Presto.exe.
+          TAG: ${{ inputs.release_tag }}
         run: |
           set -euo pipefail
           mkdir -p app-artifact
@@ -60,7 +59,7 @@ jobs:
         timeout-minutes: 3
         shell: pwsh
         run: |
-          schtasks /Delete /TN "Aztec Accelerator Crash Recovery" /F 2>$null | Out-Null
-          Remove-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "Aztec Accelerator" -EA SilentlyContinue
-          Get-Process -Name "AztecAccelerator" -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue
+          schtasks /Delete /TN "Presto Crash Recovery" /F 2>$null | Out-Null
+          Remove-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run" -Name "Presto" -EA SilentlyContinue
+          Get-Process -Name "Presto" -EA SilentlyContinue | Stop-Process -Force -EA SilentlyContinue
           exit 0

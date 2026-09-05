@@ -1,29 +1,19 @@
-/**
- * Rebrand sweep, two directions:
- *  1. Retired visual values (old palette hexes, old font families) must be GONE from every
- *     product surface — a token swap that misses a hardcoded literal fails here, not in front of
- *     a user.
- *  2. Frozen operational identity must be byte-INTACT: the visual rebrand may never leak
- *     "Presto" into identity-bearing files, and every frozen literal must still exist at its site.
- * Patterns are word-boundary/quoted on purpose: bare `Inter` matches IntersectionObserver.
- * Presence checks are the guarantee level here; exact-field pinning of tauri.conf.json lives in
- * packages/accelerator/scripts/tauri-identity.test.ts.
- */
+/** Product identity and visual regression contracts. Historical audits are immutable. */
 import { describe, expect, test } from "bun:test";
-import { readdirSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const ROOT = resolve(import.meta.dir, "..");
 
 const PRODUCT_SURFACES = [
-  "packages/accelerator/src-tauri/frontend/style.css",
-  "packages/accelerator/src-tauri/frontend/onboarding.css",
-  "packages/accelerator/src-tauri/frontend/renewal.css",
-  "packages/accelerator/src-tauri/frontend/onboarding.html",
-  "packages/accelerator/src-tauri/frontend/settings.html",
-  "packages/accelerator/src-tauri/frontend/authorize.html",
-  "packages/accelerator/src-tauri/frontend/update-prompt.html",
-  "packages/accelerator/src-tauri/frontend/renewal.html",
+  "packages/presto/src-tauri/frontend/style.css",
+  "packages/presto/src-tauri/frontend/onboarding.css",
+  "packages/presto/src-tauri/frontend/renewal.css",
+  "packages/presto/src-tauri/frontend/onboarding.html",
+  "packages/presto/src-tauri/frontend/settings.html",
+  "packages/presto/src-tauri/frontend/authorize.html",
+  "packages/presto/src-tauri/frontend/update-prompt.html",
+  "packages/presto/src-tauri/frontend/renewal.html",
   "packages/landing/index.html",
   "packages/landing/src/style.css",
   "packages/landing/src/main.ts",
@@ -55,40 +45,28 @@ const RETIRED = [
   "JetBrains+Mono",
 ];
 
-/** file → literals that must remain byte-identical (the operational freeze). */
-const FROZEN_PRESENT: Record<string, string[]> = {
-  "packages/accelerator/src-tauri/tauri.conf.json": [
-    '"productName": "Aztec Accelerator"',
-    '"identifier": "dev.aztec.accelerator"',
-    '"publisher": "Aztec Accelerator"',
-    "https://aztec-accelerator.dev/releases/latest.json",
-    '"copyright": "© 2026 Aztec Accelerator contributors"',
-    '"homepage": "https://aztec-accelerator.dev"',
+/** Identity-bearing literals pinned before the domain is finalized. */
+const IDENTITY_PRESENT: Record<string, string[]> = {
+  "packages/presto/src-tauri/tauri.conf.json": [
+    '"productName": "Presto"',
+    '"identifier": "invalid.pending-domain.presto"',
+    '"publisher": "Presto"',
+    "https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json",
+    '"copyright": "© 2026 Presto contributors"',
+    '"homepage": "https://presto-landing.alejo-amiras.workers.dev"',
   ],
-  "packages/accelerator/src-tauri/Cargo.toml": ['name = "aztec-accelerator"', "AztecAccelerator"],
-  "packages/accelerator/src-tauri/src/certs.rs": ["Aztec Accelerator Local CA", ".aztec-accelerator"],
-  "packages/accelerator/src-tauri/src/trust/linux.rs": ["aztec-accelerator-ca-"],
-  "packages/accelerator/src-tauri/src/trust/windows.rs": ["Aztec Accelerator Local CA"],
-  "packages/accelerator/src-tauri/src/autostart.rs": ['"Aztec Accelerator"'],
-  "packages/accelerator/src-tauri/src/crash_recovery.rs": ["Aztec Accelerator Crash Recovery"],
-  "packages/accelerator/src-tauri/src/update_marker.rs": ["AztecAccelerator", '"Aztec Accelerator"'],
-  "packages/accelerator/src-tauri/nsis/hooks.nsi": ["Aztec Accelerator Local CA"],
-  "packages/sdk/package.json": ["@alejoamiras/aztec-accelerator"],
-  ".github/workflows/release-accelerator.yml": ["Aztec-Accelerator-"],
+  "packages/presto/src-tauri/Cargo.toml": ['name = "presto"', "Presto"],
+  "packages/presto/src-tauri/src/certs.rs": ["Presto Local CA", ".presto"],
+  "packages/presto/src-tauri/src/trust/linux.rs": ["presto-ca-"],
+  "packages/presto/src-tauri/src/trust/windows.rs": ["Presto Local CA"],
+  "packages/presto/src-tauri/src/autostart.rs": ['"Presto"'],
+  "packages/presto/src-tauri/src/crash_recovery.rs": ["Presto Crash Recovery"],
+  "packages/presto/src-tauri/src/update_marker.rs": ["Presto", '"Presto"'],
+  "packages/presto/src-tauri/nsis/hooks.nsi": ["Presto Local CA"],
+  "packages/sdk/package.json": ["@alejoamiras/presto"],
+  ".github/workflows/release-presto.yml": ["Presto-"],
 };
 
-/** Identity-bearing files that must never mention the visual brand. */
-const FROZEN_NO_PRESTO = [
-  "packages/accelerator/src-tauri/tauri.conf.json",
-  "packages/accelerator/src-tauri/Cargo.toml",
-  "packages/accelerator/src-tauri/src/certs.rs",
-  "packages/accelerator/src-tauri/src/autostart.rs",
-  "packages/accelerator/src-tauri/src/crash_recovery.rs",
-  "packages/accelerator/src-tauri/src/update_marker.rs",
-  "packages/accelerator/src-tauri/src/updater.rs",
-  "packages/accelerator/src-tauri/src/uninstall.rs",
-  "packages/accelerator/src-tauri/nsis/hooks.nsi",
-];
 
 describe("brand sweep", () => {
   test("retired visual values are gone from every product surface", async () => {
@@ -102,9 +80,9 @@ describe("brand sweep", () => {
     expect(hits).toEqual([]);
   });
 
-  test("frozen identity literals are intact at their sites", async () => {
+  test("Presto identity literals are present at their sites", async () => {
     const missing: string[] = [];
-    for (const [rel, literals] of Object.entries(FROZEN_PRESENT)) {
+    for (const [rel, literals] of Object.entries(IDENTITY_PRESENT)) {
       const text = await Bun.file(join(ROOT, rel)).text();
       for (const lit of literals) {
         if (!text.includes(lit)) missing.push(`${rel}: ${lit}`);
@@ -113,52 +91,21 @@ describe("brand sweep", () => {
     expect(missing).toEqual([]);
   });
 
-  test("identity-bearing files never mention Presto", async () => {
-    const leaks: string[] = [];
-    for (const rel of FROZEN_NO_PRESTO) {
-      const text = await Bun.file(join(ROOT, rel)).text();
-      if (/presto/i.test(text)) leaks.push(rel);
+  test("retired operational names occur only in historical audits and the migration guide", async () => {
+    const files = Bun.spawnSync(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: ROOT });
+    expect(files.exitCode).toBe(0);
+    // Build the retired spelling so the guard does not match its own source.
+    const retired = new RegExp("aztec[ _%-]*" + "accelerator|aztec%20" + "accelerator|AZTEC_ACCEL_|\\\\bAccelerator(?:Prover|Config|Status|Phase|Protocol|HttpError)|acceleratorVersion", "i");
+    const hits: string[] = [];
+    for (const rel of new Set(files.stdout.toString().split("\\0").filter(Boolean))) {
+      if (rel.startsWith("audit/") || rel === "packages/sdk/MIGRATION.md") continue;
+      const path = join(ROOT, rel);
+      if (!existsSync(path)) continue; // Staged deletions.
+      const bytes = await Bun.file(path).arrayBuffer();
+      if (new Uint8Array(bytes).includes(0)) continue; // Binary assets.
+      const text = new TextDecoder().decode(bytes);
+      if (retired.test(rel) || retired.test(text)) hits.push(rel);
     }
-    // Every trust backend too, not just the enumerated ones.
-    const trustDir = join(ROOT, "packages/accelerator/src-tauri/src/trust");
-    for (const f of readdirSync(trustDir).filter((f) => f.endsWith(".rs"))) {
-      const text = await Bun.file(join(trustDir, f)).text();
-      if (/presto/i.test(text)) leaks.push(`trust/${f}`);
-    }
-    expect(leaks).toEqual([]);
-  });
-
-  test("no CI workflow mentions the visual brand", async () => {
-    const wfDir = join(ROOT, ".github", "workflows");
-    const leaks: string[] = [];
-    for (const f of readdirSync(wfDir).filter((f) => f.endsWith(".yml"))) {
-      const text = await Bun.file(join(wfDir, f)).text();
-      if (/presto/i.test(text)) leaks.push(f);
-    }
-    expect(leaks).toEqual([]);
-  });
-
-  test("workflows and composite actions carry no rebrand edits since the branch base", () => {
-    // A real untouched-check, not a keyword scan. `--merge-base origin/main` diffs from the
-    // merge-base to the WORKING TREE (three-dot with no second ref would stop at HEAD and miss
-    // staged/unstaged edits), so later upstream workflow changes can't falsely implicate this
-    // branch. Only meaningful where origin/main exists; skipped on shallow throwaway clones.
-    const probe = Bun.spawnSync(["git", "rev-parse", "--verify", "origin/main"], { cwd: ROOT });
-    if (probe.exitCode !== 0) return;
-    const diff = Bun.spawnSync(
-      [
-        "git",
-        "diff",
-        "--name-only",
-        "--merge-base",
-        "origin/main",
-        "--",
-        ".github/workflows",
-        ".github/actions",
-      ],
-      { cwd: ROOT },
-    );
-    expect(diff.exitCode).toBe(0);
-    expect(diff.stdout.toString().trim()).toBe("");
+    expect(hits).toEqual([]);
   });
 });

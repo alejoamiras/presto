@@ -36,7 +36,7 @@ jobs:
               - '.github/workflows/app.yml'
               - '.github/workflows/_e2e-app.yml'
               - '.github/actions/setup-aztec/**'
-              - '.github/actions/setup-accelerator/**'
+              - '.github/actions/setup-presto/**'
               - '.github/actions/start-services/**'
             # Fail closed for the real Chromium Local Network Access boundary. This is independent
             # from `relevant`: a landing-only change runs this focused browser job without waking the
@@ -153,7 +153,7 @@ jobs:
     uses: ./.github/workflows/_e2e-app.yml
     with:
       test_script: "test:e2e:local-network"
-      build_accelerator: true
+      build_presto: true
 
   chromium-lna-e2e:
     name: Chromium LNA E2E

@@ -422,8 +422,8 @@ describe("cross-language contract fixtures", () => {
   });
 });
 
-describe("accelerator-collision guard", () => {
-  // This script shares ~/.aztec-accelerator/versions with the running app by default, and both
+describe("presto-collision guard", () => {
+  // This script shares ~/.presto/versions with the running app by default, and both
   // replaces live entries and evicts by retention. The app protects a binary a proof is executing
   // with an in-process lease, which cannot see us — so the guard is what stops `bun run bb:download`
   // deleting a binary mid-proof. Both of its escape hatches shipped broken the first time.

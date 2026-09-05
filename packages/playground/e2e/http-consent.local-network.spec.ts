@@ -13,7 +13,7 @@ function isHttpProve(urlString: string): boolean {
 }
 
 test("HTTP proving requires per-tab consent and resets on reload", async ({ browser }) => {
-  test.skip(!process.env.ACCELERATOR_URL, "ACCELERATOR_URL env var not set");
+  test.skip(!process.env.PRESTO_URL, "PRESTO_URL env var not set");
   test.setTimeout(15 * 60 * 1000);
   await assertServicesAvailable();
 
@@ -44,15 +44,13 @@ test("HTTP proving requires per-tab consent and resets on reload", async ({ brow
   await expect(walletState).not.toHaveText("initializing...", { timeout: 5 * 60 * 1000 });
   await expect(walletState).toHaveText("ready");
 
-  await expect(page.locator("#accelerator-secure-title")).toHaveText(
-    "Encrypted Connection is disabled",
-  );
+  await expect(page.locator("#presto-secure-title")).toHaveText("Encrypted Connection is disabled");
   expect(proveRequests, "diagnosis must never send a proof request").toEqual([]);
 
-  await page.locator("#accelerator-use-http").click();
+  await page.locator("#presto-use-http").click();
   await expect(page.locator("#http-session-confirmation")).toBeVisible();
   await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#accelerator-label")).toHaveText("running");
+  await expect(page.locator("#presto-label")).toHaveText("running");
 
   await page.locator("#mode-accelerated").click();
   await deployAndAssert(page, "accelerated");
@@ -72,7 +70,7 @@ test("HTTP proving requires per-tab consent and resets on reload", async ({ brow
     `expected a successful native HTTP proof after consent; saw ${JSON.stringify(proveHits)}`,
   ).toBe(true);
   const phases = await page.evaluate(
-    () => (window as Window & { __ACCEL_PHASES__?: string[] }).__ACCEL_PHASES__ ?? [],
+    () => (window as Window & { __PRESTO_PHASES__?: string[] }).__PRESTO_PHASES__ ?? [],
   );
   expect(phases).toContain("receive");
   expect(phases).not.toContain("fallback");
@@ -80,10 +78,8 @@ test("HTTP proving requires per-tab consent and resets on reload", async ({ brow
 
   const requestCount = proveRequests.length;
   await page.reload();
-  await expect(page.locator("#accelerator-secure-title")).toHaveText(
-    "Encrypted Connection is disabled",
-  );
-  await expect(page.locator("#accelerator-label")).toContainText("secure connection unavailable");
+  await expect(page.locator("#presto-secure-title")).toHaveText("Encrypted Connection is disabled");
+  await expect(page.locator("#presto-label")).toContainText("secure connection unavailable");
   expect(proveRequests).toHaveLength(requestCount);
 
   await page.close();

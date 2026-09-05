@@ -12,7 +12,7 @@ function envWith(value: string | null, error?: Error): Env {
     },
   });
   return {
-    RELEASE_FEED: releaseFeed,
+    PRESTO_RELEASE_FEED: releaseFeed,
   } as Env;
 }
 
@@ -20,7 +20,7 @@ describe("release feed worker", () => {
   test("streams the signed feed for GET and omits the body for HEAD", async () => {
     const body = JSON.stringify({ version: "5.2.0" });
     const get = await handleRequest(
-      new Request("https://aztec-accelerator.dev/releases/latest.json"),
+      new Request("https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json"),
       envWith(body),
     );
     expect(get.status).toBe(200);
@@ -29,7 +29,9 @@ describe("release feed worker", () => {
     expect(get.headers.get("cache-control")).toBe("public, max-age=300");
 
     const head = await handleRequest(
-      new Request("https://aztec-accelerator.dev/releases/latest.json", { method: "HEAD" }),
+      new Request("https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json", {
+        method: "HEAD",
+      }),
       envWith(body),
     );
     expect(head.status).toBe(200);
@@ -39,11 +41,17 @@ describe("release feed worker", () => {
   test("rejects foreign paths and mutation methods", async () => {
     const env = envWith("{}");
     expect(
-      (await handleRequest(new Request("https://aztec-accelerator.dev/releases/other.json"), env))
-        .status,
+      (
+        await handleRequest(
+          new Request("https://presto-landing.alejo-amiras.workers.dev/releases/other.json"),
+          env,
+        )
+      ).status,
     ).toBe(404);
     const post = await handleRequest(
-      new Request("https://aztec-accelerator.dev/releases/latest.json", { method: "POST" }),
+      new Request("https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json", {
+        method: "POST",
+      }),
       env,
     );
     expect(post.status).toBe(405);
@@ -53,7 +61,7 @@ describe("release feed worker", () => {
   test("fails closed when the feed is absent or KV errors", async () => {
     for (const env of [envWith(null), envWith(null, new Error("offline"))]) {
       const response = await handleRequest(
-        new Request("https://aztec-accelerator.dev/releases/latest.json"),
+        new Request("https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json"),
         env,
       );
       expect(response.status).toBe(503);

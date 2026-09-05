@@ -1,0 +1,153 @@
+/**
+ * Binary/bundle identity drift guards (`bun test scripts/`). The executable renamed
+ * `presto` → `Presto` at the CARGO layer ([[bin]] name + default-run) so that
+ * plain `cargo build` (the webdriver E2E legs, F-012) and tauri-driven builds produce ONE name —
+ * while productName, identifier, config dir, and artifact filenames stayed put. A half-rename
+ * (someone touching one layer, one workflow, or re-adding the conf keys that would fork the name)
+ * must fail CI in milliseconds on every platform, not on a Windows E2E leg an hour later.
+ */
+import { describe, expect, test } from "bun:test";
+import fs from "node:fs";
+import path from "node:path";
+
+const PKG = path.resolve(import.meta.dir, "..");
+const REPO = path.resolve(PKG, "..", "..");
+const SRC_TAURI = path.join(PKG, "src-tauri");
+
+const BIN = "Presto";
+const conf = JSON.parse(fs.readFileSync(path.join(SRC_TAURI, "tauri.conf.json"), "utf8"));
+const cargo = fs.readFileSync(path.join(SRC_TAURI, "Cargo.toml"), "utf8");
+
+describe("binary identity (cargo layer owns the name)", () => {
+  test("Cargo [[bin]] + default-run are the renamed binary; crate name is NOT renamed", () => {
+    expect(cargo).toContain(`name = "${BIN}"`);
+    expect(cargo).toContain(`default-run = "${BIN}"`);
+    // Crate name anchors Cargo.lock and the release version-sed — it must stay.
+    expect(cargo).toContain('name = "presto"');
+  });
+
+  test("tauri.conf.json does NOT set mainBinaryName (it would re-fork plain-cargo vs tauri builds)", () => {
+    expect(conf.mainBinaryName).toBeUndefined();
+  });
+
+  test("product identity unchanged (install dir, artifacts, config dir all hang off these)", () => {
+    expect(conf.productName).toBe("Presto");
+    expect(conf.identifier).toBe("invalid.pending-domain.presto");
+  });
+});
+
+describe("bundle metadata", () => {
+  test("shipped metadata is pinned exactly", () => {
+    expect(conf.bundle.category).toBe("DeveloperTool");
+    expect(conf.bundle.copyright).toBe("© 2026 Presto contributors");
+    expect(conf.bundle.homepage).toBe("https://presto-landing.alejo-amiras.workers.dev");
+    expect(conf.bundle.license).toBe("AGPL-3.0-only");
+  });
+
+  test("the AGPL text ships as a bundled resource (AGPL 4/6: recipients must receive it)", () => {
+    // Dropping licenseFile removes the licence TEXT from the packages — `license` is only an
+    // SPDX identifier. AGPL sections 4 and 6 require recipients to receive the licence, so it
+    // ships as a plain resource: present in the bundle, no assent gate. Lands in
+    // Contents/Resources/LICENSE (macOS) / $INSTDIR (NSIS), NOT Contents/MacOS/, so the
+    // release bundle-shape invariant is unaffected.
+    expect(conf.bundle.resources).toEqual({ "../../../LICENSE": "LICENSE" });
+    expect(fs.existsSync(path.join(SRC_TAURI, "../../../LICENSE"))).toBe(true);
+  });
+
+  test("licenseFile stays ABSENT — it embeds a click-through SLA in the macOS DMG", () => {
+    // `licenseFile` is GLOBAL in Tauri v2 (no nsis/dmg/macOS-scoped variant exists in
+    // config.schema.json), so setting it to get an NSIS license page also embeds a Software
+    // License Agreement in the DMG: `hdiutil attach` then requires interactive agreement, which
+    // blocked the release pipeline's Post-build Smoke (run 30640841649) and would have forced
+    // every macOS user to accept a licence prompt before they could mount the download. The AGPL
+    // governs distribution and needs no click-through assent — but the TEXT must still reach
+    // recipients, which is what the `resources` mapping above does (audit correction: `license`
+    // alone is an identifier, not the licence).
+    expect(conf.bundle.licenseFile).toBeUndefined();
+  });
+
+  test("publisher is pinned — changing it again is a fleet-migration event", () => {
+    // publisher feeds NSIS ${MANUFACTURER}, whose registry namespace anchors custom-$INSTDIR
+    // restore and the interactive-reinstall uninstaller lookup. It was flipped from the
+    // identifier-fallback "aztec" on 2026-07-29 while the install base was dev/test only
+    // (publisher-flip plan). Changing it against a REAL fleet strands custom-directory installs
+    // and breaks interactive-reinstall trust cleanup — that needs a prior-release migration,
+    // not just an edit here.
+    expect(conf.bundle.publisher).toBe("Presto");
+  });
+});
+
+describe("NSIS install-destination mirror (arc-hunt r2 F2)", () => {
+  // update_marker.rs computes the marker's expected_install_path by MIRRORING what NSIS will do:
+  // MANUPRODUCTKEY (Software\<publisher>\<productName>) default value, else
+  // %LOCALAPPDATA%\<productName>, plus the binary name. Every input to that mirror is pinned
+  // here — if one drifts, the marker starts pointing somewhere the installer never writes and
+  // reconciliation silently suppresses heal/rearm until the deadline.
+  const marker = fs.readFileSync(path.join(SRC_TAURI, "src", "update_marker.rs"), "utf8");
+
+  test("Rust consts match the conf values the installer derives $INSTDIR from", () => {
+    expect(marker).toContain(`MAIN_BINARY_EXE: &str = "${BIN}.exe"`);
+    expect(marker).toContain(`PRODUCT_DIR_NAME: &str = "${conf.productName}"`);
+    // The registry namespace is Software\\<publisher>\\<productName>; publisher is pinned above.
+    const updater = fs.readFileSync(path.join(SRC_TAURI, "src", "updater.rs"), "utf8");
+    const regPath = `r"Software\\${conf.bundle.publisher}\\${conf.productName}"`;
+    expect(regPath).toBe(String.raw`r"Software\Presto\Presto"`); // guards the builder itself
+    expect(updater).toContain(regPath);
+  });
+
+  test("per-user install mode (the default-dir half of the mirror)", () => {
+    expect(conf.bundle.windows.nsis.installMode).toBe("currentUser");
+  });
+
+  test("no RUNTIME installer arg is passed to the updater builder", () => {
+    // A `.installer_arg("/D=...")` on the updater builder would make NSIS install where the
+    // marker's mirror cannot predict, and the conf-level pins below would stay green (r3 #5).
+    const rustSrc = fs
+      .readdirSync(path.join(SRC_TAURI, "src"), { recursive: true })
+      .filter((f): f is string => typeof f === "string" && f.endsWith(".rs"))
+      .map((f) => fs.readFileSync(path.join(SRC_TAURI, "src", f), "utf8"))
+      .join("\n");
+    expect(rustSrc).not.toContain("installer_arg");
+  });
+
+  test("no installer argument may override $INSTDIR", () => {
+    // A /D flag (or nsis.installerArgs carrying one) would make NSIS install somewhere the
+    // mirror cannot predict. The updater passes /UPDATE only.
+    expect(conf.bundle.windows.nsis.installerArgs).toBeUndefined();
+    expect(JSON.stringify(conf.plugins.updater)).not.toContain("/D");
+  });
+});
+
+describe("CI/scripts reference the renamed binary (lockstep sites)", () => {
+  const expectContains = (rel: string, needle: string) => {
+    const body = fs.readFileSync(path.join(REPO, rel), "utf8");
+    expect(body).toContain(needle);
+  };
+
+  test("webdriver APP_CMD paths", () => {
+    expectContains(".github/workflows/_e2e-webdriver.yml", `target/debug/${BIN}$EXE`);
+    expectContains(".github/workflows/_e2e-webdriver.yml", `target/release/${BIN}$EXE`);
+    const wd = fs.readFileSync(path.join(REPO, ".github/workflows/_e2e-webdriver.yml"), "utf8");
+    expect(wd).not.toContain("target/debug/presto");
+    expect(wd).not.toContain("target/release/presto");
+  });
+
+  test("windows heal-scenario lookup, sentinel, bundle-shape invariant, smoke constant", () => {
+    expectContains(".github/workflows/presto.yml", `"${BIN}.exe"`);
+    expectContains(".github/workflows/smoke-updater-windows.yml", `$INSTDIR\\${BIN}.exe`);
+    expectContains(".github/workflows/release-presto.yml", `${BIN}\\nbb`);
+    expectContains(
+      "packages/presto/scripts/updater-smoke-windows.ps1",
+      `$NBinaryName = "${BIN}.exe"`,
+    );
+  });
+
+  test("the Windows updater workflow requires a renamed 3.x baseline", () => {
+    const body = fs.readFileSync(
+      path.join(REPO, ".github/workflows/_e2e-updater-windows.yml"),
+      "utf8",
+    );
+    expect(body).not.toContain("presto.exe");
+    expect(body).not.toContain("N1BinaryName");
+  });
+});

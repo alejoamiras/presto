@@ -32,7 +32,7 @@ make_host() {
   "version": "0.0.0",
   "private": true,
   "dependencies": {
-    "@alejoamiras/aztec-accelerator": "file:$TARBALL",
+    "@alejoamiras/presto": "file:$TARBALL",
     "@aztec/stdlib": "$aztec"
   }
 }
@@ -84,17 +84,17 @@ JSON
 # Exercise the FULL published surface — runtime values + types — so a broken barrel/exports/types fails.
 cat > "$EXACT/index.ts" <<'TS'
 import {
-  AcceleratorProver,
-  AcceleratorHttpError,
-  ACCELERATOR_API_VERSION,
-} from "@alejoamiras/aztec-accelerator";
-import type { AcceleratorStatus, AcceleratorPhase } from "@alejoamiras/aztec-accelerator";
+  PrestoProver,
+  PrestoHttpError,
+  PRESTO_API_VERSION,
+} from "@alejoamiras/presto";
+import type { PrestoStatus, PrestoPhase } from "@alejoamiras/presto";
 
-const _prover: typeof AcceleratorProver = AcceleratorProver;
-const _err: typeof AcceleratorHttpError = AcceleratorHttpError;
-const _api: number = ACCELERATOR_API_VERSION;
-const _phase: AcceleratorPhase = "version-mismatch";
-function _use(s: AcceleratorStatus): boolean {
+const _prover: typeof PrestoProver = PrestoProver;
+const _err: typeof PrestoHttpError = PrestoHttpError;
+const _api: number = PRESTO_API_VERSION;
+const _phase: PrestoPhase = "version-mismatch";
+function _use(s: PrestoStatus): boolean {
   return s.available && (s.appVersion !== undefined || _api > 0) && _phase.length > 0 && !!_prover && !!_err;
 }
 void _use;
@@ -113,12 +113,12 @@ echo "--- typecheck the consumer against the PACKED dist (resolves the 'types' c
 
 echo "--- RUNTIME import: resolve + load the packed dist 'default' export (types-check can't — codex #2) ---"
 cat > "$EXACT/runtime-check.mjs" <<'MJS'
-import { AcceleratorProver, AcceleratorHttpError, ACCELERATOR_API_VERSION } from "@alejoamiras/aztec-accelerator";
-if (typeof AcceleratorProver !== "function") throw new Error("AcceleratorProver missing from dist");
-if (typeof AcceleratorHttpError !== "function") throw new Error("AcceleratorHttpError missing from dist");
-if (typeof ACCELERATOR_API_VERSION !== "number") throw new Error("ACCELERATOR_API_VERSION missing from dist");
+import { PrestoProver, PrestoHttpError, PRESTO_API_VERSION } from "@alejoamiras/presto";
+if (typeof PrestoProver !== "function") throw new Error("PrestoProver missing from dist");
+if (typeof PrestoHttpError !== "function") throw new Error("PrestoHttpError missing from dist");
+if (typeof PRESTO_API_VERSION !== "number") throw new Error("PRESTO_API_VERSION missing from dist");
 // The typed error must actually be `instanceof Error` (extends Error), or `catch` narrowing breaks.
-if (!(new AcceleratorHttpError(400, "invalid_version") instanceof Error)) throw new Error("AcceleratorHttpError is not an Error");
+if (!(new PrestoHttpError(400, "invalid_version") instanceof Error)) throw new Error("PrestoHttpError is not an Error");
 console.log("runtime import OK: dist exports resolve and load");
 MJS
 ( cd "$EXACT" && node runtime-check.mjs )

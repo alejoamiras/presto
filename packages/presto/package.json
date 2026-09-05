@@ -1,0 +1,31 @@
+{
+  "name": "@alejoamiras/presto-desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Native prover for Aztec transactions — bypasses browser WASM throttling",
+  "type": "module",
+  "scripts": {
+    "frontend:build": "bun scripts/build-frontend.ts",
+    "prebuild": "bun scripts/copy-bb.ts",
+    "prebuild:version": "bun scripts/bb-version.ts",
+    "test:autostart": "bash scripts/autostart-test.sh",
+    "test:e2e:ui": "bunx playwright test --config playwright.config.mjs",
+    "test:e2e:webdriver": "npx @wdio/cli run ./wdio.conf.ts",
+    "test:nsis": "bash scripts/nsis-hook-test.sh",
+    "test:unit": "bun test scripts/"
+  },
+  "devDependencies": {
+    "@fontsource/bricolage-grotesque": "^5.3.0",
+    "@fontsource/figtree": "^5.3.0",
+    "@fontsource/fragment-mono": "^5.3.0",
+    "@playwright/test": "1.62.1",
+    "@resvg/resvg-wasm": "^2.6.2",
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/cli": "^2",
+    "@wdio/cli": "^9",
+    "@wdio/local-runner": "^9",
+    "@wdio/mocha-framework": "^9",
+    "@wdio/spec-reporter": "^9",
+    "webdriverio": "^9"
+  }
+}

@@ -1,0 +1,1539 @@
+name: Release Presto
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g. 1.2.0)"
+        required: true
+        type: string
+      auth_probe:
+        description: "Probe only: verify the release-feed KV token can read production, then stop. Runs validate + the Cloudflare preflight; skips build/e2e/tag/release/publish."
+        required: false
+        type: boolean
+        default: false
+      # B6: publish and promote are SEPARATE operational events (two dispatches), not one job.
+      #   publish      = build → 3-OS gates → publish. RC + stable are both PUBLIC GitHub releases pinned
+      #                  --latest=false until promotion; the signed latest.json ships as a stable release
+      #                  ASSET. Does NOT touch the KV feed. (The stable DRAFT-gate — draft → packaged-E2E-on-draft →
+      #                  finalize — lands in B4, which is a hard prerequisite of any 2.0.0 stable publish.)
+      #   promote-only = no build; pre-flight an ALREADY-PUBLISHED version, then flip the KV `latest.json`
+      #                  feed. An organic GA (`bump_source=true`) is marked GitHub Latest only after the live
+      #                  feed verifies. This is also the rollback lever (`promote-only` an older version).
+      mode:
+        description: "publish (build+gate+publish, no feed flip) | promote-only (flip the KV feed for an already-published version — also the rollback lever)"
+        required: false
+        type: choice
+        options:
+          - publish
+          - promote-only
+        default: publish
+      bump_source:
+        description: "promote-only + organic GA only: mark the verified release GitHub Latest and open the post-release source version-bump PR. Leave false for a rollback promote."
+        required: false
+        type: boolean
+        default: false
+      dry_run:
+        description: "promote-only: run the promote pre-flight (and rehearsal checks) WITHOUT writing the feed. Proves the rollback machinery with no prod effect."
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  group: release-presto
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate Version
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      version: ${{ steps.version.outputs.version }}
+      is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+    steps:
+      # Reject any dispatch not on refs/heads/main before build, signing, tag, release, or cloud access.
+      # Every other job depends on `validate` directly or transitively, so this gates the whole run.
+      - name: Assert main ref
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Release Presto must be dispatched from refs/heads/main (got $GITHUB_REF)"
+            exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: Require finalized Presto release identity
+        run: bun scripts/presto-release-readiness.ts
+
+      - name: Validate and output version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          if ! echo "$INPUT_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
+            echo "::error::Invalid version format: '$INPUT_VERSION'. Expected semver (e.g. 1.0.0 or 1.0.0-rc.1)"
+            exit 1
+          fi
+          if [[ "$INPUT_VERSION" =~ - ]]; then
+            IS_PRERELEASE=true
+          else
+            IS_PRERELEASE=false
+          fi
+          {
+            echo "tag=presto-v${INPUT_VERSION}"
+            echo "version=$INPUT_VERSION"
+            echo "is_prerelease=$IS_PRERELEASE"
+          } >> "$GITHUB_OUTPUT"
+          echo "Resolved: version=$INPUT_VERSION  is_prerelease=$IS_PRERELEASE"
+
+  dependency-audit:
+    needs: validate
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' }}
+    uses: ./.github/workflows/dependency-audit.yml
+
+  # Resolve the greatest real, published, complete release below N that uses the current updater key.
+  # Prereleases are eligible so RC2 can exercise RC1 and GA can exercise the latest RC. No compatible
+  # baseline fails closed except for exactly RC1 when no Presto release exists.
+  resolve-updater-baseline:
+    name: Resolve updater smoke baseline
+    needs: validate
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      bootstrap: ${{ steps.resolve.outputs.bootstrap }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: Select the greatest lower complete release under the current updater key
+        id: resolve
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          PUBKEY=$(jq -r '.plugins.updater.pubkey' packages/presto/src-tauri/tauri.conf.json)
+          RESULT=$(bun packages/presto/scripts/resolve-updater-baseline.ts \
+            --repository "$REPOSITORY" \
+            --version "$RELEASE_VERSION" \
+            --pubkey "$PUBKEY")
+          echo "$RESULT" | jq .
+          {
+            echo "tag=$(echo "$RESULT" | jq -r .tag)"
+            echo "version=$(echo "$RESULT" | jq -r .version)"
+            echo "bootstrap=$(echo "$RESULT" | jq -r '.bootstrap // false')"
+          } >> "$GITHUB_OUTPUT"
+
+  # Explicit credentials probe only. Publishing deliberately has no Cloudflare credential and never
+  # depends on feed availability; promotion validates and uses the write token in its own isolated job.
+  release-auth-preflight:
+    name: Release feed access preflight
+    needs: [validate]
+    if: ${{ inputs.auth_probe }}
+    environment: release-feed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun install --frozen-lockfile
+      - name: Prove release-feed KV access
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_RELEASE_FEED_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          bunx wrangler kv key get latest.json --remote \
+            --namespace-id 41a6adef830f4a91bf63476a323cec98 >/dev/null
+          echo "✅ release-feed KV token can read production"
+
+  e2e-webdriver:
+    name: Pre-release E2E Gate (${{ matrix.runner }})
+    needs: validate
+    # F-005: skipped in auth_probe mode — a trust probe needs no e2e gate.
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # The onboarding wizard is a release-blocking cross-OS flow, so the pre-release WebDriver gate
+        # now runs on all three desktop OSes, not macOS only (audit / codex catch).
+        runner: [macos-latest, ubuntu-latest, windows-latest]
+    uses: ./.github/workflows/_e2e-webdriver.yml
+    with:
+      runner: ${{ matrix.runner }}
+      mode: release
+
+  # COST-CONTROL ONLY — not the safety guarantee. The gate runs in PARALLEL with
+  # `build`/`build-headless` (which now need only `validate`); the actual
+  # ungated-ship guard is that `smoke`, `update-smoke`, `tag`, and `release` all
+  # keep `e2e-webdriver` in `needs`. If the gate fails, this cancels the whole
+  # run so in-flight builds/notarization stop early instead of finishing for a
+  # release that can never tag. `gh run cancel` is best-effort; correctness never
+  # depends on it. INVARIANT: any future side-effecting job (tag/publish/deploy)
+  # MUST transitively `needs: e2e-webdriver`.
+  gate-watchdog:
+    name: Cancel run if the pre-release gate failed
+    needs: [e2e-webdriver]
+    if: ${{ always() && needs.e2e-webdriver.result == 'failure' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      actions: write # scoped to THIS job only; no checkout, no secrets, no third-party action
+    steps:
+      - name: Cancel this run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh run cancel "${{ github.run_id }}" --repo "${{ github.repository }}"
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: [validate]
+    # F-005: skipped in auth_probe mode — a trust probe must not burn a 45-min build.
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            platform: macos-arm64
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+            platform: macos-x86_64
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            platform: linux-x86_64
+          - target: x86_64-pc-windows-msvc
+            runner: windows-latest
+            platform: windows-x86_64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-target: ${{ matrix.target }}
+          rust-cache-key: presto-desktop-${{ matrix.target }}
+          rust-workspaces: packages/presto/src-tauri -> target
+          rust-components: ""
+
+      - name: Patch version in Cargo.toml
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        # bash on every platform — the windows-x86_64 matrix leg would otherwise run this in
+        # pwsh, where `sed` + `$RELEASE_VERSION` (a bash var) don't resolve (rc dry-run caught it).
+        shell: bash
+        run: |
+          cd packages/presto/src-tauri
+          sed -i.bak "s/^version = \".*\"/version = \"$RELEASE_VERSION\"/" Cargo.toml
+          rm -f Cargo.toml.bak
+
+      - name: Patch version in tauri.conf.json
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        # bash on every platform — the multi-line `bun -e` quoting would otherwise be at the
+        # mercy of pwsh on the windows-x86_64 leg.
+        shell: bash
+        run: |
+          cd packages/presto/src-tauri
+          bun -e "
+            const conf = JSON.parse(await Bun.file('tauri.conf.json').text());
+            conf.version = process.env.RELEASE_VERSION;
+            await Bun.write('tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
+          "
+
+      # macOS: build + notarize the .app and emit updater artifacts with an EPHEMERAL
+      # key (.app.tar.gz/.sig) WITHOUT the DMG, assert the bundle-structure
+      # invariant, THEN bundle the DMG in a retried loop — all in one step so
+      # the signing secrets live in a single place. Rationale:
+      #   - The updater never needs the DMG, so producing updater artifacts via
+      #     `--bundles app` makes them immune to the chronic DMG-bundling flake
+      #     (generic hdiutil/create-dmg flakiness on GH runners, esp.
+      #     macos-15-intel — actions/runner-images#7522; the app signs +
+      #     notarizes fine, only `bundle_dmg.sh` dies). update-smoke can then
+      #     validate even when the DMG flakes.
+      #   - Retrying ONLY the DMG step is cheap (the .app is already notarized
+      #     above — no re-notarization) and self-heals the transient failure.
+      #   - The invariant MUST run before the DMG step: `tauri bundle dmg` makes
+      #     tauri "clean" the .app out of bundle/macos once the DMG exists.
+      # Linux: single `tauri build` (deb + AppImage + ephemeral updater sig).
+      # The ephemeral signatures are discarded. A later `release-signing` environment job
+      # production-signs the exact updater payload bytes after all build tooling has exited.
+      - name: Build Tauri bundle
+        working-directory: packages/presto
+        env:
+          TARGET: ${{ matrix.target }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          ephemeral_key="$RUNNER_TEMP/updater-build.key"
+          bunx tauri signer generate --ci -p "" -w "$ephemeral_key"
+          export TAURI_SIGNING_PRIVATE_KEY
+          TAURI_SIGNING_PRIVATE_KEY="$(cat "$ephemeral_key")"
+          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+          trap 'rm -f "$ephemeral_key" "$ephemeral_key.pub"' EXIT
+          # Windows: NSIS only — matches the proven windows-build gate; skips flaky wix/msi.
+          # createUpdaterArtifacts emits *-setup.nsis.zip + an ephemeral .sig.
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            bunx tauri build --target "$TARGET" --bundles nsis
+            exit 0
+          fi
+          if [ "$RUNNER_OS" != "macOS" ]; then
+            bunx tauri build --target "$TARGET"
+            exit 0
+          fi
+          # 1) App + updater artifacts (no hdiutil; notarized here, once).
+          bunx tauri build --target "$TARGET" --bundles app
+          MACOS_DIR="src-tauri/target/$TARGET/release/bundle/macos"
+          if ! ls "$MACOS_DIR"/*.app.tar.gz >/dev/null 2>&1 \
+             || ! ls "$MACOS_DIR"/*.app.tar.gz.sig >/dev/null 2>&1; then
+            echo "::error::--bundles app did not emit updater artifacts (.app.tar.gz/.sig) in $MACOS_DIR"
+            ls -la "$MACOS_DIR" 2>/dev/null || true
+            exit 1
+          fi
+          # 2) Bundle-structure invariant — assert NOW, while the .app exists
+          #    (step 3 cleans it out). Every desktop .app MUST contain EXACTLY
+          #    the binaries we declare; a stowaway (e.g. presto-server — the
+          #    1.0.0→1.0.1 auto-update break) or a missing `bb` sidecar is a hard
+          #    fail. ANY type counts: a stray symlink/dir in MacOS/ also changes
+          #    the signed bundle shape.
+          APP="$(find "$MACOS_DIR" -maxdepth 1 -name '*.app' | head -1)"
+          if [ -z "$APP" ]; then
+            echo "::error::No .app bundle found in $MACOS_DIR"
+            ls -la "$MACOS_DIR" 2>/dev/null || true
+            exit 1
+          fi
+          EXPECTED="$(printf 'Presto\nbb\n' | sort)"
+          ACTUAL="$(cd "$APP/Contents/MacOS" && find . -mindepth 1 -maxdepth 1 -exec basename {} \; | sort)"
+          echo "Expected MacOS/ contents:"; echo "$EXPECTED"
+          echo "Actual MacOS/ contents:"; echo "$ACTUAL"
+          if ! diff <(echo "$EXPECTED") <(echo "$ACTUAL") >/dev/null; then
+            echo "::error::Bundle MacOS/ contents drifted — see above. Update Cargo.toml [[bin]] declarations + this invariant if intentional."
+            exit 1
+          fi
+          echo "Bundle structure OK"
+          # 3) DMG only — the chronic flake. Retry just this (no re-notarization).
+          for attempt in 1 2 3; do
+            if bunx tauri bundle --target "$TARGET" --bundles dmg --verbose; then
+              exit 0
+            fi
+            echo "::warning::DMG bundling attempt $attempt/3 failed (transient hdiutil flake)"
+            if [ "$attempt" = 3 ]; then
+              echo "::error::DMG bundling failed after 3 attempts"
+              exit 1
+            fi
+            sleep 10
+          done
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: unsigned-presto-${{ matrix.platform }}
+          path: |
+            packages/presto/src-tauri/target/${{ matrix.target }}/release/bundle/dmg/*.dmg
+            packages/presto/src-tauri/target/${{ matrix.target }}/release/bundle/deb/*.deb
+            packages/presto/src-tauri/target/${{ matrix.target }}/release/bundle/appimage/*.AppImage
+            packages/presto/src-tauri/target/${{ matrix.target }}/release/bundle/macos/*.tar.gz
+            packages/presto/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.exe
+            packages/presto/src-tauri/target/${{ matrix.target }}/release/bundle/nsis/*-setup.nsis.zip
+
+  # The only job that can read the production updater key. Tooling and the verifier are fully
+  # prepared before the secret-scoped step begins; while the key is present this job only signs
+  # exact build outputs, assembles feeds, and verifies signatures. It never builds, installs,
+  # launches, or smoke-tests an application.
+  sign-updater-artifacts:
+    name: Sign updater artifacts
+    needs: [validate, build]
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: release-signing
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-cache-key: presto-release-signer
+          rust-workspaces: packages/presto/core -> target
+          rust-components: ""
+          install-tauri-system-deps: "false"
+          run-prebuild: "false"
+
+      - name: Build the pinned production verifier before exposing the key
+        run: cargo build --locked --manifest-path packages/presto/core/Cargo.toml --example update-manifest
+
+      - name: Download unsigned build outputs
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: unsigned-presto-*
+          path: artifacts
+
+      - name: Production-sign and verify exact updater payloads and feeds
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: |
+          bash packages/presto/scripts/sign-release-updater-artifacts.sh \
+            "$GITHUB_WORKSPACE/artifacts" \
+            "$VERSION" \
+            "$RELEASE_TAG" \
+            "$GITHUB_WORKSPACE" \
+            "$GITHUB_WORKSPACE/packages/presto/core/target/debug/examples/update-manifest"
+
+      - name: Upload signed macOS Apple Silicon artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: presto-macos-arm64
+          path: artifacts/unsigned-presto-macos-arm64
+          if-no-files-found: error
+
+      - name: Upload signed macOS Intel artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: presto-macos-x86_64
+          path: artifacts/unsigned-presto-macos-x86_64
+          if-no-files-found: error
+
+      - name: Upload signed Linux artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: presto-linux-x86_64
+          path: artifacts/unsigned-presto-linux-x86_64
+          if-no-files-found: error
+
+      - name: Upload signed Windows artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: presto-windows-x86_64
+          path: artifacts/unsigned-presto-windows-x86_64
+          if-no-files-found: error
+
+      - name: Upload signed production update feed
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: signed-update-feed
+          path: artifacts/latest.json
+          if-no-files-found: error
+
+  build-headless:
+    name: Build Headless (${{ matrix.platform }})
+    needs: [validate]
+    # F-005: skipped in auth_probe mode — a trust probe must not burn a 45-min build.
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: aarch64-apple-darwin
+            runner: macos-latest
+            platform: macos-arm64
+          - target: x86_64-apple-darwin
+            runner: macos-15-intel
+            platform: macos-x86_64
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-latest
+            platform: linux-x86_64
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-24.04-arm
+            platform: linux-arm64
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-target: ${{ matrix.target }}
+          rust-cache-key: presto-server-${{ matrix.target }}
+          rust-workspaces: packages/presto/server -> target
+          rust-components: ""
+          # Headless release build: no desktop GUI libs, no bb-copy prebuild — the server is build.rs-free and
+          # its version comes from the patched server/Cargo.toml below, not the prebuild. (slim follow-up B)
+          install-tauri-system-deps: "false"
+          run-prebuild: "false"
+
+      - name: Patch version in Cargo.toml
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          # Patch the SERVER crate version: post-core-extraction it is the single source for BOTH
+          # `presto-server --version` AND `/health.version` (the server injects its own CARGO_PKG_VERSION
+          # as app_version). build-headless compiles server -> presto-core, NOT src-tauri, so the old
+          # src-tauri patch was dead. (slim follow-up B)
+          sed -i.bak "s/^version = \".*\"/version = \"$RELEASE_VERSION\"/" packages/presto/server/Cargo.toml
+          rm -f packages/presto/server/Cargo.toml.bak
+
+      - name: Build presto-server
+        working-directory: packages/presto/server
+        # `presto-server` lives in its own crate (separate from
+        # `src-tauri`) so that `tauri build` cannot pick it up as a
+        # stowaway in the desktop .app's MacOS/ folder. The committed
+        # server/Cargo.lock pins transitive deps (cargo resolves FROM it by
+        # default). We do NOT pass --locked here: the version-patch above edits
+        # server/Cargo.toml, which stales the server lock's own `presto-server`
+        # entry, so --locked would reject the (intentionally) now-stale lock.
+        # Reviewability comes from the lock being committed + diffed in PRs.
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Assert server self-reports the release version
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          GOT=$("packages/presto/server/target/${{ matrix.target }}/release/presto-server" --version)
+          echo "presto-server --version → $GOT"
+          if [ "$GOT" != "presto-server $RELEASE_VERSION" ]; then
+            echo "::error::Version mismatch: expected 'presto-server $RELEASE_VERSION', got '$GOT'"
+            exit 1
+          fi
+
+      - name: Package and checksum
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          cd packages/presto/server/target/${{ matrix.target }}/release
+          TARBALL="presto-server-${VERSION}-${PLATFORM}.tar.gz"
+          tar -czf "$TARBALL" presto-server
+          shasum -a 256 "$TARBALL" > "$TARBALL.sha256"
+          shasum -a 256 -c "$TARBALL.sha256"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: presto-server-${{ matrix.platform }}
+          path: |
+            packages/presto/server/target/${{ matrix.target }}/release/presto-server-*.tar.gz
+            packages/presto/server/target/${{ matrix.target }}/release/presto-server-*.tar.gz.sha256
+
+  smoke:
+    name: Post-build Smoke
+    needs: [validate, sign-updater-artifacts, e2e-webdriver]
+    runs-on: macos-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: presto-macos-arm64
+          path: artifacts
+
+      - name: Mount DMG and launch
+        run: |
+          DMG=$(find artifacts -name '*.dmg' | head -1)
+          if [ -z "$DMG" ]; then
+            echo "::error::No DMG found in artifacts"
+            ls -la artifacts/
+            exit 1
+          fi
+          echo "Mounting $DMG..."
+          hdiutil attach "$DMG" -nobrowse -mountpoint /Volumes/Presto
+
+          # Find and launch the app binary
+          APP_BIN=$(find /Volumes/Presto -name "Presto" -path "*/MacOS/*" | head -1)
+          if [ -z "$APP_BIN" ]; then
+            echo "::error::Binary not found in DMG"
+            find /Volumes/Presto -type f
+            exit 1
+          fi
+
+          # Gatekeeper / notarization verification: an unstapled or improperly
+          # signed DMG can still "launch fine" in CI yet be REJECTED on a real
+          # user's first double-click. These offline checks catch that class
+          # (which a launch-only smoke misses).
+          APP_PATH=$(find /Volumes/Presto -maxdepth 1 -name '*.app' | head -1)
+          echo "Verifying signature + stapled notarization of $APP_PATH..."
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+          echo "Signature + stapled notarization OK"
+
+          echo "Launching $APP_BIN..."
+          "$APP_BIN" > /tmp/smoke.log 2>&1 &
+          echo "SMOKE_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Health check
+        run: |
+          for i in $(seq 1 30); do
+            if ! kill -0 "$SMOKE_PID" 2>/dev/null; then
+              echo "::error::App crashed on launch"
+              cat /tmp/smoke.log
+              exit 1
+            fi
+            if curl -sf http://127.0.0.1:59833/health > /dev/null 2>&1; then
+              echo "Health check passed after $((i * 2))s"
+              HEALTH=$(curl -sf http://127.0.0.1:59833/health)
+              echo "$HEALTH" | jq .
+              echo "$HEALTH" | jq -e '.status == "ok"' > /dev/null
+              echo "$HEALTH" | jq -e '.api_version == 1' > /dev/null
+              echo "Post-build smoke passed"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Health check failed after 60s"
+          cat /tmp/smoke.log
+          exit 1
+
+      - name: Cleanup
+        if: always()
+        run: |
+          kill "$SMOKE_PID" 2>/dev/null || true
+          pkill -f "Presto" 2>/dev/null || true # DMG smoke runs N only (new name)
+          hdiutil detach /Volumes/Presto 2>/dev/null || true
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: post-build-smoke-logs
+          path: /tmp/smoke.log
+          if-no-files-found: ignore
+          retention-days: 7
+
+  # Intel DMG notarization gate (verify-only). The `smoke` job above checks
+  # signature + stapled notarization only on the ARM64 DMG; this covers the
+  # Intel DMG so an unstapled / improperly-signed Intel installer (rejected on a
+  # real Intel user's first double-click) can't ship. No launch — the arm64
+  # `smoke` covers launch + /health; the Intel positive `update-smoke` leg below
+  # exercises the Intel app at runtime.
+  smoke-intel:
+    name: Post-build Smoke (Intel notarization)
+    needs: [validate, sign-updater-artifacts, e2e-webdriver]
+    runs-on: macos-15-intel
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: presto-macos-x86_64
+          path: artifacts
+      - name: Verify Intel DMG signature + stapled notarization (offline)
+        run: |
+          DMG=$(find artifacts -name '*.dmg' | head -1)
+          if [ -z "$DMG" ]; then
+            echo "::error::No Intel DMG found in artifacts"; ls -la artifacts/; exit 1
+          fi
+          hdiutil attach "$DMG" -nobrowse -mountpoint /Volumes/Presto-Intel
+          APP_PATH=$(find /Volumes/Presto-Intel -maxdepth 1 -name '*.app' | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "::error::No .app in Intel DMG"; find /Volumes/Presto-Intel -maxdepth 2; exit 1
+          fi
+          echo "Verifying signature + stapled notarization of $APP_PATH..."
+          codesign --verify --deep --strict --verbose=2 "$APP_PATH"
+          xcrun stapler validate "$APP_PATH"
+          echo "Intel signature + stapled notarization OK"
+      - name: Cleanup
+        if: always()
+        run: hdiutil detach /Volumes/Presto-Intel 2>/dev/null || true
+
+  # Release-time updater gate — BLOCKING. macOS arm64 + Intel
+  # positive legs prove install-resolver-selected-N-1 → auto-update → relaunch → /health==N (the
+  # 1.0.1 amfid failure class); the arm64 negative leg proves a tampered artifact
+  # is REJECTED (signature enforcement). Linux and Windows have their own
+  # release-blocking updater jobs below.
+  update-smoke:
+    name: Updater Smoke (${{ matrix.platform-key }} / ${{ matrix.mode }})
+    needs: [validate, resolve-updater-baseline, sign-updater-artifacts, e2e-webdriver]
+    # The isolated signer requires all four build legs, then each matrix leg downloads only its
+    # own production-signed updater artifact.
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.resolve-updater-baseline.outputs.bootstrap != 'true' && needs.sign-updater-artifacts.result == 'success' && needs.e2e-webdriver.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            platform-key: darwin-aarch64
+            n-artifact: presto-macos-arm64
+            n1-dmg-glob: "*macOS-Apple-Silicon.dmg"
+            mode: positive
+          - runner: macos-15-intel
+            platform-key: darwin-x86_64
+            n-artifact: presto-macos-x86_64
+            n1-dmg-glob: "*macOS-Intel.dmg"
+            mode: positive
+          # Negative control (teeth): serve a TAMPERED tarball (genuine signature)
+          # and assert the updater REJECTS it (never reaches version N). Proves the
+          # gate can actually fail — without this, a green positive run is consistent
+          # with a test that always passes. arm64 only: the signature-verification
+          # path is arch-independent, no need to also burn the flakier Intel runner.
+          - runner: macos-latest
+            platform-key: darwin-aarch64
+            n-artifact: presto-macos-arm64
+            n1-dmg-glob: "*macOS-Apple-Silicon.dmg"
+            mode: negative
+    uses: ./.github/workflows/_e2e-updater.yml
+    with:
+      runner: ${{ matrix.runner }}
+      platform-key: ${{ matrix.platform-key }}
+      n-version: ${{ needs.validate.outputs.version }}
+      n-artifact: ${{ matrix.n-artifact }}
+      n1-tag: ${{ needs.resolve-updater-baseline.outputs.tag }}
+      n1-version: ${{ needs.resolve-updater-baseline.outputs.version }}
+      n1-dmg-glob: ${{ matrix.n1-dmg-glob }}
+      mode: ${{ matrix.mode }}
+
+  # Linux/AppImage updater smoke — BLOCKING (in `tag.needs` + `release.needs`).
+  # Proves a user on the greatest lower same-key AppImage auto-updates to N AND the
+  # relaunched app rebinds :59833 — the EADDRINUSE restart race fixed by the
+  # server's bind-retry (#251). Started advisory; flipped to blocking after a
+  # green 1.0.3-rc dry-run. To revert: drop it from tag/release `needs` and
+  # restore `continue-on-error` on the smoke step in _e2e-updater-linux.yml.
+  update-smoke-linux:
+    name: Updater Smoke (linux-x86_64 / ${{ matrix.mode }})
+    needs: [validate, resolve-updater-baseline, sign-updater-artifacts, e2e-webdriver]
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.resolve-updater-baseline.outputs.bootstrap != 'true' && needs.sign-updater-artifacts.result == 'success' && needs.e2e-webdriver.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        mode: [positive, negative]
+    uses: ./.github/workflows/_e2e-updater-linux.yml
+    with:
+      n-version: ${{ needs.validate.outputs.version }}
+      n1-tag: ${{ needs.resolve-updater-baseline.outputs.tag }}
+      n1-version: ${{ needs.resolve-updater-baseline.outputs.version }}
+      mode: ${{ matrix.mode }}
+  # Windows/NSIS updater smoke — BLOCKING (in tag.needs + release.needs), proven green on the
+  # 1.0.4-rc.3 dry-run (positive + negative). Tests the REAL prod-signed Windows artifact (this run's
+  # isolated signer output) installing as an auto-update FROM the resolver-selected real Windows release
+  # (complete asset set + 4-point fixture preflight) — full parity with the mac/linux
+  # smokes. The ephemeral/current-ref sibling (incl. the L8 barrier) is smoke-updater-windows.yml.
+  # REVERT (if it flakes): drop both jobs from tag.needs/release.needs to demote back to advisory.
+  update-smoke-windows:
+    name: Updater Smoke (windows-x86_64 / positive)
+    needs: [validate, resolve-updater-baseline, sign-updater-artifacts]
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.resolve-updater-baseline.outputs.bootstrap != 'true' && needs.sign-updater-artifacts.result == 'success' }}
+    uses: ./.github/workflows/_e2e-updater-windows.yml
+    with:
+      n-version: ${{ needs.validate.outputs.version }}
+      n1-version: ${{ needs.resolve-updater-baseline.outputs.version }}
+      mode: positive
+  update-smoke-windows-negative:
+    name: Updater Smoke (windows-x86_64 / negative)
+    needs: [validate, resolve-updater-baseline, sign-updater-artifacts]
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.resolve-updater-baseline.outputs.bootstrap != 'true' && needs.sign-updater-artifacts.result == 'success' }}
+    uses: ./.github/workflows/_e2e-updater-windows.yml
+    with:
+      n-version: ${{ needs.validate.outputs.version }}
+      n1-version: ${{ needs.resolve-updater-baseline.outputs.version }}
+      mode: negative
+  # B4/F: MOVED AFTER the packaged-E2E gate (was pre-gate). `packaged-e2e-on-draft` transitively needs the
+  # whole build+smoke+e2e-webdriver chain, so a failed
+  # gate aborts BEFORE the tag is pushed (no dangling tag). Pushing the reviewed tag here — after the gate,
+  # before `finalize` — lets `finalize` publish with `--verify-tag` while keeping the proven tag==github.sha
+  # anchor (codex F-consult: keep `tag`, don't retire it).
+  tag:
+    name: Create Git Tag
+    needs: [validate, release, packaged-e2e-on-draft]
+    # F-005: skip in auth_probe mode so a probe never pushes a tag. always()+!cancelled()+explicit .result
+    # gating (NOT implicit success(), so explicit prerequisites remain the authorization policy).
+    # `release` is a DIRECT need with its own success gate, so a future packaged-condition edit can never
+    # weaken the tag's prerequisites.
+    if: >-
+      ${{ always() && !cancelled() && !inputs.auth_probe && inputs.mode == 'publish'
+      && needs.validate.result == 'success' && needs.release.result == 'success'
+      && needs.packaged-e2e-on-draft.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-tags: true
+      # codex audit #9: pin the tag to the EXACT commit the whole pipeline validated. checkout@v6
+      # defaults to github.sha, but assert it explicitly so the pushed tag can never target a
+      # different HEAD than the one build/smoke/e2e all ran against (shipped-integrity anchor).
+      - name: Verify checkout is the dispatched commit (tag == github.sha)
+        env:
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          ACTUAL_SHA="$(git rev-parse HEAD)"
+          if [ "$ACTUAL_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::HEAD ($ACTUAL_SHA) != github.sha ($EXPECTED_SHA); refusing to tag a drifted commit"
+            exit 1
+          fi
+          echo "Tagging verified commit $ACTUAL_SHA"
+      - name: Create and push tag
+        env:
+          TAG: ${{ needs.validate.outputs.tag }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null 2>&1; then
+            # An existing tag MUST already point at github.sha; a tag pinned to a different commit is a
+            # release-integrity red flag (someone pre-created it) — fail rather than silently proceed.
+            EXISTING_SHA="$(git rev-parse "refs/tags/$TAG^{commit}")"
+            if [ "$EXISTING_SHA" != "$EXPECTED_SHA" ]; then
+              echo "::error::Tag $TAG already exists at $EXISTING_SHA, not github.sha ($EXPECTED_SHA); aborting"
+              exit 1
+            fi
+            echo "Tag $TAG already exists at the expected commit, skipping creation"
+          else
+            git tag "$TAG"
+            git push origin "$TAG"
+            echo "Created and pushed tag $TAG"
+          fi
+
+  # B4/F: `release` now creates a DRAFT (no git tag yet — GitHub defers tag creation until a draft is
+  # PUBLISHED). The packaged-E2E gate then runs against the DRAFT's OWN uploaded assets; `tag` (moved after
+  # the gate) pushes the reviewed tag; `finalize` flips the draft to published. So a failed packaged gate
+  # NEVER burns the version tag against a bad SHA. The isolated signer always runs before
+  # updater smokes; prereleases simply omit its already-produced latest.json from release assets.
+  release:
+    name: Create draft release
+    needs: [validate, dependency-audit, resolve-updater-baseline, build, build-headless, sign-updater-artifacts, smoke, smoke-intel, update-smoke, update-smoke-linux, update-smoke-windows, update-smoke-windows-negative, e2e-webdriver]
+    # codex F-review: require EXPLICIT success of every MANDATORY need (a bare `!contains(failure)` would let a
+    # SKIPPED smoke/webdriver/preflight still create a draft). `always() && !cancelled()` is REQUIRED up front:
+    # without a status function GitHub implicitly ANDs `success()`, which could skip `release` before the
+    # explicit checks run. Every listed release prerequisite must succeed.
+    if: >-
+      ${{ always() && !cancelled() && !inputs.auth_probe && inputs.mode == 'publish'
+      && needs.validate.result == 'success'
+      && needs.dependency-audit.result == 'success'
+      && needs.resolve-updater-baseline.result == 'success'
+      && needs.build.result == 'success'
+      && needs.build-headless.result == 'success'
+      && needs.sign-updater-artifacts.result == 'success'
+      && needs.smoke.result == 'success'
+      && needs.smoke-intel.result == 'success'
+      && (needs.update-smoke.result == 'success' || (needs.update-smoke.result == 'skipped' && needs.resolve-updater-baseline.outputs.bootstrap == 'true' && needs.validate.outputs.version == '1.0.0-rc.1'))
+      && (needs.update-smoke-linux.result == 'success' || (needs.update-smoke-linux.result == 'skipped' && needs.resolve-updater-baseline.outputs.bootstrap == 'true' && needs.validate.outputs.version == '1.0.0-rc.1'))
+      && (needs.update-smoke-windows.result == 'success' || (needs.update-smoke-windows.result == 'skipped' && needs.resolve-updater-baseline.outputs.bootstrap == 'true' && needs.validate.outputs.version == '1.0.0-rc.1'))
+      && (needs.update-smoke-windows-negative.result == 'success' || (needs.update-smoke-windows-negative.result == 'skipped' && needs.resolve-updater-baseline.outputs.bootstrap == 'true' && needs.validate.outputs.version == '1.0.0-rc.1'))
+      && needs.e2e-webdriver.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write     # gh release create --draft (publish flip happens in `finalize` — B6: no KV feed here)
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          path: artifacts
+
+      - name: Flatten and rename artifacts
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          mkdir -p release-files
+
+          echo "All artifacts:"
+          find artifacts -type f | sort
+
+          # DMGs (for direct download)
+          find artifacts/presto-macos-arm64 -name '*_aarch64.dmg' -exec mv {} "release-files/Presto-${VERSION}-macOS-Apple-Silicon.dmg" \;
+          find artifacts/presto-macos-x86_64 -name '*_x64.dmg' -exec mv {} "release-files/Presto-${VERSION}-macOS-Intel.dmg" \;
+
+          # Updater .tar.gz (macOS — each arch artifact is in its own subdirectory)
+          find artifacts/presto-macos-arm64 -name '*.app.tar.gz' -exec mv {} "release-files/Presto-${VERSION}-macOS-Apple-Silicon.app.tar.gz" \;
+          find artifacts/presto-macos-x86_64 -name '*.app.tar.gz' -exec mv {} "release-files/Presto-${VERSION}-macOS-Intel.app.tar.gz" \;
+
+          # Linux
+          find artifacts/presto-linux-x86_64 -name '*_amd64.deb' -exec mv {} "release-files/Presto-${VERSION}-Linux-x86_64.deb" \;
+          find artifacts/presto-linux-x86_64 -name '*_amd64.AppImage' -exec mv {} "release-files/Presto-${VERSION}-Linux-x86_64.AppImage" \;
+
+          # Windows — the -setup.exe (first install) + the .nsis.zip (the updater artifact)
+          find artifacts/presto-windows-x86_64 -name '*-setup.exe' -exec mv {} "release-files/Presto-${VERSION}-Windows-x86_64-setup.exe" \;
+          find artifacts/presto-windows-x86_64 -name '*-setup.nsis.zip' -exec mv {} "release-files/Presto-${VERSION}-Windows-x86_64-setup.nsis.zip" \;
+
+          # Headless server tarballs + checksums (named presto-server-${VERSION}-<platform>.tar.gz)
+          find artifacts -name 'presto-server-*.tar.gz' -exec mv {} release-files/ \;
+          find artifacts -name 'presto-server-*.tar.gz.sha256' -exec mv {} release-files/ \;
+
+          echo "Release files:"
+          ls -la release-files/
+
+          # Assert all expected files exist — fail fast if any platform is missing
+          EXPECTED=(
+            "Presto-${VERSION}-macOS-Apple-Silicon.dmg"
+            "Presto-${VERSION}-macOS-Intel.dmg"
+            "Presto-${VERSION}-macOS-Apple-Silicon.app.tar.gz"
+            "Presto-${VERSION}-macOS-Intel.app.tar.gz"
+            "Presto-${VERSION}-Linux-x86_64.deb"
+            "Presto-${VERSION}-Linux-x86_64.AppImage"
+            "Presto-${VERSION}-Windows-x86_64-setup.exe"
+            "Presto-${VERSION}-Windows-x86_64-setup.nsis.zip"
+            "presto-server-${VERSION}-macos-arm64.tar.gz"
+            "presto-server-${VERSION}-macos-arm64.tar.gz.sha256"
+            "presto-server-${VERSION}-macos-x86_64.tar.gz"
+            "presto-server-${VERSION}-macos-x86_64.tar.gz.sha256"
+            "presto-server-${VERSION}-linux-x86_64.tar.gz"
+            "presto-server-${VERSION}-linux-x86_64.tar.gz.sha256"
+            "presto-server-${VERSION}-linux-arm64.tar.gz"
+            "presto-server-${VERSION}-linux-arm64.tar.gz.sha256"
+          )
+          for f in "${EXPECTED[@]}"; do
+            if [ ! -f "release-files/$f" ]; then
+              echo "::error::Missing expected release artifact: $f"
+              exit 1
+            fi
+          done
+          echo "All ${#EXPECTED[@]} expected artifacts present"
+
+      # F-004: latest.json is assembled, signed, and verified by the isolated sign-updater-artifacts job
+      # (release-signing environment + contents: read). This job only stages that verified feed alongside the
+      # release artifacts — no signing key here, no re-generation. Gated on stable exactly like the old
+      # inline step; prereleases still ship no feed.
+      - name: Download signed update feed
+        if: needs.validate.outputs.is_prerelease == 'false'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: signed-update-feed
+          path: signed-feed
+
+      - name: Stage signed latest.json
+        if: needs.validate.outputs.is_prerelease == 'false'
+        run: |
+          cp signed-feed/latest.json release-files/latest.json
+          echo "Staged signed latest.json:"
+          cat release-files/latest.json
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
+        run: |
+          # Collect all bundle files into a null-delimited list
+          mapfile -d '' FILES < <(find release-files -type f \( -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.app.tar.gz' -o -name '*-setup.exe' -o -name '*-setup.nsis.zip' -o -name 'presto-server-*.tar.gz' -o -name 'presto-server-*.tar.gz.sha256' -o -name 'latest.json' \) -print0)
+
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "No artifacts found!"
+            exit 1
+          fi
+
+          echo "Uploading ${#FILES[@]} files:"
+          printf '  %s\n' "${FILES[@]}"
+
+          # B4/F append-only + fix-forward: a PUBLISHED release for this tag is immutable — fail (bump the
+          # version). A stale UNPUBLISHED draft (a prior run whose packaged gate failed) may be replaced — but
+          # ONLY when it is genuinely a draft with NO pushed tag (a draft never pushes its tag until publish),
+          # so we never delete a published release or an existing tag. (codex F-consult: "reruns overwrite it"
+          # is false — gh release create fails on a stale draft; delete it, isDraft+no-tag-guarded.)
+          if gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null | grep -qx true; then
+            if git ls-remote --exit-code --tags origin "refs/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+              echo "::error::draft $RELEASE_TAG unexpectedly has a pushed tag — refusing to delete"
+              exit 1
+            fi
+            # codex F-review: re-check isDraft IMMEDIATELY before delete to tighten the TOCTOU vs a manual/API
+            # publish landing between the view above and the delete (automated dispatches are already
+            # serialized by the workflow concurrency group; no atomic delete-if-draft primitive exists).
+            if [ "$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft 2>/dev/null)" != "true" ]; then
+              echo "::error::$RELEASE_TAG is no longer a draft (published between view and delete) — aborting"
+              exit 1
+            fi
+            echo "Replacing a stale unpublished draft for $RELEASE_TAG (a prior run's gate failed)"
+            gh release delete "$RELEASE_TAG" --yes
+          elif gh release view "$RELEASE_TAG" &>/dev/null; then
+            echo "::error::release $RELEASE_TAG already PUBLISHED — append-only; bump the version (fix-forward)"
+            exit 1
+          fi
+
+          echo "Creating release $RELEASE_TAG..."
+
+          # Read the Aztec version from the SDK's package.json (the AZTEC_VERSION
+          # file is generated by prebuild and not tracked in git)
+          AZTEC_VER=$(node -e "console.log(require('./packages/sdk/package.json').dependencies['@aztec/stdlib'])")
+
+          # Write release notes to file (avoids heredoc/YAML indentation issues)
+          cat > /tmp/release-notes.md << NOTES
+          ## Presto ${VERSION}
+
+          Native prover for Aztec transactions.
+
+          ### Fresh installation
+
+          Install Presto separately and quit any other local prover before starting it.
+          Presto uses fresh settings, approved sites, certificates, caches, and OS integrations.
+          It never migrates or modifies another application's installation or local state.
+          See the [migration guide](https://github.com/alejoamiras/presto/blob/main/packages/sdk/MIGRATION.md).
+
+          ### Downloads
+
+          | Platform | File |
+          |----------|------|
+          | **macOS (Apple Silicon)** | \`Presto-${VERSION}-macOS-Apple-Silicon.dmg\` |
+          | **macOS (Intel)** | \`Presto-${VERSION}-macOS-Intel.dmg\` |
+          | **Linux (Debian/Ubuntu)** | \`Presto-${VERSION}-Linux-x86_64.deb\` |
+          | **Linux (Other distros)** | \`Presto-${VERSION}-Linux-x86_64.AppImage\` |
+          | **Windows (x64)** | \`Presto-${VERSION}-Windows-x86_64-setup.exe\` |
+
+          ### macOS: First Launch
+
+          The app is **code-signed and notarized** by Apple. Double-click the DMG, drag to Applications, and launch.
+
+          ### Windows: First Launch
+
+          The installer is **not yet code-signed**, so Windows SmartScreen shows an
+          "unknown publisher" warning on first install — click **More info → Run anyway**.
+          It installs per-user (no admin prompt). Every **update** is still cryptographically
+          verified (minisign) before it runs, so auto-updates remain safe.
+
+          ### Headless server for CI test acceleration
+
+          > **For CI test acceleration only. Not for production.** Listens on \`127.0.0.1\` only.
+          > Tested on GitHub-hosted (single-tenant) runners. The built-in \`ALLOWED_ORIGINS\`
+          > access control only gates browser-driven callers; on shared or self-hosted runners,
+          > other processes on the same host can bypass it. Do not deploy this binary as a service.
+
+          | Platform | File |
+          |---|---|
+          | macOS (Apple Silicon) | \`presto-server-${VERSION}-macos-arm64.tar.gz\` |
+          | macOS (Intel)         | \`presto-server-${VERSION}-macos-x86_64.tar.gz\` |
+          | Linux (x86_64)        | \`presto-server-${VERSION}-linux-x86_64.tar.gz\` |
+          | Linux (ARM64)         | \`presto-server-${VERSION}-linux-arm64.tar.gz\` |
+
+          Each tarball ships with a \`.sha256\` sidecar. Verify before extracting. See [Headless
+          server section in the presto README](https://github.com/alejoamiras/presto/blob/main/packages/presto/README.md#headless-server-for-ci-test-acceleration)
+          for the install one-liner and \`ALLOWED_ORIGINS\` configuration.
+
+          ### Aztec Version
+          Built against Aztec \`${AZTEC_VER}\`.
+          NOTES
+
+          # Strip leading whitespace from each line (YAML indentation artifact)
+          sed -i 's/^          //' /tmp/release-notes.md
+
+          # B4/F: create a DRAFT pinned to THIS commit. `--target "$GITHUB_SHA"` is REQUIRED — without it a
+          # draft's eventual tag (created only at PUBLISH by `finalize`) would point at the latest
+          # default-branch state, not the dispatched SHA (codex F-consult). No `--verify-tag` here: the tag
+          # does not exist yet; `tag` pushes it AFTER the packaged gate and `finalize` uses `--verify-tag`.
+          # B6: stable is --latest=false (the signed KV feed is the source of truth; `promote` flips it).
+          COMMON=(--title "Presto $VERSION" --notes-file /tmp/release-notes.md --draft --target "$GITHUB_SHA" --latest=false)
+          if [ "$IS_PRERELEASE" = "true" ]; then
+            gh release create "$RELEASE_TAG" "${COMMON[@]}" --prerelease "${FILES[@]}"
+          else
+            gh release create "$RELEASE_TAG" "${COMMON[@]}" "${FILES[@]}"
+          fi
+
+          # Defense-in-depth over --target: assert the draft targets the reviewed commit.
+          ACTUAL_TARGET=$(gh release view "$RELEASE_TAG" --json targetCommitish --jq .targetCommitish)
+          if [ "$ACTUAL_TARGET" != "$GITHUB_SHA" ]; then
+            echo "::error::draft targetCommitish ($ACTUAL_TARGET) != github.sha ($GITHUB_SHA)"
+            exit 1
+          fi
+          echo "Draft $RELEASE_TAG created, targeting $GITHUB_SHA"
+
+      # B4/F: an immutable SHA-256 manifest of every uploaded asset. The packaged gate verifies its downloads
+      # against it, and `finalize` re-checks the live draft asset digests against it immediately before
+      # publishing — so the bytes the gate tested are provably the bytes that ship (draft assets are mutable).
+      - name: Generate + upload asset SHA-256 manifest
+        run: |
+          ( cd release-files && sha256sum -- * ) > asset-manifest.sha256
+          echo "Asset manifest:"; cat asset-manifest.sha256
+
+      - name: Upload asset manifest
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-asset-manifest
+          path: asset-manifest.sha256
+          retention-days: 7
+
+  # B4/F: the DRAFT gate — run the composed native-bb-over-HTTPS proof (Linux + macOS; Windows is the deferred
+  # owner-decision leg D, verified per that decision, NOT here yet) + the 1.0.7→2.0.0 upgrade + uninstall legs
+  # against the DRAFT's OWN uploaded installers (release-asset mode). Only on PASS does `tag` push the tag and
+  # `finalize` publish. This is the "packaged-E2E-on-draft" slot B6 deferred to B4.
+  packaged-e2e-on-draft:
+    name: Packaged E2E on draft
+    needs: [validate, release]
+    # RC safety (codex F-review): `release` uses explicit result checks, so this gate (and tag/finalize) carries
+    # their own status function or GitHub silently skips them (it did: the first RC to reach here drafted but
+    # never published). always()+!cancelled() only lifts the hidden scheduler veto; the explicit .result
+    # checks stay the authorization policy.
+    if: >-
+      ${{ always() && !cancelled() && !inputs.auth_probe && inputs.mode == 'publish'
+      && needs.validate.result == 'success' && needs.release.result == 'success' }}
+    permissions:
+      # Ceiling for the reusable workflow: only its `stage-installers` job uses write (to see the DRAFT's
+      # assets); the code-executing E2E jobs downgrade to `contents: read` per-job (codex privilege isolation).
+      contents: write
+    uses: ./.github/workflows/_e2e-packaged.yml
+    with:
+      # Pin the gate's harness/packed-SDK checkout to the DISPATCHED commit, not the moving `refs/heads/main`
+      # (_e2e-packaged.yml checks out `inputs.ref || github.ref`). Without this, a concurrent push to main
+      # mid-run would test the draft's pinned installers against a newer harness — breaking "tested == shipped".
+      ref: ${{ github.sha }}
+      release_tag: ${{ needs.validate.outputs.tag }}
+
+  # B4/F: FINALIZE — flip the gated draft to PUBLISHED (which pushes the git tag GitHub deferred). Runs only
+  # after the packaged gate + `tag` succeeded. Re-asserts tag==github.sha and that the draft's asset SET is
+  # unchanged since the gate (assets are mutable pre-publish) before `--draft=false --verify-tag`.
+  finalize:
+    name: Publish release (finalize)
+    needs: [validate, release, packaged-e2e-on-draft, tag]
+    # codex F-review: EXPLICIT success of ALL needs. always()+!cancelled() up front so the RC's skipped
+    # an explicit result chain so a skipped prerequisite cannot silently skip the publish (the first RC to
+    # reach this area once drafted but never finalized). The explicit .result==success chain
+    # stays the authorization policy — a skipped OR failed gate/tag can NEVER publish an ungated draft.
+    if: >-
+      ${{ always() && !cancelled() && !inputs.auth_probe && inputs.mode == 'publish'
+      && needs.validate.result == 'success'
+      && needs.release.result == 'success'
+      && needs.packaged-e2e-on-draft.result == 'success'
+      && needs.tag.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Re-assert the pushed remote tag targets the reviewed commit
+        env:
+          TAG: ${{ needs.validate.outputs.tag }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          # codex F-review: query the REMOTE tag directly — a `git fetch … || true` could leave a stale LOCAL
+          # tag and verify that. `tag` pushes a LIGHTWEIGHT tag, so ls-remote's first column IS the commit SHA.
+          REMOTE_SHA="$(git ls-remote origin "refs/tags/$TAG" | awk '{print $1}')"
+          if [ -z "$REMOTE_SHA" ]; then
+            echo "::error::tag $TAG not found on origin — refusing to publish"; exit 1
+          fi
+          if [ "$REMOTE_SHA" != "$EXPECTED_SHA" ]; then
+            echo "::error::remote tag $TAG at $REMOTE_SHA != github.sha $EXPECTED_SHA — refusing to publish"
+            exit 1
+          fi
+          echo "Remote tag $TAG verified at $EXPECTED_SHA"
+
+      - name: Download the gated asset manifest
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-asset-manifest
+          path: manifest
+
+      - name: Verify live asset SHA-256 digests == the gated manifest, then publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          # codex F-review: names-only false-greens a same-name byte replacement. Compare the DRAFT's LIVE
+          # per-asset SHA-256 digests (GitHub exposes `.digest = "sha256:<hex>"`) to the gated manifest, so the
+          # published bytes are provably the gated bytes. `sha256sum` lines are "<hex>  <name>".
+          sort manifest/asset-manifest.sha256 > /tmp/want.txt
+          echo "Gated manifest:"; cat /tmp/want.txt
+          # GitHub computes asset digests asynchronously after upload — poll until all are present (fail
+          # closed on a missing digest rather than false-green).
+          # A DRAFT release is NOT returned by GET /releases/tags/{tag} (404 even with the git tag pushed and
+          # contents:write) — resolve its numeric id via `gh release view` (which DOES see drafts) and fetch by
+          # id, which carries the per-asset `.digest`. (Same draft-visibility gotcha as the packaged-E2E fetch.)
+          RID=$(gh release view "$TAG" --json databaseId --jq .databaseId)
+          test -n "$RID" || { echo "::error::could not resolve the draft release id for $TAG"; exit 1; }
+          for attempt in $(seq 1 10); do
+            gh api "repos/$GH_REPO/releases/$RID" \
+              --jq '.assets[] | (.digest // "MISSING") + "  " + .name' \
+              | sed 's/^sha256://' | sort > /tmp/have.txt
+            if ! grep -q '^MISSING' /tmp/have.txt; then break; fi
+            echo "Some asset digests not computed yet (attempt $attempt) — waiting..."
+            sleep 6
+          done
+          echo "Live draft asset digests:"; cat /tmp/have.txt
+          if grep -q '^MISSING' /tmp/have.txt; then
+            echo "::error::a draft asset still has no computed digest — refusing to publish (fail closed)"
+            exit 1
+          fi
+          if ! diff -u /tmp/want.txt /tmp/have.txt; then
+            echo "::error::draft asset digests/names differ from the gated manifest — refusing to publish"
+            exit 1
+          fi
+          echo "All draft asset digests match the gated manifest — the published bytes are the gated bytes"
+          # Flip draft → published. The tag was pushed by `tag` and VERIFIED == github.sha above (stronger than
+          # gh's --verify-tag). Keep --latest=false until a forward GA promotion has independently verified
+          # the signed live feed; publication alone must not change either notion of the current release.
+          gh release edit "$TAG" --draft=false --latest=false
+          echo "Published $TAG (draft finalized)"
+
+  # B6: PROMOTE is a SEPARATE operational event from PUBLISH — its own `mode: promote-only` dispatch. It
+  # flips the KV-backed `latest.json` feed for an ALREADY-PUBLISHED version, and doubles as the ROLLBACK lever
+  # (dispatch an older version to move the feed back). It re-derives trust from scratch rather than trusting
+  # the publish run: it downloads the release's OWN `latest.json` asset, runs the production verifier, and
+  # asserts the release is a published, non-draft, non-prerelease stable whose version + full asset set
+  # match — THEN uploads those exact verified bytes. `dry_run` runs the whole pre-flight WITHOUT writing the
+  # feed (proves the machinery, incl. a rollback-to-prev pre-flight, with zero prod effect). Least-privilege:
+  # this is the only job that WRITES the feed (using a feed-only Cloudflare token); publishing has no
+  # Cloudflare credentials and the preflight only reads KV.
+  promote:
+    name: Promote (flip KV feed)
+    needs: [validate]
+    if: ${{ !inputs.auth_probe && inputs.mode == 'promote-only' }}
+    environment: release-feed
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read     # gh release view/download
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.validate.outputs.tag }}
+      VERSION: ${{ needs.validate.outputs.version }}
+      IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
+    outputs:
+      write_attempted: ${{ steps.write.outputs.attempted }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-target: x86_64-unknown-linux-gnu
+          rust-cache-key: presto-sign-feed
+          rust-workspaces: packages/presto/core -> target
+          rust-components: ""
+          install-tauri-system-deps: "false"
+          run-prebuild: "false"
+
+      - name: Pre-flight — published stable + signature-valid feed + complete assets
+        run: |
+          set -euo pipefail
+          # 1. Refuse a prerelease/nightly promote — the feed serves stable only.
+          if [ "$IS_PRERELEASE" != "false" ]; then
+            echo "::error::promote-only refuses a prerelease version ($VERSION) — the feed serves stable only"; exit 1
+          fi
+          # 2. The release must EXIST, be PUBLISHED (not a draft), and not be flagged prerelease on GitHub.
+          META=$(gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,assets 2>/dev/null) \
+            || { echo "::error::no release $RELEASE_TAG to promote"; exit 1; }
+          echo "$META" | jq -e '.isDraft == false'      >/dev/null || { echo "::error::$RELEASE_TAG is a DRAFT — not promotable"; exit 1; }
+          echo "$META" | jq -e '.isPrerelease == false' >/dev/null || { echo "::error::$RELEASE_TAG is flagged prerelease — not promotable"; exit 1; }
+          # 3. EXACT asset set — never promote a half-uploaded or tampered release. Compare the SORTED asset
+          #    names to the complete version-expanded 17-name set: the SAME 16 build names the flatten step
+          #    asserts on publish (keep in sync — release-contract.test.ts guards the two lists match) +
+          #    latest.json. (codex: count+category could be satisfied by one headless tarball + padding while
+          #    other platform tarballs/checksums are absent.)
+          GOT=$(echo "$META" | jq -r '.assets[].name' | LC_ALL=C sort)
+          EXPECTED=$(printf '%s\n' \
+            "Presto-${VERSION}-macOS-Apple-Silicon.dmg" \
+            "Presto-${VERSION}-macOS-Intel.dmg" \
+            "Presto-${VERSION}-macOS-Apple-Silicon.app.tar.gz" \
+            "Presto-${VERSION}-macOS-Intel.app.tar.gz" \
+            "Presto-${VERSION}-Linux-x86_64.deb" \
+            "Presto-${VERSION}-Linux-x86_64.AppImage" \
+            "Presto-${VERSION}-Windows-x86_64-setup.exe" \
+            "Presto-${VERSION}-Windows-x86_64-setup.nsis.zip" \
+            "presto-server-${VERSION}-macos-arm64.tar.gz" \
+            "presto-server-${VERSION}-macos-arm64.tar.gz.sha256" \
+            "presto-server-${VERSION}-macos-x86_64.tar.gz" \
+            "presto-server-${VERSION}-macos-x86_64.tar.gz.sha256" \
+            "presto-server-${VERSION}-linux-x86_64.tar.gz" \
+            "presto-server-${VERSION}-linux-x86_64.tar.gz.sha256" \
+            "presto-server-${VERSION}-linux-arm64.tar.gz" \
+            "presto-server-${VERSION}-linux-arm64.tar.gz.sha256" \
+            "latest.json" | LC_ALL=C sort)
+          if [ "$GOT" != "$EXPECTED" ]; then
+            echo "::error::$RELEASE_TAG asset set != the expected 17 for $VERSION"
+            diff <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$GOT") || true
+            exit 1
+          fi
+          # 4. Download the release's OWN latest.json, assert feed version == dispatched, run the PRODUCTION
+          #    verifier. These are the exact bytes the flip uploads.
+          gh release download "$RELEASE_TAG" -p latest.json --dir feed
+          FEED_VERSION=$(jq -r '.version // empty' feed/latest.json)
+          [ "$FEED_VERSION" = "$VERSION" ] || { echo "::error::release latest.json version ($FEED_VERSION) != dispatched ($VERSION)"; exit 1; }
+          bun -e "console.log(JSON.parse(await Bun.file('packages/presto/src-tauri/tauri.conf.json').text()).plugins.updater.pubkey)" > pubkey.b64
+          cargo run --quiet --manifest-path packages/presto/core/Cargo.toml --example update-manifest -- \
+            verify --feed feed/latest.json --pubkey pubkey.b64
+          # 5. The verifier accepts ANY non-empty signed platform map, so bind the feed to THIS release:
+          #    EXACTLY the 4 supported platform keys, each mapped to its EXACT expected artifact URL for this
+          #    tag (codex: prefix + HTTP 200 don't stop darwin-aarch64 pointing at the Intel tarball), then
+          #    confirm each resolves 200. Filenames mirror the isolated signer's hardcoded URLs.
+          jq -e '(.platforms | keys | sort) == ["darwin-aarch64","darwin-x86_64","linux-x86_64","windows-x86_64"]' feed/latest.json >/dev/null \
+            || { echo "::error::feed platform keys are not exactly the 4 supported platforms"; exit 1; }
+          BASE="https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}"
+          assert_url() {  # <platform-key> <exact-filename>
+            got=$(jq -r --arg k "$1" '.platforms[$k].url // empty' feed/latest.json)
+            [ "$got" = "${BASE}/$2" ] || { echo "::error::feed $1 url is '$got', expected '${BASE}/$2'"; exit 1; }
+          }
+          assert_url darwin-aarch64 "Presto-${VERSION}-macOS-Apple-Silicon.app.tar.gz"
+          assert_url darwin-x86_64  "Presto-${VERSION}-macOS-Intel.app.tar.gz"
+          assert_url linux-x86_64   "Presto-${VERSION}-Linux-x86_64.AppImage"
+          assert_url windows-x86_64 "Presto-${VERSION}-Windows-x86_64-setup.nsis.zip"
+          while read -r u; do
+            code=$(curl -fsIL --max-time 30 -o /dev/null -w '%{http_code}' "$u" 2>/dev/null || echo ERR)
+            [ "$code" = "200" ] || { echo "::error::feed payload URL not reachable ($code): $u"; exit 1; }
+          done < <(jq -r '.platforms[].url' feed/latest.json)
+          # Residual (codex, accepted for B6): the 4 payloads are NOT re-downloaded for a byte-compare. The
+          # SIGNED feed binds each payload's size and clients minisign-verify before applying, so a
+          # corrupted/wrong same-size payload fails CLOSED on the client; the only residual is availability,
+          # bounded by the 200 checks above. B4's packaged-E2E-on-draft exercises the real installers.
+          echo "✅ pre-flight OK: $RELEASE_TAG is a published stable $VERSION — exact 17-asset set, exact per-platform URLs, feed signature valid"
+
+      - name: DRY RUN — pre-flight only, feed NOT written
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "dry_run OK: promote pre-flight for $VERSION passed; the KV feed was NOT flipped (no prod effect)"
+
+      # The KV write is the authoritative promote act. It uploads the exact bytes verified above and is
+      # retried because a client-side timeout can make the outcome ambiguous. The independent public-feed
+      # gate below always runs after an attempted write and resolves that ambiguity.
+      - name: Flip the KV feed to this version (authoritative write)
+        id: write
+        if: ${{ !inputs.dry_run }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_RELEASE_FEED_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          echo "attempted=true" >> "$GITHUB_OUTPUT"
+          # Upload the EXACT verified bytes downloaded in pre-flight — never a re-synthesized feed.
+          for attempt in 1 2 3 4 5; do
+            if bunx wrangler kv key put latest.json --path feed/latest.json --remote \
+                 --namespace-id 41a6adef830f4a91bf63476a323cec98; then
+              echo "✅ KV feed flipped to $VERSION (attempt $attempt)"
+              break
+            fi
+            if [ "$attempt" = 5 ]; then
+              echo "::error::KV write of latest.json failed after 5 attempts; public verification determines the live state"
+              exit 1
+            fi
+            echo "KV write attempt $attempt failed; retrying in $((attempt * 3))s"
+            sleep $((attempt * 3))
+          done
+          echo "promote: KV feed set to $VERSION; verify-live-feed confirms edge propagation."
+
+  # Enforce the live-feed check that was previously done by hand: after `promote`
+  # writes latest.json to KV, confirm the PUBLIC prod feed
+  # actually serves this version and every asset URL resolves. Separate job (own
+  # 15m timeout) so KV edge propagation can't trip the short `promote`/`bump-source` jobs.
+  # `bump-source` gates on this — don't bump source until users would really get
+  # the release.
+  verify-live-feed:
+    name: Verify live updater feed
+    needs: [validate, promote]
+    # B6: verify only in a REAL promote (promote-only, not dry_run).
+    # blocker-1 (codex High): run this after ANY attempted promote via its OWN status function — NOT the
+    # implicit success() on `promote` — so live verification can't be skipped by a non-fatal invalidation
+    # NOR by a write whose CLI errored/timed-out AFTER KV committed (feed live but `promote` RED). The live
+    # feed is the source of truth: if the PUT truly didn't land, this polls ~600s and fails RED; if it DID
+    # land despite a RED `promote`, this confirms GREEN. Gated to validate-green + promote-only + !dry_run
+    # so it never runs in publish mode.
+    if: ${{ always() && !cancelled() && needs.validate.result == 'success' && needs.promote.outputs.write_attempted == 'true' && inputs.mode == 'promote-only' && !inputs.dry_run }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-target: x86_64-unknown-linux-gnu
+          rust-cache-key: presto-sign-feed
+          rust-workspaces: packages/presto/core -> target
+          rust-components: ""
+          install-tauri-system-deps: "false"
+          run-prebuild: "false"
+      - name: Poll the prod feed + assert it serves this release
+        env:
+          EXPECTED: ${{ needs.validate.outputs.version }}
+          FEED_URL: https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json
+        run: |
+          set -euo pipefail
+          # Poll the public CDN until it serves this version (covers invalidation
+          # propagation + the 300s max-age), then assert the platform map + that
+          # every asset URL is reachable. The updater gate used a synthesized
+          # feed; this is the only check on the REAL prod latest.json + assets.
+          FEED=""
+          GOT=""
+          for _ in $(seq 1 60); do
+            FEED=$(curl -fsS --max-time 15 "$FEED_URL" 2>/dev/null || true)
+            GOT=$(printf '%s' "$FEED" | jq -r '.version // empty' 2>/dev/null || true)
+            [ "$GOT" = "$EXPECTED" ] && break
+            sleep 10
+          done
+          if [ "$GOT" != "$EXPECTED" ]; then
+            echo "::error::live feed at $FEED_URL still not $EXPECTED after ~10min (got '${GOT:-<none>}')"
+            exit 1
+          fi
+          echo "✅ feed serves $EXPECTED"
+          printf '%s' "$FEED" | jq -e '.platforms | has("darwin-aarch64") and has("darwin-x86_64") and has("linux-x86_64") and has("windows-x86_64")' >/dev/null \
+            || { echo "::error::latest.json missing a platform key"; exit 1; }
+          # `while read` over process substitution (not a pipe) so `exit 1` exits
+          # the script, not a subshell. Retry each URL (brief edge/GitHub lag).
+          while read -r u; do
+            ok=""
+            for _ in $(seq 1 5); do
+              code=$(curl -fsIL --max-time 30 -o /dev/null -w '%{http_code}' "$u" 2>/dev/null || echo ERR)
+              if [ "$code" = "200" ]; then ok=1; break; fi
+              sleep 5
+            done
+            [ -n "$ok" ] || { echo "::error::asset URL not reachable (last=$code): $u"; exit 1; }
+            echo "✅ 200 $u"
+          done < <(printf '%s' "$FEED" | jq -r '.platforms[].url')
+
+          # F-004 (audit M7): run the PRODUCTION verifier over the live feed body. Version + reachable
+          # URLs alone don't prove the signed manifest survived the upload/CDN — a corrupted or dropped
+          # manifest_sig leaves those intact while EVERY C4 client rejects the update. This is the only
+          # cryptographic check on the real published feed.
+          printf '%s' "$FEED" > live-latest.json
+          bun -e "console.log(JSON.parse(await Bun.file('packages/presto/src-tauri/tauri.conf.json').text()).plugins.updater.pubkey)" > pubkey.b64
+          cargo run --quiet --manifest-path packages/presto/core/Cargo.toml --example update-manifest -- \
+            verify --feed live-latest.json --pubkey pubkey.b64
+          echo "✅ live updater feed verified == $EXPECTED, all assets reachable, manifest signature valid"
+
+  # GitHub's Latest badge is human-facing and does not control the updater. Keep it aligned with a forward
+  # GA only after the signed production feed is independently verified. Rollbacks deliberately leave the
+  # badge on the newest GA while the authoritative updater feed temporarily points at an older release.
+  mark-github-latest:
+    name: Mark GitHub release as Latest
+    needs: [validate, verify-live-feed]
+    if: ${{ inputs.mode == 'promote-only' && inputs.bump_source && !inputs.dry_run && needs.verify-live-feed.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Mark the verified forward GA as GitHub Latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.validate.outputs.tag }}
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" --latest; then
+              latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+              if [ "$latest" = "$TAG" ]; then
+                echo "✅ GitHub Latest now points at $TAG"
+                exit 0
+              fi
+              echo "::warning::GitHub accepted the edit but Latest resolved to $latest (attempt $attempt/5)"
+            else
+              echo "::warning::failed to mark $TAG GitHub Latest (attempt $attempt/5)"
+            fi
+            sleep 5
+          done
+          echo "::error::could not verify GitHub Latest == $TAG after 5 attempts"
+          exit 1
+
+  bump-source:
+    name: Bump source version
+    needs: [validate, mark-github-latest]
+    # B6: bump source only after a REAL organic-GA promotion — mode==promote-only, bump_source=true, not a
+    # dry_run, and GitHub Latest has caught up. A ROLLBACK promote (bump_source=false) must NOT bump source
+    # or move the human-facing badge away from the newest GA.
+    if: ${{ inputs.mode == 'promote-only' && inputs.bump_source && !inputs.dry_run && needs.mark-github-latest.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # No default-GITHUB_TOKEN perms: a short-lived, repo-scoped GitHub App
+    # installation token (contents + PRs write only, ~1h TTL) does the push +
+    # PR + auto-merge instead of the long-lived PAT (audit least-privilege).
+    permissions: {}
+    steps:
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Compute next version
+        id: next
+        env:
+          RELEASED: ${{ needs.validate.outputs.version }}
+        run: |
+          # If rc release (1.0.0-rc.7), bump rc number (1.0.0-rc.8)
+          # If stable release (1.0.0), bump patch and start rc.1 (1.0.1-rc.1)
+          NEXT=$(bun -e "
+            const v = process.env.RELEASED;
+            const rcMatch = v.match(/^(.+)-rc\.(\d+)$/);
+            if (rcMatch) {
+              console.log(rcMatch[1] + '-rc.' + (Number(rcMatch[2]) + 1));
+            } else {
+              const parts = v.split('.');
+              parts[2] = String(Number(parts[2]) + 1);
+              console.log(parts.join('.') + '-rc.1');
+            }
+          ")
+          echo "version=$NEXT" >> "$GITHUB_OUTPUT"
+          echo "Released $RELEASED → next source: $NEXT"
+
+      - name: Update source files
+        env:
+          NEXT_VERSION: ${{ steps.next.outputs.version }}
+        run: |
+          # Patch tauri.conf.json (desktop app version)
+          bun -e "
+            const conf = JSON.parse(await Bun.file('packages/presto/src-tauri/tauri.conf.json').text());
+            conf.version = process.env.NEXT_VERSION;
+            await Bun.write('packages/presto/src-tauri/tauri.conf.json', JSON.stringify(conf, null, 2) + '\n');
+          "
+
+          # Patch both crate versions: src-tauri (lib → /health) and server
+          # (→ presto-server --version).
+          sed -i "s/^version = \".*\"/version = \"$NEXT_VERSION\"/" packages/presto/src-tauri/Cargo.toml
+          sed -i "s/^version = \".*\"/version = \"$NEXT_VERSION\"/" packages/presto/server/Cargo.toml
+
+          # Keep both Cargo.locks' local-package stanzas in lockstep with the manifests.
+          # Cargo.lock records each local crate's own version; bump-source previously left them
+          # to drift (windows-ci-parity audit caught server/Cargo.lock stuck two versions back).
+          # Pure sed (the version line is the line right after `name = "<crate>"`) — no Rust
+          # toolchain in this job. A crate absent from a given lock simply doesn't match.
+          for lock in packages/presto/src-tauri/Cargo.lock packages/presto/server/Cargo.lock; do
+            for crate in presto presto-server; do
+              sed -i "/^name = \"$crate\"\$/{n;s/^version = \".*\"/version = \"$NEXT_VERSION\"/}" "$lock"
+            done
+          done
+
+      - name: Create PR
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          NEXT_VERSION: ${{ steps.next.outputs.version }}
+          RELEASED: ${{ needs.validate.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          BRANCH="chore/bump-presto-${NEXT_VERSION}"
+          git checkout -b "$BRANCH"
+          git add packages/presto/src-tauri/tauri.conf.json packages/presto/src-tauri/Cargo.toml packages/presto/server/Cargo.toml packages/presto/src-tauri/Cargo.lock packages/presto/server/Cargo.lock
+          git commit -m "chore(presto): bump source version to ${NEXT_VERSION}"
+          git push -u origin "$BRANCH"
+
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "chore(presto): bump source version to ${NEXT_VERSION}" \
+            --body "Automated post-release version bump after releasing ${RELEASED}."
+
+          gh pr merge "$BRANCH" --auto --squash --delete-branch

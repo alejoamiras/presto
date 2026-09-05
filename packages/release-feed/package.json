@@ -1,5 +1,5 @@
 {
-  "name": "@alejoamiras/aztec-accelerator-release-feed",
+  "name": "@alejoamiras/presto-release-feed",
   "private": true,
   "type": "module",
   "scripts": {

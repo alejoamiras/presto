@@ -1,7 +1,7 @@
 import type { CircuitSimulator } from "@aztec/simulator/client";
 
 // q7e3-F-02: the SDK's published types live here (a neutral module), not inside the
-// `accelerator-prover.ts` hotspot. `index.ts` re-exports them unchanged; `accelerator-transport.ts`
+// `presto-prover.ts` hotspot. `index.ts` re-exports them unchanged; `presto-transport.ts`
 // imports them here instead of back-importing from the prover — killing the former 2-way edge.
 
 /**
@@ -10,10 +10,10 @@ import type { CircuitSimulator } from "@aztec/simulator/client";
  * `1` literal that was inlined at every check — a per-language constant that documents the negotiated
  * version and gives one place to bump.
  */
-export const ACCELERATOR_API_VERSION = 1;
+export const PRESTO_API_VERSION = 1;
 
 /** Sub-phases emitted during proof generation for UI animation. */
-export type AcceleratorPhase =
+export type PrestoPhase =
   | "detect"
   | "secure-connection-unavailable"
   | "serialize"
@@ -24,38 +24,38 @@ export type AcceleratorPhase =
   | "fallback"
   | "downloading"
   | "denied"
-  // B7 (F14): the accelerator refused this SDK's Aztec version (`403 version_not_allowed`). Distinct from
+  // B7 (F14): the presto refused this SDK's Aztec version (`403 version_not_allowed`). Distinct from
   // `"denied"` (a user/origin denial) — the proof still degrades to WASM, but the cause is a version
   // gap the UI should surface differently.
   | "version-mismatch";
 
 /** Data payload for the `"proved"` phase — carries the actual proving duration. */
-export interface AcceleratorPhaseData {
+export interface PrestoPhaseData {
   durationMs: number;
 }
 
-export interface AcceleratorConfig {
-  /** Port the accelerator listens on (HTTP). Default: 59833. */
+export interface PrestoConfig {
+  /** Port the presto listens on (HTTP). Default: 59833. */
   port?: number;
-  /** Port the accelerator listens on (HTTPS — required for Safari; preferred elsewhere when trusted). Default: 59834. */
+  /** Port the presto listens on (HTTPS — required for Safari; preferred elsewhere when trusted). Default: 59834. */
   httpsPort?: number;
-  /** Host the accelerator binds to. Default: "127.0.0.1". */
+  /** Host the presto binds to. Default: "127.0.0.1". */
   host?: string;
   /**
    * Private proof transport policy. When true, the SDK never sends a `/prove` request or private
    * witness over HTTP. After an HTTPS connection failure it may perform one bounded, witness-free
    * HTTP `GET /health` solely to diagnose whether HTTPS is disabled or untrusted; that diagnostic
-   * can never make the accelerator eligible for proving.
+   * can never make the presto eligible for proving.
    *
    * Defaults to true in browsers and false in Node, Bun, and SSR. An explicit constructor/runtime
-   * option wins over `AZTEC_ACCELERATOR_HTTPS_ONLY`, which wins over the runtime default.
+   * option wins over `PRESTO_HTTPS_ONLY`, which wins over the runtime default.
    */
   httpsOnly?: boolean;
   /**
    * Allow the SDK to fall back to the plaintext `http://` endpoint **after it has already reached a
-   * healthy `https://` accelerator at this address**. Off by default (F-01, audit 2026-07-31).
+   * healthy `https://` presto at this address**. Off by default (F-01, audit 2026-07-31).
    *
-   * This is not the same knob as {@link AcceleratorConfig.httpsOnly}. It governs the narrower case
+   * This is not the same knob as {@link PrestoConfig.httpsOnly}. It governs the narrower case
    * where HTTPS *was* working and then a `/prove` fails at the network layer. Turn it on only if you
    * explicitly accept retrying the same private witness over plaintext HTTP. Browser dApps that offer
    * a session-only HTTP recovery must set both `httpsOnly: false` and
@@ -66,17 +66,17 @@ export interface AcceleratorConfig {
   allowInsecureDowngrade?: boolean;
 }
 
-export interface AcceleratorProverOptions {
+export interface PrestoProverOptions {
   /** Circuit simulator. Defaults to WASMSimulator (lazy-loaded from @aztec/simulator/client). */
   simulator?: CircuitSimulator;
-  /** Accelerator connection config (port, host). */
-  accelerator?: AcceleratorConfig;
+  /** Presto connection config (port, host). */
+  presto?: PrestoConfig;
   /** Phase transition callback for UI animation. */
-  onPhase?: (phase: AcceleratorPhase, data?: AcceleratorPhaseData) => void;
+  onPhase?: (phase: PrestoPhase, data?: PrestoPhaseData) => void;
 }
 
-/** Options for {@link AcceleratorProver.checkAcceleratorStatus}. */
-export interface AcceleratorStatusCheckOptions {
+/** Options for {@link PrestoProver.checkPrestoStatus}. */
+export interface PrestoStatusCheckOptions {
   /**
    * Ignore a settled status cached within the normal ten-second TTL and start a fresh probe. An
    * already-running probe for the current endpoint is still shared.
@@ -84,49 +84,49 @@ export interface AcceleratorStatusCheckOptions {
   forceRefresh?: boolean;
 }
 
-/** Protocol used to reach the accelerator's `/health` + `/prove` endpoints. */
-export type AcceleratorProtocol = "http" | "https";
+/** Protocol used to reach the presto's `/health` + `/prove` endpoints. */
+export type PrestoProtocol = "http" | "https";
 
 /** Best-effort result of the witness-free HTTP diagnostic after an HTTPS connection failure. */
 export type SecureConnectionDiagnosis =
   | "https-disabled"
   | "tls-or-trust-failure"
-  | "accelerator-reachable"
+  | "presto-reachable"
   | "unconfirmed";
 
 /**
- * Status of the local native accelerator, returned by {@link AcceleratorProver.checkAcceleratorStatus}.
+ * Status of the local native presto, returned by {@link PrestoProver.checkPrestoStatus}.
  *
  * A discriminated union on `available` (Q12). The prior flat interface let illegal field combinations
  * typecheck (e.g. `available: false` carrying `availableVersions`, or `needsDownload` on an offline
  * result). Narrow on `available` first — and on `reason` for the unavailable cases — to access only the
  * fields valid for that state.
  */
-export type AcceleratorStatus =
+export type PrestoStatus =
   | {
-      /** The accelerator is reachable and version-compatible. */
+      /** The presto is reachable and version-compatible. */
       available: true;
       /** Whether it must download `bb` for the SDK's Aztec version before it can prove. */
       needsDownload: boolean;
-      /** Accelerator version from `/health` (`aztec_version`); absent on the multi-version protocol. */
-      acceleratorVersion?: string;
-      /** Aztec versions the accelerator already has cached (multi-version protocol). */
+      /** Native server's Aztec version from `/health.aztec_version`; absent on minimal health. */
+      nativeAztecVersion?: string;
+      /** Aztec versions the presto already has cached (multi-version protocol). */
       availableVersions?: string[];
       /** The Aztec version this SDK expects (from its `@aztec/stdlib` dependency). */
       sdkAztecVersion?: string;
       /**
-       * The accelerator app's own version from `/health` (`version`) — the desktop/headless build, NOT the
+       * The presto app's own version from `/health` (`version`) — the desktop/headless build, NOT the
        * Aztec version. Surfaced (B7) for diagnostics/telemetry; `undefined` when the origin-tiered minimal
        * `/health` withheld it (unapproved cross-origin).
        */
       appVersion?: string;
       /**
-       * The accelerator's `/health` `api_version`. The SDK only treats an endpoint as available when this
-       * equals {@link ACCELERATOR_API_VERSION}; it is surfaced here for diagnostics.
+       * The presto's `/health` `api_version`. The SDK only treats an endpoint as available when this
+       * equals {@link PRESTO_API_VERSION}; it is surfaced here for diagnostics.
        */
       apiVersion?: number;
-      /** Which protocol reached the accelerator. */
-      protocol: AcceleratorProtocol;
+      /** Which protocol reached the presto. */
+      protocol: PrestoProtocol;
     }
   | {
       available: false;
@@ -158,14 +158,14 @@ export type AcceleratorStatus =
       /** Reachable, but `/health` returned a non-OK HTTP status. */
       reason: "error";
       sdkAztecVersion?: string;
-      protocol: AcceleratorProtocol;
+      protocol: PrestoProtocol;
     }
   | {
       available: false;
       /** Reachable, but its Aztec version doesn't match the SDK's (legacy single-version protocol). */
       reason: "version-mismatch";
-      /** The mismatched accelerator version. */
-      acceleratorVersion: string;
+      /** The native server's mismatched Aztec version (not its application version). */
+      nativeAztecVersion: string;
       sdkAztecVersion?: string;
-      protocol: AcceleratorProtocol;
+      protocol: PrestoProtocol;
     };

@@ -27,9 +27,9 @@ $ErrorActionPreference = "Stop"
 # way the rest of this repo's pwsh does, instead of letting a native exit code throw.
 $PSNativeCommandUseErrorActionPreference = $false
 $runKey = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
-$runValueName = "Aztec Accelerator"
-$taskName = "Aztec Accelerator Crash Recovery"
-$aztecDir = Join-Path $env:USERPROFILE ".aztec-accelerator"
+$runValueName = "Presto"
+$taskName = "Presto Crash Recovery"
+$aztecDir = Join-Path $env:USERPROFILE ".presto"
 
 $setup = Get-ChildItem -Path $AppArtifactDir -Recurse -Filter "*-setup.exe" -EA SilentlyContinue | Select-Object -First 1
 if (-not $setup) {
@@ -41,7 +41,7 @@ if (-not $setup) {
 # The installer is unsigned (B1 Authenticode is still deferred); a Defender quarantine mid-run would
 # masquerade as a product failure. Scoped to the EXACT install directory (not all of %LOCALAPPDATA%) — the
 # path need not exist yet for an exclusion to be registered.
-$installRoot = Join-Path $env:LOCALAPPDATA "Aztec Accelerator"
+$installRoot = Join-Path $env:LOCALAPPDATA "Presto"
 Add-MpPreference -ExclusionPath $installRoot -ErrorAction SilentlyContinue
 
 # NSIS /S is ASYNC: -PassThru + WaitForExit so a (never-expected) interactive prompt fails fast here instead
@@ -57,13 +57,13 @@ if ($inst.ExitCode -ne 0) { Write-Host "::error::installer exited $($inst.ExitCo
 
 # Address the app BY NAME under the per-user install root (installMode currentUser). Never a bare recursive
 # first-match: the install dir also carries the bundled `bb` sidecar.
-$exe = Get-ChildItem -Path "$env:LOCALAPPDATA" -Recurse -Filter "AztecAccelerator.exe" -EA SilentlyContinue |
+$exe = Get-ChildItem -Path "$env:LOCALAPPDATA" -Recurse -Filter "Presto.exe" -EA SilentlyContinue |
   Select-Object -First 1
 if (-not $exe) {
   # Dump the tree: the one time this fired, the cause was the CALLER feeding a 1.0.7 installer (whose binary
-  # still carries the pre-rename `aztec-accelerator.exe` name), not anything about this install. Listing what
+  # still carries the pre-rename `presto.exe` name), not anything about this install. Listing what
   # actually landed is what makes that diagnosable instead of guessable.
-  Write-Host "::error::installed AztecAccelerator.exe not found under %LOCALAPPDATA% (wrong installer version?)"
+  Write-Host "::error::installed Presto.exe not found under %LOCALAPPDATA% (wrong installer version?)"
   Get-ChildItem -Path "$env:LOCALAPPDATA" -Recurse -EA SilentlyContinue | Select-Object FullName | Out-String | Write-Host
   exit 1
 }
@@ -97,10 +97,10 @@ Set-Content -Path $configFile -NoNewline -Value '{"config_version":2,"approved_o
 # "Cannot find path ... because it does not exist"), so create it first. `-Force` is a no-op when it already
 # exists, which is the normal case on a real user's machine.
 New-Item -Path $runKey -Force -ErrorAction SilentlyContinue | Out-Null
-Set-ItemProperty -Path $runKey -Name $runValueName -Value "$env:LOCALAPPDATA\Aztec Stale\Aztec Accelerator.exe "
+Set-ItemProperty -Path $runKey -Name $runValueName -Value "$env:LOCALAPPDATA\Aztec Stale\Presto.exe "
 schtasks /Delete /TN $taskName /F 2>$null | Out-Null
 
-$env:AZTEC_ACCEL_NO_UPDATE = "1"
+$env:PRESTO_NO_UPDATE = "1"
 $proc = Start-Process -FilePath $exe.FullName -PassThru
 $healthy = $false
 for ($i = 0; $i -lt 30; $i++) {
@@ -165,9 +165,9 @@ Write-Host "armed by the product: healed Run value + crash-recovery task (bound 
 # Check by NAME, not just our PID: the crash-recovery task is armed at this point and may legitimately have
 # started a second instance that won the port race, letting our original process bow out benignly. What must
 # hold is "an app is running", not "this exact pid is running".
-$aliveBefore = @(Get-Process -Name "AztecAccelerator" -ErrorAction SilentlyContinue)
+$aliveBefore = @(Get-Process -Name "Presto" -ErrorAction SilentlyContinue)
 if ($aliveBefore.Count -eq 0) {
-  Write-Host "::error::precondition: no AztecAccelerator process is running before the uninstall (nothing proves running-app teardown)"
+  Write-Host "::error::precondition: no Presto process is running before the uninstall (nothing proves running-app teardown)"
   exit 1
 }
 
@@ -223,9 +223,9 @@ if (-not (Test-Path $configFile)) {
 # minutes, so no bounded wait proves the absence of a FUTURE relaunch — it would look like evidence without
 # being any. Future triggers are proven dead by asserting the task itself is gone, above; this check covers
 # the already-started case that task-absence does not subsume.
-$aliveAfter = @(Get-Process -Name "AztecAccelerator" -ErrorAction SilentlyContinue)
+$aliveAfter = @(Get-Process -Name "Presto" -ErrorAction SilentlyContinue)
 if ($aliveAfter.Count -gt 0) {
-  $failures += "$($aliveAfter.Count) AztecAccelerator process(es) survived the uninstall (pids: $($aliveAfter.Id -join ', '))"
+  $failures += "$($aliveAfter.Count) Presto process(es) survived the uninstall (pids: $($aliveAfter.Id -join ', '))"
 }
 
 if ($failures.Count -gt 0) {

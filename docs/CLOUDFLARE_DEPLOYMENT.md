@@ -8,7 +8,7 @@ No OpenTofu, S3, CloudFront, or build server is required.
 
 1. Run `wrangler login` and finish the browser OAuth flow. Verify with `wrangler whoami`.
 2. Create a namespace with `wrangler kv namespace create RELEASE_FEED` and replace the namespace ID
-   in `packages/release-feed/wrangler.jsonc` and `.github/workflows/release-accelerator.yml`.
+   in `packages/release-feed/wrangler.jsonc` and `.github/workflows/release-presto.yml`.
 3. Change the Worker names and custom-domain routes in each `wrangler.jsonc` for the fork's account.
 4. Create `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_DEPLOY_API_TOKEN`,
    `CLOUDFLARE_RELEASE_FEED_DEPLOY_API_TOKEN`, and `CLOUDFLARE_RELEASE_FEED_API_TOKEN` GitHub Actions

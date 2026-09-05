@@ -18,7 +18,7 @@
  *   4.2.0-revision.2            (if -revision.1 already exists)
  */
 
-const PACKAGE_NAME = "@alejoamiras/aztec-accelerator";
+const PACKAGE_NAME = "@alejoamiras/presto";
 
 /**
  * Pure function: given a base version and the list of already-published

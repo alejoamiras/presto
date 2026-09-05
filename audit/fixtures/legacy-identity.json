@@ -1,0 +1,13 @@
+{
+  "notice": "Historical identity fixture for read-only compatibility and isolated CI state tests.",
+  "productName": "Aztec Accelerator",
+  "updaterPublicKeyPayload": "RWSY9Ri1PVpuRVYMOJ6pLJlWYXhE5GJqPT6nRPi0l02H/5oogta8vsR9",
+  "stateDirectory": ".aztec-accelerator",
+  "autostartFile": "aztec-accelerator.desktop",
+  "sdkPackage": "@alejoamiras/aztec-accelerator",
+  "sdkVersion": "5.2.0",
+  "sdkIntegrity": "sha512-SjgdAEFcllcrbl0U6kZnbr3e16rHqjlAWoOXw1oUx0sLa5+1hiVylpeZn3/l0nMdtTso1ouGuDVF5ywLh1xOsQ==",
+  "proverExport": "AcceleratorProver",
+  "statusMethod": "checkAcceleratorStatus",
+  "configOption": "accelerator"
+}

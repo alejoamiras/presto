@@ -77,7 +77,7 @@ test("page loads with correct initial state", async ({ page }) => {
   await mockServicesOffline(page);
   await page.goto("/");
 
-  // Embedded UI is visible (wait for init to complete — accelerator health check has 2s timeout)
+  // Embedded UI is visible (wait for init to complete — presto health check has 2s timeout)
   await expect(page.locator("#embedded-ui")).toBeVisible({ timeout: 10000 });
 
   // Accelerated mode button is active by default
@@ -129,12 +129,12 @@ test("log panel shows checking Aztec node message on load", async ({ page }) => 
   await expect(page.locator("#log")).toContainText("Checking Aztec node");
 });
 
-test("accelerator status is shown in services panel", async ({ page }) => {
+test("presto status is shown in services panel", async ({ page }) => {
   await mockServicesOffline(page);
   await page.goto("/");
 
-  await expect(page.locator("#accelerator-status")).toBeVisible();
-  await expect(page.locator("#accelerator-label")).toBeVisible();
+  await expect(page.locator("#presto-status")).toBeVisible();
+  await expect(page.locator("#presto-label")).toBeVisible();
 });
 
 test("recognized health renders available and suppresses install UI", async ({ page }) => {
@@ -144,10 +144,10 @@ test("recognized health renders available and suppresses install UI", async ({ p
   );
   await page.goto("/");
 
-  await expect(page.locator("#accelerator-label")).toHaveText("running");
-  await expect(page.locator("#accelerator-status")).toHaveAttribute("data-status", "online");
+  await expect(page.locator("#presto-label")).toHaveText("running");
+  await expect(page.locator("#presto-status")).toHaveAttribute("data-status", "online");
   await expect(page.locator("#accel-banner")).toBeHidden();
-  await expect(page.locator("#accelerator-cta")).toBeHidden();
+  await expect(page.locator("#presto-cta")).toBeHidden();
 });
 
 test("an unconfirmed secure connection keeps install guidance and shows recovery", async ({
@@ -158,20 +158,20 @@ test("an unconfirmed secure connection keeps install guidance and shows recovery
   await mockHealth(page, (route) => route.abort());
   await page.goto("/");
 
-  await expect(page.locator("#accelerator-label")).toContainText("secure connection unavailable");
-  await expect(page.locator("#accelerator-permission-help")).toBeHidden();
-  await expect(page.locator("#accelerator-secure-help")).toBeVisible();
+  await expect(page.locator("#presto-label")).toContainText("secure connection unavailable");
+  await expect(page.locator("#presto-permission-help")).toBeHidden();
+  await expect(page.locator("#presto-secure-help")).toBeVisible();
   await expect(page.locator("#accel-banner")).toBeVisible();
-  await expect(page.locator("#accelerator-cta")).toBeVisible();
+  await expect(page.locator("#presto-cta")).toBeVisible();
 });
 
 test("health error and version mismatch do not offer a contradictory install", async ({ page }) => {
   await mockServicesOffline(page);
   await mockHealth(page, (route) => route.fulfill({ status: 500, body: "error" }));
   await page.goto("/");
-  await expect(page.locator("#accelerator-label")).toContainText("health check error");
+  await expect(page.locator("#presto-label")).toContainText("health check error");
   await expect(page.locator("#accel-banner")).toBeHidden();
-  await expect(page.locator("#accelerator-cta")).toBeHidden();
+  await expect(page.locator("#presto-cta")).toBeHidden();
 
   await page.unroute("http://127.0.0.1:59833/health");
   await page.unroute("https://127.0.0.1:59834/health");
@@ -183,9 +183,9 @@ test("health error and version mismatch do not offer a contradictory install", a
     }),
   );
   await page.reload();
-  await expect(page.locator("#accelerator-label")).toContainText("version mismatch");
+  await expect(page.locator("#presto-label")).toContainText("version mismatch");
   await expect(page.locator("#accel-banner")).toBeHidden();
-  await expect(page.locator("#accelerator-cta")).toBeHidden();
+  await expect(page.locator("#presto-cta")).toBeHidden();
 });
 
 test("permission-blocked guidance recovers through immediate Retry", async ({ page }) => {
@@ -199,19 +199,19 @@ test("permission-blocked guidance recovers through immediate Retry", async ({ pa
   });
   await page.goto("/");
 
-  await expect(page.locator("#accelerator-label")).toHaveText("local access blocked");
-  await expect(page.locator("#accelerator-permission-help")).toBeVisible();
+  await expect(page.locator("#presto-label")).toHaveText("local access blocked");
+  await expect(page.locator("#presto-permission-help")).toBeVisible();
   await expect(page.locator("#accel-banner")).toBeHidden();
-  await expect(page.locator("#accelerator-cta")).toBeHidden();
+  await expect(page.locator("#presto-cta")).toBeHidden();
 
   blocked = false;
   await page.evaluate(() => {
     (window as typeof window & { __mockLnaPermission?: string }).__mockLnaPermission = "granted";
   });
-  await page.locator("#accelerator-permission-retry").click();
-  await expect(page.locator("#accelerator-permission-retry")).toBeDisabled();
-  await expect(page.locator("#accelerator-label")).toHaveText("running");
-  await expect(page.locator("#accelerator-permission-help")).toBeHidden();
+  await page.locator("#presto-permission-retry").click();
+  await expect(page.locator("#presto-permission-retry")).toBeDisabled();
+  await expect(page.locator("#presto-label")).toHaveText("running");
+  await expect(page.locator("#presto-permission-help")).toBeHidden();
 });
 
 test("HTTP recovery requires confirmation and resets on reload", async ({ page }) => {
@@ -237,16 +237,14 @@ test("HTTP recovery requires confirmation and resets on reload", async ({ page }
   );
   await page.goto("/");
 
-  await expect(page.locator("#accelerator-secure-title")).toHaveText(
-    "Encrypted Connection is disabled",
-  );
-  await expect(page.locator("#accelerator-secure-help")).toBeVisible();
+  await expect(page.locator("#presto-secure-title")).toHaveText("Encrypted Connection is disabled");
+  await expect(page.locator("#presto-secure-help")).toBeVisible();
   expect(plaintextProofRequests).toEqual([]);
   const storageBefore = await page.evaluate(() => ({ ...localStorage }));
   const cookieBefore = await page.evaluate(() => document.cookie);
   const urlBefore = page.url();
 
-  await page.locator("#accelerator-use-http").click();
+  await page.locator("#presto-use-http").click();
   await expect(page.locator("#http-session-confirmation")).toBeVisible();
   await expect(page.locator("#http-session-cancel")).toBeFocused();
   await page.keyboard.press("Shift+Tab");
@@ -258,22 +256,22 @@ test("HTTP recovery requires confirmation and resets on reload", async ({ page }
   );
   await page.locator("#http-session-cancel").click();
   await expect(page.locator("#http-session-confirmation")).toBeHidden();
-  await expect(page.locator("#accelerator-service-status")).toBeFocused();
-  await expect(page.locator("#accelerator-label")).toContainText("secure connection unavailable");
+  await expect(page.locator("#presto-service-status")).toBeFocused();
+  await expect(page.locator("#presto-label")).toContainText("secure connection unavailable");
 
-  await page.locator("#accelerator-use-http").click();
+  await page.locator("#presto-use-http").click();
   await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#accelerator-label")).toHaveText("running");
-  await expect(page.locator("#accelerator-secure-help")).toBeHidden();
-  await expect(page.locator("#accelerator-service-status")).toBeFocused();
-  await expect(page.locator("#accelerator-recovery-announcement")).toContainText("this tab only");
+  await expect(page.locator("#presto-label")).toHaveText("running");
+  await expect(page.locator("#presto-secure-help")).toBeHidden();
+  await expect(page.locator("#presto-service-status")).toBeFocused();
+  await expect(page.locator("#presto-recovery-announcement")).toContainText("this tab only");
   expect(await page.evaluate(() => ({ ...localStorage }))).toEqual(storageBefore);
   expect(await page.evaluate(() => document.cookie)).toBe(cookieBefore);
   expect(page.url()).toBe(urlBefore);
 
   await page.reload();
-  await expect(page.locator("#accelerator-secure-help")).toBeVisible();
-  await expect(page.locator("#accelerator-label")).toContainText("secure connection unavailable");
+  await expect(page.locator("#presto-secure-help")).toBeVisible();
+  await expect(page.locator("#presto-label")).toContainText("secure connection unavailable");
   expect(plaintextProofRequests).toEqual([]);
 });
 

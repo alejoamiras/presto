@@ -5,7 +5,7 @@ name: _Updater Smoke Windows (reusable)
 # installs as an auto-update — i.e. it tests what we actually ship, like mac/Linux.
 #
 # N    = the prod-signed `-setup.nsis.zip`/.sig downloaded from this run's isolated signer job.
-# N-1  = the resolver-selected real published Windows release (`accelerator-v<n1-version>`), the linux
+# N-1  = the resolver-selected real published Windows release (`presto-v<n1-version>`), the linux
 #        download-real-N-1 pattern. A preflight fails early if the fixture can no longer update to
 #        HEAD (asset missing, N not above the F-004 floor, updater pubkey rotated, or the feed
 #        endpoint moved) — each of those would otherwise surface as a confusing smoke failure on
@@ -32,7 +32,7 @@ on:
       n-artifact:
         description: This run's Windows build artifact name
         required: false
-        default: accelerator-windows-x86_64
+        default: presto-windows-x86_64
         type: string
       mode:
         description: "positive (expect the update) | negative (tamper the artifact, expect rejection)"
@@ -52,10 +52,10 @@ jobs:
       SMOKE_MODE: ${{ inputs.mode }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-accelerator
+      - uses: ./.github/actions/setup-presto
         with:
-          rust-cache-key: accelerator-desktop-x86_64-pc-windows-msvc
-          rust-workspaces: packages/accelerator/src-tauri -> target
+          rust-cache-key: presto-desktop-x86_64-pc-windows-msvc
+          rust-workspaces: packages/presto/src-tauri -> target
           rust-components: ""
 
       # Download the REAL prod-signed N (this run's build): *-setup.nsis.zip + .sig.
@@ -91,7 +91,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="accelerator-v$N1_VERSION"
+          TAG="presto-v$N1_VERSION"
           mkdir -p "$RUNNER_TEMP/n1"
           # (a) The release asset exists and downloads.
           if ! gh release download "$TAG" --pattern '*-setup.exe' --dir "$RUNNER_TEMP/n1" --repo "$GITHUB_REPOSITORY"; then
@@ -115,16 +115,16 @@ jobs:
           # (c)+(d) The conf N-1 was BUILT with still matches HEAD where it must: same updater
           # pubkey (else N's prod signature can never verify) and the exact feed endpoint the smoke
           # impersonates (else N-1 asks a host we don't serve).
-          gh api "repos/$GITHUB_REPOSITORY/contents/packages/accelerator/src-tauri/tauri.conf.json?ref=$TAG" --jq '.content' | base64 -d > "$RUNNER_TEMP/n1-conf.json"
+          gh api "repos/$GITHUB_REPOSITORY/contents/packages/presto/src-tauri/tauri.conf.json?ref=$TAG" --jq '.content' | base64 -d > "$RUNNER_TEMP/n1-conf.json"
           old_pub=$(jq -r '.plugins.updater.pubkey' "$RUNNER_TEMP/n1-conf.json")
-          new_pub=$(jq -r '.plugins.updater.pubkey' packages/accelerator/src-tauri/tauri.conf.json)
+          new_pub=$(jq -r '.plugins.updater.pubkey' packages/presto/src-tauri/tauri.conf.json)
           if [ "$old_pub" != "$new_pub" ]; then
             echo "::error::preflight (c): updater pubkey at $TAG differs from HEAD — the real N-1 cannot verify today's signatures (key rotated? fixture must move forward)"
             exit 1
           fi
           old_ep=$(jq -r '.plugins.updater.endpoints[0]' "$RUNNER_TEMP/n1-conf.json")
-          if [ "$old_ep" != "https://aztec-accelerator.dev/releases/latest.json" ]; then
-            echo "::error::preflight (d): N-1's updater endpoint is '$old_ep', not the impersonated https://aztec-accelerator.dev/releases/latest.json"
+          if [ "$old_ep" != "https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json" ]; then
+            echo "::error::preflight (d): N-1's updater endpoint is '$old_ep', not the impersonated https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json"
             exit 1
           fi
           echo "preflight OK: $TAG asset present, $N_VERSION > $N1_VERSION, pubkey + endpoint unchanged"
@@ -138,7 +138,7 @@ jobs:
           if (-not $n1) { Write-Error "N-1 installer not found"; exit 1 }
           # Guard a no-op pass: N-1 must differ from N (the release version).
           if ($env:N1_VERSION -eq $env:N_VERSION) { Write-Error "N-1 == N ($env:N_VERSION) — a no-op update would pass trivially"; exit 1 }
-          & packages/accelerator/scripts/updater-smoke-windows.ps1 `
+          & packages/presto/scripts/updater-smoke-windows.ps1 `
             -NVersion $env:N_VERSION `
             -NArtifactsDir "$env:RUNNER_TEMP\n" `
             -N1Installer $n1.FullName `

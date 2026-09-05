@@ -18,9 +18,9 @@ on:
         required: true
         type: string
       n-artifact:
-        description: This run's Linux build artifact name (accelerator-linux-x86_64)
+        description: This run's Linux build artifact name (presto-linux-x86_64)
         required: false
-        default: accelerator-linux-x86_64
+        default: presto-linux-x86_64
         type: string
       n1-tag:
         description: Resolver-selected real published release tag below N
@@ -68,7 +68,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
           # GUI runtime libs the AppImage needs at launch (libEGL/libGL come in via
-          # the gtk/webkit stack). This is the SAME set setup-accelerator installs
+          # the gtk/webkit stack). This is the SAME set setup-presto installs
           # for the Linux WebDriver job — which is why that job's app launches
           # headlessly. Without them the AppImage dies on
           # `libEGL.so.1: cannot open shared object file` before it can update.
@@ -105,16 +105,16 @@ jobs:
           N1_TAG: ${{ inputs.n1-tag }}
           N1_VERSION: ${{ inputs.n1-version }}
         run: |
-          if [ "$N1_TAG" != "accelerator-v$N1_VERSION" ]; then
+          if [ "$N1_TAG" != "presto-v$N1_VERSION" ]; then
             echo "::error::resolver output is inconsistent: tag=$N1_TAG version=$N1_VERSION"
             exit 1
           fi
           echo "N-1 = $N1_TAG"
           # Guard against a no-op pass: if N-1 resolves to the SAME version under
           # test, the updater has nothing to do and /health == N passes trivially.
-          # Exact tag compare (tags are `accelerator-v<version>`).
-          if [ "$N1_TAG" = "accelerator-v$N_VERSION" ]; then
-            echo "::error::N-1 ($N1_TAG) is the version under test (accelerator-v$N_VERSION) — no-op no-update would pass trivially. Aborting."
+          # Exact tag compare (tags are `presto-v<version>`).
+          if [ "$N1_TAG" = "presto-v$N_VERSION" ]; then
+            echo "::error::N-1 ($N1_TAG) is the version under test (presto-v$N_VERSION) — no-op no-update would pass trivially. Aborting."
             exit 1
           fi
           # Retry the N-1 asset download: GitHub's release-asset CDN throttles/errors transiently (the
@@ -146,7 +146,7 @@ jobs:
             sleep "$((attempt * 10))"
           done
 
-      # BLOCKING: this job is in release-accelerator.yml's `tag.needs` /
+      # BLOCKING: this job is in release-presto.yml's `tag.needs` /
       # `release.needs`, so a failure here fails the job → blocks the release.
       # Validated green on a 1.0.3-rc dry-run before the flip. To revert to
       # advisory: restore `continue-on-error` here + drop the job from tag/release
@@ -158,7 +158,7 @@ jobs:
         run: |
           APPIMAGE=$(find n1 -name '*.AppImage' | head -1)
           if [ -z "$APPIMAGE" ]; then echo "::error::N-1 AppImage not found"; exit 1; fi
-          bash packages/accelerator/scripts/updater-smoke-linux.sh \
+          bash packages/presto/scripts/updater-smoke-linux.sh \
             "${{ inputs.n-version }}" \
             "${{ inputs.platform-key }}" \
             n-artifacts \

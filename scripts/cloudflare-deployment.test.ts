@@ -23,7 +23,7 @@ describe("Cloudflare deployment contract", () => {
   });
 
   test("only the promote workflow writes the exact verified feed bytes to production KV", () => {
-    const release = read(".github/workflows/release-accelerator.yml");
+    const release = read(".github/workflows/release-presto.yml");
     expect(release).toContain(
       "wrangler kv key put latest.json --path feed/latest.json --remote",
     );

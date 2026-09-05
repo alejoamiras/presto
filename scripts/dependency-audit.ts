@@ -184,9 +184,9 @@ async function main() {
   );
 
   const cargoLocks = [
-    "packages/accelerator/core/Cargo.lock",
-    "packages/accelerator/server/Cargo.lock",
-    "packages/accelerator/src-tauri/Cargo.lock",
+    "packages/presto/core/Cargo.lock",
+    "packages/presto/server/Cargo.lock",
+    "packages/presto/src-tauri/Cargo.lock",
   ];
   let rustWarningCount = 0;
   for (const lock of cargoLocks) {

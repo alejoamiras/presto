@@ -8,9 +8,9 @@ export function setupDOM(): void {
     <span id="aztec-status" class="status-dot status-unknown"></span>
     <span id="network-label"></span>
     <span id="aztec-url"></span>
-    <span id="accelerator-status" class="status-dot status-unknown"></span>
-    <span id="accelerator-label"></span>
-    <a id="accelerator-cta" class="hidden"></a>
+    <span id="presto-status" class="status-dot status-unknown"></span>
+    <span id="presto-label"></span>
+    <a id="presto-cta" class="hidden"></a>
     <span id="wallet-dot" class="status-dot status-unknown"></span>
     <span id="wallet-state"></span>
     <div id="versions-row" class="hidden">

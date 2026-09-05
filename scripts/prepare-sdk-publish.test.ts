@@ -3,7 +3,7 @@ import { PUBLISHED_EXPORTS, preparePublishManifest } from "./prepare-sdk-publish
 
 describe("preparePublishManifest (B7 SDK publish rewrite)", () => {
   const src = {
-    name: "@alejoamiras/aztec-accelerator",
+    name: "@alejoamiras/presto",
     version: "0.0.0",
     exports: "./src/index.ts",
     files: ["src", "dist", ".claude", "MIGRATION.md"],

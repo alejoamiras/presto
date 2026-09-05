@@ -1,9 +1,9 @@
 /**
- * AcceleratorProver proving e2e tests
+ * PrestoProver proving e2e tests
  *
  * One shared setup (prover + wallet + Sponsored FPC), then deploys an account
  * in each mode:
- *   - Accelerated: real accelerator desktop app (skipped when ACCELERATOR_URL not set)
+ *   - Accelerated: real presto desktop app (skipped when PRESTO_URL not set)
  *   - Local (WASM): fallback via unreachable port
  *
  * Network-agnostic: always uses Sponsored FPC + from: NO_FROM.
@@ -19,22 +19,22 @@ import { WASMSimulator } from "@aztec/simulator/client";
 import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { getLogger } from "@logtape/logtape";
-import { AcceleratorProver } from "../src/index";
+import { PrestoProver } from "../src/index";
 import { deploySchnorrAccount } from "./e2e-helpers.js";
 import { config } from "./e2e-setup.js";
 
-const logger = getLogger(["aztec-accelerator", "sdk", "e2e", "proving"]);
+const logger = getLogger(["presto", "sdk", "e2e", "proving"]);
 
 // Shared state across all describes
 let node: ReturnType<typeof createAztecNodeClient>;
-let prover: AcceleratorProver;
+let prover: PrestoProver;
 let wallet: EmbeddedWallet;
 let feePaymentMethod: SponsoredFeePaymentMethod;
 
-describe("AcceleratorProver", () => {
+describe("PrestoProver", () => {
   describe("Setup", () => {
     test("should create prover and connect to Aztec node", async () => {
-      prover = new AcceleratorProver({ simulator: new WASMSimulator() });
+      prover = new PrestoProver({ simulator: new WASMSimulator() });
 
       node = createAztecNodeClient(config.nodeUrl);
       const nodeInfo = await node.getNodeInfo();
@@ -73,15 +73,15 @@ describe("AcceleratorProver", () => {
     });
   });
 
-  describe.skipIf(!config.acceleratorUrl)("Accelerated", () => {
-    test("should report accelerator as available", async () => {
-      const status = await prover.checkAcceleratorStatus();
+  describe.skipIf(!config.prestoUrl)("Accelerated", () => {
+    test("should report presto as available", async () => {
+      const status = await prover.checkPrestoStatus();
       expect(status.available).toBe(true);
-      logger.info("Accelerator status", { available: status.available });
+      logger.info("Presto status", { available: status.available });
     });
 
     test(
-      "should deploy account through the NATIVE accelerator path (not WASM fallback)",
+      "should deploy account through the NATIVE presto path (not WASM fallback)",
       async () => {
         expect(wallet).toBeDefined();
 
@@ -112,7 +112,7 @@ describe("AcceleratorProver", () => {
         expect(wallet).toBeDefined();
 
         // Force WASM fallback by pointing at an unreachable port
-        prover.setAcceleratorConfig({ port: 1 });
+        prover.setPrestoConfig({ port: 1 });
 
         const phases: string[] = [];
         prover.setOnPhase((p) => phases.push(p));
