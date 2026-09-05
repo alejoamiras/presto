@@ -2,6 +2,7 @@
 
 use aztec_accelerator::authorization::{AuthDecision, AuthorizationManager};
 use aztec_accelerator::commands;
+use aztec_accelerator::config;
 use std::sync::Arc;
 use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
@@ -99,6 +100,17 @@ fn open_or_focus_window(app: &AppHandle, config: WindowConfig) -> Option<tauri::
         }
         return None;
     }
+    // Read through the app handle rather than threading a theme into every WindowConfig: every
+    // window wants the same stored value, and the popups are built from places that have no config.
+    let theme = match app.try_state::<commands::ConfigState>() {
+        Some(state) => state.lock.read().theme,
+        None => {
+            tracing::warn!(
+                "No ConfigState while building a window; falling back to the default theme"
+            );
+            config::Theme::default()
+        }
+    };
     // `tauri dev` supplies its built-in frontend server through the effective runtime config even
     // though the checked-in config deliberately has no devUrl. Production never accepts this path.
     let dev_origin = if tauri::is_dev() {
@@ -108,6 +120,7 @@ fn open_or_focus_window(app: &AppHandle, config: WindowConfig) -> Option<tauri::
     };
     match WebviewWindowBuilder::new(app, config.label, WebviewUrl::App(config.url.into()))
         .title(config.title)
+        .initialization_script(commands::theme_script(theme, commands::ThemeSource::PreferStored))
         .inner_size(config.width, config.height)
         .resizable(false)
         .center()
@@ -123,6 +136,27 @@ fn open_or_focus_window(app: &AppHandle, config: WindowConfig) -> Option<tauri::
         // by Tauri's built-in static server; paths, queries, and fragments remain same-origin.
         .on_navigation(move |url| is_allowed_navigation(url, dev_origin.as_ref()))
         .on_new_window(|_url, _features| NewWindowResponse::Deny)
+        // The init script above resolves against `localStorage`, so a re-navigation paints the
+        // cached theme rather than the one baked at build time. This is the repair path for when
+        // that cache is wrong: a config edited between sessions, or the write gap documented on
+        // `theme_script`. Re-reading config here settles it and refreshes the cache.
+        .on_page_load(|window, payload| {
+            if payload.event() != tauri::webview::PageLoadEvent::Finished {
+                return;
+            }
+            let theme = match window.app_handle().try_state::<commands::ConfigState>() {
+                Some(state) => state.lock.read().theme,
+                None => {
+                    // Registered before any window is built, so absence is a wiring regression.
+                    tracing::warn!("No ConfigState while re-asserting the theme; using the default");
+                    config::Theme::default()
+                }
+            };
+            if let Err(e) = window.eval(commands::theme_script(theme, commands::ThemeSource::Authoritative))
+            {
+                tracing::warn!(window = %window.label(), error = %e, "Could not re-assert the theme after a page load");
+            }
+        })
         .build()
     {
         Ok(window) => {
@@ -142,11 +176,13 @@ pub fn open_settings_window(app: &AppHandle) {
         WindowConfig {
             label: "settings",
             url: "settings.html".to_string(),
-            title: "Aztec Accelerator Settings",
+            title: "Presto Settings",
             width: 500.0,
-            // 600, not 520: the Encrypted Connection section adds rows, and at 520 the speed slider
-            // was clipped by the bottom edge.
-            height: 600.0,
+            // 664, not 600: the Encrypted Connection section and the Appearance row both add height,
+            // and the title bar spends `WEBVIEW_CHROME_HEIGHT` of whatever is set here. The collapsed
+            // view measures 622, so this clears it by 10 — the speed slider was clipped by the bottom
+            // edge the last two times this number lagged the content.
+            height: 664.0,
             always_on_top: false,
             focus_if_open: true,
             focus_on_create: true,
@@ -162,18 +198,20 @@ pub fn show_onboarding_window(app: &AppHandle) {
         WindowConfig {
             label: "onboarding",
             url: "onboarding.html".to_string(),
-            title: "Welcome to Aztec Accelerator",
+            title: "Welcome to Presto",
             width: 520.0,
             // Bracketed from real feedback, not computed: 600 left an obvious dead band under the
             // button (it was sized around a footer that no longer exists) and 510 clipped the
-            // content, so the pre-Start layout lands between the two. 560 clears it with a little
-            // breathing room. The taller post-Start state (three result lines + Retry) is handled by
-            // `body.scrollable` rather than by sizing the window for a state it holds for seconds.
-            // Since measured: the pre-Start card is 536px, so 560 clears it by ~24px. The desktop-ui
-            // specs now size the page to THIS value (e2e/window-sizes.ts, pinned to this file by a
+            // content, so the pre-Start layout lands between the two. The taller post-Start state
+            // (three result lines + Retry) is handled by `body.scrollable` rather than by sizing the
+            // window for a state it holds for seconds.
+            // 560 was chosen as the height the CARD gets, but the title bar spends
+            // `WEBVIEW_CHROME_HEIGHT` of it, so the card only ever saw 528 and clipped by 5px. 592
+            // makes that original intent real: 560 of viewport for a 533px card. The desktop-ui
+            // specs size the page to the viewport (e2e/window-sizes.ts, pinned to this file by a
             // drift guard) and fail if the card stops fitting — that is what makes the number a
             // constraint instead of a guess. Adding a row here means re-checking that test.
-            height: 560.0,
+            height: 592.0,
             always_on_top: false,
             focus_if_open: true,
             // Standalone window (not part of the C9 auth-popup arbiter) — create it focused.
@@ -193,7 +231,11 @@ pub fn show_renewal_window(app: &AppHandle) {
             url: "renewal.html".to_string(),
             title: "Certificate Renewal",
             width: 420.0,
-            height: 260.0,
+            // The consent copy plus its two buttons measure 279px, and the title bar takes
+            // `WEBVIEW_CHROME_HEIGHT` off the top, so 260 hid the buttons under the bottom edge with
+            // no way to scroll to them. A consent dialog whose Renew and Later are off-screen is the
+            // worst version of this bug, hence sizing to fit rather than to scroll.
+            height: 320.0,
             always_on_top: false,
             focus_if_open: true,
             // Standalone window (not part of the C9 auth-popup arbiter) — create it focused.
@@ -291,7 +333,7 @@ pub fn show_update_prompt_window(app: &AppHandle, current_version: &str, new_ver
         WindowConfig {
             label: "update-prompt",
             url,
-            title: "Aztec Accelerator Update",
+            title: "Presto Update",
             width: 420.0,
             height: 280.0,
             always_on_top: false,

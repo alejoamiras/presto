@@ -144,7 +144,7 @@ test("recognized health renders available and suppresses install UI", async ({ p
   );
   await page.goto("/");
 
-  await expect(page.locator("#accelerator-label")).toHaveText("available");
+  await expect(page.locator("#accelerator-label")).toHaveText("running");
   await expect(page.locator("#accelerator-status")).toHaveAttribute("data-status", "online");
   await expect(page.locator("#accel-banner")).toBeHidden();
   await expect(page.locator("#accelerator-cta")).toBeHidden();
@@ -210,7 +210,7 @@ test("permission-blocked guidance recovers through immediate Retry", async ({ pa
   });
   await page.locator("#accelerator-permission-retry").click();
   await expect(page.locator("#accelerator-permission-retry")).toBeDisabled();
-  await expect(page.locator("#accelerator-label")).toHaveText("available");
+  await expect(page.locator("#accelerator-label")).toHaveText("running");
   await expect(page.locator("#accelerator-permission-help")).toBeHidden();
 });
 
@@ -263,7 +263,7 @@ test("HTTP recovery requires confirmation and resets on reload", async ({ page }
 
   await page.locator("#accelerator-use-http").click();
   await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#accelerator-label")).toHaveText("available");
+  await expect(page.locator("#accelerator-label")).toHaveText("running");
   await expect(page.locator("#accelerator-secure-help")).toBeHidden();
   await expect(page.locator("#accelerator-service-status")).toBeFocused();
   await expect(page.locator("#accelerator-recovery-announcement")).toContainText("this tab only");

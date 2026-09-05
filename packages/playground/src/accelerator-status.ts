@@ -75,8 +75,8 @@ export function acceleratorStatusView(status: AcceleratorStatus): AcceleratorSta
   if (status.available) {
     return {
       connected: true,
-      label: "available",
-      log: "Native accelerator detected on loopback",
+      label: "running",
+      log: "Presto detected on loopback",
       logLevel: "success",
       showInstall: false,
       showPermissionHelp: false,
@@ -89,7 +89,7 @@ export function acceleratorStatusView(status: AcceleratorStatus): AcceleratorSta
       return {
         connected: false,
         label: "local access blocked",
-        log: "The browser blocked local access; allow it in site permissions, then Retry",
+        log: "The browser blocked local access. Allow it in site permissions, then Retry",
         logLevel: "warn",
         showInstall: false,
         showPermissionHelp: true,
@@ -100,28 +100,28 @@ export function acceleratorStatusView(status: AcceleratorStatus): AcceleratorSta
         "https-disabled": {
           title: "Encrypted Connection is disabled",
           message:
-            "Accelerator is running, but its HTTPS listener is off. Enable Encrypted Connection in Settings.",
+            "Presto is running, but its HTTPS listener is off. Turn on Encrypted Connection in Settings.",
         },
         "tls-or-trust-failure": {
           title: "Secure connection is not trusted",
           message:
-            "Accelerator advertises HTTPS, but the browser could not establish it. Repair the local certificate trust setup.",
+            "Presto advertises HTTPS, but the browser could not establish it. Repair the local certificate trust.",
         },
         "accelerator-reachable": {
-          title: "Accelerator is reachable",
+          title: "Presto is reachable",
           message:
             "The public health response hides HTTPS details. Check Encrypted Connection and local certificate trust.",
         },
         unconfirmed: {
           title: "Secure connection unavailable",
           message:
-            "The diagnostic could not confirm Accelerator. It may be stopped or not installed, or the browser may have blocked local HTTP.",
+            "The diagnostic could not confirm Presto. It may be stopped or not installed, or the browser may have blocked local HTTP.",
         },
       }[status.diagnosis];
       return {
         connected: false,
-        label: "secure connection unavailable, fallback: wasm",
-        log: `${explanation.title}; falling back to WASM`,
+        label: "secure connection unavailable, in-browser",
+        log: `${explanation.title}. Proving stays in-browser`,
         logLevel: "warn",
         showInstall: status.diagnosis === "unconfirmed",
         showPermissionHelp: false,
@@ -133,8 +133,8 @@ export function acceleratorStatusView(status: AcceleratorStatus): AcceleratorSta
     case "offline":
       return {
         connected: false,
-        label: "not detected, fallback: wasm",
-        log: "Accelerator not detected, will fall back to WASM",
+        label: "not detected, in-browser",
+        log: "Presto not detected, proving stays in-browser",
         logLevel: "warn",
         showInstall: true,
         showPermissionHelp: false,
@@ -143,8 +143,8 @@ export function acceleratorStatusView(status: AcceleratorStatus): AcceleratorSta
     case "error":
       return {
         connected: false,
-        label: "health check error, fallback: wasm",
-        log: "Accelerator answered unexpectedly; falling back to WASM",
+        label: "health check error, in-browser",
+        log: "Presto answered unexpectedly, proving in-browser",
         logLevel: "error",
         showInstall: false,
         showPermissionHelp: false,
@@ -153,8 +153,8 @@ export function acceleratorStatusView(status: AcceleratorStatus): AcceleratorSta
     case "version-mismatch":
       return {
         connected: false,
-        label: "version mismatch, fallback: wasm",
-        log: "Accelerator Aztec version is incompatible; falling back to WASM",
+        label: "version mismatch, in-browser",
+        log: "Presto's Aztec version is incompatible, proving in-browser",
         logLevel: "warn",
         showInstall: false,
         showPermissionHelp: false,

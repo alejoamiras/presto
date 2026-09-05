@@ -5,6 +5,7 @@ import {
   watchLoopbackPermissionChanges,
 } from "./accelerator-detection";
 import { FEED_URL, feedVersionToTag } from "./feed";
+import { initRace } from "./race";
 
 // ── Scroll reveals ──
 const observer = new IntersectionObserver(
@@ -23,14 +24,32 @@ for (const el of document.querySelectorAll(".reveal")) {
   observer.observe(el);
 }
 
-// ── Mouse-reactive ambient glow ──
-const glow = document.querySelector(".hero-ambient") as HTMLElement | null;
-if (glow) {
-  document.addEventListener("mousemove", (e) => {
-    glow.style.left = `${e.clientX}px`;
-    glow.style.top = `${e.clientY}px`;
+// ── Mobile nav ──
+function initNav(): void {
+  const toggle = document.getElementById("nav-toggle");
+  const links = document.getElementById("nav-links");
+  if (!toggle || !links) return;
+  const setOpen = (open: boolean) => {
+    links.classList.toggle("open", open);
+    toggle.setAttribute("aria-expanded", String(open));
+  };
+  toggle.addEventListener("click", () => {
+    setOpen(!links.classList.contains("open"));
+  });
+  links.addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).closest("a")) setOpen(false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && links.classList.contains("open")) {
+      setOpen(false);
+      toggle.focus();
+    }
   });
 }
+initNav();
+
+// ── The race ──
+initRace();
 
 // ── OS-aware download button ──
 const REPO = "alejoamiras/aztec-accelerator";
@@ -52,14 +71,14 @@ function detectOs(): OsInfo {
       // Safari + Chrome on Apple Silicon report this
       (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
     return isArm
-      ? { label: "Download for macOS (Apple Silicon)", pattern: /Apple-Silicon\.dmg$/ }
-      : { label: "Download for macOS", pattern: /macOS.*\.dmg$/ };
+      ? { label: "Get Presto for macOS (Apple Silicon)", pattern: /Apple-Silicon\.dmg$/ }
+      : { label: "Get Presto for macOS", pattern: /macOS.*\.dmg$/ };
   }
   if (/Linux/.test(ua)) {
-    return { label: "Download for Linux", pattern: /\.AppImage$/ };
+    return { label: "Get Presto for Linux", pattern: /\.AppImage$/ };
   }
   // Windows or unknown — point to releases page
-  return { label: "Download", pattern: /^$/ };
+  return { label: "Get Presto", pattern: /^$/ };
 }
 
 // Resolve the live stable tag from the SIGNED KV-backed feed (single source of truth — B6), NOT a GitHub releases
@@ -106,10 +125,10 @@ async function initDownload(): Promise<void> {
 
 initDownload();
 
-// ── Accelerator detection ──
+// ── Presto detection ──
 const heroSub = document.querySelector(".hero-sub") as HTMLElement | null;
 const heroLink = heroSub?.querySelector("a") as HTMLAnchorElement | null;
-const originalHeroLink = heroLink?.innerHTML ?? "";
+const originalHeroLink = heroLink ? Array.from(heroLink.childNodes, (n) => n.cloneNode(true)) : [];
 
 function renderAcceleratorStatus(status: LandingAcceleratorStatus): void {
   const blocked = status === "permission-blocked";
@@ -122,20 +141,20 @@ function renderAcceleratorStatus(status: LandingAcceleratorStatus): void {
     const explanation = {
       "https-disabled": {
         title: "Encrypted Connection is disabled",
-        message: "Accelerator is running, but its HTTPS listener is off.",
+        message: "Presto is running, but its HTTPS listener is off.",
       },
       "tls-or-trust-failure": {
         title: "Secure connection is not trusted",
-        message: "Accelerator advertises HTTPS, but this browser could not establish it.",
+        message: "Presto advertises HTTPS, but this browser could not establish it.",
       },
       "accelerator-reachable": {
-        title: "Accelerator is reachable",
+        title: "Presto is reachable",
         message: "Its public health response hides the exact HTTPS configuration.",
       },
       unconfirmed: {
         title: "Secure connection unavailable",
         message:
-          "Accelerator may be stopped or not installed, or the browser may have blocked the local diagnostic.",
+          "Presto may be stopped or not installed, or the browser may have blocked the local diagnostic.",
       },
     }[status.diagnosis];
     const title = document.getElementById("landing-secure-title");
@@ -147,12 +166,16 @@ function renderAcceleratorStatus(status: LandingAcceleratorStatus): void {
   if (!heroSub || !heroLink) return;
   if (status === "available") {
     heroSub.classList.add("detected");
-    heroLink.innerHTML =
-      '<span class="accel-dot" aria-hidden="true"></span> Accelerator detected — Open the Playground <span>&rarr;</span>';
+    const dot = document.createElement("span");
+    dot.className = "accel-dot";
+    dot.setAttribute("aria-hidden", "true");
+    const arrow = document.createElement("span");
+    arrow.textContent = "→";
+    heroLink.replaceChildren(dot, "Presto is running on this machine. Open the playground ", arrow);
   } else {
     // Offline and generic error remain deliberately quiet: restore the unchanged landing CTA.
     heroSub.classList.remove("detected");
-    heroLink.innerHTML = originalHeroLink;
+    heroLink.replaceChildren(...originalHeroLink.map((n) => n.cloneNode(true)));
   }
 }
 

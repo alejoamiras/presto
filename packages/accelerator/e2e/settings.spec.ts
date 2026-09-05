@@ -1,6 +1,6 @@
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import { WINDOW_SIZES } from "./window-sizes.js";
+import { VIEWPORT_SIZES } from "./window-sizes.js";
 
 const MOCK_PATH = path.join(import.meta.dirname, "tauri-mock.js");
 
@@ -190,7 +190,7 @@ test("toggle error reverts checkbox and shows hint", async ({ page }) => {
   // Should revert to unchecked and show error hint
   await expect(toggle).not.toBeChecked();
   await expect(page.locator(".error-hint")).toBeVisible();
-  await expect(page.locator(".error-hint")).toHaveText("Failed — try again");
+  await expect(page.locator(".error-hint")).toHaveText("Failed. Try again");
 });
 
 // ── Autostart health row (plan D17: the switch shows INTENT, the row shows HEALTH) ──
@@ -440,7 +440,7 @@ test("a failed enable_https shows the persisted state, not the failure", async (
 
   // Reflects what the backend actually stored...
   await expect(page.locator("#https")).toBeChecked();
-  // ...and says why, in the backend's own words — "Failed — try again" would hide the restart.
+  // ...and says why, in the backend's own words — "Failed. Try again" would hide the restart.
   await expect(page.getByText("still using a previous certificate")).toBeVisible();
 });
 
@@ -556,7 +556,7 @@ test("at the real window size the speed control is reachable with the certificat
 }) => {
   // The exact regression the owner hit: opening "Manage certificate" pushes the speed section down,
   // and at the old 520px height it was clipped with no scroll.
-  await page.setViewportSize(WINDOW_SIZES.settings);
+  await page.setViewportSize(VIEWPORT_SIZES.settings);
   await page.goto("/settings.html");
   await page.locator("#cert-details summary").click();
 
@@ -572,7 +572,7 @@ test("at the real window size the default Settings view fits with no scrolling a
   // didn't fit — `body.scrollable` makes that merely scrollable, not correct. A reachability-only
   // assertion passes on the old 520px height, so it would not have caught the bug it exists for.
   // (Scrolling IS the accepted answer once the certificate disclosure is open — see the test above.)
-  await page.setViewportSize(WINDOW_SIZES.settings);
+  await page.setViewportSize(VIEWPORT_SIZES.settings);
   await page.goto("/settings.html");
 
   const fit = await page.evaluate(() => ({
@@ -584,4 +584,119 @@ test("at the real window size the default Settings view fits with no scrolling a
     `the default Settings view is ${fit.content}px in a ${fit.window}px window — raise the height in windows.rs or drop a row`,
   ).toBeLessThanOrEqual(fit.window);
   await expect(page.locator(".speed-section")).toBeInViewport({ ratio: 1 });
+});
+
+test("appearance reflects the stored theme and saves the picked one", async ({ page }) => {
+  await page.addInitScript(() => {
+    (window as any).__TAURI_MOCK__.setHandler("get_config", () => ({
+      config_version: 1,
+      https_enabled: false,
+      approved_origins: [],
+      speed: "full",
+      theme: "dark",
+      onboarding_version: 1,
+    }));
+  });
+  await page.goto("/settings.html");
+
+  await expect(page.locator('#theme input[value="dark"]')).toBeChecked();
+
+  await page.locator("#theme label", { hasText: "Light" }).click();
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (window as any).__TAURI_MOCK__.calls.filter((c: any) => c.cmd === "set_theme"),
+      ),
+    )
+    .toEqual([expect.objectContaining({ args: { theme: "light" } })]);
+});
+
+test("a failed set_theme reverts to the persisted choice instead of the clicked one", async ({
+  page,
+}) => {
+  // The radio flips on click before the command resolves. Rust is what repaints, so leaving a
+  // rejected choice selected would show a theme the app is not actually in.
+  await page.addInitScript(() => {
+    (window as any).__TAURI_MOCK__.setHandler("set_theme", () => {
+      throw new Error("config written by a newer build");
+    });
+  });
+  await page.goto("/settings.html");
+
+  await page.locator("#theme label", { hasText: "Dark" }).click();
+  await expect(page.locator('#theme input[value="system"]')).toBeChecked();
+});
+
+test("the appearance control is not actionable until the stored value is known", async ({
+  page,
+}) => {
+  // Hydration sits downstream of the initial config+system-info pair, so a slow request in it is a
+  // window in which a click would be silently reverted. Stalling get_system_info on purpose:
+  // an earlier version hydrated after the autostart await and passed a test that stalled only that,
+  // while this sequence still lost the click.
+  await page.addInitScript(() => {
+    (window as any).__TAURI_MOCK__.setHandler("get_config", () => ({
+      config_version: 1,
+      https_enabled: false,
+      approved_origins: [],
+      speed: "full",
+      theme: "dark",
+      onboarding_version: 1,
+    }));
+    (window as any).__TAURI_MOCK__.setHandler(
+      "get_system_info",
+      () =>
+        new Promise((resolve) =>
+          setTimeout(() => resolve({ platform: "macos", cpu_count: 10 }), 400),
+        ),
+    );
+  });
+  await page.goto("/settings.html");
+
+  await expect(page.locator('#theme input[value="light"]')).toBeDisabled();
+
+  await expect(page.locator('#theme input[value="light"]')).toBeEnabled({ timeout: 5000 });
+  await expect(page.locator('#theme input[value="dark"]')).toBeChecked();
+  expect(
+    await page.evaluate(
+      () => (window as any).__TAURI_MOCK__.calls.filter((c: any) => c.cmd === "set_theme").length,
+    ),
+  ).toBe(0);
+});
+
+test("the recovery reload disables the appearance control again while it re-hydrates", async ({
+  page,
+}) => {
+  // A failed set_theme re-runs loadSettings, and by then the fieldset is enabled. Without disabling
+  // per call, that second pass has the same click-then-overwrite window as the first.
+  await page.addInitScript(() => {
+    (window as any).__TAURI_MOCK__.setHandler("set_theme", () => {
+      throw new Error("config written by a newer build");
+    });
+    (window as any).__TAURI_MOCK__.setHandler("get_config", (_args: unknown, callIndex: number) => {
+      const config = {
+        config_version: 1,
+        https_enabled: false,
+        approved_origins: [],
+        speed: "full",
+        theme: "system",
+        onboarding_version: 1,
+      };
+      // Stall only the recovery pass, so the assertion lands inside its awaits.
+      return callIndex === 1
+        ? config
+        : new Promise((resolve) => setTimeout(() => resolve(config), 400));
+    });
+  });
+  await page.goto("/settings.html");
+  // Asserted on a child input, not the fieldset: Playwright resolves disabled through an ancestor
+  // fieldset but does not report the fieldset element itself as disabled.
+  const option = page.locator('#theme input[value="light"]');
+  await expect(option).toBeEnabled();
+
+  await page.locator("#theme label", { hasText: "Dark" }).click();
+  await expect(option).toBeDisabled();
+
+  await expect(option).toBeEnabled({ timeout: 5000 });
+  await expect(page.locator('#theme input[value="system"]')).toBeChecked();
 });

@@ -49,7 +49,7 @@ describe("acceleratorStatusView", () => {
   test.each([
     ["https-disabled", "Encrypted Connection is disabled", false],
     ["tls-or-trust-failure", "Secure connection is not trusted", false],
-    ["accelerator-reachable", "Accelerator is reachable", false],
+    ["accelerator-reachable", "Presto is reachable", false],
     ["unconfirmed", "Secure connection unavailable", true],
   ] as const)("renders the %s secure recovery diagnosis", (diagnosis, title, showInstall) => {
     const view = acceleratorStatusView({

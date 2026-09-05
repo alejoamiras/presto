@@ -5,7 +5,6 @@ import {
   HttpSessionConsentController,
   watchLoopbackPermissionChanges,
 } from "./accelerator-status";
-import { AsciiController } from "./ascii-animation";
 import {
   AZTEC_DISPLAY_URL,
   AZTEC_SDK_VERSION,
@@ -27,6 +26,7 @@ import {
   installWorkerDiagnostics,
 } from "./diagnostics";
 import { showResult, stepToPhase } from "./results";
+import { SparkOrbitController } from "./spark-orbit";
 import { $, $btn, appendLog, formatDuration, setStatus, startClock } from "./ui";
 import { sameMajor } from "./version";
 
@@ -127,25 +127,25 @@ $("mode-local").addEventListener("click", () => {
   if (deploying) return;
   setUiMode("local");
   updateModeUI("local");
-  appendLog("Proving mode → WASM");
+  appendLog("Proving mode → in-browser");
 });
 
 $("mode-accelerated").addEventListener("click", () => {
   if (deploying) return;
   setUiMode("accelerated");
   updateModeUI("accelerated");
-  appendLog("Proving mode → Accelerated");
+  appendLog("Proving mode → Presto");
 });
 
 // ── Shared helpers ──
 
-/** Handle a prover phase: feed the animation and react to fallback. */
-function handleProverPhase(ascii: AsciiController, phase: string, _data?: unknown): void {
+/** Handle a prover phase: feed the dial and react to fallback. */
+function handleProverPhase(ascii: SparkOrbitController, phase: string, _data?: unknown): void {
   ascii.pushPhase(phase as Parameters<typeof ascii.pushPhase>[0]);
   if (phase === "fallback") {
-    appendLog("Native proving fell back to WASM (this will be slower)", "warn");
+    appendLog("Presto's offline, proving in-browser for now (slower)", "warn");
     // The proof path never awaits this. The controller starts a single forced refresh only if its
-    // last rendered state was available, so WASM fallback remains immediate and failure-proof.
+    // last rendered state was available, so in-browser fallback remains immediate and failure-proof.
     if (state.uiMode === "accelerated") acceleratorStatus.refreshAfterFallback();
   }
 }
@@ -168,7 +168,7 @@ $("deploy-btn").addEventListener("click", async () => {
 
   $("progress").classList.remove("hidden");
 
-  const ascii = new AsciiController($("ascii-art"), document.getElementById("ascii-elapsed"));
+  const ascii = new SparkOrbitController($("ascii-art"), document.getElementById("ascii-elapsed"));
   ascii.start(state.uiMode);
 
   try {
@@ -213,7 +213,7 @@ $("token-flow-btn").addEventListener("click", async () => {
 
   $("progress").classList.remove("hidden");
 
-  const ascii = new AsciiController($("ascii-art"), document.getElementById("ascii-elapsed"));
+  const ascii = new SparkOrbitController($("ascii-art"), document.getElementById("ascii-elapsed"));
   ascii.start(state.uiMode);
 
   try {
@@ -263,7 +263,7 @@ async function initWallet(): Promise<void> {
     const networkLabel = $("network-label");
     if (state.proofsRequired) {
       networkLabel.textContent = "proofs enabled";
-      networkLabel.className = "text-amber-500/80 text-[10px] uppercase tracking-wider ml-auto";
+      networkLabel.className = "text-brand-warning text-[10px] uppercase tracking-wider ml-auto";
       appendLog("Ready. Deploy a test account to get started (proofs enabled)", "success");
     } else {
       networkLabel.textContent = "proofs simulated";
@@ -273,7 +273,7 @@ async function initWallet(): Promise<void> {
     }
   } else {
     $("wallet-state").textContent = "failed";
-    $("wallet-state").className = "text-red-400/80 ml-auto text-[10px] font-mono font-light";
+    $("wallet-state").className = "text-brand-danger ml-auto text-[10px] font-mono font-light";
     setStatus("wallet-dot", false);
   }
 }
@@ -288,7 +288,7 @@ async function init(): Promise<void> {
   // bounded; a later Allow/Block decision owns a fresh, cache-bypassing status refresh instead.
   await watchLoopbackPermissionChanges(() => {
     void acceleratorStatus.refreshAfterPermissionChange().catch(() => {
-      appendLog("Accelerator status refresh failed; WASM fallback remains available", "error");
+      appendLog("Couldn't re-check Presto. Proving stays in-browser", "error");
     });
   });
 
@@ -305,13 +305,13 @@ async function init(): Promise<void> {
 
   $btn("accelerator-permission-retry").addEventListener("click", () => {
     void acceleratorStatus.refresh({ forceRefresh: true }).catch(() => {
-      appendLog("Accelerator status refresh failed; WASM fallback remains available", "error");
+      appendLog("Couldn't re-check Presto. Proving stays in-browser", "error");
     });
   });
 
   $btn("accelerator-secure-retry").addEventListener("click", () => {
     void acceleratorStatus.retrySecureConnection().catch(() => {
-      appendLog("Secure connection retry failed; WASM fallback remains available", "error");
+      appendLog("Couldn't retry the secure connection. Proving stays in-browser", "error");
     });
   });
 
@@ -319,7 +319,7 @@ async function init(): Promise<void> {
   $btn("http-session-cancel").addEventListener("click", () => httpSessionConsent.cancel());
   $btn("http-session-confirm").addEventListener("click", () => {
     void httpSessionConsent.confirm().catch(() => {
-      appendLog("HTTP session recovery failed; WASM fallback remains available", "error");
+      appendLog("Couldn't switch to HTTP. Proving stays in-browser", "error");
     });
   });
   $("http-session-confirmation").addEventListener("click", (event) => {
@@ -370,8 +370,8 @@ async function init(): Promise<void> {
       appendLog(`Aztec node version: ${nodeVersion}`);
       if (sameMajor(AZTEC_SDK_VERSION, nodeVersion) === false) {
         appendLog(`Version mismatch: SDK ${AZTEC_SDK_VERSION} ≠ node ${nodeVersion}`, "warn");
-        sdkEl.classList.add("text-amber-500/80");
-        nodeEl.classList.add("text-amber-500/80");
+        sdkEl.classList.add("text-brand-warning");
+        nodeEl.classList.add("text-brand-warning");
       } else if (sameMajor(AZTEC_SDK_VERSION, nodeVersion) && nodeVersion !== AZTEC_SDK_VERSION) {
         appendLog(`SDK ${AZTEC_SDK_VERSION} / node ${nodeVersion}: same major, compatible`);
       }

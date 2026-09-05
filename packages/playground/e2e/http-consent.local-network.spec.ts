@@ -52,7 +52,7 @@ test("HTTP proving requires per-tab consent and resets on reload", async ({ brow
   await page.locator("#accelerator-use-http").click();
   await expect(page.locator("#http-session-confirmation")).toBeVisible();
   await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#accelerator-label")).toHaveText("available");
+  await expect(page.locator("#accelerator-label")).toHaveText("running");
 
   await page.locator("#mode-accelerated").click();
   await deployAndAssert(page, "accelerated");

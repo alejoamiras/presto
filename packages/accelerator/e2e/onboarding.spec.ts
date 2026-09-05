@@ -1,6 +1,6 @@
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
-import { WINDOW_SIZES } from "./window-sizes.js";
+import { VIEWPORT_SIZES } from "./window-sizes.js";
 
 const MOCK_PATH = path.join(import.meta.dirname, "tauri-mock.js");
 
@@ -125,7 +125,7 @@ test("partial cert failure: HTTPS shown off with Retry, other choices still appl
   // Retry, or press it again (HTTPS now unchecked) to continue without HTTPS. With HTTPS off but the
   // other two still on, the label stays "Start".
   await expect(page.locator("#start")).toBeEnabled();
-  await expect(page.locator("#start")).toHaveText("Start");
+  await expect(page.locator("#start")).toHaveText("Let's go");
 });
 
 test("Retry re-checks HTTPS and re-enables Start", async ({ page }) => {
@@ -162,14 +162,14 @@ test("the primary label follows the toggles (Start when any is on, Continue when
   // There is no Skip button: unchecking everything IS the decline. "Start" would read wrong for that,
   // so the label adapts.
   await page.goto("/onboarding.html");
-  await expect(page.locator("#start")).toHaveText("Start");
+  await expect(page.locator("#start")).toHaveText("Let's go");
 
   for (const id of ALL_TOGGLES) await setToggle(page, id, false);
   await expect(page.locator("#start")).toHaveText("Continue");
 
   // Any single toggle back on flips it back.
   await setToggle(page, "#opt-autostart", true);
-  await expect(page.locator("#start")).toHaveText("Start");
+  await expect(page.locator("#start")).toHaveText("Let's go");
 });
 
 test("declining everything is an explicit, recorded choice", async ({ page }) => {
@@ -207,7 +207,7 @@ async function overflow(page: Page) {
 test("the pre-Start wizard fits its window without needing to scroll", async ({ page }) => {
   // The state the user sees on first launch, and the one the 560px height was chosen for. If this
   // starts overflowing, the height is wrong again — or a row was added without revisiting it.
-  await page.setViewportSize(WINDOW_SIZES.onboarding);
+  await page.setViewportSize(VIEWPORT_SIZES.onboarding);
   await page.goto("/onboarding.html");
 
   const { content, window } = await overflow(page);
@@ -228,7 +228,7 @@ test("the taller post-Start state stays reachable by scrolling", async ({ page }
       completed: false,
     }));
   });
-  await page.setViewportSize(WINDOW_SIZES.onboarding);
+  await page.setViewportSize(VIEWPORT_SIZES.onboarding);
   await page.goto("/onboarding.html");
   await page.locator("#start").click();
   await expect(page.locator("#https-retry")).toBeVisible();

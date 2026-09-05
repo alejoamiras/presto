@@ -103,7 +103,7 @@ test("harness proves a real denied and granted public-to-loopback fetch", async 
   expect(await healthHits()).toBe(automaticHits + 1);
   await page.locator("#accelerator-use-http").click();
   await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#accelerator-label")).toHaveText("available");
+  await expect(page.locator("#accelerator-label")).toHaveText("running");
   await context.close();
 });
 
@@ -126,7 +126,7 @@ test("playground denial gives guidance and same-context grant automatically reco
   await expect(page.locator("#accelerator-secure-help")).toBeVisible();
   await page.locator("#accelerator-use-http").click();
   await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#accelerator-label")).toHaveText("available");
+  await expect(page.locator("#accelerator-label")).toHaveText("running");
   await expect(page.locator("#accelerator-permission-help")).toBeHidden();
   await expect(page.locator("#accelerator-status")).toHaveAttribute("data-status", "online");
   expect(await healthHits()).toBeGreaterThan(0);
@@ -151,7 +151,7 @@ test("landing denial suppresses download and same-context grant automatically re
   await expect(page.locator("#landing-permission-help")).toBeHidden();
   await expect(page.locator("#landing-secure-help")).toBeVisible();
   await expect(page.locator("#download-actions")).toBeVisible();
-  await expect(page.locator("#landing-secure-title")).toHaveText("Accelerator is reachable");
+  await expect(page.locator("#landing-secure-title")).toHaveText("Presto is reachable");
   expect(await healthHits()).toBeGreaterThan(0);
   await context.close();
 });
@@ -176,7 +176,7 @@ test("playground automatically recovers when an open prompt is allowed after pro
   await expect(page.locator("#accelerator-secure-help")).toBeVisible();
   await page.locator("#accelerator-use-http").click();
   await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#accelerator-label")).toHaveText("available");
+  await expect(page.locator("#accelerator-label")).toHaveText("running");
   await expect(page.locator("#accelerator-status")).toHaveAttribute("data-status", "online");
   expect(await healthHits()).toBeGreaterThan(0);
   await context.close();

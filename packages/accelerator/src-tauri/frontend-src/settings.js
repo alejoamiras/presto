@@ -41,9 +41,22 @@ function updateSpeedUI(index) {
 }
 
 async function loadSettings() {
+  // Disable per call, not just via the HTML attribute: this also runs as the recovery path after a
+  // failed set_theme, and by then the fieldset is enabled — leaving the awaits below open to the
+  // same click-then-overwrite race the initial disabled state exists to close.
+  document.getElementById("theme").disabled = true;
+
   const [config, sysInfo] = await Promise.all([invoke("get_config"), invoke("get_system_info")]);
 
   CPUS = sysInfo.cpu_count;
+
+  // Hydrate then enable, in that order. The radios ship disabled precisely so no click can land
+  // before the stored value is known — moving this earlier in the bootstrap only narrows the window,
+  // it does not close it, because every preceding await is a chance for the user to get there first.
+  const theme = config.theme || "system";
+  const themeInput = document.querySelector(`#theme input[value="${theme}"]`);
+  if (themeInput) themeInput.checked = true;
+  document.getElementById("theme").disabled = false;
 
   // codex r2 #6 / r3 #6: the autostart switch ships DISABLED (settings.html) and stays disabled until
   // its true state is CONFIRMED — so an unknown state is never presented as an actionable "off", and a
@@ -159,7 +172,7 @@ async function loadAutostart() {
     // never an actionable "off") and the health row stays out of the way.
     console.error("Failed to read autostart state:", e);
     document.getElementById("autostart-health").hidden = true;
-    showErrorHint(autostartEl, "Autostart state unavailable — reopen Settings to retry");
+    showErrorHint(autostartEl, "Autostart state unavailable. Reopen Settings to retry");
   }
 }
 
@@ -175,7 +188,7 @@ autostartEl.addEventListener("change", async (e) => {
   } catch (err) {
     el.checked = !el.checked;
     console.error("Failed to invoke set_autostart:", err);
-    showErrorHint(el, typeof err === "string" ? err : "Failed — try again");
+    showErrorHint(el, typeof err === "string" ? err : "Failed. Try again");
     el.disabled = false;
   }
 });
@@ -188,7 +201,7 @@ document.getElementById("autostart-fix").addEventListener("click", async (e) => 
     renderAutostartStatus(await invoke("repair_autostart"));
   } catch (err) {
     console.error("Autostart repair failed:", err);
-    showErrorHint(btn, typeof err === "string" ? err : "Repair failed — try again");
+    showErrorHint(btn, typeof err === "string" ? err : "Repair failed. Try again");
   } finally {
     btn.disabled = false;
   }
@@ -217,7 +230,7 @@ async function runHttpsOp(anchor, op) {
     console.error("HTTPS operation failed:", err);
     // Surface the backend's own message: "restart to finish enabling" and "a proof is running" are
     // both actionable, and a generic "Failed — try again" would throw that away.
-    showErrorHint(anchor, typeof err === "string" ? err : "Failed — try again");
+    showErrorHint(anchor, typeof err === "string" ? err : "Failed. Try again");
   } finally {
     // Authoritative refresh — never infer the resulting state from whether the call threw.
     try {
@@ -252,6 +265,19 @@ speedSlider.addEventListener("change", (e) => {
   invoke("set_speed", { speed: level.value }).catch((err) => {
     console.error("Failed to set speed:", err);
     showErrorHint(speedSlider, "Failed to save");
+    loadSettings();
+  });
+});
+
+// Appearance. Rust owns the repaint: set_theme re-evaluates the data-theme script in every open
+// window, so this handler deliberately does NOT touch the DOM. Reverting on failure means re-reading
+// the config rather than trusting the radio the user just clicked.
+const themeGroup = document.getElementById("theme");
+themeGroup.addEventListener("change", (e) => {
+  const value = e.target.value;
+  invoke("set_theme", { theme: value }).catch((err) => {
+    console.error("Failed to set theme:", err);
+    showErrorHint(themeGroup, "Failed to save");
     loadSettings();
   });
 });

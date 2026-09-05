@@ -703,6 +703,7 @@ fn main() {
             commands::set_autostart,
             commands::repair_autostart,
             commands::set_speed,
+            commands::set_theme,
             commands::remove_approved_origin,
             commands::get_system_info,
             commands::get_verified_info,
@@ -725,7 +726,7 @@ fn main() {
 
             let bundled_version = env!("AZTEC_BB_VERSION").to_string();
 
-            let status = MenuItemBuilder::with_id("status", "Status: Idle")
+            let status = MenuItemBuilder::with_id("status", "Ready")
                 .enabled(false)
                 .build(app)?;
 

@@ -140,7 +140,7 @@ describe("landing accelerator detection", () => {
     globalThis.fetch = mock(async (input: string | URL | Request) => {
       if (String(input).startsWith("https://")) throw new TypeError("TLS unavailable");
       return Response.json(body);
-    }) as typeof fetch;
+    }) as unknown as typeof fetch;
 
     expect(await detectAccelerator()).toEqual({
       reason: "secure-connection-unavailable",
