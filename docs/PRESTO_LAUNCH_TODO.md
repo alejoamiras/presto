@@ -26,23 +26,25 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 
 ## 2. Cloudflare and credentials
 
-- [ ] Save every new production credential in a clearly named Presto 1Password item and verify read-back before configuring GitHub. Preserve all existing keys.
+- [x] Save every new production credential in a clearly named Presto 1Password item and verify read-back before configuring GitHub. Updater, three Cloudflare tokens, Apple signing and release App backups are verified; existing keys are preserved. Apply the same rule to any subsequent credentials.
 - [x] Create fresh landing, playground and release-feed Workers and `PRESTO_RELEASE_FEED` KV namespace.
 - [x] Enable workers.dev fallback endpoints and version previews.
 - [x] Deploy apex landing and playground Custom Domains plus the `/releases/*` feed route.
 - [x] Verify HTTPS, canonical URLs, cross-origin isolation headers and the deliberately empty/no-store feed.
 - [x] Implement same-repository-only PR preview uploads with stable PR aliases and isolated credentialed jobs.
-- [x] Create/store the scoped site deployment token in 1Password and GitHub; verify read-back, target zone/routes/Workers access, denied KV access, and successful landing/playground CI preview uploads.
+- [x] Create/store the site deployment token in 1Password and GitHub; verify read-back, target zone/routes/Workers access, denied KV access, and successful landing/playground CI preview uploads.
+- [ ] Restrict the site token's Zone Read and Workers Routes Edit resource filter to `presto.build`; the read-only audit confirmed nine other zones are visible. Account-level Workers Scripts/KV permissions do not use zone filters. Preserve the saved token when tightening its policy.
 - [x] Create/store the separate release-feed deployment token in 1Password and main-only `release-feed`; verify read-back, scoped API access and a real preview-version upload without changing production.
-- [ ] Create/store the separate KV promotion token in 1Password and main-only `release-feed`.
+- [x] Create/store the separate KV promotion token in 1Password and main-only `release-feed`; verify exact read-back, distinct active tokens, denied Worker/route access, and a successful expiring KV write/read probe without touching the public manifest.
 - [x] Enable and verify same-repository PR previews after credential setup; both stable PR aliases and deep links return 200 with isolation headers, without changing production deployments.
 - [x] Generate a fresh password-protected Tauri updater key and verify its 1Password backup and signing; add only the public key to the repository.
 - [x] Store updater private key/password in the main-only `release-signing` environment.
 - [x] Confirm the owner-approved 1Password recovery backup: exact key/password read-back and signing passed. **On 2026-09-05 the owner explicitly removed the separate offline-copy requirement from the original plan.**
 - [x] Make a permanent owner-only local copy of the encrypted updater key and public key; verify byte equality and record a recovery inventory.
 - Independent offline backup is optional under that updated owner decision; it is not claimed complete and does not block setup or release. Existing local copies remain untouched.
-- [ ] Securely re-enter Apple signing/notarization credentials for the newly named app.
-- [ ] Authorize the release GitHub App for Presto; securely provide/rotate its private key if needed.
+- [x] Securely re-enter Apple signing/notarization credentials for the newly named app; verify the account with read-only notarization history, certificate/private-key and team matching, exact Presto 1Password read-back, and all six GitHub secrets. Original Apple credentials unchanged; release-CI acceptance remains pending.
+- [x] Authorize the release GitHub App for Presto; verify exact App ID/PEM read-back from `Presto Release GitHub App`, authenticated App identity, preserved access to both repositories, and a narrowly scoped temporary token; configure GitHub without changing existing App keys. CI smoke acceptance is tracked below.
+- [x] Pass the existing release-bot CI credential smoke (`33984288576`): temporary branch/PR creation, label/comment and CI triggering succeeded; PR #7 was closed without merging. This is App credential acceptance, not release or package acceptance.
 - [ ] Verify credentials and environments without publishing; enable deployment/release workflows only when safe.
 
 ## 3. Verification, review and merge
@@ -52,6 +54,7 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 - [x] Diagnose and fix the core fake-prover test-isolation race; 10 consecutive parallel full suites pass.
 - [ ] Pass desktop WebDriver/Playwright, HTTPS/consent/LNA, certificate, installer, headless and release-contract gates.
 - [ ] Pass packaged-native state-isolation/uninstall and full-stack browser consent tests using real candidate artifacts.
+- [x] Wire the existing packaged checks to secretless `Build Test Bundle` dispatch (`platform=all`), with exact-SHA Linux/Windows/macOS artifacts and the existing HTTP consent/reset spec against an installed desktop app. Focused contracts, local checks and independent wiring reviews pass; hosted execution remains required.
 - [ ] Pass dependency audit, actionlint, ShellCheck, Wrangler typecheck/dry-run and `git diff --check`.
 - [ ] Refresh independent review: OS identity, uninstall, certificates and state isolation.
 - [ ] Refresh independent review: SDK/API compatibility and witness transport.

@@ -179,8 +179,9 @@ Backup-priority checkpoint, 2026-09-05:
 3. Enter least-privilege, separate Cloudflare deployment/feed-deployment/feed-promotion tokens.
    Re-enter Apple credentials and authorize the release GitHub App for this repository.
    Enable `PRESTO_PREVIEWS_ENABLED` only after preview credentials are ready.
-   The two updater secrets, site token/account ID, and feed-deployment token/environment account ID
-   have been provisioned. The KV promotion token, Apple and GitHub App setup are still pending.
+   The two updater secrets, all three Cloudflare tokens, and required account IDs have been
+   provisioned. Apple and GitHub App credentials are also backed up and configured. Site-token
+   zone restriction and credential use in release CI remain to be verified.
    All new credentials require the same 1Password
    save/read-back custody checks. The backup-priority pause is resolved by the updated owner decision.
 4. Complete interactive npm bootstrap/login/2FA and configure the trusted publisher before publishing
@@ -212,5 +213,102 @@ feed, and npm dist-tags; do not unpublish or rewrite release assets.
   output passes the workflow's Worker-name/version-ID parser. Its existing contract reproduced the
   old command mismatch and passes after correction; all 212 script tests and actionlint pass.
   Focused independent release review found no concrete safety/correctness issues.
-- The owner has been asked to create `Presto Release Feed Promotion` with only Workers KV Storage
-  Edit for the target account, save it as a separate 1Password item, and confirm readiness.
+- The owner subsequently created and saved `Presto Release Feed Promotion`; verified provisioning
+  and write-access evidence are recorded in the checkpoint below.
+
+## Promotion-token handoff and scope follow-up (2026-09-05)
+
+- After the owner approved 1Password access, exact promotion-token read-back passed. All three
+  Cloudflare tokens are separately backed up, active and distinct; the previously verified site
+  and feed-deployment token IDs are unchanged. The updater item is also present, untouched.
+  The promotion token can access the fresh KV namespace and is denied Worker settings and zone
+  routes (403). The initial key-list probe used an invalid page size of 1; correcting it to
+  Cloudflare's documented minimum of 10 resolved the 400 error without any token change.
+  `CLOUDFLARE_RELEASE_FEED_API_TOKEN` was added to main-only `release-feed` at 17:47 UTC;
+  existing GitHub secrets were not overwritten.
+- Pinned Wrangler 4.124.0 successfully wrote and read back a non-secret credential probe in
+  `PRESTO_RELEASE_FEED`, with a 120-second expiry. Only the uniquely named probe key was written;
+  `latest.json` and all legacy KV data were untouched. The public feed still returns 503/no-store.
+  This verifies actual KV write access without promoting a release or changing Worker deployments.
+- The owner reports no Presto zone filter was selected when creating the Cloudflare tokens.
+  Account-level Workers Scripts and KV permissions do not require a zone filter. The site token's
+  Zone Read and Workers Routes Edit must be restricted to `presto.build`: the site-token API audit
+  confirmed Presto plus nine other zones are visible. Have the owner edit the existing token policy
+  in the dashboard; do not rotate or replace it simply to change resource permissions. Full policy
+  introspection is unavailable with the scoped credentials, so route-write scope still needs that
+  dashboard confirmation.
+  This remains a pre-launch follow-up, not a reason to modify legacy resources.
+- Operational head is `16b5954a359236b735995dbdc12f40dc74bdbfae`. SDK, App, Landing,
+  infrastructure/workflow lint and PR previews pass. Native run `33981048209` completed at the
+  17:41 UTC checkpoint: all functional jobs passed, including Windows packaging, installation,
+  launch and health checks. Only launch readiness and its aggregate Presto Status failed, as
+  intended while setup remains incomplete. No CI wait remains active; no stable release or
+  feed promotion has occurred. Cloudflare token provisioning is complete; site scope and the
+  remaining credential/acceptance checks still prevent launch readiness. Apple and App credential
+  setup are completed below.
+
+## Apple signing credential checkpoint (2026-09-05)
+
+- The owner's supplied Apple ID successfully authenticated with the saved team and app-specific
+  password using read-only `notarytool history`. No notarization submission, keychain import or
+  credential rotation occurred; the email is saved in 1Password rather than committed here.
+- Two direct-to-file reads of the existing encrypted `developer-id.p12` match byte-for-byte and
+  its 3061-byte attachment size. Direct file output avoids binary-to-UTF-8 alteration in captured
+  stdout. Temporary copies are owner-only (directory 0700, files 0600); the original vault item
+  and its 2026-03-18 modification timestamp remain unchanged.
+- The saved password opens the PKCS#12; its private key matches the certificate public key, the
+  team matches, and the saved abbreviated signing name resolves exactly to its full Developer ID
+  Application name. The certificate is valid through 2027-02-01 22:12:15 UTC. No identity changed.
+- New `Presto Apple Signing` in Personal stores all six release values, including the encrypted
+  certificate as recoverable base64 and the verified Apple ID. Exact read-back passed before
+  GitHub provisioning. `APPLE_CERTIFICATE`, `APPLE_CERTIFICATE_PASSWORD`, `APPLE_SIGNING_IDENTITY`,
+  `APPLE_ID`, `APPLE_PASSWORD` and `APPLE_TEAM_ID` were added at repository scope, matching the
+  existing build job, at 18:10 UTC. Production build/notarization acceptance in CI is still pending.
+- The historical release PR identified the existing release GitHub App; its public lookup returned
+  404 and the initial vault inventory had no clearly named App backup. The owner's subsequent
+  installation update and verified backup resolve that setup dependency, as recorded below.
+
+## Release GitHub App credential checkpoint (2026-09-05)
+
+- The owner confirmed the existing App, added Presto to its installation, and saved the App ID
+  and PEM attachment in `Presto Release GitHub App` in Personal. Two exact reads matched.
+  App-authenticated GitHub calls verify App ID `3941590` and installation `137485954`, with both
+  Presto and the original repository still authorized. Public App lookup returning 404 was not
+  evidence that the App was missing; authenticated verification succeeds.
+- A temporary installation token was minted with access only to `alejoamiras/presto` and the
+  existing workflow's contents/pull-requests/issues write permissions (plus metadata read).
+  GitHub's repository listing confirmed that exact one-repository scope. The verification token
+  was revoked immediately afterward. No existing App key or installation was modified by the agent.
+- `RELEASE_BOT_APP_ID` and `RELEASE_BOT_PRIVATE_KEY` were added to Presto repository secrets at
+  18:28 UTC, only after vault read-back and GitHub authentication passed. Existing secrets were
+  not overwritten. The dispatch-only release-bot diagnostic was enabled and run at operational
+  head `16b5954a359236b735995dbdc12f40dc74bdbfae`; production deployment and release workflows
+  stay disabled.
+- Release-bot run `33984288576` passed. It exercised the GitHub-stored key, temporary branch and
+  PR creation, labels/comments and CI triggering; temporary PR #7 is closed and was not merged.
+  The temporary branch is absent, every triggered run is terminal, and main remains `ae3b252`.
+  This is credential/automation acceptance only: its branch was based on the still-visual main,
+  so it does not claim operational native/package test acceptance or replace required PR checks.
+
+## Candidate acceptance wiring and scope verification (2026-09-05)
+
+- Three independent reviews of `16b5954` found no remaining high/critical production defects.
+  SDK review verified the 189-test CI result, actual published-legacy-SDK native proving against
+  Presto and tarball consumer checks. OS and release reviews identified an execution gap: packaged
+  acceptance was reachable only through the main-gated release workflow, and artifact staging
+  omitted macOS arm64. The unsigned test builder also needed to disable updater artifacts.
+- `Build Test Bundle` now supports `platform=all`: three disposable installer builds, no signing
+  secrets, an installer-only Tauri configuration overlay, and existing reusable packaged acceptance
+  pinned to the dispatch SHA. Explicit artifact names replace the incomplete architecture glob.
+  Separate Linux HTTPS/HTTP runners exercise the existing proof and consent/reset specs against
+  the installed app, with the packed SDK. Existing isolation and uninstall checks stay intact.
+  Production release readiness, main-only release gates, updater keys and feed behavior are unchanged.
+- Both OS and release reviewers approved this bounded wiring diff. All 22 release-contract tests,
+  actionlint, `git diff --check` and `bun run test` pass locally (478 unit/script tests; the existing
+  skipped test remains skipped). This is wiring approval, not a claim that hosted packaged checks
+  have already run. Exact final-commit CI and review still precede readiness and merge.
+- After the owner edited the site token, it remains active with the same ID and verified vault
+  value. Direct access to another zone's Worker routes is denied (403), but zone listing still
+  returns all ten zones and a direct unrelated-zone detail read succeeds (200). The remaining
+  Zone Read scope needs the owner's dashboard summary; no token replacement or external writes
+  were performed during these probes.

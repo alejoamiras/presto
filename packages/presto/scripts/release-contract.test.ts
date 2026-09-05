@@ -64,6 +64,32 @@ const PACKAGED_E2E_RUNNER = fs.readFileSync(
   "utf8",
 );
 
+test("candidate bundles run all packaged platforms without production keys or publication", () => {
+  const candidate = fs.readFileSync(
+    path.join(REPO, ".github/workflows/build-test-bundle.yml"),
+    "utf8",
+  );
+  expect(candidate).toContain('fromJSON(\'["linux-x86_64","macos-arm64","windows-x86_64"]\')');
+  expect(candidate).toContain('--config \'{"bundle":{"createUpdaterArtifacts":false}}\'');
+  expect(candidate).toContain("uses: ./.github/workflows/_e2e-packaged.yml");
+  expect(candidate).toContain("ref: $" + "{{ github.sha }}");
+  for (const [input, platform] of [
+    ["app_artifact", "linux-x86_64"],
+    ["macos_app_artifact", "macos-arm64"],
+    ["windows_app_artifact", "windows-x86_64"],
+  ]) {
+    expect(candidate).toContain(`${input}: presto-${platform}-$` + "{{ github.sha }}");
+    expect(PACKAGED).toContain(`name: $` + `{{ inputs.${input} }}`);
+  }
+  expect(PACKAGED).not.toContain("pattern: presto-*x86_64");
+  expect(candidate).not.toMatch(/secrets[.:]|gh release|git tag|wrangler/);
+  expect(PACKAGED).toContain("transport: [https, http]");
+  expect(PACKAGED).toContain("PRESTO_URL: http://127.0.0.1:59833");
+  expect(PACKAGED).toContain("PLAYWRIGHT_PROJECT: local-network");
+  expect(PACKAGED).toContain("test:e2e:packaged http-consent.local-network.spec.ts");
+  expect(PACKAGED_E2E_RUNNER).toContain('"${PLAYWRIGHT_PROJECT:-packaged-e2e}"');
+});
+
 describe("release-presto.yml — B6 publish/promote contract", () => {
   test("least privilege: `promote` is the only leg that writes the feed", () => {
     expect(WF.match(/wrangler kv key put/g)).toHaveLength(1);
@@ -184,7 +210,7 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     expect(PLAYWRIGHT_CONFIG).toContain('baseURL: "http://127.0.0.1:5173"');
 
     const proofSteps = PACKAGED.match(
-      /- name: Run packaged-E2E \(composed proof\)\n\s+timeout-minutes: 35/g,
+      /- name: Run packaged-E2E \(composed proof\)\n(?:\s+if: matrix.transport == 'https'\n)?\s+timeout-minutes: 35/g,
     );
     expect(proofSteps?.length).toBe(2);
     expect(PACKAGED.match(/if: \$\{\{ failure\(\) \|\| cancelled\(\) \}\}/g)?.length).toBe(2);
