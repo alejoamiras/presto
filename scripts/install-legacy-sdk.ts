@@ -3,6 +3,7 @@ import { mkdtemp, readFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import legacy from "../audit/fixtures/legacy-identity.json";
+import { parseNpmPackResult } from "./npm-pack-result";
 
 const root = resolve(import.meta.dir, "..");
 const directory = await mkdtemp(join(tmpdir(), "presto-legacy-sdk-"));
@@ -11,14 +12,11 @@ function run(args: string[]) {
   if (result.exitCode !== 0) throw new Error(result.stderr.toString());
   return result.stdout.toString();
 }
-const packed = JSON.parse(run([
+const packed = parseNpmPackResult(JSON.parse(run([
   "npm", "pack", "--ignore-scripts", "--json",
   `${legacy.sdkPackage}@${legacy.sdkVersion}`,
-])) as Array<{ filename: string }>;
-if (packed.length !== 1 || !/^[a-z0-9.-]+\.tgz$/.test(packed[0]!.filename)) {
-  throw new Error("Unexpected npm pack result");
-}
-const tarball = join(directory, packed[0]!.filename);
+])), legacy.sdkPackage, legacy.sdkVersion);
+const tarball = join(directory, packed.filename);
 const integrity = `sha512-${createHash("sha512").update(await readFile(tarball)).digest("base64")}`;
 if (integrity !== legacy.sdkIntegrity) throw new Error("Historical SDK tarball integrity mismatch");
 run(["tar", "-xzf", tarball]);

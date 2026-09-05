@@ -44,6 +44,22 @@ Release sequence: SDK 5.2.0 to `testnet` with provenance; native `1.0.0-rc.1`; n
 verification; then guarded SDK `latest` promotion. RCs must never enter the public feed.
 The baseline bootstrap is restricted to exactly RC1 with no earlier Presto release.
 
+### Recovering an interrupted first RC
+
+An unpublished RC1 draft counts as an existing release and deliberately blocks the bootstrap
+exception. Do not weaken the resolver to ignore drafts. Before a retry, inspect the exact
+`presto-v1.0.0-rc.1` release in `alejoamiras/presto` and confirm all of the following:
+
+- The release is still a draft, has never been published, and no other Presto release exists.
+- `refs/tags/presto-v1.0.0-rc.1` does not exist on the remote repository.
+- No RC manifest was promoted; the new stable feed remains empty.
+
+Preserve the failed run logs and draft asset hashes for diagnosis. Only after those read-only checks
+and explicit operator approval may the exact unpublished draft be removed (without deleting any
+tag). Then re-dispatch RC1 from the reviewed commit using the same recovered signing identity.
+If a tag exists, publication status is uncertain, or any release was published, stop: do not delete
+or rewrite it. Resolve the baseline/publication state and fix forward under the normal release rules.
+
 ### `npm-publish` GitHub environment and npm trusted publisher
 
 The environment has no npm secret. Configure the package's [npm GitHub Actions trusted publisher](https://docs.npmjs.com/trusted-publishers/) exactly as follows:

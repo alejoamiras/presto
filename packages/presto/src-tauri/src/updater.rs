@@ -684,3 +684,92 @@ fn canonicalize_expected(p: std::path::PathBuf) -> std::path::PathBuf {
     }
     p
 }
+
+/// Re-arm recovery on early return, before a non-returning restart, or leave it defused after
+/// marker reconciliation. Test this on every platform even though installation uses it on Windows.
+#[cfg(any(target_os = "windows", test))]
+struct CrashRecoveryGuard<F: FnMut()> {
+    rearm: F,
+    rearmed: bool,
+}
+
+#[cfg(any(target_os = "windows", test))]
+impl<F: FnMut()> CrashRecoveryGuard<F> {
+    fn new(rearm: F) -> Self {
+        Self {
+            rearm,
+            rearmed: false,
+        }
+    }
+
+    fn rearm_now(&mut self) {
+        if !self.rearmed {
+            (self.rearm)();
+            self.rearmed = true;
+        }
+    }
+
+    fn defuse(&mut self) {
+        self.rearmed = true;
+    }
+}
+
+#[cfg(any(target_os = "windows", test))]
+impl<F: FnMut()> Drop for CrashRecoveryGuard<F> {
+    fn drop(&mut self) {
+        self.rearm_now();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CrashRecoveryGuard;
+
+    #[test]
+    fn crash_recovery_rearms_once_when_update_exits_early() {
+        let count = std::cell::Cell::new(0);
+        {
+            let _guard = CrashRecoveryGuard::new(|| count.set(count.get() + 1));
+        }
+        assert_eq!(count.get(), 1);
+    }
+
+    #[test]
+    fn crash_recovery_rearms_before_restart_without_double_rearm() {
+        let count = std::cell::Cell::new(0);
+        {
+            let mut guard = CrashRecoveryGuard::new(|| count.set(count.get() + 1));
+            guard.rearm_now();
+            assert_eq!(
+                count.get(),
+                1,
+                "restart never returns, so rearm must happen first"
+            );
+            guard.rearm_now();
+        }
+        assert_eq!(count.get(), 1);
+    }
+
+    #[test]
+    fn reconciled_or_foreign_update_windows_defuse_stale_recovery() {
+        let count = std::cell::Cell::new(0);
+        {
+            let mut guard = CrashRecoveryGuard::new(|| count.set(count.get() + 1));
+            guard.defuse();
+            guard.rearm_now();
+        }
+        assert_eq!(count.get(), 0);
+    }
+
+    #[test]
+    fn updater_key_is_exactly_the_bundled_plugin_key() {
+        let conf: serde_json::Value =
+            serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        assert_eq!(
+            super::updater_pubkey(),
+            conf["plugins"]["updater"]["pubkey"].as_str().unwrap()
+        );
+        // An empty development key deliberately fails the separate release-readiness gate.
+        // Never substitute a test key here or bypass that gate for a release build.
+    }
+}

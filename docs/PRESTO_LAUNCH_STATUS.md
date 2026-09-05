@@ -62,10 +62,33 @@ release deployment must consume the exact provenance-verified published SDK.
 - Post-domain desktop script tests: 96 passed; Rust authorization tests: 44 passed; native verified-site
   tests: 7 passed. Generated social-card hashes passed the asset manifest check. Cargo normalized
   renamed package ordering in the core/desktop lockfiles without changing dependency versions.
-- Initial operational GitHub CI is not green: Windows compilation references a missing
-  `CrashRecoveryGuard` in `updater.rs`; the published legacy SDK installer rejects the npm pack
-  result in Linux CI (which upgrades to npm 12). Both require fixes and reruns. The separate
-  launch-readiness failure remains expected until signing/recovery/credentials are finalized.
+- Follow-up fixes restore the Windows `CrashRecoveryGuard` without restoring legacy binary cleanup.
+  All 108 desktop Rust tests and desktop/core/headless Clippy pass locally. Windows CI must rerun.
+- Reproduced npm 12's package-keyed JSON output; shared npm 11/12 parsing now preserves pinned
+  identity, safe filenames and independent integrity checks in both tarball consumers. The actual
+  npm 12 legacy fixture installation and full local `bun run test:all` pass, including a real native
+  proof through the published legacy SDK (8 E2E passed; 3 remote-network-only cases skipped).
+- Added frozen legacy health/prove contract coverage, incumbent-listener preservation and headless
+  conflict guidance tests. The packaged isolation job now verifies `--prepare-uninstall` too.
+- Preview uploads generate trusted SPA configuration without executing PR code in the credentialed
+  job. Both sites' deep-link fallback and isolation headers pass against the local Workers runtime.
+  Config dates now match pinned Wrangler 4.124.0's supported `2026-08-22`; all three dry-runs pass.
+  The deployed versions listed above are unchanged by these local checks.
+- Follow-up script tests: 113 passed; workspace lint/typechecks/unit tests, actionlint, ShellCheck
+  and dependency audit pass (zero blocked findings, no new audit exceptions).
+- A full local core run exposed a test-isolation race: six authorization tests reached the global
+  fake prover without sharing its serialization lock, overwriting containment state and leaking
+  test children. The isolated cleanup test passed 20 times; the partially corrected suite still
+  failed, confirming that every successful authorization reader needed the lock. After adding all
+  six annotations, all 266 core tests passed in 10 consecutive default-parallel full runs, with
+  no remaining child processes or captured-output hangs. Core Clippy and format checks pass.
+  Production containment behavior was not changed.
+- Independent reviewers found no remaining high/critical or justified medium code defects in the
+  follow-up fixes. Final approval still needs the exact release-ready commit and OS artifact evidence.
+- Launch readiness remains intentionally blocked until signing/recovery/credentials are finalized.
+- Follow-up changes are staged locally, not pushed: the 1Password Git signing request failed before
+  a commit was created. Unlock/approve signing, commit the reviewed changes, push the operational
+  branch and rerun GitHub checks before marking Windows acceptance complete.
 - Linux/Windows installer execution, packaged candidate and same-key updater matrices still require CI
   and real Presto RC/stable artifacts. Local NSIS and hermetic autostart harnesses require Docker.
 - Three independent operational review areas were examined; identified high defects were corrected.
@@ -81,6 +104,8 @@ release deployment must consume the exact provenance-verified published SDK.
 3. Enter least-privilege, separate Cloudflare deployment/feed-deployment/feed-promotion tokens.
    Re-enter Apple credentials and authorize the release GitHub App for this repository.
    Enable `PRESTO_PREVIEWS_ENABLED` only after preview credentials are ready.
+   On 2026-09-05 the repository and three protected environments had no secrets configured;
+   1Password vault access timed out. No signing secrets were generated or stored during that attempt.
 4. Complete interactive npm bootstrap/login/2FA and configure the trusted publisher before publishing
    the real SDK candidate from CI. No npm versions or dist-tags have been changed.
 5. Run all remaining OS, installer, packaged-app, consent and updater gates. Set readiness only after

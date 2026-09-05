@@ -25,6 +25,7 @@ The SDK has no deprecated aliases:
 | `checkAcceleratorStatus()` | `checkPrestoStatus()` |
 | Constructor option `accelerator` | `presto` |
 | Status field `acceleratorVersion` | `nativeAztecVersion` |
+| Diagnosis literal `accelerator-reachable` | `presto-reachable` |
 
 `nativeAztecVersion` describes the native Aztec/bb version; `appVersion` describes the
 application version. Rename product-specific `AZTEC_ACCELERATOR_*` environment variables
@@ -35,7 +36,7 @@ The health/prove wire protocol remains compatible in both directions. Switching 
 not require switching native apps at the same moment. HTTPS defaults, explicit per-tab HTTP
 consent, witness transport, diagnostics, phases, and WASM fallback retain their behavior.
 
-Presto production downloads will be announced after the permanent domain and release
+Presto lives at https://presto.build. Production downloads will be announced after release
 verification gates are finalized. Do not treat a Worker preview as a stable release.
 
 ## Browsers are HTTPS-only by default

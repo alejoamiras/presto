@@ -102,14 +102,19 @@ async fn main() {
     ));
 
     if let Err(e) = start(state).await {
-        if e.downcast_ref::<std::io::Error>()
-            .is_some_and(|io| io.kind() == std::io::ErrorKind::AddrInUse)
-        {
-            tracing::error!("{}", presto_core::server::PORT_CONFLICT_GUIDANCE);
+        if let Some(guidance) = server_error_guidance(e.as_ref()) {
+            tracing::error!("{guidance}");
         }
         tracing::error!("Presto server error: {e}");
         std::process::exit(1);
     }
+}
+
+fn server_error_guidance(error: &(dyn std::error::Error + 'static)) -> Option<&'static str> {
+    error
+        .downcast_ref::<std::io::Error>()
+        .filter(|io| io.kind() == std::io::ErrorKind::AddrInUse)
+        .map(|_| presto_core::server::PORT_CONFLICT_GUIDANCE)
 }
 
 /// Parse the `ALLOWED_ORIGINS` env value into canonical origins (F-02).
@@ -162,6 +167,19 @@ fn resolve_gating(allow_all: bool, allowed_origins: Option<&str>) -> Result<Gati
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_foreign_listener_gets_actionable_guidance_without_changing_it() {
+        let busy = std::io::Error::from(std::io::ErrorKind::AddrInUse);
+        let guidance = server_error_guidance(&busy).unwrap();
+        assert!(guidance.contains("59833"));
+        assert!(guidance.contains("Quit the other local prover"));
+        assert!(guidance.contains("restart Presto"));
+        assert_eq!(
+            server_error_guidance(&std::io::Error::from(std::io::ErrorKind::PermissionDenied)),
+            None
+        );
+    }
 
     fn co(s: &str) -> CanonicalOrigin {
         CanonicalOrigin::parse(s).unwrap()

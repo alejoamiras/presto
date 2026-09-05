@@ -42,6 +42,8 @@ if [ -f "$HOME/.presto/config.json" ]; then
 fi
 kill "$PRESTO_TEST_PID" 2>/dev/null || true
 wait "$PRESTO_TEST_PID" 2>/dev/null || true
+Presto --prepare-uninstall
+test "$BEFORE" = "$(snapshot)"
 sudo apt-get remove -y "$PACKAGE"
 test "$BEFORE" = "$(snapshot)"
 echo "Historical state, certificate and autostart fixtures are byte-identical after install/launch/uninstall."

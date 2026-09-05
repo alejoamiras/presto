@@ -1,6 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { parseNpmPackResult } from "./npm-pack-result";
 import { fetchAndVerifySdkProvenance, SDK_PACKAGE, SDK_VERSION_PATTERN } from "./sdk-release-verification";
 import { verifySdkPackageSignatures } from "./verify-sdk-package-signatures";
 
@@ -31,13 +32,10 @@ if (import.meta.main) {
   if (!SDK_VERSION_PATTERN.test(version)) throw new Error("Invalid published SDK candidate");
   await fetchAndVerifySdkProvenance(version);
   await verifySdkPackageSignatures(version);
-  const packed = JSON.parse(run(["npm", "pack", "--ignore-scripts", "--json", `${SDK_PACKAGE}@${version}`]));
-  if (packed.length !== 1 || !/^[a-z0-9.-]+\.tgz$/.test(packed[0].filename)) {
-    throw new Error("Unexpected published SDK tarball");
-  }
+  const packed = parseNpmPackResult(JSON.parse(run(["npm", "pack", "--ignore-scripts", "--json", `${SDK_PACKAGE}@${version}`])), SDK_PACKAGE, version);
   const expectedIntegrity = run(["npm", "view", `${SDK_PACKAGE}@${version}`, "dist.integrity"]);
-  if (packed[0].integrity !== expectedIntegrity) throw new Error("Published tarball integrity mismatch");
-  const tarball = join(directory, packed[0].filename);
+  if (packed.integrity !== expectedIntegrity) throw new Error("Published tarball integrity mismatch");
+  const tarball = join(directory, packed.filename);
   const manifest = JSON.parse(run(["tar", "-xzOf", tarball, "package/package.json"]));
   const workspace = await Bun.file(join(root, "packages/sdk/package.json")).json();
   assertPublishedSdkManifest(manifest, version, workspace.dependencies);

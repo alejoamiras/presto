@@ -61,6 +61,27 @@ jobs:
           path: dist
       - name: Install the pinned deployment CLI without lifecycle scripts
         run: npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/presto-preview-cli" wrangler@4.124.0
+      - name: Write fixed preview configuration
+        env:
+          SITE: ${{ matrix.site }}
+        run: |
+          node <<'NODE'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const site = process.env.SITE;
+          if (!['landing', 'playground'].includes(site)) throw new Error('Invalid preview site');
+          const config = {
+            name: `presto-${site}`,
+            compatibility_date: '2026-08-22',
+            workers_dev: true,
+            preview_urls: true,
+            assets: {
+              directory: path.join(process.env.GITHUB_WORKSPACE, 'dist'),
+              not_found_handling: 'single-page-application',
+            },
+          };
+          fs.writeFileSync(path.join(process.env.RUNNER_TEMP, 'presto-preview.json'), JSON.stringify(config));
+          NODE
       - name: Upload immutable version with stable PR alias
         env:
           SITE: ${{ matrix.site }}
@@ -69,6 +90,5 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           "$RUNNER_TEMP/presto-preview-cli/node_modules/.bin/wrangler" versions upload \
-            --name "presto-$SITE" --assets "$GITHUB_WORKSPACE/dist" \
-            --compatibility-date 2026-09-04 --preview-alias "pr-$PR_NUMBER"
+            --config "$RUNNER_TEMP/presto-preview.json" --preview-alias "pr-$PR_NUMBER"
           echo "Preview: https://pr-$PR_NUMBER-presto-$SITE.alejo-amiras.workers.dev" >> "$GITHUB_STEP_SUMMARY"

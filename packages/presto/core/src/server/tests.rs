@@ -757,6 +757,9 @@ fn auth_state_with_popup_at(
 }
 
 #[tokio::test]
+// Successful authorization reaches bb and reads process-global BB_BINARY_PATH. All such tests
+// must share the fake-prover tests' lock, even when they assert only on authorization outcomes.
+#[serial]
 async fn prove_auto_approves_localhost_origin() {
     let (popup_tx, popup_rx) = std::sync::mpsc::channel();
     let (state, _auth, _cfg_dir) = auth_state_with_popup(popup_tx);
@@ -795,6 +798,7 @@ async fn prove_auto_approves_localhost_origin() {
 }
 
 #[tokio::test]
+#[serial] // Reads BB_BINARY_PATH after popup approval; do not spawn another test's fake prover.
 async fn prove_triggers_popup_for_unknown_origin() {
     let (popup_tx, popup_rx) = std::sync::mpsc::channel();
     let (state, auth, _cfg_dir) = auth_state_with_popup(popup_tx);
@@ -874,6 +878,7 @@ async fn prove_returns_403_when_origin_denied() {
 }
 
 #[tokio::test]
+#[serial] // Trusted no-Origin requests reach the process-global prover/containment registry.
 async fn prove_allows_no_origin_only_with_trusted_loopback_host() {
     let (popup_tx, popup_rx) = std::sync::mpsc::channel();
     let (state, _auth, _cfg_dir) = auth_state_with_popup(popup_tx);
@@ -943,6 +948,7 @@ async fn prove_rejects_forged_host_dns_rebinding() {
 }
 
 #[tokio::test]
+#[serial] // Remembered approval still proceeds to bb and reads BB_BINARY_PATH.
 async fn prove_approves_remembered_origin() {
     let (popup_tx, popup_rx) = std::sync::mpsc::channel();
     let (state, _auth, _cfg_dir) = auth_state_with_popup(popup_tx);
@@ -1195,6 +1201,7 @@ fn resolve_version_returns_none_without_header() {
 // ── Failure-path tests ──
 
 #[tokio::test]
+#[serial] // This small-body request reaches bb; it is not rejected before spawning.
 async fn prove_rejects_oversized_body() {
     let app = router(AppState::default());
     // Send a body just over MAX_BODY_SIZE (50MB + 1 byte)
@@ -1328,6 +1335,7 @@ async fn prove_sheds_with_429_when_waiter_cap_full() {
 /// continues if the save fails (a disk error must never fail an already-approved proof), so the
 /// in-memory copy can hold the origin while nothing reached disk (post-impl codex).
 #[tokio::test]
+#[serial] // Persisted approval continues into bb and reads the process-global fake-prover override.
 async fn allow_persists_the_origin_to_disk() {
     let dir = tempfile::tempdir().unwrap();
     let cfg_path = dir.path().join("config.json");

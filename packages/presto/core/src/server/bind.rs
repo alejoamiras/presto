@@ -102,6 +102,13 @@ mod tests {
             elapsed < budget + Duration::from_millis(150),
             "hard deadline overshot: {elapsed:?} (budget {budget:?}, interval {interval:?}) — a soft deadline would sleep a full interval past the budget"
         );
+        // Losing a bind must never stop or replace the existing prover's listener.
+        let client = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let (_accepted, _) = tokio::time::timeout(Duration::from_secs(1), probe.accept())
+            .await
+            .expect("the incumbent listener must remain operational")
+            .unwrap();
+        drop(client);
         drop(probe);
     }
 

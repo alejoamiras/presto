@@ -3,47 +3,6 @@
 version = 3
 
 [[package]]
-name = "presto-core"
-version = "0.0.0"
-dependencies = [
- "axum",
- "base64",
- "dirs",
- "flate2",
- "hex",
- "http",
- "libc",
- "minisign-verify",
- "parking_lot",
- "reqwest",
- "semver",
- "serde",
- "serde_json",
- "sha2",
- "tar",
- "tempfile",
- "time",
- "tokio",
- "tower-http",
- "tracing",
- "url",
- "uuid",
- "which",
- "windows-sys 0.61.2",
-]
-
-[[package]]
-name = "presto-server"
-version = "1.0.0-rc.1"
-dependencies = [
- "presto-core",
- "parking_lot",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1044,6 +1003,47 @@ name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "439ee305def115ba05938db6eb1644ff94165c5ab5e9420d1c1bcedbba909391"
+
+[[package]]
+name = "presto-core"
+version = "0.0.0"
+dependencies = [
+ "axum",
+ "base64",
+ "dirs",
+ "flate2",
+ "hex",
+ "http",
+ "libc",
+ "minisign-verify",
+ "parking_lot",
+ "reqwest",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tar",
+ "tempfile",
+ "time",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "url",
+ "uuid",
+ "which",
+ "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "presto-server"
+version = "1.0.0-rc.1"
+dependencies = [
+ "parking_lot",
+ "presto-core",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "prettyplease"

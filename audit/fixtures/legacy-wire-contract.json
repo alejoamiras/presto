@@ -1,0 +1,15 @@
+{
+  "sourceCommit": "983334eae9980831dbb704d1242730be5ce83ff7",
+  "source": "packages/accelerator/core/src/server.rs and server/prove.rs",
+  "note": "Historical health shapes and transport envelope; proof bytes are synthetic, not a cryptographic proof.",
+  "minimalHealth": { "status": "ok", "api_version": 1 },
+  "detailedHealth": {
+    "status": "ok",
+    "api_version": 1,
+    "version": "3.0.0",
+    "aztec_version": "5.2.0",
+    "available_versions": ["5.2.0"],
+    "bb_available": true
+  },
+  "proveResponse": { "proof": "AAECAw==" }
+}
