@@ -86,9 +86,18 @@ release deployment must consume the exact provenance-verified published SDK.
 - Independent reviewers found no remaining high/critical or justified medium code defects in the
   follow-up fixes. Final approval still needs the exact release-ready commit and OS artifact evidence.
 - Launch readiness remains intentionally blocked until signing/recovery/credentials are finalized.
-- Follow-up changes are staged locally, not pushed: the 1Password Git signing request failed before
-  a commit was created. Unlock/approve signing, commit the reviewed changes, push the operational
-  branch and rerun GitHub checks before marking Windows acceptance complete.
+- Follow-up commit `e2f1235a146ba10639b224e24beaa400d7b160a5` is signed, GitHub-verified and pushed.
+  Its SDK, App, Landing and infrastructure lint workflows pass. Windows app/core compilation,
+  unit tests, TLS/trust and WebDriver tests now pass too, confirming the recovery-guard fix.
+- The Windows autostart lifecycle test exposed another rename-only fixture regression: the test
+  directory lost its space while the negative-control decoy retained an unrelated prefix.
+  Shared deliberately spaced fixture paths and a derived decoy restore the test's intended
+  conditions. A cross-platform regression guard reproduces the missing-space failure before the
+  fix. Real Windows lifecycle acceptance requires the subsequent CI rerun.
+- The Windows installer was produced, but its smoke signing step rejected the deliberately empty
+  production public key. The smoke now supplies a matching throwaway public key through a temporary
+  build-config overlay, without modifying the committed production identity or readiness gate.
+  The packaging/install smoke must rerun with that overlay.
 - Linux/Windows installer execution, packaged candidate and same-key updater matrices still require CI
   and real Presto RC/stable artifacts. Local NSIS and hermetic autostart harnesses require Docker.
 - Three independent operational review areas were examined; identified high defects were corrected.
@@ -105,7 +114,8 @@ release deployment must consume the exact provenance-verified published SDK.
    Re-enter Apple credentials and authorize the release GitHub App for this repository.
    Enable `PRESTO_PREVIEWS_ENABLED` only after preview credentials are ready.
    On 2026-09-05 the repository and three protected environments had no secrets configured;
-   1Password vault access timed out. No signing secrets were generated or stored during that attempt.
+   Git signing and vault listing later succeeded, but the separate saved-item listing request
+   timed out. No release signing secrets were generated, read or stored during these attempts.
 4. Complete interactive npm bootstrap/login/2FA and configure the trusted publisher before publishing
    the real SDK candidate from CI. No npm versions or dist-tags have been changed.
 5. Run all remaining OS, installer, packaged-app, consent and updater gates. Set readiness only after

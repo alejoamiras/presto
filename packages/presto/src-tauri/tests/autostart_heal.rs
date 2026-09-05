@@ -15,6 +15,37 @@ use presto::autostart::{set_enabled_at, snapshot_restore_roundtrip_for_tests};
 use presto::update_marker::{MarkerPaths, MarkerPayload};
 use std::path::{Path, PathBuf};
 
+// This is a test installation directory, not the product identity. Its space is essential to
+// exercising quoting and Windows' first-token executable-prefix hijack.
+const SPACED_INSTALL_DIRECTORY: &str = "Presto Test";
+
+fn spaced_install_directory(root: &Path) -> PathBuf {
+    root.join(SPACED_INSTALL_DIRECTORY)
+}
+
+fn prefix_hijack_decoy(root: &Path) -> PathBuf {
+    let (prefix, _) = SPACED_INSTALL_DIRECTORY
+        .split_once(' ')
+        .expect("quoting fixture must contain a space");
+    root.join(format!("{prefix}.exe"))
+}
+
+#[test]
+fn quoting_fixture_preserves_space_and_matching_prefix_decoy() {
+    let root = Path::new("fixture-root");
+    let directory = spaced_install_directory(root);
+    let component = directory.file_name().unwrap().to_str().unwrap();
+    assert!(
+        component.contains(' '),
+        "quoting fixture must contain a space"
+    );
+    let prefix = component.split_once(' ').unwrap().0;
+    assert_eq!(
+        prefix_hijack_decoy(root),
+        root.join(format!("{prefix}.exe"))
+    );
+}
+
 /// A real executable file the stored entry can resolve to.
 fn make_exe(dir: &Path, name: &str) -> PathBuf {
     let p = dir.join(name);
@@ -58,7 +89,7 @@ fn linux_full_lifecycle_enable_break_heal_disable() {
     let bin = tempfile::tempdir().expect("bin dir");
     // A spaced path: the removed plugin wrote it unquoted (= broken first-token Exec); ours must
     // quote it and round-trip.
-    let spaced_dir = bin.path().join("presto");
+    let spaced_dir = spaced_install_directory(bin.path());
     std::fs::create_dir_all(&spaced_dir).unwrap();
     let v1 = make_exe(&spaced_dir, "app-v1");
     let v2 = make_exe(&spaced_dir, "app-v2");
@@ -399,7 +430,7 @@ fn macos_heal_preserves_keepalive_through_a_real_patch() {
     std::env::set_var("HOME", home.path());
 
     let bin = tempfile::tempdir().expect("bin dir");
-    let spaced_dir = bin.path().join("Presto.app");
+    let spaced_dir = spaced_install_directory(bin.path());
     std::fs::create_dir_all(&spaced_dir).unwrap();
     let v1 = make_exe(&spaced_dir, "app-v1");
     let v2 = make_exe(&spaced_dir, "app-v2");
@@ -644,13 +675,13 @@ fn windows_full_lifecycle_quoting_heal_and_createprocess_proof() {
 
     // A REAL executable in a spaced dir, plus a decoy at the CreateProcess prefix position.
     let bin = tempfile::tempdir().expect("bin dir");
-    let spaced = bin.path().join("Presto");
+    let spaced = spaced_install_directory(bin.path());
     std::fs::create_dir_all(&spaced).unwrap();
     let probe_src =
         std::path::PathBuf::from(std::env::var("SystemRoot").unwrap()).join("System32\\where.exe");
     let probe = spaced.join("Presto.exe");
     std::fs::copy(&probe_src, &probe).expect("copy probe exe");
-    let decoy = bin.path().join("Aztec.exe"); // the §9 hijack position for the unquoted value
+    let decoy = prefix_hijack_decoy(bin.path()); // the §9 hijack position for the unquoted value
     std::fs::copy(&probe_src, &decoy).expect("copy decoy exe");
 
     // 0. Fresh-profile regression: a machine that has never had a startup entry has NO Run key at

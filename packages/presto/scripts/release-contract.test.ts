@@ -43,6 +43,18 @@ const PLAYGROUND_PACKAGE = fs.readFileSync(
   path.join(REPO, "packages/playground/package.json"),
   "utf8",
 );
+
+test("Windows packaging smoke uses a matching ephemeral public key without changing release identity", () => {
+  const ci = fs.readFileSync(path.join(REPO, ".github/workflows/presto.yml"), "utf8");
+  const smoke = ci.split("  windows-build:")[1]?.split("\n  status:")[0] ?? "";
+  expect(smoke).toContain('readFileSync("./smoke-updater.key.pub", "utf8")');
+  expect(smoke).toContain("JSON.stringify({ plugins: { updater: { pubkey } } })");
+  expect(smoke).toContain(
+    'bunx tauri build --bundles nsis --config "$RUNNER_TEMP/presto-smoke-config.json"',
+  );
+  expect(smoke).not.toContain("TAURI_SIGNING_PRIVATE_KEY: $" + "{{ secrets.");
+  expect(smoke).not.toContain("recoveredUpdaterPublicKey");
+});
 const PLAYWRIGHT_CONFIG = fs.readFileSync(
   path.join(REPO, "packages/playground/playwright.config.ts"),
   "utf8",

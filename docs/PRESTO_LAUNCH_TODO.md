@@ -16,7 +16,9 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 - [x] Preserve ports 59833/59834 and the `/health` and `/prove` protocol and genuine Aztec ecosystem terminology.
 - [x] Remove the obsolete planning tree; preserve historical audits and add the migration guide/branding guards.
 - [x] Purchase and onboard `presto.build`; pin native identifier `build.presto.presto`.
-- [ ] Fix the missing Windows updater crash-recovery guard and restore cross-platform regression coverage. **Implemented; Windows CI rerun pending.**
+- [x] Fix the missing Windows updater crash-recovery guard; Windows compilation, app/core unit tests and WebDriver pass on `e2f1235`.
+- [ ] Restore deliberately spaced autostart quoting fixtures and matching prefix-hijack decoy. **Regression guard added; Windows lifecycle rerun pending.**
+- [ ] Give the Windows packaging smoke a matching ephemeral public/private key pair without modifying production identity. **Contract guard added; CI rerun pending.**
 - [x] Fix the published legacy SDK fixture installer under CI's npm 12 and add regression coverage; actual npm 12 installation and native-proof E2E pass locally.
 - [ ] Refresh all remaining API/state/OS/release identity-contract and mutual wire-compatibility acceptance evidence.
 - [ ] Verify actionable port-conflict behavior and no modification of the other installation.
@@ -50,7 +52,7 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 - [ ] Refresh independent review: SDK/API compatibility and witness transport.
 - [ ] Refresh independent review: release/npm/Actions/Cloudflare and rollback safety.
 - [ ] Fix all high/critical and justified medium findings; rerun affected gates.
-- [ ] Complete 1Password Git signing, push the locally verified follow-up fixes and rerun remote CI. **Owner approval required.**
+- [x] Complete 1Password Git signing, push follow-up fixes as `e2f1235` and rerun remote CI.
 - [ ] Approve release readiness only after domain, updater recovery, routes, credentials and pre-release gates are evidenced.
 - [ ] Observe successful `Presto Status`, then replace the old native required-check name in the ruleset.
 - [ ] Babysit required checks and merge only the exact reviewed commit; keep releases separately gated.
