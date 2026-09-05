@@ -299,6 +299,18 @@ describe("F-012 P3 — per-window capability ACL", () => {
 describe("NSIS uninstall hook — an upgrade must not wipe trust", () => {
   const HOOKS = path.join(SRC_TAURI, "nsis", "hooks.nsi");
 
+  test("Windows and Wine runners use the actual harness installation directory", async () => {
+    const harness = await read(path.join(SRC_TAURI, "nsis", "harness.test.nsi"));
+    const suffix = /^InstallDir "\$TEMP\\([^"\\]+)"$/m.exec(harness)?.[1];
+    expect(suffix).toBeDefined();
+    const workflow = await read(
+      path.resolve(SRC_TAURI, "../../..", ".github/workflows/presto.yml"),
+    );
+    const wine = await read(path.resolve(SRC_TAURI, "../scripts/nsis-hook-test.sh"));
+    expect(workflow).toContain(`Join-Path $env:TEMP "${suffix}"`);
+    expect(wine).toContain(`$PROFILE/Temp/${suffix}`);
+  });
+
   test("the destructive ops require BOTH $UpdateMode <> 1 and $EXEDIR != $INSTDIR", async () => {
     const nsi = await read(HOOKS);
     const guardOpen = nsi.search(/\$\{If\}\s*\$UpdateMode\s*<>\s*1/);

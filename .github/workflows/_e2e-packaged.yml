@@ -400,7 +400,7 @@ jobs:
       - name: Prepare virtual display
         run: |
           sudo apt-get update
-          sudo apt-get install -y xvfb stalonetray dbus-x11
+          sudo apt-get install -y xvfb stalonetray dbus-x11 libnss3-tools openssl
           Xvfb :99 -screen 0 1280x1024x24 >/tmp/presto-isolation-xvfb.log 2>&1 &
           echo "DISPLAY=:99" >> "$GITHUB_ENV"
           sleep 2

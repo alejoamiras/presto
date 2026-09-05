@@ -98,10 +98,36 @@ release deployment must consume the exact provenance-verified published SDK.
   production public key. The smoke now supplies a matching throwaway public key through a temporary
   build-config overlay, without modifying the committed production identity or readiness gate.
   The packaging/install smoke must rerun with that overlay.
+- On `eb2158a`, Windows packaging/install smoke and the real autostart lifecycle pass. The remaining
+  non-readiness failure is the NSIS hook harness runner looking under its old temporary directory
+  while the harness installs under `presto-hooks-harness`. The runner now matches the actual NSIS
+  install directory; a contract compares the Windows and Wine runners against that declaration.
+  The contract fails before the correction and passes afterward. CI must verify the real hook run.
+- The harness follow-up is staged locally: Git signing failed to complete its 1Password approval.
+  Commit/push and real Windows CI verification remain pending; no signing bypass was used.
+- Linux packaged isolation now seeds a real historical CA in fresh Chromium and Firefox NSS stores
+  and checks exact certificate bytes, trust flags and CA validation across the existing lifecycle.
+  Local disposable-database controls detect deletion, distrust and replacement. The historical
+  autostart fixture uses the original code's exact case-sensitive filename. This strengthens the
+  existing acceptance check; real packaged execution and other-platform isolation remain pending.
 - Linux/Windows installer execution, packaged candidate and same-key updater matrices still require CI
   and real Presto RC/stable artifacts. Local NSIS and hermetic autostart harnesses require Docker.
 - Three independent operational review areas were examined; identified high defects were corrected.
   Final approval must be refreshed against the exact commit after domain/key/credential work.
+
+## Credential custody
+
+Every new production key, password and deployment credential must be saved in a clearly named
+Presto item in the owner's Personal 1Password vault and read-back verified before configuring GitHub.
+Never overwrite or delete existing signing identities. Only public keys enter Git. Keep release
+readiness blocked until the owner confirms a separate offline updater-key recovery copy.
+
+The new `Presto Production Updater Signing Key` item was created with its generated password on
+2026-09-05. Key generation, saved-key verification and GitHub provisioning are separate steps;
+creating the item alone is not evidence that those later steps or offline recovery are complete.
+The password read did not complete its approval, so no new key pair has been generated and no
+release secrets have been configured in GitHub. Resume from the existing item; do not generate a
+replacement password or duplicate item. Offline recovery destination/confirmation is still required.
 
 ## Required operator inputs and remaining gates
 

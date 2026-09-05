@@ -230,7 +230,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "makensis failed ($LASTEXITCODE)" }
 
           $setup  = Join-Path $PWD "hooks-harness-setup.exe"
-          $dir    = Join-Path $env:TEMP "aztec-hooks-harness"
+          $dir    = Join-Path $env:TEMP "presto-hooks-harness"
           $certs  = Join-Path $env:USERPROFILE ".presto\certs"
           $marker = Join-Path $certs "marker.txt"
 
@@ -245,6 +245,10 @@ jobs:
 
           foreach ($case in $cases) {
             & $setup /S | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "NSIS harness setup failed ($LASTEXITCODE)" }
+            if (-not (Test-Path (Join-Path $dir "uninstall.exe"))) {
+              throw "NSIS harness did not produce its uninstaller under $dir"
+            }
             New-Item -ItemType Directory -Force -Path $certs | Out-Null
             Set-Content -Path $marker -Value "seeded"
 

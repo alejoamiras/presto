@@ -17,14 +17,16 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 - [x] Remove the obsolete planning tree; preserve historical audits and add the migration guide/branding guards.
 - [x] Purchase and onboard `presto.build`; pin native identifier `build.presto.presto`.
 - [x] Fix the missing Windows updater crash-recovery guard; Windows compilation, app/core unit tests and WebDriver pass on `e2f1235`.
-- [ ] Restore deliberately spaced autostart quoting fixtures and matching prefix-hijack decoy. **Regression guard added; Windows lifecycle rerun pending.**
-- [ ] Give the Windows packaging smoke a matching ephemeral public/private key pair without modifying production identity. **Contract guard added; CI rerun pending.**
+- [x] Restore deliberately spaced autostart quoting fixtures and matching prefix-hijack decoy; Windows lifecycle passes on `eb2158a`.
+- [x] Give the Windows packaging smoke a matching ephemeral public/private key pair without modifying production identity; packaging/install smoke passes on `eb2158a`.
+- [ ] Align the Windows NSIS harness runner with its renamed installation directory. **Contract reproduced and fixed locally; CI rerun pending.**
 - [x] Fix the published legacy SDK fixture installer under CI's npm 12 and add regression coverage; actual npm 12 installation and native-proof E2E pass locally.
 - [ ] Refresh all remaining API/state/OS/release identity-contract and mutual wire-compatibility acceptance evidence.
 - [ ] Verify actionable port-conflict behavior and no modification of the other installation.
 
 ## 2. Cloudflare and credentials
 
+- [ ] Save every new production credential in a clearly named Presto 1Password item and verify read-back before configuring GitHub. Preserve all existing keys.
 - [x] Create fresh landing, playground and release-feed Workers and `PRESTO_RELEASE_FEED` KV namespace.
 - [x] Enable workers.dev fallback endpoints and version previews.
 - [x] Deploy apex landing and playground Custom Domains plus the `/releases/*` feed route.
