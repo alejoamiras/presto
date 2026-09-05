@@ -103,8 +103,10 @@ release deployment must consume the exact provenance-verified published SDK.
   while the harness installs under `presto-hooks-harness`. The runner now matches the actual NSIS
   install directory; a contract compares the Windows and Wine runners against that declaration.
   The contract fails before the correction and passes afterward. CI must verify the real hook run.
-- The harness follow-up is staged locally: Git signing failed to complete its 1Password approval.
-  Commit/push and real Windows CI verification remain pending; no signing bypass was used.
+- The harness follow-up is signed, GitHub-verified and pushed as `6b7b6b0`. All functional jobs in
+  Presto run `33976311599` pass, including Windows certificate/hook, packaging/install and WebDriver
+  checks. SDK, App, Landing and Actionlint also pass. Only the intentional launch-readiness gate
+  prevents an overall green status; no signing or readiness bypass was used.
 - Linux packaged isolation now seeds a real historical CA in fresh Chromium and Firefox NSS stores
   and checks exact certificate bytes, trust flags and CA validation across the existing lifecycle.
   Local disposable-database controls detect deletion, distrust and replacement. The historical
@@ -122,26 +124,29 @@ Presto item in the owner's Personal 1Password vault and read-back verified befor
 Never overwrite or delete existing signing identities. Only public keys enter Git. Keep release
 readiness blocked until the owner confirms a separate offline updater-key recovery copy.
 
-The new `Presto Production Updater Signing Key` item was created with its generated password on
-2026-09-05. Key generation, saved-key verification and GitHub provisioning are separate steps;
-creating the item alone is not evidence that those later steps or offline recovery are complete.
-The password read did not complete its approval, so no new key pair has been generated and no
-release secrets have been configured in GitHub. Resume from the existing item; do not generate a
-replacement password or duplicate item. Offline recovery destination/confirmation is still required.
+The `Presto Production Updater Signing Key` item in Personal now contains the fresh encrypted key,
+its generated 64-character password and public key. On 2026-09-05, exact read-back comparisons
+passed; the key rejected an incorrect password and successfully signed an artifact verified by
+the production verifier. Public key ID: `f92b1e05e0cef393`. The public key is added to Tauri config.
+The verified backup supplied `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
+to GitHub's `release-signing` environment at 16:08 UTC, after confirming its main-only branch policy.
+GitHub does not permit secret-value read-back; these entries are not yet release-CI acceptance.
+No existing signing key was changed. Offline recovery destination/confirmation remains required;
+`recoveredUpdaterPublicKey` stays null and `releaseReady` stays false. Do not generate a replacement
+password, duplicate item or replacement key when resuming.
 
 ## Required operator inputs and remaining gates
 
 1. Domain onboarding and production routes are complete. Preserve `presto.build` and native
    identifier `build.presto.presto` before and after the first RC.
-2. Generate a fresh password-protected updater key, commit its public key, store both secrets in
-   the main-only `release-signing` environment, and confirm an offline recovery copy.
-   The Tauri public-key field is intentionally empty; no inherited signing key is accepted.
+2. Confirm a separate offline recovery copy of the new updater key and password. Generation,
+   1Password read-back/signature verification and main-only GitHub secret provisioning are complete;
+   release-CI use and owner-confirmed offline recovery are not yet complete.
 3. Enter least-privilege, separate Cloudflare deployment/feed-deployment/feed-promotion tokens.
    Re-enter Apple credentials and authorize the release GitHub App for this repository.
    Enable `PRESTO_PREVIEWS_ENABLED` only after preview credentials are ready.
-   On 2026-09-05 the repository and three protected environments had no secrets configured;
-   Git signing and vault listing later succeeded, but the separate saved-item listing request
-   timed out. No release signing secrets were generated, read or stored during these attempts.
+   Only the two updater secrets have been provisioned so far; the remaining credential setup is
+   still pending. All new credentials require the same 1Password save/read-back custody checks.
 4. Complete interactive npm bootstrap/login/2FA and configure the trusted publisher before publishing
    the real SDK candidate from CI. No npm versions or dist-tags have been changed.
 5. Run all remaining OS, installer, packaged-app, consent and updater gates. Set readiness only after

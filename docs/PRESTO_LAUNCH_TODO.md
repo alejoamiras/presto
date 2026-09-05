@@ -19,7 +19,7 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 - [x] Fix the missing Windows updater crash-recovery guard; Windows compilation, app/core unit tests and WebDriver pass on `e2f1235`.
 - [x] Restore deliberately spaced autostart quoting fixtures and matching prefix-hijack decoy; Windows lifecycle passes on `eb2158a`.
 - [x] Give the Windows packaging smoke a matching ephemeral public/private key pair without modifying production identity; packaging/install smoke passes on `eb2158a`.
-- [ ] Align the Windows NSIS harness runner with its renamed installation directory. **Contract reproduced and fixed locally; CI rerun pending.**
+- [x] Align the Windows NSIS harness runner with its renamed installation directory; real Windows certificate/hook CI passes on `6b7b6b0`.
 - [x] Fix the published legacy SDK fixture installer under CI's npm 12 and add regression coverage; actual npm 12 installation and native-proof E2E pass locally.
 - [ ] Refresh all remaining API/state/OS/release identity-contract and mutual wire-compatibility acceptance evidence.
 - [ ] Verify actionable port-conflict behavior and no modification of the other installation.
@@ -35,8 +35,8 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 - [ ] Create/store a least-privilege site deployment token (Workers Scripts Edit, target-zone Routes Edit/Zone Read).
 - [ ] Create/store a separate release-feed deployment token and separate KV promotion token in `release-feed`.
 - [ ] Enable and verify PR previews only after their credentials are ready.
-- [ ] Generate a fresh password-protected Tauri updater key; commit only the public key.
-- [ ] Store updater private key/password in the main-only `release-signing` environment.
+- [x] Generate a fresh password-protected Tauri updater key and verify its 1Password backup and signing; add only the public key to the repository.
+- [x] Store updater private key/password in the main-only `release-signing` environment.
 - [ ] Confirm an offline updater-key recovery copy before the first RC. **Owner confirmation required.**
 - [ ] Securely re-enter Apple signing/notarization credentials for the newly named app.
 - [ ] Authorize the release GitHub App for Presto; securely provide/rotate its private key if needed.
