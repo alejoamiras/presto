@@ -47,6 +47,24 @@ Release sequence: SDK 5.2.0 to `testnet` with provenance; native `1.0.0-rc.1`; n
 verification; then guarded SDK `latest` promotion. RCs must never enter the public feed.
 The baseline bootstrap is restricted to exactly RC1 with no earlier Presto release.
 
+### Cloudflare deployment credentials
+
+Keep three distinct tokens, each saved/read-back verified in 1Password before GitHub setup:
+
+| Purpose | GitHub location | Permissions |
+| --- | --- | --- |
+| Landing/playground and PR previews | Repository: `CLOUDFLARE_DEPLOY_API_TOKEN` | Account Workers Scripts Edit; Presto zone Workers Routes Edit and Zone Read |
+| Feed Worker code | Main-only `release-feed`: `CLOUDFLARE_RELEASE_FEED_DEPLOY_API_TOKEN` | Account Workers Scripts Edit only |
+| Signed feed promotion | Main-only `release-feed`: `CLOUDFLARE_RELEASE_FEED_API_TOKEN` | Account Workers KV Storage Edit only |
+
+Feed deployment uses `wrangler versions upload` and deploys the exact returned version ID at 100%.
+It does not run `wrangler deploy` or `wrangler triggers deploy`: route changes require the separately
+scoped site token and an explicit infrastructure operation. Keep the configured feed route in place.
+The uploaded version is selected from Wrangler's structured output, validating the Worker name and
+version ID before activation. This follows Cloudflare's separation of
+[versions, deployments and triggers](https://developers.cloudflare.com/workers/wrangler/commands/workers/).
+Uploading a version alone does not promote the stable manifest or change production traffic.
+
 ### Recovering an interrupted first RC
 
 An unpublished RC1 draft counts as an existing release and deliberately blocks the bootstrap

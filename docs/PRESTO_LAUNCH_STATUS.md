@@ -179,8 +179,9 @@ Backup-priority checkpoint, 2026-09-05:
 3. Enter least-privilege, separate Cloudflare deployment/feed-deployment/feed-promotion tokens.
    Re-enter Apple credentials and authorize the release GitHub App for this repository.
    Enable `PRESTO_PREVIEWS_ENABLED` only after preview credentials are ready.
-   The two updater secrets plus site token/account ID have been provisioned so far; feed credentials,
-   Apple and GitHub App setup are still pending. All new credentials require the same 1Password
+   The two updater secrets, site token/account ID, and feed-deployment token/environment account ID
+   have been provisioned. The KV promotion token, Apple and GitHub App setup are still pending.
+   All new credentials require the same 1Password
    save/read-back custody checks. The backup-priority pause is resolved by the updated owner decision.
 4. Complete interactive npm bootstrap/login/2FA and configure the trusted publisher before publishing
    the real SDK candidate from CI. No npm versions or dist-tags have been changed.
@@ -194,3 +195,22 @@ Backup-priority checkpoint, 2026-09-05:
 
 Published versions/releases remain append-only. Rollback uses Worker versions, a verified prior KV
 feed, and npm dist-tags; do not unpublish or rewrite release assets.
+
+## Feed-deployment credential checkpoint (2026-09-05)
+
+- Owner-created `Presto Release Feed Deployment` was read-back verified in 1Password and confirmed
+  active. It can read feed Worker settings; KV and route access are denied. The separate site token
+  remains backed up, active and unchanged. Both vault item names exist independently.
+- The token and account ID were copied to the main-only `release-feed` environment at 17:18 UTC.
+  The deployment workflow remains disabled until the operational rename reaches main safely.
+- The scoped token uploaded preview version `30b60a29-8325-472a-b23b-c2c37a71a94a` at
+  `credential-check-presto-release-feed.alejo-amiras.workers.dev`; the exact-version deployment
+  dry-run passed. Preview and production feeds return 503/no-store with no promoted manifest.
+  The deployment API confirms production remains on `678208cc-f854-4fa4-aef1-53f8274df9b7`.
+- Feed deployment now uploads and activates an exact version instead of using route-managing
+  `wrangler deploy`, matching the script-only token permission boundary. The real upload's structured
+  output passes the workflow's Worker-name/version-ID parser. Its existing contract reproduced the
+  old command mismatch and passes after correction; all 212 script tests and actionlint pass.
+  Focused independent release review found no concrete safety/correctness issues.
+- The owner has been asked to create `Presto Release Feed Promotion` with only Workers KV Storage
+  Edit for the target account, save it as a separate 1Password item, and confirm readiness.

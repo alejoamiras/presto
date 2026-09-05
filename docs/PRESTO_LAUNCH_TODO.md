@@ -33,7 +33,8 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 - [x] Verify HTTPS, canonical URLs, cross-origin isolation headers and the deliberately empty/no-store feed.
 - [x] Implement same-repository-only PR preview uploads with stable PR aliases and isolated credentialed jobs.
 - [x] Create/store the scoped site deployment token in 1Password and GitHub; verify read-back, target zone/routes/Workers access, denied KV access, and successful landing/playground CI preview uploads.
-- [ ] Create/store a separate release-feed deployment token and separate KV promotion token in `release-feed`.
+- [x] Create/store the separate release-feed deployment token in 1Password and main-only `release-feed`; verify read-back, scoped API access and a real preview-version upload without changing production.
+- [ ] Create/store the separate KV promotion token in 1Password and main-only `release-feed`.
 - [x] Enable and verify same-repository PR previews after credential setup; both stable PR aliases and deep links return 200 with isolation headers, without changing production deployments.
 - [x] Generate a fresh password-protected Tauri updater key and verify its 1Password backup and signing; add only the public key to the repository.
 - [x] Store updater private key/password in the main-only `release-signing` environment.
