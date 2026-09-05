@@ -32,12 +32,14 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 - [x] Deploy apex landing and playground Custom Domains plus the `/releases/*` feed route.
 - [x] Verify HTTPS, canonical URLs, cross-origin isolation headers and the deliberately empty/no-store feed.
 - [x] Implement same-repository-only PR preview uploads with stable PR aliases and isolated credentialed jobs.
-- [ ] Create/store a least-privilege site deployment token (Workers Scripts Edit, target-zone Routes Edit/Zone Read).
+- [x] Create/store the scoped site deployment token in 1Password and GitHub; verify read-back, target zone/routes/Workers access, denied KV access, and successful landing/playground CI preview uploads.
 - [ ] Create/store a separate release-feed deployment token and separate KV promotion token in `release-feed`.
-- [ ] Enable and verify PR previews only after their credentials are ready.
+- [x] Enable and verify same-repository PR previews after credential setup; both stable PR aliases and deep links return 200 with isolation headers, without changing production deployments.
 - [x] Generate a fresh password-protected Tauri updater key and verify its 1Password backup and signing; add only the public key to the repository.
 - [x] Store updater private key/password in the main-only `release-signing` environment.
-- [ ] Confirm an offline updater-key recovery copy before the first RC. **Owner confirmation required.**
+- [x] Confirm the owner-approved 1Password recovery backup: exact key/password read-back and signing passed. **On 2026-09-05 the owner explicitly removed the separate offline-copy requirement from the original plan.**
+- [x] Make a permanent owner-only local copy of the encrypted updater key and public key; verify byte equality and record a recovery inventory.
+- Independent offline backup is optional under that updated owner decision; it is not claimed complete and does not block setup or release. Existing local copies remain untouched.
 - [ ] Securely re-enter Apple signing/notarization credentials for the newly named app.
 - [ ] Authorize the release GitHub App for Presto; securely provide/rotate its private key if needed.
 - [ ] Verify credentials and environments without publishing; enable deployment/release workflows only when safe.

@@ -115,7 +115,7 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
       expect(document).not.toContain("install it over the existing");
     }
     expect(WF).toContain("never migrates or modifies");
-    expect(RELEASE_RUNBOOK).toContain("offline recovery copy");
+    expect(RELEASE_RUNBOOK).toContain("1Password as the backup of record");
   });
 
   test("ordinary releases fail closed on a same-key baseline and have no rotation escape hatch", () => {

@@ -121,8 +121,10 @@ release deployment must consume the exact provenance-verified published SDK.
 
 Every new production key, password and deployment credential must be saved in a clearly named
 Presto item in the owner's Personal 1Password vault and read-back verified before configuring GitHub.
-Never overwrite or delete existing signing identities. Only public keys enter Git. Keep release
-readiness blocked until the owner confirms a separate offline updater-key recovery copy.
+Never overwrite or delete existing signing identities. Only public keys enter Git. On 2026-09-05
+the owner explicitly approved 1Password as the backup of record and removed the separate offline
+copy requirement from the original plan. This newer decision supersedes the earlier backup pause;
+independent offline recovery is not claimed. All other release gates remain mandatory.
 
 The `Presto Production Updater Signing Key` item in Personal now contains the fresh encrypted key,
 its generated 64-character password and public key. On 2026-09-05, exact read-back comparisons
@@ -131,22 +133,55 @@ the production verifier. Public key ID: `f92b1e05e0cef393`. The public key is ad
 The verified backup supplied `TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 to GitHub's `release-signing` environment at 16:08 UTC, after confirming its main-only branch policy.
 GitHub does not permit secret-value read-back; these entries are not yet release-CI acceptance.
-No existing signing key was changed. Offline recovery destination/confirmation remains required;
-`recoveredUpdaterPublicKey` stays null and `releaseReady` stays false. Do not generate a replacement
-password, duplicate item or replacement key when resuming.
+No existing signing key was changed. The verified 1Password backup now satisfies the owner-approved
+recovery policy; `recoveredUpdaterPublicKey` records that public key while `releaseReady` stays false
+for the remaining credentials and acceptance gates. Do not generate a replacement password,
+duplicate item or replacement key when resuming.
 
 ## Required operator inputs and remaining gates
 
+Backup-priority checkpoint, 2026-09-05:
+
+- All functional CI jobs on the public-key commit `f3c0805` pass, including Windows packaging,
+  certificate/hooks and desktop WebDriver. Run `33977053211` is terminal; its only failures are
+  the intentional launch-readiness gate and aggregate Presto Status. No CI wait remains active.
+- The owner saved `Presto Site Deployment` in Personal. Repeated vault reads matched and the token
+  is active. Read-only checks succeed for the Presto zone, routes and Workers; KV access is denied.
+  The scoped template requested Workers Scripts Edit and target-zone Routes Edit/Zone Read;
+  token-policy introspection was denied, so these checks are not a complete permission audit.
+  The token and account ID were copied to repository secrets at 16:24 UTC. Actual preview-upload
+  acceptance remains pending; preview/deployment switches were not enabled.
+- Current vault evidence resolves the earlier misleading item-ID association: a separate legacy
+  feed-promotion item remains present, active and distinct from the Presto site token. The legacy
+  updater signing item, feed-deploy item and Apple Developer item remain present with modification
+  dates predating this setup. No credential was deleted, rotated or overwritten by the agent.
+- The encrypted Presto key and public key were copied to the owner's permanent
+  `Documents/Presto-Recovery` folder (0700, key files 0600) and compared byte-for-byte. Its README
+  records credential sources and verification limits without secret values. The password is not
+  stored alongside that encrypted key. This is not yet a complete independent recovery backup.
+- Setup was paused for extra-backup assurance; the owner's subsequent explicit decision accepts
+  the verified 1Password backup and resumes setup without a separate offline file. Preserve all
+  existing copies. Do not copy plaintext passwords to an unencrypted folder or treat GitHub secrets
+  as recovery backups. No independent offline backup is claimed.
+- After resuming, `PRESTO_PREVIEWS_ENABLED=true` and rerun `33977053079` passed both builds and
+  credential-isolated uploads. Stable aliases `pr-6-presto-landing.alejo-amiras.workers.dev` and
+  `pr-6-presto-playground.alejo-amiras.workers.dev` return 200 for root/deep links with COOP
+  `same-origin` and COEP `credentialless`. Preview versions are
+  `9eeb5b28-fba3-4baa-94e1-abd39d9b7064` and `c64e5216-9b70-4856-b048-5287e9de0600`.
+  Cloudflare's deployment API confirms production remains on the versions listed above.
+  This completes preview write-access acceptance; production deployment workflows remain disabled.
+
 1. Domain onboarding and production routes are complete. Preserve `presto.build` and native
    identifier `build.presto.presto` before and after the first RC.
-2. Confirm a separate offline recovery copy of the new updater key and password. Generation,
-   1Password read-back/signature verification and main-only GitHub secret provisioning are complete;
-   release-CI use and owner-confirmed offline recovery are not yet complete.
+2. Updater generation, owner-approved 1Password recovery, read-back/signature verification and
+   main-only GitHub secret provisioning are complete. Release-CI use remains to be verified;
+   an independent offline copy is optional under the updated owner decision.
 3. Enter least-privilege, separate Cloudflare deployment/feed-deployment/feed-promotion tokens.
    Re-enter Apple credentials and authorize the release GitHub App for this repository.
    Enable `PRESTO_PREVIEWS_ENABLED` only after preview credentials are ready.
-   Only the two updater secrets have been provisioned so far; the remaining credential setup is
-   still pending. All new credentials require the same 1Password save/read-back custody checks.
+   The two updater secrets plus site token/account ID have been provisioned so far; feed credentials,
+   Apple and GitHub App setup are still pending. All new credentials require the same 1Password
+   save/read-back custody checks. The backup-priority pause is resolved by the updated owner decision.
 4. Complete interactive npm bootstrap/login/2FA and configure the trusted publisher before publishing
    the real SDK candidate from CI. No npm versions or dist-tags have been changed.
 5. Run all remaining OS, installer, packaged-app, consent and updater gates. Set readiness only after

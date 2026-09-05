@@ -24,8 +24,11 @@ Generate a new password-protected key for Presto. Commit only its public key. Ne
 may exist at repository scope. Re-enter Apple signing/notarization credentials separately:
 GitHub cannot export existing secrets.
 
-Before RC1, require the operator to keep an offline recovery copy and record the exact recovered
-public key in `infra/presto-identity.json`. Never claim recovery based only on a GitHub upload.
+The owner explicitly approved 1Password as the backup of record on 2026-09-05, removing the
+separate offline-copy requirement from the original launch plan. Save the key and password in
+1Password, verify exact read-back and successful signing, and record that public key as
+`recoveredUpdaterPublicKey` in `infra/presto-identity.json`. Never claim recovery based only on a
+GitHub upload. This attestation does not claim that an independent offline backup exists.
 The signing job must verify every payload and manifest against the committed public key.
 
 ### Launch gates
