@@ -123,8 +123,8 @@ jobs:
             exit 1
           fi
           old_ep=$(jq -r '.plugins.updater.endpoints[0]' "$RUNNER_TEMP/n1-conf.json")
-          if [ "$old_ep" != "https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json" ]; then
-            echo "::error::preflight (d): N-1's updater endpoint is '$old_ep', not the impersonated https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json"
+          if [ "$old_ep" != "https://presto.build/releases/latest.json" ]; then
+            echo "::error::preflight (d): N-1's updater endpoint is '$old_ep', not the impersonated https://presto.build/releases/latest.json"
             exit 1
           fi
           echo "preflight OK: $TAG asset present, $N_VERSION > $N1_VERSION, pubkey + endpoint unchanged"

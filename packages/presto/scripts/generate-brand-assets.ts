@@ -149,10 +149,7 @@ async function genAppIcons(outDir: string): Promise<void> {
 
 function ogHtml(variant: "landing" | "playground"): string {
   const font = (file: string) => `url("file://${join(FONTS_DIR, file)}") format("woff2")`;
-  const domain =
-    variant === "landing"
-      ? "presto-landing.alejo-amiras.workers.dev"
-      : "presto-playground.alejo-amiras.workers.dev";
+  const domain = variant === "landing" ? "presto.build" : "playground.presto.build";
   const line1 = variant === "landing" ? "Fast proofs." : "Try it live.";
   const line2 = variant === "landing" ? "Like magic" : "The playground";
   return `<!doctype html><html><head><meta charset="utf-8"><style>
@@ -162,9 +159,9 @@ function ogHtml(variant: "landing" | "playground"): string {
   body{width:1200px;height:630px;background:#FFFAF1;display:flex;align-items:center;gap:64px;
     padding:0 96px;font-family:Bricolage,sans-serif;color:#241B33}
   .mark{flex:none}
-  h1{font-size:96px;font-weight:800;line-height:1.04;letter-spacing:-.02em}
+  h1{font-size:${variant === "landing" ? 96 : 72}px;font-weight:800;line-height:1.04;letter-spacing:-.02em}
   h1 .c{color:#3B4FE0}.h1 .g{color:#FFC53D}
-  .meta{font-family:Fragment,monospace;font-size:30px;color:#6E6580;margin-top:36px}
+  .meta{font-family:Fragment,monospace;font-size:${variant === "landing" ? 30 : 22}px;color:#6E6580;margin-top:36px}
   </style></head><body>
   <svg class="mark" width="300" height="300" viewBox="0 0 120 120" fill="none">
     <path d="M64 24 L38 66 H56 L52 94 L86 50 H64 Z" fill="#3B4FE0" stroke="#3B4FE0" stroke-width="8" stroke-linejoin="round"/>
@@ -178,7 +175,7 @@ function ogHtml(variant: "landing" | "playground"): string {
 
 async function genOg(variant: "landing" | "playground"): Promise<void> {
   const outPath = resolve(PKG_DIR, "..", variant, "public", "og-image.png");
-  const { chromium } = await import("playwright");
+  const { chromium } = await import("@playwright/test");
   const browser = await chromium.launch({ headless: true }).catch((err) => {
     console.error(`chromium launch failed (run \`bunx playwright install chromium\` once): ${err}`);
     return process.exit(1);

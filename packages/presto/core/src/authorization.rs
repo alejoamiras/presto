@@ -539,7 +539,7 @@ mod tests {
 
     #[test]
     fn is_approved_checks_both() {
-        let approved = vec![co("https://presto-playground.alejo-amiras.workers.dev")];
+        let approved = vec![co("https://playground.presto.build")];
         // auto_approve_localhost = true → localhost auto-approved.
         assert!(AuthorizationManager::is_approved(
             &co("http://localhost:5173"),
@@ -548,7 +548,7 @@ mod tests {
         ));
         // An explicitly-approved origin is approved regardless of the localhost flag.
         assert!(AuthorizationManager::is_approved(
-            &co("https://presto-playground.alejo-amiras.workers.dev"),
+            &co("https://playground.presto.build"),
             &approved,
             false
         ));

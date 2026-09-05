@@ -140,9 +140,7 @@ mod tests {
         // Specific seed entries we expect.
         assert!(registry.lookup("https://nulo.sh").is_some());
         assert!(registry.lookup("https://faucet.nulo.sh").is_some());
-        assert!(registry
-            .lookup("https://presto-playground.alejo-amiras.workers.dev")
-            .is_some(),);
+        assert!(registry.lookup("https://playground.presto.build").is_some(),);
     }
 
     #[test]

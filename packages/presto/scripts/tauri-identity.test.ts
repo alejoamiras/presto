@@ -32,7 +32,7 @@ describe("binary identity (cargo layer owns the name)", () => {
 
   test("product identity unchanged (install dir, artifacts, config dir all hang off these)", () => {
     expect(conf.productName).toBe("Presto");
-    expect(conf.identifier).toBe("invalid.pending-domain.presto");
+    expect(conf.identifier).toBe("build.presto.presto");
   });
 });
 
@@ -40,7 +40,7 @@ describe("bundle metadata", () => {
   test("shipped metadata is pinned exactly", () => {
     expect(conf.bundle.category).toBe("DeveloperTool");
     expect(conf.bundle.copyright).toBe("© 2026 Presto contributors");
-    expect(conf.bundle.homepage).toBe("https://presto-landing.alejo-amiras.workers.dev");
+    expect(conf.bundle.homepage).toBe("https://presto.build");
     expect(conf.bundle.license).toBe("AGPL-3.0-only");
   });
 

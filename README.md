@@ -14,8 +14,8 @@ Native prover for Aztec transactions. Bypasses browser WASM throttling by runnin
 |---------|-------------|--------|
 | [`@alejoamiras/presto`](packages/sdk) | SDK — drop-in `PrestoProver` for dApp integration | [![npm](https://img.shields.io/npm/v/@alejoamiras/presto?label=npm)](https://www.npmjs.com/package/@alejoamiras/presto) |
 | [`packages/presto`](packages/presto) | Desktop tray app (macOS/Linux/Windows) + headless server for CI test acceleration | [![Presto](https://github.com/alejoamiras/presto/actions/workflows/presto.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/presto.yml) |
-| [`packages/playground`](packages/playground) | [Live demo](https://presto-playground.alejo-amiras.workers.dev) — WASM vs accelerated comparison | [![App](https://github.com/alejoamiras/presto/actions/workflows/app.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/app.yml) |
-| [`packages/landing`](packages/landing) | Landing page at [presto-landing.alejo-amiras.workers.dev](https://presto-landing.alejo-amiras.workers.dev) | |
+| [`packages/playground`](packages/playground) | [Live demo](https://playground.presto.build) — WASM vs accelerated comparison | [![App](https://github.com/alejoamiras/presto/actions/workflows/app.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/app.yml) |
+| [`packages/landing`](packages/landing) | Landing page at [presto.build](https://presto.build) | |
 
 ## Architecture
 

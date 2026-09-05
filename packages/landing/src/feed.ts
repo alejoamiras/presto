@@ -8,9 +8,9 @@
 // path segment — never interpolate a feed field into a URL host. Asset download URLs still come from the
 // GitHub API's own `browser_download_url` (GitHub-origin), never from the feed.
 
-// Same-origin on the deployed site (presto-landing.alejo-amiras.workers.dev/releases/latest.json); 404s harmlessly in local
-// dev → the caller falls back to the GitHub releases page.
-export const FEED_URL = "https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json";
+// Canonical production endpoint, also used from local dev and workers.dev previews.
+// An empty/unavailable feed falls back to the GitHub releases page without exposing an RC.
+export const FEED_URL = "https://presto.build/releases/latest.json";
 
 // The promoted feed only ever carries a stable X.Y.Z — reject prereleases and anything non-SemVer. This is
 // both the untrusted-input guard and the fix for "an RC shows up as the download".

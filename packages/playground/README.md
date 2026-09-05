@@ -6,7 +6,7 @@ Interactive web app for comparing in-browser WASM proving against native acceler
 
 ## Live Demo
 
-[presto-playground.alejo-amiras.workers.dev](https://presto-playground.alejo-amiras.workers.dev)
+[playground.presto.build](https://playground.presto.build)
 
 ## Features
 
@@ -65,7 +65,7 @@ E2E tests use [Playwright](https://playwright.dev).
 bun run build   # Output: dist/
 ```
 
-Deployed with Cloudflare Workers Static Assets at `presto-playground.alejo-amiras.workers.dev`. `app.yml` is the PR gate (lint, typecheck, unit, e2e). The live deploy is a manual `release-sdk.yml` dispatch: choose `sdk-and-playground` for a candidate SDK release plus deploy, or `playground-only` to deploy without publishing npm.
+Deployed with Cloudflare Workers Static Assets at `playground.presto.build`. `app.yml` is the PR gate (lint, typecheck, unit, e2e). The live deploy is a manual `release-sdk.yml` dispatch: choose `sdk-and-playground` for a candidate SDK release plus deploy, or `playground-only` to deploy without publishing npm.
 
 ## License
 

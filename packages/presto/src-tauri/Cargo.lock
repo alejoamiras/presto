@@ -3,36 +3,6 @@
 version = 3
 
 [[package]]
-name = "presto-core"
-version = "0.0.0"
-dependencies = [
- "axum",
- "base64 0.22.1",
- "dirs",
- "flate2",
- "hex",
- "http",
- "libc",
- "minisign-verify",
- "parking_lot",
- "reqwest 0.12.28",
- "semver",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tar",
- "tempfile",
- "time",
- "tokio",
- "tower-http",
- "tracing",
- "url",
- "uuid",
- "which",
- "windows-sys 0.61.2",
-]
-
-[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -271,57 +241,6 @@ dependencies = [
  "tower-layer",
  "tower-service",
  "tracing",
-]
-
-[[package]]
-name = "presto"
-version = "1.0.0-rc.1"
-dependencies = [
- "presto-core",
- "axum",
- "base64 0.22.1",
- "dirs",
- "flate2",
- "fs2",
- "hex",
- "http",
- "hyper",
- "hyper-util",
- "libc",
- "parking_lot",
- "plist",
- "rcgen",
- "reqwest 0.12.28",
- "rustls-pemfile",
- "semver",
- "serde",
- "serde_json",
- "serial_test",
- "sha2 0.10.9",
- "sha2 0.11.0",
- "tar",
- "tauri",
- "tauri-build",
- "tauri-plugin-process",
- "tauri-plugin-updater",
- "tauri-plugin-webdriver",
- "tempfile",
- "time",
- "tokio",
- "tokio-rustls",
- "tower",
- "tower-http",
- "tracing",
- "tracing-appender",
- "tracing-subscriber",
- "url",
- "urlencoding",
- "uuid",
- "which",
- "windows-sys 0.61.2",
- "winreg",
- "x509-parser 0.18.1",
- "zeroize",
 ]
 
 [[package]]
@@ -3346,6 +3265,87 @@ name = "precomputed-hash"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "925383efa346730478fb4838dbe9137d2a47675ad789c546d150a6e1dd4ab31c"
+
+[[package]]
+name = "presto"
+version = "1.0.0-rc.1"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "dirs",
+ "flate2",
+ "fs2",
+ "hex",
+ "http",
+ "hyper",
+ "hyper-util",
+ "libc",
+ "parking_lot",
+ "plist",
+ "presto-core",
+ "rcgen",
+ "reqwest 0.12.28",
+ "rustls-pemfile",
+ "semver",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "sha2 0.10.9",
+ "sha2 0.11.0",
+ "tar",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-process",
+ "tauri-plugin-updater",
+ "tauri-plugin-webdriver",
+ "tempfile",
+ "time",
+ "tokio",
+ "tokio-rustls",
+ "tower",
+ "tower-http",
+ "tracing",
+ "tracing-appender",
+ "tracing-subscriber",
+ "url",
+ "urlencoding",
+ "uuid",
+ "which",
+ "windows-sys 0.61.2",
+ "winreg",
+ "x509-parser 0.18.1",
+ "zeroize",
+]
+
+[[package]]
+name = "presto-core"
+version = "0.0.0"
+dependencies = [
+ "axum",
+ "base64 0.22.1",
+ "dirs",
+ "flate2",
+ "hex",
+ "http",
+ "libc",
+ "minisign-verify",
+ "parking_lot",
+ "reqwest 0.12.28",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tar",
+ "tempfile",
+ "time",
+ "tokio",
+ "tower-http",
+ "tracing",
+ "url",
+ "uuid",
+ "which",
+ "windows-sys 0.61.2",
+]
 
 [[package]]
 name = "prettyplease"

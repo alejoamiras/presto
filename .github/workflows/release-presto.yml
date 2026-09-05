@@ -1358,7 +1358,7 @@ jobs:
       - name: Poll the prod feed + assert it serves this release
         env:
           EXPECTED: ${{ needs.validate.outputs.version }}
-          FEED_URL: https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json
+          FEED_URL: https://presto.build/releases/latest.json
         run: |
           set -euo pipefail
           # Poll the public CDN until it serves this version (covers invalidation

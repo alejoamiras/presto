@@ -45,15 +45,15 @@ const RETIRED = [
   "JetBrains+Mono",
 ];
 
-/** Identity-bearing literals pinned before the domain is finalized. */
+/** Permanent identity-bearing literals; changing them after release breaks OS identity. */
 const IDENTITY_PRESENT: Record<string, string[]> = {
   "packages/presto/src-tauri/tauri.conf.json": [
     '"productName": "Presto"',
-    '"identifier": "invalid.pending-domain.presto"',
+    '"identifier": "build.presto.presto"',
     '"publisher": "Presto"',
-    "https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json",
+    "https://presto.build/releases/latest.json",
     '"copyright": "© 2026 Presto contributors"',
-    '"homepage": "https://presto-landing.alejo-amiras.workers.dev"',
+    '"homepage": "https://presto.build"',
   ],
   "packages/presto/src-tauri/Cargo.toml": ['name = "presto"', "Presto"],
   "packages/presto/src-tauri/src/certs.rs": ["Presto Local CA", ".presto"],
@@ -95,9 +95,13 @@ describe("brand sweep", () => {
     const files = Bun.spawnSync(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: ROOT });
     expect(files.exitCode).toBe(0);
     // Build the retired spelling so the guard does not match its own source.
-    const retired = new RegExp("aztec[ _%-]*" + "accelerator|aztec%20" + "accelerator|AZTEC_ACCEL_|\\\\bAccelerator(?:Prover|Config|Status|Phase|Protocol|HttpError)|acceleratorVersion", "i");
+    const retired = new RegExp("aztec[ _%-]*" + "accelerator|aztec%20" + "accelerator|AZTEC_" + "ACCEL_|\\bAccelerator(?:Prover|Config|Status|Phase|Protocol|HttpError)|accelerator" + "Version", "i");
     const hits: string[] = [];
-    for (const rel of new Set(files.stdout.toString().split("\\0").filter(Boolean))) {
+    const paths = new Set(files.stdout.toString().split("\0").filter(Boolean));
+    expect(paths.size).toBeGreaterThan(100);
+    expect(paths.has("packages/presto/src-tauri/tauri.conf.json")).toBe(true);
+    expect(retired.test("Accelerator" + "Prover")).toBe(true);
+    for (const rel of paths) {
       if (rel.startsWith("audit/") || rel === "packages/sdk/MIGRATION.md") continue;
       const path = join(ROOT, rel);
       if (!existsSync(path)) continue; // Staged deletions.

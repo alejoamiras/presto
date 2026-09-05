@@ -1,13 +1,13 @@
 /**
  * Local HTTPS feed server for the release-time updater smoke test.
  *
- * Impersonates `https://presto-landing.alejo-amiras.workers.dev` on the CI runner (paired with an
+ * Impersonates `https://presto.build` on the CI runner (paired with an
  * `/etc/hosts` entry + a trusted local CA — see updater-smoke.sh). Serves:
  *   - GET /releases/latest.json        → the synthesized feed for version N
  *   - GET /releases/download/<file>    → the (already prod-signed) N artifacts
  *
  * The Tauri updater in the N-1 binary fetches the hardcoded endpoint
- * (https://presto-release-feed.alejo-amiras.workers.dev/releases/latest.json), then downloads the
+ * (https://presto.build/releases/latest.json), then downloads the
  * artifact URL from the feed and verifies its `.sig` against the embedded
  * prod pubkey. We serve the real signed artifacts, so NO signing key is needed.
  *

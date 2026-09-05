@@ -9,7 +9,7 @@ fallback belongs to an integrating dApp such as the playground.
 
 ## Live Site
 
-[presto-landing.alejo-amiras.workers.dev](https://presto-landing.alejo-amiras.workers.dev)
+[presto.build](https://presto.build)
 
 ## Development
 

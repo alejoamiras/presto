@@ -6,6 +6,7 @@
   "compatibility_flags": ["nodejs_compat"],
   "workers_dev": true,
   "preview_urls": true,
+  "routes": [{ "pattern": "presto.build/releases/*", "zone_name": "presto.build" }],
   "kv_namespaces": [
     {
       "binding": "PRESTO_RELEASE_FEED",
