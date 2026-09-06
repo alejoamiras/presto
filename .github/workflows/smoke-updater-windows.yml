@@ -170,6 +170,27 @@ jobs:
           cp target/release/bundle/nsis/*-setup.nsis.zip target/release/bundle/nsis/*-setup.nsis.zip.sig "$RUNNER_TEMP/n/"
           ls -la "$RUNNER_TEMP/n"
 
+      - name: Sign and verify the ephemeral smoke feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          payloads=("$RUNNER_TEMP"/n/*-setup.nsis.zip)
+          [ "${#payloads[@]}" -eq 1 ] || { echo "::error::expected exactly one N updater payload"; exit 1; }
+          PAYLOAD="${payloads[0]}"
+          FEED="$RUNNER_TEMP/n/smoke-latest.json"
+          FEED_HOST=$(jq -er '.plugins.updater.endpoints[0] | capture("^https://(?<host>[A-Za-z0-9.-]+)/").host' packages/presto/src-tauri/tauri.conf.json)
+          jq -n --arg version "$N_VERSION" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg signature "$(tr -d '\r\n' < "$PAYLOAD.sig")" \
+            --arg url "https://$FEED_HOST/releases/download/$(basename "$PAYLOAD")" \
+            --argjson size "$(wc -c < "$PAYLOAD" | tr -d ' ')" \
+            '{version:$version,notes:"ephemeral updater smoke",pub_date:$date,
+              platforms:{"windows-x86_64":{signature:$signature,url:$url,size:$size}}}' > "$FEED"
+          bash packages/presto/scripts/sign-smoke-feed.sh "$FEED" "$GITHUB_WORKSPACE"
+          jq -er '.plugins.updater.pubkey' packages/presto/src-tauri/tauri.conf.json > "$RUNNER_TEMP/smoke-pubkey.b64"
+          cargo run --locked --manifest-path packages/presto/core/Cargo.toml --example update-manifest -- \
+            verify --feed "$FEED" --pubkey "$RUNNER_TEMP/smoke-pubkey.b64"
+
       - name: Updater smoke (${{ inputs.mode || 'barrier' }}, ephemeral chain)
         shell: pwsh
         run: |

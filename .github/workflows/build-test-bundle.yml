@@ -55,7 +55,10 @@ jobs:
         env:
           TARGET: ${{ fromJSON('{"macos-arm64":"aarch64-apple-darwin","macos-x86_64":"x86_64-apple-darwin","linux-x86_64":"x86_64-unknown-linux-gnu","windows-x86_64":"x86_64-pc-windows-msvc"}')[matrix.platform] }}
         # Installer-only overlay: no production key and no unsigned updater artifacts.
-        run: bunx tauri build --target "$TARGET" --config '{"bundle":{"createUpdaterArtifacts":false}}'
+        run: |
+          bundle_args=()
+          if [ "$RUNNER_OS" = "Windows" ]; then bundle_args=(--bundles nsis); fi
+          bunx tauri build --target "$TARGET" "${bundle_args[@]}" --config '{"bundle":{"createUpdaterArtifacts":false}}'
 
       - name: Collect bundles
         shell: bash

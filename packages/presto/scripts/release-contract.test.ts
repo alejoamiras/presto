@@ -71,6 +71,11 @@ test("candidate bundles run all packaged platforms without production keys or pu
   );
   expect(candidate).toContain('fromJSON(\'["linux-x86_64","macos-arm64","windows-x86_64"]\')');
   expect(candidate).toContain('--config \'{"bundle":{"createUpdaterArtifacts":false}}\'');
+  expect(candidate).toContain(
+    'if [ "$RUNNER_OS" = "Windows" ]; then bundle_args=(--bundles nsis); fi',
+  );
+  expect(candidate).toContain(`"$TARGET" "\${bundle_args[@]}"`);
+  expect(candidate).not.toContain("--bundles all");
   expect(candidate).toContain("uses: ./.github/workflows/_e2e-packaged.yml");
   expect(candidate).toContain("ref: $" + "{{ github.sha }}");
   for (const [input, platform] of [
@@ -78,8 +83,8 @@ test("candidate bundles run all packaged platforms without production keys or pu
     ["macos_app_artifact", "macos-arm64"],
     ["windows_app_artifact", "windows-x86_64"],
   ]) {
-    expect(candidate).toContain(`${input}: presto-${platform}-$` + "{{ github.sha }}");
-    expect(PACKAGED).toContain(`name: $` + `{{ inputs.${input} }}`);
+    expect(candidate).toContain(`${input}: presto-${platform}-\${{ github.sha }}`);
+    expect(PACKAGED).toContain(`name: \${{ inputs.${input} }}`);
   }
   expect(PACKAGED).not.toContain("pattern: presto-*x86_64");
   expect(candidate).not.toMatch(/secrets[.:]|gh release|git tag|wrangler/);
@@ -87,7 +92,24 @@ test("candidate bundles run all packaged platforms without production keys or pu
   expect(PACKAGED).toContain("PRESTO_URL: http://127.0.0.1:59833");
   expect(PACKAGED).toContain("PLAYWRIGHT_PROJECT: local-network");
   expect(PACKAGED).toContain("test:e2e:packaged http-consent.local-network.spec.ts");
-  expect(PACKAGED_E2E_RUNNER).toContain('"${PLAYWRIGHT_PROJECT:-packaged-e2e}"');
+  expect(PACKAGED_E2E_RUNNER).toContain(`"\${PLAYWRIGHT_PROJECT:-packaged-e2e}"`);
+});
+
+test("ephemeral Windows updater smoke prepares its signed feed before running the installed app", () => {
+  const workflow = fs.readFileSync(
+    path.join(REPO, ".github/workflows/smoke-updater-windows.yml"),
+    "utf8",
+  );
+  const preparation =
+    workflow
+      .split("- name: Sign and verify the ephemeral smoke feed")[1]
+      ?.split("- name: Updater smoke")[0] ?? "";
+  expect(preparation).toContain('FEED="$RUNNER_TEMP/n/smoke-latest.json"');
+  expect(preparation).toContain(
+    'bash packages/presto/scripts/sign-smoke-feed.sh "$FEED" "$GITHUB_WORKSPACE"',
+  );
+  expect(preparation).toContain('verify --feed "$FEED" --pubkey "$RUNNER_TEMP/smoke-pubkey.b64"');
+  expect(workflow.replace(/^\s*#.*$/gm, "")).not.toMatch(/\$\{\{ secrets\./);
 });
 
 describe("release-presto.yml — B6 publish/promote contract", () => {

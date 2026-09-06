@@ -312,3 +312,31 @@ feed, and npm dist-tags; do not unpublish or rewrite release assets.
   returns all ten zones and a direct unrelated-zone detail read succeeds (200). The remaining
   Zone Read scope needs the owner's dashboard summary; no token replacement or external writes
   were performed during these probes.
+
+## Owner scope confirmation and Windows workflow diagnosis (2026-09-05)
+
+- The owner's Cloudflare token-summary screenshot confirms account-level Workers Scripts Edit
+  and `presto.build`-only Zone Read / Workers Routes Edit. Together with the unrelated-route 403,
+  this resolves the dashboard-policy gate. The observed broader zone metadata reads remain an
+  API behavior caveat, not a request for another token edit. No credential changed.
+- Candidate `20139a3` passed SDK, App, Landing, previews and workflow lint. Native functional
+  checks also passed; only readiness and its aggregate remain intentionally blocked.
+- Candidate build run `33985354120` built Linux and macOS successfully. Windows failed because
+  the generic builder requested MSI, whose version format rejects `1.0.0-rc.1`. Match the existing
+  release path by building NSIS only on Windows; retain the committed version and unsigned overlay.
+- Ephemeral updater run `33985355163` built both synthetic versions but failed before launching
+  them: `smoke-latest.json` was missing. The runtime smoke correctly requires an already-signed
+  feed, while its standalone caller did not prepare one. Add the missing caller step using the
+  existing smoke-feed signer and run-local key, followed by the production Rust manifest verifier.
+  Do not restore production signing credentials to smoke jobs or weaken verification.
+- Both workflow regressions are reproduced by the focused contract checks before the fixes.
+  Hosted re-execution is required to establish actual installer and updater acceptance.
+- After correction, all 23 release contracts, actionlint, ShellCheck and `git diff --check` pass.
+  The first full local run timed out in an unchanged SDK test after a 510-second scheduling gap;
+  the isolated rerun passed in two seconds and the subsequent complete `bun run test` passed
+  (479 tests). No SDK code or timeout was changed. The dependency audit reports zero blockers,
+  nine existing accepted exceptions, 15 moderate/low advisories and 20 informational RustSec
+  warnings; this is policy acceptance, not a claim that dependencies have no advisories.
+- Focused independent release review approves the corrected Windows-only bundle override and
+  ephemeral feed preparation, conditional on hosted execution. The pinned Tauri CLI help confirms
+  that `all` is not a CLI bundle name, so non-Windows platforms keep their configuration defaults.

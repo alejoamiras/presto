@@ -1,11 +1,8 @@
 #!/usr/bin/env bash
 # Sign a synthesized updater-smoke feed IN PLACE (F-004 Layer A).
 #
-# A C4+ N-1 build enforces the signed-manifest envelope, so the local smoke feed must carry a
-# `manifest` + `manifest_sig` signed with the SAME updater key N-1 embeds (the prod key — the synthetic
-# N-1 keeps the committed prod pubkey). This assembles the canonical envelope from the feed, signs it
-# with the key in TAURI_SIGNING_PRIVATE_KEY[_PASSWORD], and splices the two fields back in. Shared by
-# updater-smoke.sh (macOS) + updater-smoke-linux.sh so the envelope shape has ONE definition.
+# The synthetic Windows smoke uses a throwaway key embedded in both test builds. Sign its
+# local feed with that same key; production feeds use the isolated release signer instead.
 #
 # Encoding contract (kept in lockstep with presto_core::update_manifest):
 #   - manifest     = base64(envelope.json bytes)
