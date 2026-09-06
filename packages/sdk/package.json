@@ -1,9 +1,9 @@
 {
-  "name": "@alejoamiras/aztec-accelerator",
+  "name": "@alejoamiras/presto",
   "version": "0.0.0",
   "repository": {
     "type": "git",
-    "url": "https://github.com/alejoamiras/aztec-accelerator",
+    "url": "https://github.com/alejoamiras/presto",
     "directory": "packages/sdk"
   },
   "license": "AGPL-3.0-only",

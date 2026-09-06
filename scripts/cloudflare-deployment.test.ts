@@ -23,7 +23,7 @@ describe("Cloudflare deployment contract", () => {
   });
 
   test("only the promote workflow writes the exact verified feed bytes to production KV", () => {
-    const release = read(".github/workflows/release-accelerator.yml");
+    const release = read(".github/workflows/release-presto.yml");
     expect(release).toContain(
       "wrangler kv key put latest.json --path feed/latest.json --remote",
     );
@@ -35,7 +35,13 @@ describe("Cloudflare deployment contract", () => {
 
   test("the release-feed Worker is deployed independently from feed promotion", () => {
     const deploy = read(".github/workflows/deploy-release-feed.yml");
-    expect(deploy).toContain("wrangler deploy --config packages/release-feed/wrangler.jsonc");
+    expect(deploy).toContain("wrangler versions upload --config packages/release-feed/wrangler.jsonc");
+    expect(deploy).toContain('wrangler versions deploy "$VERSION_ID@100%" --yes --config packages/release-feed/wrangler.jsonc');
+    expect(deploy).toContain("WRANGLER_OUTPUT_FILE_PATH");
+    expect(deploy).toContain('entry.type === "version-upload"');
+    expect(deploy).toContain('upload.worker_name !== "presto-release-feed"');
+    expect(deploy).not.toContain("wrangler deploy --config");
+    expect(deploy).not.toContain("wrangler triggers deploy");
     expect(deploy).toContain("environment: release-feed");
     expect(deploy).toContain("CLOUDFLARE_RELEASE_FEED_DEPLOY_API_TOKEN");
     expect(deploy).not.toContain("CLOUDFLARE_RELEASE_FEED_API_TOKEN");

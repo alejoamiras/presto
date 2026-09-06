@@ -32,7 +32,7 @@
         "required_status_checks": [
           { "context": "SDK Status", "integration_id": 15368 },
           { "context": "App Status", "integration_id": 15368 },
-          { "context": "Accelerator Status", "integration_id": 15368 },
+          { "context": "Presto Status", "integration_id": 15368 },
           { "context": "Actionlint Status", "integration_id": 15368 }
         ]
       }

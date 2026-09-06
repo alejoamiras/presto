@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { resolveAztecBb } from "../packages/accelerator/scripts/copy-bb.ts";
+import { resolveAztecBb } from "../packages/presto/scripts/copy-bb.ts";
 import { checkWindowsBbPin } from "./check-windows-bb-pin.ts";
 
 // F-008: the pin-status check must resolve the LIVE bb.js version and NEVER touch the network.

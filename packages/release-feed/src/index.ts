@@ -8,6 +8,7 @@ function headers(): Headers {
     "Cross-Origin-Embedder-Policy": "credentialless",
     "Cross-Origin-Opener-Policy": "same-origin",
     "X-Content-Type-Options": "nosniff",
+    "Access-Control-Allow-Origin": "*",
   });
 }
 
@@ -24,7 +25,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   }
 
   try {
-    const body = await env.RELEASE_FEED.get(FEED_KEY, { type: "stream", cacheTtl: 60 });
+    const body = await env.PRESTO_RELEASE_FEED.get(FEED_KEY, { type: "stream", cacheTtl: 60 });
     if (!body) {
       return new Response("Feed unavailable", {
         status: 503,

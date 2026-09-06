@@ -7,7 +7,7 @@ name: Release Bot Token Check
 # App token at a real stable cut.
 #
 # It creates a throwaway branch off main + a trivial commit under
-# packages/accelerator/** (so the Accelerator gate actually fires), opens a PR
+# packages/presto/** (so the Presto gate actually fires), opens a PR
 # against main, asserts check-runs appear on it, then closes the PR + deletes the
 # branch + cancels the triggered runs. The App token does the writes; the default
 # GITHUB_TOKEN does only the read assertions + run cancellation.
@@ -65,11 +65,11 @@ jobs:
           BASE_SHA=$(gh api "repos/$REPO/git/refs/heads/main" --jq '.object.sha')
 
           # contents:write — create the branch, then a trivial commit under
-          # packages/accelerator/** so the Accelerator PR gate actually fires.
+          # packages/presto/** so the Presto PR gate actually fires.
           GH_TOKEN="$APP_TOKEN" gh api -X POST "repos/$REPO/git/refs" \
             -f ref="refs/heads/$BR" -f sha="$BASE_SHA" >/dev/null
           echo "✅ contents:write — branch $BR created"
-          GH_TOKEN="$APP_TOKEN" gh api -X PUT "repos/$REPO/contents/packages/accelerator/.release-bot-smoke" \
+          GH_TOKEN="$APP_TOKEN" gh api -X PUT "repos/$REPO/contents/packages/presto/.release-bot-smoke" \
             -f message="chore: release-bot token smoke (throwaway)" \
             -f content="$(printf 'release-bot token smoke %s\n' "$BR" | base64 | tr -d '\n')" \
             -f branch="$BR" >/dev/null

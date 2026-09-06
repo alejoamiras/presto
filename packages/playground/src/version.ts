@@ -1,7 +1,7 @@
 /**
  * Aztec protocol compatibility is MAJOR-scoped: any 5.x.x aztec.js talks to any
  * 5.x.x node; only a major difference (5.x.x vs 6.x.x) breaks the wire contract.
- * (Distinct from the accelerator's bb pairing, which is exact-version by design.)
+ * (Distinct from the presto's bb pairing, which is exact-version by design.)
  */
 
 /** Major component of a semver-ish string (`5.2.0`, `v5.2.0`, `^5.2.0`, `5.2.0-rc.1` → `"5"`). */

@@ -77,7 +77,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.sdk-version.outputs.version }}
         run: |
-          package='@alejoamiras/aztec-accelerator'
+          package='@alejoamiras/presto'
           tag="${package}@${VERSION}"
           encoded_tag="$(jq -rn --arg tag "$tag" '$tag | @uri')"
 
@@ -125,7 +125,7 @@ jobs:
         env:
           VERSION: ${{ steps.sdk-version.outputs.version }}
         run: |
-          package='@alejoamiras/aztec-accelerator'
+          package='@alejoamiras/presto'
           for attempt in $(seq 1 10); do
             published="$(npm view "$package@$VERSION" version 2>/dev/null || true)"
             testnet="$(npm view "$package" dist-tags.testnet 2>/dev/null || true)"
@@ -150,7 +150,7 @@ jobs:
           VERSION: ${{ steps.sdk-version.outputs.version }}
           AZTEC_VERSION: ${{ steps.aztec-version.outputs.version }}
         run: |
-          tag="@alejoamiras/aztec-accelerator@${VERSION}"
+          tag="@alejoamiras/presto@${VERSION}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "$tag"
@@ -172,7 +172,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.sdk-version.outputs.version }}
         run: |
-          package='@alejoamiras/aztec-accelerator'
+          package='@alejoamiras/presto'
           tag="${package}@${VERSION}"
           remote_refs="$(git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")"
           remote_sha="$(printf '%s\n' "$remote_refs" | awk '/\^\{\}$/ {print $1; exit}')"
@@ -188,7 +188,7 @@ jobs:
           cd "$work"
           npm init -y >/dev/null
           npm install --no-audit --no-fund --loglevel=error "$package@$VERSION"
-          installed="$(node -p "require('./node_modules/@alejoamiras/aztec-accelerator/package.json').version")"
+          installed="$(node -p "require('./node_modules/@alejoamiras/presto/package.json').version")"
           [ "$installed" = "$VERSION" ] || {
             echo "::error::fresh install resolved $installed, expected $VERSION"
             exit 1

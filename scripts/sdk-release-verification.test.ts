@@ -13,7 +13,7 @@ function statement(
   return {
     subject: [
       {
-        name: "pkg:npm/%40alejoamiras/aztec-accelerator@5.2.0-revision.1",
+        name: "pkg:npm/%40alejoamiras/presto@5.2.0-revision.1",
         digest: { sha512: overrides.digest ?? "ab".repeat(64) },
       },
     ],

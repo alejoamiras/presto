@@ -50,6 +50,8 @@ function activeReleaseRuns(): Array<{ status: string; url: string }> {
       "gh",
       "run",
       "list",
+      "--repo",
+      "alejoamiras/presto",
       "--workflow",
       "release-sdk.yml",
       "--limit",
@@ -70,7 +72,7 @@ function assertNoActiveReleaseRuns(): void {
 
 async function fetchUncachedDistTags(): Promise<Record<string, string>> {
   const response = await fetch(
-    `https://registry.npmjs.org/@alejoamiras%2faztec-accelerator?cache_bust=${Date.now()}`,
+    `https://registry.npmjs.org/@alejoamiras%2fpresto?cache_bust=${Date.now()}`,
     {
       headers: {
         accept: "application/json",
@@ -132,7 +134,7 @@ async function main() {
     "git",
     "ls-remote",
     "--tags",
-    "origin",
+    "https://github.com/alejoamiras/presto.git",
     `refs/tags/${gitTag}`,
     `refs/tags/${gitTag}^{}`,
   ]);
@@ -143,7 +145,7 @@ async function main() {
   }
 
   const release = JSON.parse(
-    run(["gh", "release", "view", gitTag, "--json", "tagName,url"]),
+    run(["gh", "release", "view", gitTag, "--repo", "alejoamiras/presto", "--json", "tagName,url"]),
   ) as { tagName: string; url: string };
   if (release.tagName !== gitTag) throw new Error(`GitHub release has unexpected tag ${release.tagName}`);
 

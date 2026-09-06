@@ -11,9 +11,9 @@ on:
   push:
     branches: [main]
     paths:
-      - packages/accelerator/src-tauri/**
-      - packages/accelerator/server/**
-      - .github/actions/setup-accelerator/action.yml
+      - packages/presto/src-tauri/**
+      - packages/presto/server/**
+      - .github/actions/setup-presto/action.yml
       - .github/workflows/warm-rust-cache.yml
   schedule:
     - cron: "0 6 * * 1,4" # Mon + Thu 06:00 UTC — keep the cache inside the 7-day eviction window
@@ -33,13 +33,13 @@ jobs:
     timeout-minutes: 30
     defaults:
       run:
-        working-directory: packages/accelerator/src-tauri
+        working-directory: packages/presto/src-tauri
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-accelerator
+      - uses: ./.github/actions/setup-presto
         with:
-          rust-cache-key: accelerator-desktop-x86_64-unknown-linux-gnu
-          rust-workspaces: packages/accelerator/src-tauri -> target
+          rust-cache-key: presto-desktop-x86_64-unknown-linux-gnu
+          rust-workspaces: packages/presto/src-tauri -> target
       # Debug + all-targets to warm what `clippy --all-targets` and `cargo test` compile.
       - run: cargo build --all-targets
 
@@ -49,12 +49,12 @@ jobs:
     timeout-minutes: 20
     defaults:
       run:
-        working-directory: packages/accelerator/server
+        working-directory: packages/presto/server
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: ./.github/actions/setup-accelerator
+      - uses: ./.github/actions/setup-presto
         with:
-          rust-cache-key: accelerator-server-x86_64-unknown-linux-gnu
-          rust-workspaces: packages/accelerator/server -> target
+          rust-cache-key: presto-server-x86_64-unknown-linux-gnu
+          rust-workspaces: packages/presto/server -> target
           rust-components: ""
       - run: cargo build

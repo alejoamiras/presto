@@ -1,0 +1,19 @@
+//! Desktop (Tauri) crate. The GUI-agnostic proving core lives in `presto-core`; this crate adds
+//! the Tauri layer (tray, updater, windows, commands) + the Safari HTTPS / cert surface.
+//!
+//! `authorization`/`bb`/`config`/`versions`/`log_dir` are re-exported from core so existing
+//! `presto::…` imports stay stable; `server` is a thin wrapper that re-exports
+//! `presto_core::server` and adds the GUI-local `start_https`.
+
+pub use presto_core::{authorization, bb, config, log_dir, versions};
+
+pub mod autostart;
+pub mod certs;
+pub mod commands;
+pub mod crash_recovery;
+pub mod server;
+pub mod trust;
+pub mod uninstall;
+pub mod update_marker;
+pub mod updater;
+pub mod verified_sites;

@@ -1,10 +1,10 @@
 import {
-  type AcceleratorPhase,
-  type AcceleratorPhaseData,
-  AcceleratorProver,
-  type AcceleratorStatus,
-  type AcceleratorStatusCheckOptions,
-} from "@alejoamiras/aztec-accelerator";
+  type PrestoPhase,
+  type PrestoPhaseData,
+  PrestoProver,
+  type PrestoStatus,
+  type PrestoStatusCheckOptions,
+} from "@alejoamiras/presto";
 import { NO_FROM } from "@aztec/aztec.js/account";
 import { AztecAddress } from "@aztec/aztec.js/addresses";
 import { NO_WAIT } from "@aztec/aztec.js/contracts";
@@ -54,7 +54,7 @@ export const AZTEC_SDK_VERSION = process.env.VITE_AZTEC_SDK_VERSION || "unknown"
 
 export interface AztecState {
   node: ReturnType<typeof createAztecNodeClient> | null;
-  prover: AcceleratorProver | null;
+  prover: PrestoProver | null;
   wallet: Wallet | null;
   embeddedWallet: EmbeddedWallet | null;
   registeredAddresses: AztecAddress[];
@@ -104,14 +104,14 @@ function pickSessionSender(): AztecAddress {
  * Retry, and every proof then reuse the same status cache, protocol pin, generation, and HTTPS
  * history.
  */
-export function getAcceleratorProver(): AcceleratorProver {
+export function getPrestoProver(): PrestoProver {
   if (!state.prover) {
     // Browser SDK instances are HTTPS-only by default. This explicit flag remains solely as a
     // packaged-E2E assertion knob; there is intentionally no `httpsOnly=false` URL switch.
     const httpsOnly = new URLSearchParams(window.location.search).get("httpsOnly") === "true";
     state.prover = httpsOnly
-      ? new AcceleratorProver({ accelerator: { httpsOnly: true, allowInsecureDowngrade: false } })
-      : new AcceleratorProver();
+      ? new PrestoProver({ presto: { httpsOnly: true, allowInsecureDowngrade: false } })
+      : new PrestoProver();
     state.prover.setForceLocal(state.uiMode === "local");
   }
   return state.prover;
@@ -122,16 +122,14 @@ export function getAcceleratorProver(): AcceleratorProver {
  * the warning/confirmation UI. Nothing is written to storage, the URL, or desktop configuration.
  */
 export function enableInsecureHttpForSession(): void {
-  getAcceleratorProver().setAcceleratorConfig({
+  getPrestoProver().setPrestoConfig({
     httpsOnly: false,
     allowInsecureDowngrade: true,
   });
 }
 
-export function checkAcceleratorStatus(
-  options?: AcceleratorStatusCheckOptions,
-): Promise<AcceleratorStatus> {
-  return getAcceleratorProver().checkAcceleratorStatus(options);
+export function checkPrestoStatus(options?: PrestoStatusCheckOptions): Promise<PrestoStatus> {
+  return getPrestoProver().checkPrestoStatus(options);
 }
 
 export async function checkAztecNode(): Promise<{ reachable: boolean; nodeVersion?: string }> {
@@ -203,7 +201,7 @@ async function bustStaleCrsCacheOnce(log: LogFn): Promise<void> {
 }
 
 /**
- * Connect to the Aztec node and set up the AcceleratorProver.
+ * Connect to the Aztec node and set up the PrestoProver.
  * Shared by both embedded and external wallet paths.
  */
 export async function initializeNode(log: LogFn): Promise<void> {
@@ -212,11 +210,9 @@ export async function initializeNode(log: LogFn): Promise<void> {
   // intentionally no URL-controlled opt-out; HTTP consent exists only in the in-memory recovery UI.
   const httpsOnly = new URLSearchParams(window.location.search).get("httpsOnly") === "true";
   log(
-    httpsOnly
-      ? "Creating AcceleratorProver (HTTPS-only, packaged-E2E)..."
-      : "Creating AcceleratorProver...",
+    httpsOnly ? "Creating PrestoProver (HTTPS-only, packaged-E2E)..." : "Creating PrestoProver...",
   );
-  state.prover = getAcceleratorProver();
+  state.prover = getPrestoProver();
 
   log("Connecting to Aztec node...");
   state.node = createAztecNodeClient(AZTEC_NODE_URL);
@@ -471,7 +467,7 @@ export async function deployTestAccount(
   log: LogFn,
   onTick: (elapsedMs: number) => void,
   onStep: (stepName: string) => void,
-  onPhase?: (phase: AcceleratorPhase, data?: AcceleratorPhaseData) => void,
+  onPhase?: (phase: PrestoPhase, data?: PrestoPhaseData) => void,
 ): Promise<DeployResult> {
   if (!state.embeddedWallet) {
     throw new Error("Embedded wallet not initialized");
@@ -485,12 +481,12 @@ export async function deployTestAccount(
   const proveTracker = createProveTracker();
   // B4 packaged-E2E witness: expose the raw phase trail on `window` so the composed-proof spec can assert the
   // accelerated path was USED (a `receive` phase, and NO `fallback`). The network `/prove`-header witness
-  // proves native bb RAN, but proof decode can still fall back to WASM afterward (accelerator-prover.ts), so
+  // proves native bb RAN, but proof decode can still fall back to WASM afterward (presto-prover.ts), so
   // the phase trail is the complementary check. Reset per deploy; harmless in prod (an unused window field).
-  const phaseSink = window as typeof window & { __ACCEL_PHASES__?: AcceleratorPhase[] };
-  phaseSink.__ACCEL_PHASES__ = [];
+  const phaseSink = window as typeof window & { __PRESTO_PHASES__?: PrestoPhase[] };
+  phaseSink.__PRESTO_PHASES__ = [];
   state.prover?.setOnPhase((phase, data) => {
-    phaseSink.__ACCEL_PHASES__?.push(phase);
+    phaseSink.__PRESTO_PHASES__?.push(phase);
     if (phase === "proved" && data?.durationMs) proveTracker.set(data.durationMs);
     onPhase?.(phase, data);
   });
@@ -600,7 +596,7 @@ export async function runTokenFlow(
   log: LogFn,
   onTick: (elapsedMs: number) => void,
   onStep: (stepName: string) => void,
-  onPhase?: (phase: AcceleratorPhase, data?: AcceleratorPhaseData) => void,
+  onPhase?: (phase: PrestoPhase, data?: PrestoPhaseData) => void,
 ): Promise<TokenFlowResult> {
   if (!state.wallet) {
     throw new Error("Wallet not initialized");
@@ -673,7 +669,7 @@ export async function runTokenFlow(
     log("Deploying TokenContract (minter=Alice)...");
     const tokenDeploy = TokenContract.deployWithOpts(
       { method: "constructor_with_minter", wallet: state.wallet },
-      "Accelerator",
+      "Presto",
       "ACEL",
       18,
       alice,

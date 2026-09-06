@@ -1,15 +1,9 @@
 import "./style.css";
 import {
-  AcceleratorStatusController,
-  acceleratorStatusView,
-  HttpSessionConsentController,
-  watchLoopbackPermissionChanges,
-} from "./accelerator-status";
-import {
   AZTEC_DISPLAY_URL,
   AZTEC_SDK_VERSION,
-  checkAcceleratorStatus,
   checkAztecNode,
+  checkPrestoStatus,
   deployTestAccount,
   enableInsecureHttpForSession,
   initializeWallet,
@@ -25,6 +19,12 @@ import {
   installWasmDiagnostics,
   installWorkerDiagnostics,
 } from "./diagnostics";
+import {
+  HttpSessionConsentController,
+  PrestoStatusController,
+  prestoStatusView,
+  watchLoopbackPermissionChanges,
+} from "./presto-status";
 import { showResult, stepToPhase } from "./results";
 import { SparkOrbitController } from "./spark-orbit";
 import { $, $btn, appendLog, formatDuration, setStatus, startClock } from "./ui";
@@ -32,17 +32,17 @@ import { sameMajor } from "./version";
 
 let deploying = false;
 
-const acceleratorStatus = new AcceleratorStatusController({
-  check: checkAcceleratorStatus,
+const prestoStatus = new PrestoStatusController({
+  check: checkPrestoStatus,
   render: (status) => {
-    const view = acceleratorStatusView(status);
-    setStatus("accelerator-status", view.connected);
-    $("accelerator-label").textContent = view.label;
-    $("accelerator-cta").classList.toggle("hidden", !view.showInstall);
-    $("accelerator-permission-help").classList.toggle("hidden", !view.showPermissionHelp);
-    $("accelerator-secure-help").classList.toggle("hidden", !view.showSecureConnectionHelp);
-    $("accelerator-secure-title").textContent = view.secureConnectionTitle ?? "";
-    $("accelerator-secure-message").textContent = view.secureConnectionMessage ?? "";
+    const view = prestoStatusView(status);
+    setStatus("presto-status", view.connected);
+    $("presto-label").textContent = view.label;
+    $("presto-cta").classList.toggle("hidden", !view.showInstall);
+    $("presto-permission-help").classList.toggle("hidden", !view.showPermissionHelp);
+    $("presto-secure-help").classList.toggle("hidden", !view.showSecureConnectionHelp);
+    $("presto-secure-title").textContent = view.secureConnectionTitle ?? "";
+    $("presto-secure-message").textContent = view.secureConnectionMessage ?? "";
     if (!view.showSecureConnectionHelp) httpSessionConsent.cancel();
 
     const showInstallBanner = view.showInstall && !localStorage.getItem("accel-banner-dismissed");
@@ -50,26 +50,26 @@ const acceleratorStatus = new AcceleratorStatusController({
     appendLog(view.log, view.logLevel);
   },
   setPending: (pending) => {
-    const permissionRetry = $btn("accelerator-permission-retry");
+    const permissionRetry = $btn("presto-permission-retry");
     permissionRetry.disabled = pending;
     permissionRetry.textContent = pending ? "Checking…" : "Retry";
-    const secureRetry = $btn("accelerator-secure-retry");
+    const secureRetry = $btn("presto-secure-retry");
     secureRetry.disabled = pending;
     secureRetry.textContent = pending ? "Checking…" : "Retry secure connection";
-    $btn("accelerator-use-http").disabled = pending;
+    $btn("presto-use-http").disabled = pending;
     if (pending) httpSessionConsent.cancel();
   },
 });
 
 const httpSessionConsent = new HttpSessionConsentController({
   configure: () => {
-    const displayed = acceleratorStatus.displayed;
+    const displayed = prestoStatus.displayed;
     if (!displayed || displayed.available || displayed.reason !== "secure-connection-unavailable") {
       throw new Error("secure connection status changed before HTTP consent was confirmed");
     }
     enableInsecureHttpForSession();
   },
-  refresh: () => acceleratorStatus.refresh({ forceRefresh: true }),
+  refresh: () => prestoStatus.refresh({ forceRefresh: true }),
   setConfirmationOpen: (open) => {
     const confirmation = $("http-session-confirmation");
     const app = $("playground-app");
@@ -82,18 +82,18 @@ const httpSessionConsent = new HttpSessionConsentController({
       $btn("http-session-cancel").focus();
     } else {
       app.removeAttribute("aria-hidden");
-      $("accelerator-service-status").focus();
+      $("presto-service-status").focus();
     }
   },
   setPending: (pending) => {
     const confirm = $btn("http-session-confirm");
-    const useHttp = $btn("accelerator-use-http");
+    const useHttp = $btn("presto-use-http");
     confirm.disabled = pending;
     useHttp.disabled = pending;
     confirm.textContent = pending ? "Checking…" : "Use HTTP for this session";
   },
   announce: (message) => {
-    $("accelerator-recovery-announcement").textContent = message;
+    $("presto-recovery-announcement").textContent = message;
   },
 });
 
@@ -103,7 +103,7 @@ startClock();
 // ── Service checks ──
 
 async function checkServices(): Promise<void> {
-  await acceleratorStatus.refresh();
+  await prestoStatus.refresh();
 }
 
 // ── Mode toggle ──
@@ -146,7 +146,7 @@ function handleProverPhase(ascii: SparkOrbitController, phase: string, _data?: u
     appendLog("Presto's offline, proving in-browser for now (slower)", "warn");
     // The proof path never awaits this. The controller starts a single forced refresh only if its
     // last rendered state was available, so in-browser fallback remains immediate and failure-proof.
-    if (state.uiMode === "accelerated") acceleratorStatus.refreshAfterFallback();
+    if (state.uiMode === "accelerated") prestoStatus.refreshAfterFallback();
   }
 }
 
@@ -287,7 +287,7 @@ async function init(): Promise<void> {
   // Install this before the first health request can open the LNA prompt. The health probe stays
   // bounded; a later Allow/Block decision owns a fresh, cache-bypassing status refresh instead.
   await watchLoopbackPermissionChanges(() => {
-    void acceleratorStatus.refreshAfterPermissionChange().catch(() => {
+    void prestoStatus.refreshAfterPermissionChange().catch(() => {
       appendLog("Couldn't re-check Presto. Proving stays in-browser", "error");
     });
   });
@@ -297,25 +297,25 @@ async function init(): Promise<void> {
   // Wire diagnostics export
   $("export-diagnostics-btn").addEventListener("click", downloadDiagnostics);
 
-  // Wire accelerator banner dismiss
+  // Wire presto banner dismiss
   $("accel-banner-dismiss").addEventListener("click", () => {
     $("accel-banner").classList.add("hidden");
     localStorage.setItem("accel-banner-dismissed", "1");
   });
 
-  $btn("accelerator-permission-retry").addEventListener("click", () => {
-    void acceleratorStatus.refresh({ forceRefresh: true }).catch(() => {
+  $btn("presto-permission-retry").addEventListener("click", () => {
+    void prestoStatus.refresh({ forceRefresh: true }).catch(() => {
       appendLog("Couldn't re-check Presto. Proving stays in-browser", "error");
     });
   });
 
-  $btn("accelerator-secure-retry").addEventListener("click", () => {
-    void acceleratorStatus.retrySecureConnection().catch(() => {
+  $btn("presto-secure-retry").addEventListener("click", () => {
+    void prestoStatus.retrySecureConnection().catch(() => {
       appendLog("Couldn't retry the secure connection. Proving stays in-browser", "error");
     });
   });
 
-  $btn("accelerator-use-http").addEventListener("click", () => httpSessionConsent.request());
+  $btn("presto-use-http").addEventListener("click", () => httpSessionConsent.request());
   $btn("http-session-cancel").addEventListener("click", () => httpSessionConsent.cancel());
   $btn("http-session-confirm").addEventListener("click", () => {
     void httpSessionConsent.confirm().catch(() => {
@@ -378,7 +378,7 @@ async function init(): Promise<void> {
     }
   }
 
-  // Check accelerator
+  // Check presto
   await checkServices();
 
   // Show embedded UI and hide fallback placeholder

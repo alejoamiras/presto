@@ -13,8 +13,8 @@ on:
         required: false
         type: string
         default: "http://localhost:8080"
-      build_accelerator:
-        description: Build and start headless accelerator server for accelerated proving tests
+      build_presto:
+        description: Build and start headless presto server for accelerated proving tests
         required: false
         type: boolean
         default: false
@@ -38,87 +38,94 @@ jobs:
         with:
           aztec_node_url: ${{ inputs.aztec_node_url }}
 
-      # ── Accelerator (optional) ──────────────────────────────────────
-      - name: Install system dependencies (accelerator)
-        if: inputs.build_accelerator
+      # ── Presto (optional) ──────────────────────────────────────
+      - name: Install system dependencies (presto)
+        if: inputs.build_presto
         run: |
           sudo apt-get update
-          # Headless only: this leg builds just `accelerator-server` (no Tauri GUI) → drop WebKit/GTK; keep
+          # Headless only: this leg builds just `presto-server` (no Tauri GUI) → drop WebKit/GTK; keep
           # libssl-dev for reqwest (the bb download). (core-extraction Phase 3b follow-up)
           sudo apt-get install -y libssl-dev
 
       - name: Copy bb sidecar
-        if: inputs.build_accelerator
-        run: bun run --cwd packages/accelerator prebuild
+        if: inputs.build_presto
+        run: bun run --cwd packages/presto prebuild
 
       - name: Set BB_BINARY_PATH + AZTEC_BB_VERSION
-        if: inputs.build_accelerator
+        if: inputs.build_presto
         run: |
-          echo "BB_BINARY_PATH=$(pwd)/packages/accelerator/src-tauri/binaries/bb-x86_64-unknown-linux-gnu" >> "$GITHUB_ENV"
+          echo "BB_BINARY_PATH=$(pwd)/packages/presto/src-tauri/binaries/bb-x86_64-unknown-linux-gnu" >> "$GITHUB_ENV"
           # /prove fast-path fix (core-extraction codex finding #1): surface the prebuild's resolved bb version
           # so the headless server's bundled_version isn't "unknown" → the "requested == bundled" download-skip
           # works + /health.aztec_version is truthful. Persist via $GITHUB_ENV (the server launches in a later step).
           # Read into a var FIRST so a missing/unreadable AZTEC_VERSION fails the step (set -e) instead of
           # silently writing an empty value — `echo "VAR=$(cat …)"` swallows the cat failure. (codex post-impl)
-          AZTEC_BB_VERSION="$(cat packages/accelerator/src-tauri/AZTEC_VERSION)"
+          AZTEC_BB_VERSION="$(cat packages/presto/src-tauri/AZTEC_VERSION)"
           echo "AZTEC_BB_VERSION=$AZTEC_BB_VERSION" >> "$GITHUB_ENV"
 
       # F-015: pin the action to a master-history SHA (NOT the @stable-generated commit, which
       # upstream may GC) and select the channel explicitly via `toolchain:` — @stable was the
       # channel selector, so pinning the ref alone would break the toolchain resolution.
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
-        if: inputs.build_accelerator
+        if: inputs.build_presto
         with:
           toolchain: stable
 
-      # This job builds the server crate FROM packages/accelerator/server, so
+      # This job builds the server crate FROM packages/presto/server, so
       # Cargo writes all artifacts (incl. the src-tauri path-dep) under
       # server/target. Cache that dir only. Use the SAME `shared-key` as the
       # other linux server builds (smoke / release-smoke / release build-headless
-      # + setup-accelerator) so they cross-warm one shared server cache.
+      # + setup-presto) so they cross-warm one shared server cache.
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: inputs.build_accelerator
+        if: inputs.build_presto
         with:
-          workspaces: packages/accelerator/server -> target
-          shared-key: accelerator-server-x86_64-unknown-linux-gnu
+          workspaces: packages/presto/server -> target
+          shared-key: presto-server-x86_64-unknown-linux-gnu
           # Reusable PR runs restore the main cache without creating refs/pull entries.
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Build headless accelerator server
-        if: inputs.build_accelerator
-        working-directory: packages/accelerator/server
-        # `accelerator-server` lives in its own sibling crate to keep it
+      - name: Build headless presto server
+        if: inputs.build_presto
+        working-directory: packages/presto/server
+        # `presto-server` lives in its own sibling crate to keep it
         # out of the Tauri desktop bundle (see src-tauri/Cargo.toml docs).
         run: cargo build
 
-      - name: Start headless accelerator server
-        if: inputs.build_accelerator
+      - name: Start headless presto server
+        if: inputs.build_presto
         # Run the binary built in the previous step directly — `cargo run`
         # re-resolves/re-checks the build graph on every invocation.
         run: |
-          packages/accelerator/server/target/debug/accelerator-server > /tmp/accelerator.log 2>&1 &
-          echo "ACCELERATOR_PID=$!" >> "$GITHUB_ENV"
+          packages/presto/server/target/debug/presto-server > /tmp/presto.log 2>&1 &
+          echo "PRESTO_PID=$!" >> "$GITHUB_ENV"
 
-      - name: Wait for accelerator
-        if: inputs.build_accelerator
+      - name: Wait for presto
+        if: inputs.build_presto
         run: |
           for i in $(seq 1 15); do
             if curl -sf http://127.0.0.1:59833/health > /dev/null 2>&1; then
-              echo "Accelerator ready (attempt $i)"
+              echo "Presto ready (attempt $i)"
               exit 0
             fi
             sleep 2
           done
-          echo "Accelerator failed to respond within 30s"
-          cat /tmp/accelerator.log 2>/dev/null || true
+          echo "Presto failed to respond within 30s"
+          cat /tmp/presto.log 2>/dev/null || true
           exit 1
 
       # ── Run tests ───────────────────────────────────────────────────
+      - name: Install integrity-pinned published legacy SDK for compatibility gate
+        if: inputs.build_presto
+        run: |
+          LEGACY_SDK_ENTRY=$(bun scripts/install-legacy-sdk.ts)
+          test -f "$LEGACY_SDK_ENTRY"
+          echo "LEGACY_SDK_ENTRY=$LEGACY_SDK_ENTRY" >> "$GITHUB_ENV"
+
       - name: Run SDK E2E tests
         env:
           AZTEC_NODE_URL: ${{ inputs.aztec_node_url }}
-          ACCELERATOR_URL: ${{ inputs.build_accelerator && 'http://127.0.0.1:59833' || '' }}
-          ACCELERATOR_DOWNLOAD_TEST: ${{ inputs.build_accelerator && 'true' || '' }}
+          PRESTO_URL: ${{ inputs.build_presto && 'http://127.0.0.1:59833' || '' }}
+          PRESTO_DOWNLOAD_TEST: ${{ inputs.build_presto && 'true' || '' }}
         run: bun run --cwd packages/sdk test:e2e
 
       - name: Upload Aztec logs
@@ -130,16 +137,16 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Upload accelerator logs
-        if: failure() && inputs.build_accelerator
+      - name: Upload presto logs
+        if: failure() && inputs.build_presto
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: accelerator-logs
-          path: /tmp/accelerator.log
+          name: presto-logs
+          path: /tmp/presto.log
           if-no-files-found: ignore
           retention-days: 7
 
       - name: Cleanup
         if: always()
         run: |
-          kill "$ACCELERATOR_PID" 2>/dev/null || true
+          kill "$PRESTO_PID" 2>/dev/null || true

@@ -37,7 +37,7 @@ export function hasVerifiedSdkProvenance(
 
 export async function verifySdkPackageSignatures(version: string): Promise<void> {
   if (!SDK_VERSION_PATTERN.test(version)) throw new Error(`invalid SDK version ${version}`);
-  const directory = await mkdtemp(join(tmpdir(), "aztec-sdk-signature-audit-"));
+  const directory = await mkdtemp(join(tmpdir(), "presto-sdk-signature-audit-"));
   try {
     await Bun.write(
       join(directory, "package.json"),
@@ -51,7 +51,7 @@ export async function verifySdkPackageSignatures(version: string): Promise<void>
       [
         "node",
         "-p",
-        "require('./node_modules/@alejoamiras/aztec-accelerator/package.json').version",
+        "require('./node_modules/@alejoamiras/presto/package.json').version",
       ],
       directory,
     ).trim();

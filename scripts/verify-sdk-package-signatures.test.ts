@@ -6,7 +6,7 @@ describe("SDK signature verification", () => {
     const report = {
       verified: [
         {
-          name: "@alejoamiras/aztec-accelerator",
+          name: "@alejoamiras/presto",
           version: "5.2.0",
           attestations: { provenance: { predicateType: "https://slsa.dev/provenance/v1" } },
         },

@@ -1,20 +1,16 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "aztec-accelerator-release-feed",
+  "name": "presto-release-feed",
   "main": "src/index.ts",
-  "compatibility_date": "2026-09-04",
+  "compatibility_date": "2026-08-22",
   "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
   "preview_urls": true,
-  "routes": [
-    {
-      "pattern": "aztec-accelerator.dev/releases/latest.json*",
-      "zone_name": "aztec-accelerator.dev"
-    }
-  ],
+  "routes": [{ "pattern": "presto.build/releases/*", "zone_name": "presto.build" }],
   "kv_namespaces": [
     {
-      "binding": "RELEASE_FEED",
-      "id": "1d28a54a44d94e98a7becc04951807fa"
+      "binding": "PRESTO_RELEASE_FEED",
+      "id": "41a6adef830f4a91bf63476a323cec98"
     }
   ],
   "observability": {

@@ -12,7 +12,7 @@ import { createAztecNodeClient } from "@aztec/aztec.js/node";
 import { getLogger } from "@logtape/logtape";
 import { config, isLocalNetwork } from "./e2e-setup.js";
 
-const logger = getLogger(["aztec-accelerator", "sdk", "e2e", "remote-network"]);
+const logger = getLogger(["presto", "sdk", "e2e", "remote-network"]);
 
 describe.skipIf(isLocalNetwork)("Remote Network Connectivity", () => {
   test(

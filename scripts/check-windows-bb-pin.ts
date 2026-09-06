@@ -6,7 +6,7 @@
  * Prebuild/Build Smoke gate uses via resolveWindowsBbChecksum), never the argv/aztec.js version.
  *
  * Read-only: it NEVER downloads the asset or writes a pin. A pin is added by a human after review (see
- * WINDOWS_BB_CHECKSUMS in packages/accelerator/scripts/copy-bb.ts) — a twice-downloaded asset is not
+ * WINDOWS_BB_CHECKSUMS in packages/presto/scripts/copy-bb.ts) — a twice-downloaded asset is not
  * independent evidence. This step is INFORMATIONAL; the enforcing fail-closed check is the Windows CI
  * gate (resolveWindowsBbChecksum throws without an accepted pin), and the only automated bump caller
  * (aztec-stable → main) runs that gate.
@@ -15,7 +15,7 @@ import {
   resolveAztecBb,
   resolveWindowsBbChecksum,
   WINDOWS_BB_ASSET,
-} from "../packages/accelerator/scripts/copy-bb.ts";
+} from "../packages/presto/scripts/copy-bb.ts";
 
 export interface WindowsBbPinStatus {
   version: string;
@@ -43,7 +43,7 @@ export function checkWindowsBbPin(version: string = resolveAztecBb().version): W
         `Steps: download ${WINDOWS_BB_ASSET} from the v${version} aztec-packages release, verify the\n` +
         `release page + tag signature, diff it against the prior pinned asset, then add a\n` +
         `{ sha256, provenance: "manual-review", note } entry to WINDOWS_BB_CHECKSUMS in\n` +
-        `packages/accelerator/scripts/copy-bb.ts. Pins are NEVER auto-generated (F-008).\n` +
+        `packages/presto/scripts/copy-bb.ts. Pins are NEVER auto-generated (F-008).\n` +
         `(${detail})`,
     };
   }

@@ -25,7 +25,7 @@ on:
         required: true
         type: string
       n-artifact:
-        description: This run's build artifact name (e.g. accelerator-macos-arm64)
+        description: This run's build artifact name (e.g. presto-macos-arm64)
         required: true
         type: string
       n1-tag:
@@ -73,7 +73,7 @@ jobs:
           N1_TAG: ${{ inputs.n1-tag }}
           N1_VERSION: ${{ inputs.n1-version }}
         run: |
-          if [ "$N1_TAG" != "accelerator-v$N1_VERSION" ]; then
+          if [ "$N1_TAG" != "presto-v$N1_VERSION" ]; then
             echo "::error::resolver output is inconsistent: tag=$N1_TAG version=$N1_VERSION"
             exit 1
           fi
@@ -81,15 +81,15 @@ jobs:
           # Guard against a no-op pass: if N-1 resolves to the SAME version under
           # test (e.g. bad resolver wiring selects N itself), the updater
           # has nothing to do and `/health == N` would pass trivially (false pass).
-          # Exact tag compare (tags are `accelerator-v<version>`) — a suffix match
-          # would false-trip on e.g. accelerator-v11.0.3 vs 1.0.3.
-          if [ "$N1_TAG" = "accelerator-v$N_VERSION" ]; then
-            echo "::error::N-1 ($N1_TAG) is the version under test (accelerator-v$N_VERSION) — no-op no-update would pass trivially. Aborting."
+          # Exact tag compare (tags are `presto-v<version>`) — a suffix match
+          # would false-trip on e.g. presto-v11.0.3 vs 1.0.3.
+          if [ "$N1_TAG" = "presto-v$N_VERSION" ]; then
+            echo "::error::N-1 ($N1_TAG) is the version under test (presto-v$N_VERSION) — no-op no-update would pass trivially. Aborting."
             exit 1
           fi
-          gh api "repos/$GITHUB_REPOSITORY/contents/packages/accelerator/src-tauri/tauri.conf.json?ref=$N1_TAG" --jq '.content' | base64 -d > n1-tauri.conf.json
+          gh api "repos/$GITHUB_REPOSITORY/contents/packages/presto/src-tauri/tauri.conf.json?ref=$N1_TAG" --jq '.content' | base64 -d > n1-tauri.conf.json
           OLD_PUB=$(jq -r '.plugins.updater.pubkey' n1-tauri.conf.json)
-          NEW_PUB=$(jq -r '.plugins.updater.pubkey' packages/accelerator/src-tauri/tauri.conf.json)
+          NEW_PUB=$(jq -r '.plugins.updater.pubkey' packages/presto/src-tauri/tauri.conf.json)
           if [ "$OLD_PUB" != "$NEW_PUB" ]; then
             echo "::error::ordinary updater smoke requires a same-key N-1 baseline"
             exit 1
@@ -129,7 +129,7 @@ jobs:
         run: |
           DMG=$(find n1 -name '*.dmg' | head -1)
           if [ -z "$DMG" ]; then echo "::error::N-1 DMG not found"; exit 1; fi
-          bash packages/accelerator/scripts/updater-smoke.sh \
+          bash packages/presto/scripts/updater-smoke.sh \
             "${{ inputs.n-version }}" \
             "${{ inputs.platform-key }}" \
             n-artifacts \

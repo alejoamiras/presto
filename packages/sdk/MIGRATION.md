@@ -1,9 +1,48 @@
 # Migration guide
 
+## Aztec Accelerator → Presto
+
+Presto is a separate installation and npm package. Install Presto manually, quit Aztec
+Accelerator before starting it, and approve sites and certificate setup again. Both apps use
+loopback ports 59833/59834; only one can run at a time. Presto never imports, edits, removes,
+or uninstalls Aztec Accelerator data, certificates, settings, caches, or binaries.
+
+Replace `@alejoamiras/aztec-accelerator` with `@alejoamiras/presto` in dependencies and
+imports. The first Presto SDK release is 5.2.0; the first stable native app is 1.0.0.
+The SDK has no deprecated aliases:
+
+| Previous API | Presto API |
+| --- | --- |
+| `AcceleratorProver` | `PrestoProver` |
+| `AcceleratorConfig` | `PrestoConfig` |
+| `AcceleratorProverOptions` | `PrestoProverOptions` |
+| `AcceleratorStatus` | `PrestoStatus` |
+| `AcceleratorStatusCheckOptions` | `PrestoStatusCheckOptions` |
+| `AcceleratorPhase` / `AcceleratorPhaseData` | `PrestoPhase` / `PrestoPhaseData` |
+| `AcceleratorProtocol` / `AcceleratorHttpError` | `PrestoProtocol` / `PrestoHttpError` |
+| `ACCELERATOR_API_VERSION` | `PRESTO_API_VERSION` (wire value still 1) |
+| `setAcceleratorConfig()` | `setPrestoConfig()` |
+| `checkAcceleratorStatus()` | `checkPrestoStatus()` |
+| Constructor option `accelerator` | `presto` |
+| Status field `acceleratorVersion` | `nativeAztecVersion` |
+| Diagnosis literal `accelerator-reachable` | `presto-reachable` |
+
+`nativeAztecVersion` describes the native Aztec/bb version; `appVersion` describes the
+application version. Rename product-specific `AZTEC_ACCELERATOR_*` environment variables
+to `PRESTO_*`. Keep ecosystem names such as `AZTEC_NODE_URL`, `@aztec/*`,
+`x-aztec-version`, and `sdkAztecVersion` unchanged.
+
+The health/prove wire protocol remains compatible in both directions. Switching SDKs does
+not require switching native apps at the same moment. HTTPS defaults, explicit per-tab HTTP
+consent, witness transport, diagnostics, phases, and WASM fallback retain their behavior.
+
+Presto lives at https://presto.build. Production downloads will be announced after release
+verification gates are finalized. Do not treat a Worker preview as a stable release.
+
 ## Browsers are HTTPS-only by default
 
-`new AcceleratorProver()` now resolves `httpsOnly` from the explicit option first, then
-`AZTEC_ACCELERATOR_HTTPS_ONLY`, then the runtime default: `true` in browser pages and Web Workers,
+`new PrestoProver()` now resolves `httpsOnly` from the explicit option first, then
+`PRESTO_HTTPS_ONLY`, then the runtime default: `true` in browser pages and Web Workers,
 and `false` in Node, Bun, and SSR. Server-side clients therefore retain compatibility with the
 TLS-free headless CI server.
 
@@ -14,10 +53,10 @@ native-first/WASM-fallback reliability contract, but now exposes an actionable u
 type SecureConnectionDiagnosis =
   | "https-disabled"
   | "tls-or-trust-failure"
-  | "accelerator-reachable"
+  | "presto-reachable"
   | "unconfirmed";
 
-type AcceleratorStatus =
+type PrestoStatus =
   | /* existing arms */
   | {
       available: false;
@@ -29,7 +68,7 @@ type AcceleratorStatus =
 
 This additive arm is source-breaking for exhaustive TypeScript switches. Handle it separately from
 `permission-blocked`: Local Network Access denial needs browser site-permission recovery, while a
-secure-connection failure needs Accelerator tray → Settings → **Encrypted Connection** and, for
+secure-connection failure needs Presto tray → Settings → **Encrypted Connection** and, for
 trust failures, certificate setup again.
 
 When HTTPS cannot connect, the SDK may issue one bounded, witness-free HTTP `GET /health` to improve
@@ -45,23 +84,23 @@ If a browser dApp deliberately offers plaintext proving, require an informed con
 both flags only to the current prover instance:
 
 ```ts
-prover.setAcceleratorConfig({
+prover.setPrestoConfig({
   httpsOnly: false,
   allowInsecureDowngrade: true,
 });
-await prover.checkAcceleratorStatus({ forceRefresh: true });
+await prover.checkPrestoStatus({ forceRefresh: true });
 ```
 
 Do not persist this consent in local storage, cookies, URL parameters, or desktop configuration. A
 reload/new prover restores the HTTPS-only browser default. In particular, do not add a production
 `?httpsOnly=false` switch.
 
-## `AcceleratorStatus` adds `permission-blocked`
+## `PrestoStatus` adds `permission-blocked`
 
-`checkAcceleratorStatus` can now distinguish an explicit browser loopback-network permission denial:
+`checkPrestoStatus` can now distinguish an explicit browser loopback-network permission denial:
 
 ```ts
-type AcceleratorStatus =
+type PrestoStatus =
   | /* existing available/error/version arms */
   | { available: false; reason: "offline"; sdkAztecVersion?: string }
   | { available: false; reason: "permission-blocked"; sdkAztecVersion?: string };
@@ -71,7 +110,7 @@ This additive union arm is **source-breaking for exhaustive TypeScript switches*
 it intentionally has no `protocol`, because neither loopback endpoint answered:
 
 ```ts
-const status = await prover.checkAcceleratorStatus();
+const status = await prover.checkPrestoStatus();
 if (!status.available) {
   switch (status.reason) {
     case "permission-blocked":
@@ -88,7 +127,7 @@ if (!status.available) {
 }
 
 // After the user changes the permission, bypass the settled 10-second status cache.
-await prover.checkAcceleratorStatus({ forceRefresh: true });
+await prover.checkPrestoStatus({ forceRefresh: true });
 ```
 
 Only an explicit `denied` state is distinguishable. Under the browser HTTPS-only default, a
@@ -97,19 +136,19 @@ pending/dismissed prompt, unsupported Permissions API, or query error normally b
 still report `offline`. `forceRefresh` does not reset configuration,
 protocol pins, HTTPS history, or an already-running same-generation probe.
 
-## `AcceleratorStatus` is now a discriminated union (Q12)
+## `PrestoStatus` is now a discriminated union (Q12)
 
-`AcceleratorStatus` (returned by `AcceleratorProver.checkAcceleratorStatus()`) changed from a flat
+`PrestoStatus` (returned by `PrestoProver.checkPrestoStatus()`) changed from a flat
 interface — where every field was optional and illegal combinations typechecked — to a **discriminated
 union on `available`**. The HTTP wire contract is unchanged; this is a TypeScript-only break.
 
 ### Before
 
 ```ts
-interface AcceleratorStatus {
+interface PrestoStatus {
   available: boolean;
   needsDownload: boolean;
-  acceleratorVersion?: string;
+  nativeAztecVersion?: string;
   availableVersions?: string[];
   sdkAztecVersion?: string;
   protocol?: "http" | "https";
@@ -119,14 +158,14 @@ interface AcceleratorStatus {
 ### After
 
 ```ts
-type AcceleratorStatus =
+type PrestoStatus =
   | {
       available: true;
       needsDownload: boolean;
-      acceleratorVersion?: string;
+      nativeAztecVersion?: string;
       availableVersions?: string[];
       sdkAztecVersion?: string;
-      protocol: AcceleratorProtocol;            // "http" | "https"
+      protocol: PrestoProtocol;            // "http" | "https"
     }
   | { available: false; reason: "offline"; sdkAztecVersion?: string }
   | { available: false; reason: "permission-blocked"; sdkAztecVersion?: string }
@@ -136,12 +175,12 @@ type AcceleratorStatus =
       diagnosis: SecureConnectionDiagnosis;
       sdkAztecVersion?: string;
     }
-  | { available: false; reason: "error"; protocol: AcceleratorProtocol; sdkAztecVersion?: string }
+  | { available: false; reason: "error"; protocol: PrestoProtocol; sdkAztecVersion?: string }
   | {
       available: false;
       reason: "version-mismatch";
-      acceleratorVersion: string;
-      protocol: AcceleratorProtocol;
+      nativeAztecVersion: string;
+      protocol: PrestoProtocol;
       sdkAztecVersion?: string;
     };
 ```
@@ -149,18 +188,18 @@ type AcceleratorStatus =
 ### What to change
 
 **Narrow on `available` before reading state-specific fields.** Accessing `needsDownload`,
-`availableVersions`, or `acceleratorVersion` without narrowing is now a type error — which is the point:
+`availableVersions`, or `nativeAztecVersion` without narrowing is now a type error — which is the point:
 those fields were never meaningful on an unavailable result.
 
 ```ts
 // Before — fields read without narrowing
-const status = await prover.checkAcceleratorStatus();
+const status = await prover.checkPrestoStatus();
 if (status.available && !status.needsDownload) {
   /* ... */
 }
 
 // After — narrow first; the compiler then exposes exactly the valid fields
-const status = await prover.checkAcceleratorStatus();
+const status = await prover.checkPrestoStatus();
 if (status.available) {
   // status.needsDownload, status.availableVersions, status.protocol available here
   if (!status.needsDownload) {
@@ -171,7 +210,7 @@ if (status.available) {
   //                "error" | "version-mismatch"
   switch (status.reason) {
     case "version-mismatch":
-      console.warn(`accelerator is on ${status.acceleratorVersion}, SDK wants ${status.sdkAztecVersion}`);
+      console.warn(`presto is on ${status.nativeAztecVersion}, SDK wants ${status.sdkAztecVersion}`);
       break;
     case "permission-blocked":
       // Show browser site-permission guidance and an immediate forced Retry.
@@ -191,28 +230,28 @@ Most callers that already wrote `if (status.available) { … }` need **no change
 already do is exactly what the union requires. Only code that read `needsDownload`/version fields
 *without* first checking `available` must add the narrowing.
 
-The new `AcceleratorProtocol` type (`"http" | "https"`) is exported for convenience.
+The new `PrestoProtocol` type (`"http" | "https"`) is exported for convenience.
 
-## New: typed `AcceleratorHttpError` + surfaced health fields (B7)
+## New: typed `PrestoHttpError` + surfaced health fields (B7)
 
 ### Prove errors now degrade to WASM or throw a TYPED error — never a raw `ky` error
 
-The accelerator is an optimisation, so `createChonkProof` **falls back to WASM** for every recognised
+The presto is an optimisation, so `createChonkProof` **falls back to WASM** for every recognised
 transient/denial/capacity/version condition. The degrade set is matched by status, not exhaustively by
 code: **every** `403` (a denial, `version_not_allowed`, or `authorization_cooldown`) and **every** `408` /
 `413` / `429` / `503` falls back regardless of its `code`, plus `500` with `download_failed`/`prove_failed`.
 What used to leak a raw `ky` `HTTPError` to your dApp — a caller **misconfiguration**
 (`400 invalid_version` / `invalid_origin`), a `500` with an **unrecognised** code, or any other unexpected
-status — now throws a typed [`AcceleratorHttpError`] (exported from the barrel) with `.status` and `.code`,
+status — now throws a typed [`PrestoHttpError`] (exported from the barrel) with `.status` and `.code`,
 so a real integration bug is surfaced instead of masked as "slow but working":
 
 ```ts
-import { AcceleratorHttpError } from "@alejoamiras/aztec-accelerator";
+import { PrestoHttpError } from "@alejoamiras/presto";
 
 try {
   await prover.createChonkProof(steps);
 } catch (e) {
-  if (e instanceof AcceleratorHttpError) {
+  if (e instanceof PrestoHttpError) {
     // misconfiguration — e.status (e.g. 400), e.code (e.g. "invalid_version")
   }
 }
@@ -220,7 +259,7 @@ try {
 
 **Behaviour change (was: always degrade).** Previously EVERY `/prove` HTTP error — including the HTTP
 downgrade-retry path — fell back to WASM. Now a `400` (`invalid_version`/`invalid_origin`), a `500` with an
-unrecognised code, or any other unexpected status throws `AcceleratorHttpError` on BOTH the primary and the
+unrecognised code, or any other unexpected status throws `PrestoHttpError` on BOTH the primary and the
 retry path. (Every `403` and every `408`/`413`/`429`/`503` still degrades regardless of code — the throw
 set is only misconfiguration + genuinely unexpected responses.) A dApp that relied on the old always-degrade
 behaviour to swallow a misconfiguration (e.g. with `allowInsecureDowngrade`) will now see the error
@@ -229,12 +268,12 @@ force-degrade regardless.
 
 ### New `"version-mismatch"` phase
 
-`onPhase` may now emit `"version-mismatch"` (distinct from `"denied"`) when the accelerator refuses this
+`onPhase` may now emit `"version-mismatch"` (distinct from `"denied"`) when the presto refuses this
 SDK's Aztec version (`403 version_not_allowed`). The proof still degrades to WASM.
 
-### `AcceleratorStatus` gains `appVersion` / `apiVersion`
+### `PrestoStatus` gains `appVersion` / `apiVersion`
 
-The `available: true` status now also carries the accelerator app's own `appVersion` (the desktop/headless
-build) and the negotiated `apiVersion`. `apiVersion` is present whenever the accelerator is available (a
+The `available: true` status now also carries the presto app's own `appVersion` (the desktop/headless
+build) and the negotiated `apiVersion`. `apiVersion` is present whenever the presto is available (a
 recognised `/health` must carry it). `appVersion` is optional — the origin-tiered MINIMAL `/health` served
 to an unapproved cross-origin withholds it. Additive; no break.

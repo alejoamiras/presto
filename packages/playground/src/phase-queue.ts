@@ -1,7 +1,7 @@
-import type { AcceleratorPhase } from "@alejoamiras/aztec-accelerator";
+import type { PrestoPhase } from "@alejoamiras/presto";
 
 /** All phases the proving theater can display — SDK prover phases + app-level phases. */
-export type AnimationPhase = AcceleratorPhase | "app:simulate" | "app:prove" | "app:confirm";
+export type AnimationPhase = PrestoPhase | "app:simulate" | "app:prove" | "app:confirm";
 
 export const MIN_DISPLAY_MS = 1000;
 

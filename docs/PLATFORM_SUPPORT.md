@@ -11,7 +11,7 @@
 
 ## Encrypted Connection (HTTPS)
 
-HTTPS between the browser and the accelerator is **default-on**, consented through the first-run
+HTTPS between the browser and the presto is **default-on**, consented through the first-run
 onboarding wizard, on **all three** desktop OSes (it was previously a macOS-only "Safari Support"
 toggle). It gives an encrypted, authenticated loopback channel; Safari *requires* it (Safari blocks
 plain HTTP from an HTTPS page), while Chrome/Firefox/Edge use it when the local certificate is trusted
@@ -27,7 +27,7 @@ within 30 days of expiry.
 |----|-------------|---------|-------------------|-----------|
 | **macOS** | login Keychain (`security`) | password dialog on install | renewal consent window → password | Settings "Remove certificate trust"; or Keychain Access |
 | **Windows** | CurrentUser `Root` (`certutil.exe`) | the wizard's *Start* click (no separate dialog is guaranteed) | renewal consent window | NSIS uninstaller removes it; or Settings "Remove certificate trust" |
-| **Linux** | user NSS DBs — `~/.pki/nssdb` (Chrome/Chromium/Brave/Edge) + each Firefox profile — via `certutil` | the wizard's *Start* click (no OS dialog exists) | silent (user DBs need no auth) | Settings "Remove certificate trust"; or `AztecAccelerator --remove-ca-trust` |
+| **Linux** | user NSS DBs — `~/.pki/nssdb` (Chrome/Chromium/Brave/Edge) + each Firefox profile — via `certutil` | the wizard's *Start* click (no OS dialog exists) | silent (user DBs need no auth) | Settings "Remove certificate trust"; or `Presto --remove-ca-trust` |
 
 **Linux notes.** Requires `certutil` (the `.deb` depends on `libnss3-tools`; the AppImage detects it and
 degrades with an install hint if absent). Per-store trust status is shown honestly in the wizard/Settings.
@@ -37,8 +37,8 @@ disclaimed, not silently claimed as covered. Firefox must be restarted to pick u
 **Full uninstall (all OSes).** The trust-store column above is only the CA. A complete teardown also
 removes the autostart entry and the crash-recovery task/unit. **Windows** does all of it in the NSIS
 uninstaller (guarded so an in-place upgrade never fires it). **macOS/Linux** have no uninstall hook, so run
-`AztecAccelerator --prepare-uninstall` (or `packages/accelerator/scripts/uninstall.sh`) before deleting the
-app. It is **ownership-checked**: a second, copied install that still shares `~/.aztec-accelerator` leaves
+`Presto --prepare-uninstall` (or `packages/presto/scripts/uninstall.sh`) before deleting the
+app. It is **ownership-checked**: a second, copied install that still shares `~/.presto` leaves
 all shared state intact and reports why. Config and approved origins are never removed by any path.
 
 ## macOS Details
@@ -75,12 +75,12 @@ The app uses GTK via WebKitGTK. Tray icon support depends on the compositor:
 
 ### Browser Local Network Access (Chrome 142+, Firefox 153+)
 
-Chrome 142 began gating requests from public websites to loopback addresses behind a user permission prompt (Local Network Access); Chrome 145 splits it into `local-network` and `loopback-network` permissions. Firefox 153 enables its corresponding Local Network Access protection by default for desktop users. A dApp probing the accelerator from a public origin triggers the browser prompt on first use. An explicit denial is reported by the SDK as `permission-blocked` and still falls back to WASM; a pending/dismissed prompt or unavailable permission query can remain inconclusive.
+Chrome 142 began gating requests from public websites to loopback addresses behind a user permission prompt (Local Network Access); Chrome 145 splits it into `local-network` and `loopback-network` permissions. Firefox 153 enables its corresponding Local Network Access protection by default for desktop users. A dApp probing the presto from a public origin triggers the browser prompt on first use. An explicit denial is reported by the SDK as `permission-blocked` and still falls back to WASM; a pending/dismissed prompt or unavailable permission query can remain inconclusive.
 
 The SDK annotates supported plaintext requests with `targetAddressSpace: "loopback"`. This declares the destination so supporting browsers can run their LNA flow; it does not bypass permission. HTTPS is not an escape hatch because the gate follows address space, not scheme. Site permissions beside the address bar are the usual recovery, followed by a forced Retry, but this is not guaranteed: enterprise policy can require an administrator, while an iframe can require top-level access or explicit Permissions Policy delegation.
 
 Keep this flow separate from HTTPS recovery. If HTTPS cannot connect, the SDK reports
-`secure-connection-unavailable` with a best-effort diagnosis. The normal repair is Accelerator tray
+`secure-connection-unavailable` with a best-effort diagnosis. The normal repair is Presto tray
 → Settings → enable **Encrypted Connection**, or re-run certificate setup for trust failures, then
 force Retry. The SDK may use one witness-free HTTP health diagnostic after HTTPS failure, but never
 sends an HTTP `/prove` or witness automatically. Safari may block that diagnostic, leaving the
@@ -92,9 +92,9 @@ prompt.
 
 ### Localhost Authorization
 
-The accelerator runs an HTTP server on `127.0.0.1:59833` (localhost only — not exposed to the network).
+The presto runs an HTTP server on `127.0.0.1:59833` (localhost only — not exposed to the network).
 
-**Browser requests** (cross-origin): The `Origin` header is checked against the approved origins list. Unknown origins trigger a MetaMask-style authorization popup. Approved origins are persisted in `~/.aztec-accelerator/config.json`.
+**Browser requests** (cross-origin): The `Origin` header is checked against the approved origins list. Unknown origins trigger a MetaMask-style authorization popup. Approved origins are persisted in `~/.presto/config.json`.
 
 **Non-browser requests** (curl, scripts): No `Origin` header is sent, so requests are auto-approved. This is by design — `Origin` is a browser-only mechanism. The binding to `127.0.0.1` is the security boundary for non-browser access.
 
@@ -106,4 +106,4 @@ Updates are signed with Ed25519 (minisign format). The public key is embedded in
 
 ### Binary Download Verification
 
-When downloading `bb` binaries for version mismatches, the accelerator verifies the download against a SHA-256 digest from the GitHub API. If the digest is unavailable or verification fails, the download is rejected (fail-closed). The bundled `bb` sidecar does not require verification.
+When downloading `bb` binaries for version mismatches, the presto verifies the download against a SHA-256 digest from the GitHub API. If the digest is unavailable or verification fails, the download is rejected (fail-closed). The bundled `bb` sidecar does not require verification.

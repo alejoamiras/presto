@@ -5,8 +5,8 @@ import "../src/test-setup.ts";
  * E2E test setup — runs once before all test files via preload.
  *
  * Asserts that Aztec node is reachable (mandatory).
- * Accelerator health is only checked when ACCELERATOR_URL is set
- * (the accelerator is a desktop app — optional by design).
+ * Presto health is only checked when PRESTO_URL is set
+ * (the presto is a desktop app — optional by design).
  * Throws immediately if required services are unavailable.
  */
 
@@ -26,7 +26,7 @@ await configure({
       lowestLevel: "warning",
     },
     {
-      category: ["aztec-accelerator"],
+      category: ["presto"],
       sinks: ["console"],
       lowestLevel: logLevel,
     },
@@ -36,8 +36,8 @@ await configure({
 // Environment configuration
 export const config = {
   nodeUrl: process.env.AZTEC_NODE_URL || "http://localhost:8080",
-  /** Optional accelerator URL — accelerated tests are skipped when not set. */
-  acceleratorUrl: process.env.ACCELERATOR_URL || "",
+  /** Optional presto URL — accelerated tests are skipped when not set. */
+  prestoUrl: process.env.PRESTO_URL || "",
 };
 
 /** True when pointing at a local sandbox (default). */
@@ -62,18 +62,18 @@ async function assertLocalServicesAvailable(): Promise<void> {
     );
   }
 
-  if (config.acceleratorUrl) {
-    const acceleratorOk = await fetch(`${config.acceleratorUrl}/health`, {
+  if (config.prestoUrl) {
+    const prestoOk = await fetch(`${config.prestoUrl}/health`, {
       signal: AbortSignal.timeout(5000),
     })
       .then((r) => r.ok)
       .catch(() => false);
 
-    if (!acceleratorOk) {
+    if (!prestoOk) {
       throw new Error(
-        `Accelerator not available at ${config.acceleratorUrl}. ` +
-          "ACCELERATOR_URL is set but the accelerator is not responding.\n" +
-          "  Start the accelerator desktop app or unset ACCELERATOR_URL to skip accelerator tests.",
+        `Presto not available at ${config.prestoUrl}. ` +
+          "PRESTO_URL is set but the presto is not responding.\n" +
+          "  Start the presto desktop app or unset PRESTO_URL to skip presto tests.",
       );
     }
   }

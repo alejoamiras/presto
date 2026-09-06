@@ -1,12 +1,12 @@
-# Aztec Accelerator Playground
+# Presto Playground
 
 Interactive web app for comparing in-browser WASM proving against native accelerated proving on Aztec. Deploy a token contract, transfer tokens, and see the speed difference side by side.
 
-[![App](https://github.com/alejoamiras/aztec-accelerator/actions/workflows/app.yml/badge.svg)](https://github.com/alejoamiras/aztec-accelerator/actions/workflows/app.yml)
+[![App](https://github.com/alejoamiras/presto/actions/workflows/app.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/app.yml)
 
 ## Live Demo
 
-[playground.aztec-accelerator.dev](https://playground.aztec-accelerator.dev)
+[playground.presto.build](https://playground.presto.build)
 
 ## Features
 
@@ -65,7 +65,7 @@ E2E tests use [Playwright](https://playwright.dev).
 bun run build   # Output: dist/
 ```
 
-Deployed with Cloudflare Workers Static Assets at `playground.aztec-accelerator.dev`. `app.yml` is the PR gate (lint, typecheck, unit, e2e). The live deploy is a manual `release-sdk.yml` dispatch: choose `sdk-and-playground` for a candidate SDK release plus deploy, or `playground-only` to deploy without publishing npm.
+Deployed with Cloudflare Workers Static Assets at `playground.presto.build`. `app.yml` is the PR gate (lint, typecheck, unit, e2e). The live deploy is a manual `release-sdk.yml` dispatch: choose `sdk-and-playground` for a candidate SDK release plus deploy, or `playground-only` to deploy without publishing npm.
 
 ## License
 

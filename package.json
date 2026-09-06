@@ -3,7 +3,7 @@
   "license": "AGPL-3.0-only",
   "workspaces": [
     "packages/sdk",
-    "packages/accelerator",
+    "packages/presto",
     "packages/playground",
     "packages/landing",
     "packages/release-feed"
@@ -17,9 +17,9 @@
     "format": "biome format --write .",
     "lint": "biome check . && bun run lint:pkg && bun run lint:shell && bun run lint:rust",
     "lint:actions": "actionlint",
-    "lint:fix": "biome check --write . && cd packages/accelerator/src-tauri && cargo fmt",
+    "lint:fix": "biome check --write . && cd packages/presto/src-tauri && cargo fmt",
     "lint:pkg": "sort-package-json --check package.json packages/*/package.json",
-    "lint:rust": "cd packages/accelerator/src-tauri && cargo fmt --check",
+    "lint:rust": "cd packages/presto/src-tauri && cargo fmt --check",
     "lint:shell": "shellcheck packages/*/scripts/*.sh",
     "prepare": "husky",
     "sdk:promote": "bun scripts/promote-sdk-latest.ts",
@@ -28,7 +28,7 @@
     "test:e2e": "bun run --cwd packages/sdk test:e2e",
     "test:scripts": "bun test scripts/*.test.ts",
     "test:typecheck": "bun run typecheck:scripts && bun run --cwd packages/sdk test:lint && bun run --cwd packages/playground typecheck && bun run --cwd packages/playground typecheck:scripts && bun run --cwd packages/release-feed typecheck",
-    "test:unit": "bun run --cwd packages/sdk test:unit && bun run --cwd packages/playground test:unit && bun run --cwd packages/accelerator test:unit && bun run --cwd packages/release-feed test && bun run test:scripts",
+    "test:unit": "bun run --cwd packages/sdk test:unit && bun run --cwd packages/playground test:unit && bun run --cwd packages/presto test:unit && bun run --cwd packages/release-feed test && bun run test:scripts",
     "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json"
   },
   "lint-staged": {

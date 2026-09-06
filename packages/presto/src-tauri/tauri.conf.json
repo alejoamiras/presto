@@ -1,0 +1,86 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/dev/crates/tauri-utils/schema.json",
+  "productName": "Presto",
+  "version": "1.0.0-rc.1",
+  "identifier": "build.presto.presto",
+  "build": {
+    "beforeDevCommand": {
+      "script": "bun run frontend:build",
+      "cwd": "..",
+      "wait": true
+    },
+    "beforeBuildCommand": {
+      "script": "bun run frontend:build",
+      "cwd": ".."
+    },
+    "frontendDist": "./frontend"
+  },
+  "app": {
+    "windows": [],
+    "withGlobalTauri": false,
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self'; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; frame-src 'none'; child-src 'none'; worker-src 'none'",
+      "capabilities": [
+        "authorize",
+        "settings",
+        "update-prompt",
+        "onboarding",
+        "renewal"
+      ]
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://presto.build/releases/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDkzRjNDRUUwMDUxRTJCRjkKUldUNUt4NEY0TTd6a3pRZ2l2V0J1TFEyOGJPbTF4NzJRV09NL0w4c2lJSExRUzlIaEFsQStmWnoK",
+      "windows": {
+        "installMode": "quiet"
+      }
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "copyright": "© 2026 Presto contributors",
+    "homepage": "https://presto.build",
+    "license": "AGPL-3.0-only",
+    "resources": {
+      "../../../LICENSE": "LICENSE"
+    },
+    "publisher": "Presto",
+    "createUpdaterArtifacts": "v1Compatible",
+    "externalBin": [
+      "binaries/bb"
+    ],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/icon.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "linux": {
+      "deb": {
+        "desktopTemplate": "main.desktop",
+        "depends": [
+          "libnss3-tools"
+        ]
+      }
+    },
+    "macOS": {
+      "minimumSystemVersion": "10.15"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "installerHooks": "./nsis/hooks.nsi"
+      }
+    }
+  }
+}

@@ -11,7 +11,7 @@ import { Fq, Fr } from "@aztec/aztec.js/fields";
 import type { EmbeddedWallet } from "@aztec/wallets/embedded";
 import { getLogger } from "@logtape/logtape";
 
-const logger = getLogger(["aztec-accelerator", "sdk", "e2e", "helpers"]);
+const logger = getLogger(["presto", "sdk", "e2e", "helpers"]);
 
 /** Deploy a new Schnorr account using the current prover with Sponsored FPC. */
 export async function deploySchnorrAccount(

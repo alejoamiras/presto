@@ -1,14 +1,10 @@
 {
   "$schema": "../../node_modules/wrangler/config-schema.json",
-  "name": "aztec-accelerator-playground",
-  "compatibility_date": "2026-09-04",
+  "name": "presto-playground",
+  "compatibility_date": "2026-08-22",
+  "workers_dev": true,
   "preview_urls": true,
-  "routes": [
-    {
-      "pattern": "playground.aztec-accelerator.dev",
-      "custom_domain": true
-    }
-  ],
+  "routes": [{ "pattern": "playground.presto.build", "custom_domain": true }],
   "assets": {
     "directory": "./dist",
     "not_found_handling": "single-page-application"

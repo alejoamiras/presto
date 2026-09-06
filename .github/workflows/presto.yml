@@ -1,0 +1,818 @@
+name: Presto
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main, security-hardening]
+
+# Cancel a superseded in-flight run when a new commit is pushed to the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  identity-readiness:
+    name: Presto launch identity readiness
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - run: bun scripts/presto-release-readiness.ts
+
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    outputs:
+      rust_platform: ${{ steps.override.outputs.relevant || steps.filter.outputs.rust_platform }}
+      desktop_runtime: ${{ steps.override.outputs.relevant || steps.filter.outputs.desktop_runtime }}
+      windows_packaging: ${{ steps.override.outputs.relevant || steps.filter.outputs.windows_packaging }}
+      headless_server: ${{ steps.override.outputs.relevant || steps.filter.outputs.headless_server }}
+      sdk_integration: ${{ steps.override.outputs.relevant || steps.filter.outputs.sdk_integration }}
+      release_tooling: ${{ steps.override.outputs.relevant || steps.filter.outputs.release_tooling }}
+      updater_feed: ${{ steps.override.outputs.relevant || steps.filter.outputs.updater_feed }}
+      windows_bb: ${{ steps.override.outputs.relevant || steps.filter.outputs.windows_bb }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        with:
+          filters: .github/filters/presto.yml
+      - name: Override for manual dispatch
+        if: github.event_name == 'workflow_dispatch'
+        id: override
+        run: echo "relevant=true" >> "$GITHUB_OUTPUT"
+
+  clippy:
+    name: Clippy
+    needs: changes
+    if: needs.changes.outputs.rust_platform == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: packages/presto/src-tauri
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-cache-key: presto-desktop-x86_64-unknown-linux-gnu
+          rust-workspaces: |
+            packages/presto/src-tauri -> target
+            packages/presto/core -> target
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      # presto-core is standalone (compiled as a path-dep of src-tauri, but not lint-covered by it).
+      - run: cargo fmt --check --manifest-path ../core/Cargo.toml
+      - run: cargo clippy --manifest-path ../core/Cargo.toml --all-targets -- -D warnings
+
+  test:
+    name: Rust Tests
+    needs: changes
+    if: needs.changes.outputs.rust_platform == 'true'
+    runs-on: ubuntu-latest
+    # 20, not 10: warm-cache runs finish in ~4 min, but a cold rust-cache (notably on a manual
+    # `gh run rerun`, which does not restore the cache) does a full workspace rebuild that can
+    # exceed 10 min and time out. 20 gives a cold build headroom without masking a real hang.
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: packages/presto/src-tauri
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-cache-key: presto-desktop-x86_64-unknown-linux-gnu
+          rust-workspaces: |
+            packages/presto/src-tauri -> target
+            packages/presto/core -> target
+          rust-components: ""
+      - run: cargo test
+      # presto-core's own unit tests (113) — not exercised by `cargo test` in src-tauri.
+      - run: cargo test --manifest-path ../core/Cargo.toml
+
+  cert-trust:
+    name: Cert Trust (${{ matrix.platform }})
+    needs: changes
+    if: needs.changes.outputs.rust_platform == 'true'
+    runs-on: ${{ matrix.runner }}
+    # 30, not 20: a cold Windows Rust build (this leg has its own cache key) can run ~15-18 min before
+    # the fast read-only trust test even starts.
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux
+            test: trust_linux
+            rust-cache-key: presto-desktop-x86_64-unknown-linux-gnu
+          - runner: windows-latest
+            platform: windows
+            test: trust_windows
+            rust-cache-key: presto-desktop-x86_64-pc-windows-msvc
+          - runner: macos-latest
+            platform: macos
+            test: trust_macos
+            rust-cache-key: presto-desktop-aarch64-apple-darwin
+    defaults:
+      run:
+        working-directory: packages/presto/src-tauri
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-cache-key: ${{ matrix.rust-cache-key }}
+          rust-workspaces: |
+            packages/presto/src-tauri -> target
+            packages/presto/core -> target
+          rust-components: ""
+      # Keep Windows app/core unit coverage on the already-running platform leg so the
+      # installer job's critical path is reserved for packaging, install, and launch assurance.
+      - name: Compile + unit-test the app crate on Windows
+        if: matrix.platform == 'windows'
+        run: cargo test
+      - name: Compile + unit-test presto-core on Windows
+        if: matrix.platform == 'windows'
+        run: cargo test --manifest-path ../core/Cargo.toml
+      # Linux drives certutil against a throwaway $HOME NSS db (install/verify/chain-validate/remove).
+      - name: Install libnss3-tools (certutil)
+        if: matrix.platform == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libnss3-tools
+      # Tier-1 certainty: an in-process TLS handshake against the REAL generated cert set (no OS store,
+      # no browser). Runs on ALL three OSes here so a cert-generation regression (bad SANs / key usage /
+      # name constraints / mismatched key) fails fast on macOS + Windows too, not just the Linux `test`
+      # job. Cheap + needs no certutil/keychain, so it's safe on every matrix leg.
+      - run: cargo test --test tls_handshake -- --nocapture
+      # Real trust-store test per OS. Windows: CurrentUser Root add/verify/remove (spike I3 — expected
+      # silent in CI). macOS: headless-safe subset only (verify/status + F-05's removal
+      # classification, which `security find-certificate` can answer without a prompt; the INSTALL
+      # path needs interactive auth — spike I7, covered by the manual runbook, NOT here).
+      # F-05: this is the only place the macOS/Windows removal paths are EXECUTED rather than merely
+      # compiled — the unit tests cover the shared classifier, but each backend's own code is
+      # cfg-gated to its target and so invisible to the Linux `test` job.
+      - run: cargo test --test ${{ matrix.test }} -- --ignored --nocapture
+      # L3 (autostart plan §6): the real-OS autostart lifecycle — enable(quoted) → break → heal →
+      # platform-OFF respected → never-resurrect — on each OS's real artifact store. ONE test per
+      # OS by design (Windows mutates the real HKCU behind an RAII restore; --test-threads=1 makes
+      # the serialization explicit rather than incidental).
+      - run: cargo test --test autostart_heal -- --ignored --nocapture --test-threads=1
+      # B5: real-OS uninstall ownership. Linux exercises the copied-install foreign skip (a foreign
+      # .desktop + certs LEFT) and the CARGO_BIN_EXE owned+idempotent teardown; Windows round-trips
+      # crash-recovery ownership against a REAL scheduled task (schtasks /XML + UTF-16 — the layer the
+      # Wine NSIS harness cannot reach). One test per OS mutates real per-user state, so --test-threads=1.
+      - run: cargo test --test uninstall_ownership -- --ignored --nocapture --test-threads=1
+      # D5 (autostart plan): a bare `cargo test` compiles + runs the crate's #[cfg(test)] blocks.
+      # Until this line NO workflow ran one on macOS, so every #[cfg(target_os = "macos")] unit
+      # test — including crash_recovery's three patch_plist_* tests — had never compiled anywhere.
+      - if: matrix.platform == 'macos'
+        run: cargo test
+      # Tier-3: run the REAL NSIS uninstall hook on real Windows under each command line it has to tell
+      # apart. This guard cannot be fixed after the fact — a release cannot fix its own uninstaller —
+      # and getting it wrong deletes the user's trust anchor on a routine upgrade. The path that
+      # matters is the INTERACTIVE plain upgrade (wizard, uninstall radio): there the old uninstaller
+      # runs with `_?=` and WITHOUT `/UPDATE`. The silent in-app update NEVER runs the old
+      # uninstaller at all in tauri-bundler 2.8.1 (PageLeaveReinstall's update-mode guard skips
+      # reinst_uninstall; measured live in smoke run 30472678896) — the `/UPDATE` case below is
+      # therefore DEFENSE-IN-DEPTH for a future template that forwards it, not a path 2.8.1 takes.
+      # The hook's `RMDir` target is the observable: a seeded marker survives iff the guard held.
+      - name: NSIS uninstall-hook guard (upgrade must not wipe trust)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        working-directory: packages/presto/src-tauri/nsis
+        run: |
+          $ErrorActionPreference = "Stop"
+          # Resolve makensis rather than assuming one hardcoded path, and NEVER swallow the installer's
+          # output. This step began failing across every branch with only
+          # "'C:\Program Files (x86)\NSIS\makensis.exe' is not recognized" — the `| Out-Null` hid why
+          # choco had not produced it, and the single hardcoded path had no fallback. The guard itself
+          # is unchanged: makensis must still exist and the harness must still compile.
+          function Resolve-Makensis {
+            $candidates = @(
+              "C:\Program Files (x86)\NSIS\makensis.exe",
+              "C:\Program Files\NSIS\makensis.exe",
+              "$env:ChocolateyInstall\bin\makensis.exe"
+            )
+            foreach ($c in $candidates) { if ($c -and (Test-Path $c)) { return $c } }
+            $onPath = Get-Command makensis -ErrorAction SilentlyContinue
+            if ($onPath) { return $onPath.Source }
+            return $null
+          }
+          $makensis = Resolve-Makensis
+          if (-not $makensis) {
+            Write-Host "makensis not found — installing NSIS (installer output NOT suppressed)"
+            # Retry: the community feed returns transient 5xx. Observed on 2026-08-14 —
+            # "Failed to fetch results from V2 feed ... 504 (Gateway Timeout)" ->
+            # "Unable to resolve dependency 'nsis.install'" -> the whole Windows leg red.
+            # Three bounded attempts with backoff; a persistent outage still fails loudly rather than
+            # silently skipping a security guard.
+            for ($i = 1; $i -le 3; $i++) {
+              choco install nsis -y --no-progress
+              if ($LASTEXITCODE -eq 0) { break }
+              if ($i -eq 3) { throw "choco install nsis failed after $i attempts (last exit $LASTEXITCODE)" }
+              Write-Host "::warning::choco install nsis failed (exit $LASTEXITCODE) — retrying in $($i * 15)s"
+              Start-Sleep -Seconds ($i * 15)
+            }
+            $makensis = Resolve-Makensis
+          }
+          if (-not $makensis) {
+            throw "makensis still not found after installing NSIS. Searched the standard install dirs, the Chocolatey bin shim, and PATH."
+          }
+          Write-Host "using makensis at $makensis"
+          # B5: the harness bundles a stub app exe so PREUNINSTALL has a real `--prepare-uninstall` target
+          # to invoke — compile it FIRST (the wine runner does the same).
+          & $makensis /V2 stub.test.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis stub.test.nsi failed ($LASTEXITCODE)" }
+          & $makensis /V2 harness.test.nsi
+          if ($LASTEXITCODE -ne 0) { throw "makensis failed ($LASTEXITCODE)" }
+
+          $setup  = Join-Path $PWD "hooks-harness-setup.exe"
+          $dir    = Join-Path $env:TEMP "presto-hooks-harness"
+          $certs  = Join-Path $env:USERPROFILE ".presto\certs"
+          $marker = Join-Path $certs "marker.txt"
+
+          $cases = @(
+            @{ args = "/S _?=$dir";         survives = $true;
+               desc = "manual-download upgrade: installer runs the old uninstaller WITHOUT /UPDATE" },
+            @{ args = "/S /UPDATE _?=$dir"; survives = $true;
+               desc = "defense-in-depth: /UPDATE forwarding (dead in 2.8.1 silent updates)" },
+            @{ args = "/S";                 survives = $false;
+               desc = "genuine uninstall: Add/Remove Programs, no _?=" }
+          )
+
+          foreach ($case in $cases) {
+            & $setup /S | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "NSIS harness setup failed ($LASTEXITCODE)" }
+            if (-not (Test-Path (Join-Path $dir "uninstall.exe"))) {
+              throw "NSIS harness did not produce its uninstaller under $dir"
+            }
+            New-Item -ItemType Directory -Force -Path $certs | Out-Null
+            Set-Content -Path $marker -Value "seeded"
+
+            Start-Process -FilePath (Join-Path $dir "uninstall.exe") `
+                          -ArgumentList $case.args -Wait
+            # Without _?= NSIS relaunches a temp copy and the parent returns immediately, so give the
+            # deletion a chance to land before reading the verdict. A guard that SHOULD delete but is
+            # merely slow would otherwise read as a (passing) survival.
+            if (-not $case.survives) {
+              $deadline = (Get-Date).AddSeconds(15)
+              while ((Test-Path $marker) -and (Get-Date) -lt $deadline) { Start-Sleep -Milliseconds 250 }
+            }
+
+            $survived = Test-Path $marker
+            if ($survived -ne $case.survives) {
+              throw "FAIL [$($case.desc)]: marker survived=$survived, expected=$($case.survives)"
+            }
+            Write-Host "ok [$($case.desc)]: marker survived=$survived"
+
+            # F-05 (audit 2026-07-31): the hook now VERIFIES the delete instead of firing and
+            # forgetting, and drops a CA-TRUST-NOT-REMOVED.txt when the CA may still be trusted. The
+            # wine harness (scripts/nsis-hook-test.sh) covers the positive case — no certutil, so it
+            # must warn. THIS runner is the opposite and more important direction: certutil exists and
+            # no such CA was ever installed, which is every ordinary user's uninstall. Whitelisting
+            # CRYPT_E_NOT_FOUND by numeric value instead of re-querying the store would fire a scary
+            # file here on literally every uninstall.
+            $warned = Join-Path $env:USERPROFILE ".presto\CA-TRUST-NOT-REMOVED.txt"
+            if (Test-Path $warned) {
+              throw "FAIL [$($case.desc)]: false unremoved-CA warning: $(Get-Content -Raw $warned)"
+            }
+            Write-Host "ok [$($case.desc)]: no false unremoved-CA warning"
+
+            Remove-Item -Recurse -Force $certs, $dir -ErrorAction SilentlyContinue
+          }
+
+          # ── POSTINSTALL completion-token cases (piece-2 plan §6 T2), on REAL Windows ──
+          # The template invokes NSIS_HOOK_POSTINSTALL via !ifmacrodef: a misspelled macro is
+          # SILENTLY skipped. The positive must-fire case is the only guard against that.
+          $aztecDir = Join-Path $env:USERPROFILE ".presto"
+          $handoff  = Join-Path $aztecDir "update-txn"
+          $token    = Join-Path $aztecDir "update-txn-done"
+
+          New-Item -ItemType Directory -Force -Path $aztecDir | Out-Null
+          Set-Content -Path $handoff -Value "nonce-abc123" -NoNewline
+          & $setup /S | Out-Null
+          if (-not (Test-Path $token)) { throw "FAIL POSTINSTALL must-fire: no token written" }
+          $nonce = (Get-Content -Raw $token).Trim()
+          if ($nonce -cne "nonce-abc123") { throw "FAIL POSTINSTALL: nonce mangled ($nonce)" }
+          if (Test-Path $handoff) { throw "FAIL POSTINSTALL: handoff not consumed" }
+          Write-Host "ok [POSTINSTALL must-fire: handoff -> token, nonce preserved]"
+
+          # Double fire (reinstall-over): handoff consumed, so a no-op — token untouched.
+          & $setup /S | Out-Null
+          if ((Get-Content -Raw $token).Trim() -cne "nonce-abc123" -or (Test-Path $handoff)) {
+            throw "FAIL POSTINSTALL double fire disturbed the token"
+          }
+          Write-Host "ok [POSTINSTALL double fire is idempotent]"
+          Remove-Item -Recurse -Force $aztecDir, $dir -ErrorAction SilentlyContinue
+
+          # Fresh install (no handoff) must create NO token.
+          & $setup /S | Out-Null
+          if (Test-Path $token) { throw "FAIL POSTINSTALL created a token with no handoff" }
+          Write-Host "ok [POSTINSTALL no-op on fresh install]"
+          Remove-Item -Recurse -Force $aztecDir, $dir -ErrorAction SilentlyContinue
+
+  # F-004: full updater-feed sign/verify round-trip with a THROWAWAY key (no prod secret). Guards the
+  # version-binding property end-to-end against tauri-CLI drift and any change to the update-manifest
+  # tool: happy path (envelope -> tauri signer sign -> splice -> verify) must pass, and the F-004 splice
+  # attack (bump the OUTER version while the signed envelope stays put) must be rejected. The rejection
+  # logic itself is also unit-covered by presto-core tests above; this proves the real signing path.
+  updater-feed-e2e:
+    name: Updater Feed Sign/Verify E2E
+    needs: changes
+    if: needs.changes.outputs.updater_feed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-cache-key: presto-desktop-x86_64-unknown-linux-gnu
+          rust-workspaces: packages/presto/core -> target
+          rust-components: ""
+          # Only the pure core example + the tauri signer are exercised — no GTK stack, no bb sidecar.
+          install-tauri-system-deps: "false"
+          run-prebuild: "false"
+      - name: Round-trip sign + verify (throwaway key)
+        run: |
+          set -euo pipefail
+          work="$(mktemp -d)"
+
+          # 1. Throwaway updater keypair (never a prod secret; empty password for CI). tauri writes the
+          #    private key + a .pub whose CONTENT is already base64(minisign .pub doc) — the exact format
+          #    tauri.conf.json.plugins.updater.pubkey uses, so the app verifies against this same shape.
+          ( cd packages/presto && bunx tauri signer generate --ci -p "" -w "$work/test.key" )
+          cp "$work/test.key.pub" "$work/pubkey.b64"
+          export TAURI_SIGNING_PRIVATE_KEY
+          TAURI_SIGNING_PRIVATE_KEY="$(cat "$work/test.key")"
+          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+
+          # 2. Representative unsigned feed (artifact `signature` values are opaque to the manifest
+          #    binding — only the manifest signature is cryptographically checked here).
+          jq -n '{version:"1.2.3", notes:"ci", pub_date:"2026-01-01T00:00:00Z", platforms:{
+            "linux-x86_64":{signature:"art-linux", url:"https://example.test/app.AppImage", size:111},
+            "darwin-aarch64":{signature:"art-mac", url:"https://example.test/app.tar.gz", size:222}
+          }}' > "$work/latest.json"
+
+          tool() { cargo run --quiet --manifest-path packages/presto/core/Cargo.toml --example update-manifest -- "$@"; }
+
+          # 3. Happy path: envelope -> sign -> splice -> verify (must exit 0).
+          tool envelope --feed "$work/latest.json" > "$work/envelope.json"
+          ( cd packages/presto && bunx tauri signer sign "$work/envelope.json" )
+          tool splice --feed "$work/latest.json" --envelope "$work/envelope.json" --sig "$work/envelope.json.sig" > "$work/signed.json"
+          tool verify --feed "$work/signed.json" --pubkey "$work/pubkey.b64"
+          echo "happy-path verify OK"
+
+          # 4. F-004 splice attack: bump the OUTER version; the signed envelope stays at 1.2.3. verify
+          #    MUST reject (OuterMismatch). A pass here is a regression.
+          jq '.version = "9.9.9"' "$work/signed.json" > "$work/tampered.json"
+          if tool verify --feed "$work/tampered.json" --pubkey "$work/pubkey.b64"; then
+            echo "::error::version-splice feed VERIFIED but must have been rejected — signed-manifest downgrade protection regressed"
+            exit 1
+          fi
+          echo "splice-reject OK (downgrade attack correctly refused)"
+
+  lint:
+    name: Lint
+    needs: changes
+    if: needs.changes.outputs.release_tooling == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+      - name: Unit-test build scripts (copy-bb supply-chain gate)
+        run: bun run --cwd packages/presto test:unit
+      - name: Unit-test root scripts (download-bb cache-integrity gate)
+        run: bun run test:scripts
+
+  smoke:
+    name: Smoke
+    needs: changes
+    if: needs.changes.outputs.headless_server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: packages/presto/src-tauri
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-cache-key: presto-server-x86_64-unknown-linux-gnu
+          rust-workspaces: packages/presto/server -> target
+          rust-components: ""
+          # Headless smoke: no desktop GUI libs, no bb copy (it only builds + health-checks the server).
+          install-tauri-system-deps: "false"
+          run-prebuild: "false"
+      - name: Build headless server
+        # `presto-server` lives in a sibling crate at `../server/`
+        # — see Cargo.toml docs.
+        run: cargo build --manifest-path ../server/Cargo.toml
+      - name: Assert headless tree has no GUI/TLS-serving deps (core-extraction regression guard)
+        # Tripwire: if a future change (or an accidental [workspace]) ever pulls the Tauri / webview /
+        # TLS-serving / cert-gen tree back into the headless binary, fail loudly. Protects the ~56%
+        # dependency-surface reduction from the presto-core extraction.
+        run: |
+          TREE=$(cargo tree --manifest-path ../server/Cargo.toml -p presto-server --edges normal --prefix none | sort -u)
+          if echo "$TREE" | grep -iqE '^(tauri|tao |wry|rcgen|tokio-rustls|x509-parser|rustls-pemfile)'; then
+            echo "::error::headless dep tree regressed — a GUI/TLS-serving crate leaked back in:"
+            echo "$TREE" | grep -iE '^(tauri|tao |wry|rcgen|tokio-rustls|x509-parser|rustls-pemfile)'
+            exit 1
+          fi
+          echo "headless tree clean: $(echo "$TREE" | wc -l) packages, no tauri/rcgen/tokio-rustls"
+      - name: Launch and health check
+        run: |
+          # bb-version hook (version-only): this leg skips the full prebuild, so resolve the live @aztec/bb.js
+          # version directly (no bb copy) and surface it to /health via the runtime env — core is build.rs-free,
+          # so the server reads AZTEC_BB_VERSION at construct-time. Run the script by ABSOLUTE path (the job's
+          # working-dir is src-tauri; a bare `bun run` would also echo a `$ …` line into the capture).
+          AZTEC_BB_VERSION="$(bun "$GITHUB_WORKSPACE/packages/presto/scripts/bb-version.ts")"
+          export AZTEC_BB_VERSION
+          ../server/target/debug/presto-server &
+          SERVER_PID=$!
+
+          # Poll until server is ready (max 15s)
+          for i in $(seq 1 30); do
+            if curl -sf http://127.0.0.1:59833/health > /dev/null 2>&1; then
+              break
+            fi
+            if ! kill -0 $SERVER_PID 2>/dev/null; then
+              echo "::error::Server crashed on startup"
+              exit 1
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "::error::Server not ready after 15s"
+              kill $SERVER_PID 2>/dev/null || true
+              exit 1
+            fi
+            sleep 0.5
+          done
+
+          HEALTH=$(curl -sf http://127.0.0.1:59833/health || true)
+          echo "Health response: $HEALTH"
+
+          if [ -z "$HEALTH" ]; then
+            echo "::error::No response from /health"
+            kill $SERVER_PID 2>/dev/null || true
+            exit 1
+          fi
+
+          echo "$HEALTH" | jq -e '.status == "ok"' > /dev/null
+          # bb-version hook worked → /health.aztec_version reflects the injected version, not "unknown".
+          echo "$HEALTH" | jq -e '.aztec_version != "unknown"' > /dev/null
+          # /health.version shape-guard (non-empty string). NOTE: bb_available is INTENTIONALLY not asserted —
+          # this leg skips the bb copy, so /health.bb_available is legitimately false here.
+          echo "$HEALTH" | jq -e '(.version | type) == "string" and (.version | length) > 0' > /dev/null
+          echo "Smoke test passed"
+          kill $SERVER_PID 2>/dev/null || true
+
+  release-smoke:
+    name: Release Smoke
+    needs: changes
+    if: needs.changes.outputs.headless_server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: packages/presto/src-tauri
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-cache-key: presto-server-x86_64-unknown-linux-gnu
+          rust-workspaces: packages/presto/server -> target
+          rust-components: ""
+          # Release smoke: build + package only (no /health, no bb) → no desktop libs, no prebuild.
+          install-tauri-system-deps: "false"
+          run-prebuild: "false"
+      - name: Build release headless server (linux-x86_64)
+        # `presto-server` lives in a sibling crate at `../server/`.
+        run: cargo build --release --manifest-path ../server/Cargo.toml
+      - name: Package and checksum
+        run: |
+          cd ../server/target/release
+          tar -czf presto-server-pr-smoke-linux-x86_64.tar.gz presto-server
+          shasum -a 256 presto-server-pr-smoke-linux-x86_64.tar.gz > presto-server-pr-smoke-linux-x86_64.tar.gz.sha256
+          shasum -a 256 -c presto-server-pr-smoke-linux-x86_64.tar.gz.sha256
+
+  desktop-ui:
+    name: Desktop UI Tests
+    needs: changes
+    if: needs.changes.outputs.desktop_runtime == 'true'
+    runs-on: ubuntu-latest
+    # Headroom for a cold Playwright fill (~30 min) on a cache miss; ~2 min on a
+    # cache hit, so this ceiling is a safety net that normal runs never approach.
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+      - uses: ./.github/actions/playwright-cache
+        with:
+          package-dir: packages/presto
+      - run: bun run --cwd packages/presto test:e2e:ui
+
+  e2e:
+    name: E2E
+    needs: changes
+    if: needs.changes.outputs.sdk_integration == 'true'
+    uses: ./.github/workflows/_e2e.yml
+    with:
+      build_presto: true
+
+  e2e-webdriver:
+    name: E2E WebDriver (${{ matrix.platform }})
+    needs: changes
+    if: needs.changes.outputs.desktop_runtime == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos
+            runner: macos-latest
+          - platform: linux
+            runner: ubuntu-latest
+          - platform: windows
+            runner: windows-latest
+    uses: ./.github/workflows/_e2e-webdriver.yml
+    with:
+      runner: ${{ matrix.runner }}
+      mode: dev
+
+  # F-012 (D8): the dev matrix above runs `tauri dev`, which is `is_dev()==true` and never exercises the
+  # SHIPPED custom-protocol asset/CSP path. This Linux-only lane does a real `tauri build --debug` so the
+  # trust-boundary spec's CSP + per-window ACL assertions run against a production-mode binary. Linux-only
+  # keeps the extra full-compile cost to one job (the 3-OS dev matrix covers per-platform WebView/IPC diffs).
+  e2e-webdriver-builtdebug:
+    name: E2E WebDriver (built-debug, linux)
+    needs: changes
+    if: needs.changes.outputs.desktop_runtime == 'true'
+    uses: ./.github/workflows/_e2e-webdriver.yml
+    with:
+      runner: ubuntu-latest
+      mode: built-debug
+
+  windows-prebuild:
+    name: Windows Prebuild Smoke
+    needs: changes
+    if: needs.changes.outputs.windows_bb == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+      - name: Fetch + verify the Windows bb.exe sidecar (real copy-bb.ts path)
+        run: bun run --cwd packages/presto prebuild
+      - name: Assert the sidecar exists, runs, and is self-contained
+        shell: pwsh
+        run: |
+          $bb = "packages/presto/src-tauri/binaries/bb-x86_64-pc-windows-msvc.exe"
+          if (-not (Test-Path $bb)) { Write-Error "sidecar missing: $bb"; exit 1 }
+          & $bb --version
+          if ($LASTEXITCODE -ne 0) { Write-Error "bb.exe --version failed (exit $LASTEXITCODE)"; exit 1 }
+          # Import canary: fail the gate if bb.exe ever gains a VC++ redist dependency.
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -property installationPath
+          $dumpbin = Get-ChildItem "$vs\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+          if ($dumpbin) {
+            $deps = & $dumpbin.FullName /DEPENDENTS $bb
+            $deps
+            if ($deps | Select-String -Pattern 'VCRUNTIME140|MSVCP140|MSVCR\d') {
+              Write-Error "bb.exe now depends on the VC++ redistributable — bundle it or revisit self-contained"
+              exit 1
+            }
+            Write-Host "Import canary OK: no VC++ redist dependency"
+          } else {
+            Write-Warning "dumpbin not found; skipped import canary"
+          }
+
+  windows-build:
+    name: Windows Build Smoke
+    needs: changes
+    if: needs.changes.outputs.windows_packaging == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: packages/presto/src-tauri
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-cache-key: presto-desktop-x86_64-pc-windows-msvc
+          rust-workspaces: packages/presto/src-tauri -> target
+          rust-components: ""
+      - name: Build the Tauri app (NSIS installer)
+        working-directory: packages/presto
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Ephemeral updater signing key — smoke only, never shipped. createUpdaterArtifacts
+          # is on, so tauri build needs a key to emit the .nsis.zip + .sig.
+          bunx tauri signer generate --ci -p "" -w ./smoke-updater.key
+          TAURI_SIGNING_PRIVATE_KEY="$(cat ./smoke-updater.key)"
+          export TAURI_SIGNING_PRIVATE_KEY
+          export TAURI_SIGNING_PRIVATE_KEY_PASSWORD=""
+          # Match the throwaway private key without changing the committed production identity.
+          # This also permits packaging smoke before the production key is provisioned; the
+          # separate launch-readiness gate remains fail-closed.
+          bun -e '
+            const { readFileSync, writeFileSync } = require("node:fs");
+            const pubkey = readFileSync("./smoke-updater.key.pub", "utf8").trim();
+            writeFileSync(process.env.RUNNER_TEMP + "/presto-smoke-config.json",
+              JSON.stringify({ plugins: { updater: { pubkey } } }));
+          '
+          bunx tauri build --bundles nsis --config "$RUNNER_TEMP/presto-smoke-config.json"
+          rm -f ./smoke-updater.key ./smoke-updater.key.pub
+      - name: Assert the NSIS installer was produced
+        working-directory: packages/presto/src-tauri
+        shell: bash
+        run: |
+          set -euo pipefail
+          nsis=$(find target/release/bundle -name '*-setup.exe' | head -1)
+          [ -n "$nsis" ] || { echo "::error::no NSIS -setup.exe produced"; exit 1; }
+          ls -la "$nsis"
+          echo "Windows installer produced: $nsis"
+      - name: Install + launch + probe /health (does the tray app run on the runner?)
+        working-directory: packages/presto/src-tauri
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $nsis = Get-ChildItem -Recurse -Filter "*-setup.exe" target/release/bundle/nsis | Select-Object -First 1
+          if (-not $nsis) { Write-Error "no installer"; exit 1 }
+          # Scoped Defender exclusion so the UNSIGNED installer/exe isn't quarantined mid-test
+          # (ephemeral runner only; %LOCALAPPDATA% is the per-user install target).
+          Add-MpPreference -ExclusionPath "$env:LOCALAPPDATA" -ErrorAction SilentlyContinue
+          # Silent per-user NSIS install (/S, installMode currentUser -> %LOCALAPPDATA%, no UAC).
+          Write-Host "installing $($nsis.FullName) /S"
+          Start-Process -FilePath $nsis.FullName -ArgumentList "/S" -Wait
+          $exe = Get-ChildItem -Path "$env:LOCALAPPDATA" -Recurse -Filter "Presto.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $exe) {
+            Write-Error "installed Presto.exe not found under %LOCALAPPDATA%"
+            Get-ChildItem -Path "$env:LOCALAPPDATA" -Recurse -ErrorAction SilentlyContinue | Select-Object FullName | Out-String | Write-Host
+            exit 1
+          }
+          # Shared launch/probe helper for the two scenarios below.
+          $runKey = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Run"
+          $saKey  = "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
+          $staleValue = "$env:LOCALAPPDATA\Aztec Gone\Presto.exe "
+          $aztecDir = Join-Path $env:USERPROFILE ".presto"
+          $markerFile = Join-Path $aztecDir "update-in-progress.json"
+          # Kill switch so the launched app doesn't poll the PROD updater feed / pop a prompt.
+          # NOTE: marker reconciliation deliberately runs regardless of this switch.
+          $env:PRESTO_NO_UPDATE = "1"
+          function Start-AndProbe {
+            $p = Start-Process -FilePath $exe.FullName -PassThru
+            $healthy = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                $h = Invoke-RestMethod -Uri "http://127.0.0.1:59833/health" -TimeoutSec 3
+                if ($h.status -eq "ok") { Write-Host "/health: $($h | ConvertTo-Json -Compress)"; $healthy = $true; break }
+              } catch { }
+              Start-Sleep -Seconds 2
+            }
+            if (-not $healthy) {
+              Write-Error "app did not serve /health within 60s — the tray/WebView2 app may not run on a windows-latest runner (risk #1)"
+              exit 1
+            }
+            return $p
+          }
+          function Clear-AutostartState {
+            # F-B1 cleanup — BEFORE any force-kill: an armed crash-recovery task would treat
+            # Stop-Process as a crash and relaunch the app mid-assertion (flake generator).
+            schtasks /Delete /TN "Presto Crash Recovery" /F 2>$null
+            Remove-ItemProperty -Path $runKey -Name "Presto" -ErrorAction SilentlyContinue
+            Remove-ItemProperty -Path $saKey  -Name "Presto" -ErrorAction SilentlyContinue
+          }
+
+          # ── Scenario A (T5, piece-2 wiring proof): a LIVE update marker suppresses the heal AND
+          #    the crash-recovery rearm, end to end through main.rs — the library tables cannot
+          #    catch a wiring bug that gates only one of the two. ──
+          New-Item -ItemType Directory -Force -Path $aztecDir | Out-Null
+          $deadline = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 600
+          # Valid marker (schema/canonical-semver/deadline in-clamp) whose token will never match:
+          # classification = Suppress, so it must SURVIVE the launch.
+          Set-Content -Path $markerFile -NoNewline -Value ('{"schema":1,"txn":"ci-live-window","candidate":"9.9.9","expected_install_path":"C:\\nowhere\\app.exe","intent_at_disarm":true,"deadline_unix":' + $deadline + '}')
+          Set-ItemProperty -Path $runKey -Name "Presto" -Value $staleValue
+          schtasks /Delete /TN "Presto Crash Recovery" /F 2>$null
+          Write-Host "scenario A: live marker + stale Run value seeded; launching"
+          $proc = Start-AndProbe
+          $after = (Get-ItemProperty -Path $runKey -Name "Presto" -ErrorAction SilentlyContinue)."Presto"
+          if ($after -cne $staleValue) {
+            Write-Error "suppression breached: the Run value changed under a live marker (was '$staleValue', now '$after')"
+            exit 1
+          }
+          schtasks /Query /TN "Presto Crash Recovery" 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Error "suppression breached: the crash-recovery task was created under a live marker"
+            exit 1
+          }
+          if (-not (Test-Path $markerFile)) {
+            Write-Error "the live marker was removed by a launch that could not satisfy its removal rule"
+            exit 1
+          }
+          Write-Host "OK scenario A: live marker suppressed heal AND rearm; marker survived"
+          Clear-AutostartState
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          Remove-Item -Force $markerFile -ErrorAction SilentlyContinue
+          Start-Sleep -Seconds 2
+
+          # ── Scenario B (L6 flip, piece 2): with NO marker, the Windows automatic heal is ON —
+          #    the seeded stale value must come out as the EXACTLY QUOTED installed exe. ──
+          if (Test-Path $markerFile) { Write-Error "precondition: marker still present"; exit 1 }
+          Set-ItemProperty -Path $runKey -Name "Presto" -Value $staleValue
+          Write-Host "scenario B: stale Run value seeded, no marker; launching"
+          $proc = Start-AndProbe
+          $expected = '"' + $exe.FullName + '"'
+          $healed = $null
+          # The heal runs in .setup() before the server binds, but poll briefly to be robust.
+          $deadlineB = (Get-Date).AddSeconds(15)
+          do {
+            $healed = (Get-ItemProperty -Path $runKey -Name "Presto" -ErrorAction SilentlyContinue)."Presto"
+            if ($healed -ceq $expected) { break }
+            Start-Sleep -Milliseconds 500
+          } while ((Get-Date) -lt $deadlineB)
+          if ($healed -cne $expected) {
+            Write-Error "heal breached: expected the exactly quoted installed exe '$expected', got '$healed'"
+            exit 1
+          }
+          Write-Host "OK scenario B: stale value healed to the exactly quoted installed exe"
+          Clear-AutostartState
+          Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
+          Write-Host "OK: the Windows app installs, launches, serves /health, suppresses under a live marker, and heals without one"
+          # Explicit success: `schtasks /Delete` above is the last NATIVE command, and Actions
+          # appends `exit $LASTEXITCODE` to pwsh steps. Cmdlets don't reset $LASTEXITCODE, so a
+          # task that was never armed (schtasks exits 1) would fail this step despite every
+          # assertion passing.
+          exit 0
+
+  # NOTE: the Windows updater-smoke (positive + negative) is PROVEN green and now lives in
+  # the release pipeline (release-presto.yml), not per-PR — it builds 4 app versions,
+  # far too heavy for every PR. The reusable _e2e-updater-windows.yml can still be run
+  # manually via workflow_dispatch.
+
+  presto-status:
+    name: Presto Status
+    if: always()
+    needs:
+      [
+        changes,
+        identity-readiness,
+        clippy,
+        test,
+        cert-trust,
+        updater-feed-e2e,
+        lint,
+        smoke,
+        release-smoke,
+        desktop-ui,
+        e2e,
+        e2e-webdriver,
+        e2e-webdriver-builtdebug,
+        windows-prebuild,
+        windows-build,
+      ]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Check results
+        run: |
+          test "${{ needs.identity-readiness.result }}" = success
+          results="${{ needs.changes.result }} ${{ needs.clippy.result }} ${{ needs.test.result }} ${{ needs.cert-trust.result }} ${{ needs.updater-feed-e2e.result }} ${{ needs.lint.result }} ${{ needs.smoke.result }} ${{ needs.release-smoke.result }} ${{ needs.desktop-ui.result }} ${{ needs.e2e.result }} ${{ needs.e2e-webdriver.result }} ${{ needs.e2e-webdriver-builtdebug.result }} ${{ needs.windows-prebuild.result }} ${{ needs.windows-build.result }}"
+          for r in $results; do
+            if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
+              echo "Job failed or was cancelled: $r"
+              exit 1
+            fi
+          done
+          echo "All jobs passed or were skipped"

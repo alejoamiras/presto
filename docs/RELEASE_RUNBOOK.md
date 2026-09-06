@@ -4,10 +4,10 @@ This repository ships two independently versioned artifacts:
 
 | Artifact | Release entry point | Use it when |
 |---|---|---|
-| SDK (`@alejoamiras/aztec-accelerator`) | `release-sdk.yml` | The SDK or pinned `@aztec/*` dependencies changed |
-| Desktop + headless accelerator | `release-accelerator.yml` | Native server, desktop UI, updater, trust, or bb download logic changed |
+| SDK (`@alejoamiras/presto`) | `release-sdk.yml` | The SDK or pinned `@aztec/*` dependencies changed |
+| Desktop + headless presto | `release-presto.yml` | Native server, desktop UI, updater, trust, or bb download logic changed |
 
-An Aztec protocol bump is normally SDK-only. Installed accelerators download and verify the matching `bb` version at runtime; do not cut a native-app release merely to track an `@aztec/*` bump.
+An Aztec protocol bump is normally SDK-only. Installed Presto apps download and verify the matching `bb` version at runtime; do not cut a native-app release merely to track an `@aztec/*` bump.
 
 ## One-time production configuration
 
@@ -15,40 +15,71 @@ Keep the release setup small: neither GitHub environment requires reviewers, but
 
 ### `release-signing` GitHub environment
 
-Store this required environment secret:
+Store both required environment secrets:
 
 - `TAURI_SIGNING_PRIVATE_KEY`
+- `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`
 
-`TAURI_SIGNING_PRIVATE_KEY_PASSWORD` is optional. Omit it when the production key is passwordless; the workflow passes an empty value and the signer supports that configuration. Set it only when the stored private key was generated with that exact password.
+Generate a new password-protected key for Presto. Commit only its public key. Neither secret
+may exist at repository scope. Re-enter Apple signing/notarization credentials separately:
+GitHub cannot export existing secrets.
 
-The production updater key and its optional password must not also exist as repository-level secrets. `release-accelerator.yml` exposes these values only to the dedicated signing step, whose commands are intentionally narrow and use the installed, lockfile-pinned Tauri CLI directly. Apple signing/notarization credentials remain separate because they are required by the macOS build jobs; this change does not isolate those build-time credentials.
+The owner explicitly approved 1Password as the backup of record on 2026-09-05, removing the
+separate offline-copy requirement from the original launch plan. Save the key and password in
+1Password, verify exact read-back and successful signing, and record that public key as
+`recoveredUpdaterPublicKey` in `infra/presto-identity.json`. Never claim recovery based only on a
+GitHub upload. This attestation does not claim that an independent offline backup exists.
+The signing job must verify every payload and manifest against the committed public key.
 
-#### Accelerator 3 updater-key rotation (completed)
+### Launch gates
 
-Accelerator 3 rotates the production updater key to public key ID `456E5A3DB518F598`. The matching
-passwordless private key is stored in the Personal-vault item
-`Aztec Accelerator Updater Signing Key v3 (passwordless)` and in the `release-signing` environment only.
-The older `Tauri Signing Key` item is retained as historical evidence and must not be used.
+The operational PR remains draft until the permanent `PRESTO_DOMAIN`, reverse-domain native
+identifier, updater endpoint, Cloudflare routes, secrets, and all required tests are finalized.
+`bun scripts/presto-release-readiness.ts` fails closed while any launch attestation is pending.
+Only set `releaseReady` after these checks and all three independent reviews pass.
 
-In that 1Password Login item, `username` records the public key and `password` contains the private-key
-payload. “Passwordless” means the updater private key has an empty encryption passphrase; it does **not** mean
-the 1Password `password` field is empty. GitHub's `TAURI_SIGNING_PRIVATE_KEY` must be populated from that
-`password` field, while `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` remains unset.
+Workers may run on workers.dev before this gate; they are previews, not stable releases.
+The fresh feed namespace is `41a6adef830f4a91bf63476a323cec98`; never reuse another product's KV,
+updater key, certificates, native identifier, or installation.
 
-This is an intentionally breaking updater migration: 1.x and 2.x binaries pin the old public key and cannot
-authenticate any 3.x feed. The 3.0.0 changelog and generated GitHub release notes must therefore tell those
-users to quit the accelerator and manually install 3.0.0 over the existing application. A prior uninstall is
-normally unnecessary and risks removing integration state; install-over preserves configuration and cached bb
-versions. After the manual reinstall, 3.x-to-3.x automatic updates work normally.
+Release sequence: SDK 5.2.0 to `testnet` with provenance; native `1.0.0-rc.1`; native
+`1.0.0` using RC1 as its actual same-key baseline; stable feed promotion; full-stack consent
+verification; then guarded SDK `latest` promotion. RCs must never enter the public feed.
+The baseline bootstrap is restricted to exactly RC1 with no earlier Presto release.
 
-Before publishing any 3.0.0 candidate, require the isolated signer job to prove that all updater payloads and
-the generated feed verify against the public key committed in `tauri.conf.json`. Never work around a mismatch
-with an HTTP feed, unsigned payload, alternate public key, or hand-edited release artifact.
+### Cloudflare deployment credentials
 
-The one-time Accelerator 3 bootstrap machinery has been removed now that complete published 3.x baselines
-exist. There is no dispatch toggle for bypassing same-key updater gates. Any future updater-key rotation
-requires a deliberately reviewed migration change that defines the user migration, release gates, rollback
-behavior, and documentation for that specific rotation.
+Keep three distinct tokens, each saved/read-back verified in 1Password before GitHub setup:
+
+| Purpose | GitHub location | Permissions |
+| --- | --- | --- |
+| Landing/playground and PR previews | Repository: `CLOUDFLARE_DEPLOY_API_TOKEN` | Account Workers Scripts Edit; Presto zone Workers Routes Edit and Zone Read |
+| Feed Worker code | Main-only `release-feed`: `CLOUDFLARE_RELEASE_FEED_DEPLOY_API_TOKEN` | Account Workers Scripts Edit only |
+| Signed feed promotion | Main-only `release-feed`: `CLOUDFLARE_RELEASE_FEED_API_TOKEN` | Account Workers KV Storage Edit only |
+
+Feed deployment uses `wrangler versions upload` and deploys the exact returned version ID at 100%.
+It does not run `wrangler deploy` or `wrangler triggers deploy`: route changes require the separately
+scoped site token and an explicit infrastructure operation. Keep the configured feed route in place.
+The uploaded version is selected from Wrangler's structured output, validating the Worker name and
+version ID before activation. This follows Cloudflare's separation of
+[versions, deployments and triggers](https://developers.cloudflare.com/workers/wrangler/commands/workers/).
+Uploading a version alone does not promote the stable manifest or change production traffic.
+
+### Recovering an interrupted first RC
+
+An unpublished RC1 draft counts as an existing release and deliberately blocks the bootstrap
+exception. Do not weaken the resolver to ignore drafts. Before a retry, inspect the exact
+`presto-v1.0.0-rc.1` release in `alejoamiras/presto` and confirm all of the following:
+
+- The release is still a draft, has never been published, and no other Presto release exists.
+- `refs/tags/presto-v1.0.0-rc.1` does not exist on the remote repository.
+- No RC manifest was promoted; the new stable feed remains empty.
+
+Preserve the failed run logs and draft asset hashes for diagnosis. Only after those read-only checks
+and explicit operator approval may the exact unpublished draft be removed (without deleting any
+tag). Then re-dispatch RC1 from the reviewed commit using the same recovered signing identity.
+If a tag exists, publication status is uncertain, or any release was published, stop: do not delete
+or rewrite it. Resolve the baseline/publication state and fix forward under the normal release rules.
 
 ### `npm-publish` GitHub environment and npm trusted publisher
 
@@ -57,20 +88,17 @@ The environment has no npm secret. Configure the package's [npm GitHub Actions t
 | Field | Value |
 |---|---|
 | Organization or user | `alejoamiras` |
-| Repository | `aztec-accelerator` |
+| Repository | `presto` |
 | Workflow filename | `release-sdk.yml` |
 | Environment | `npm-publish` |
 | Allowed action | `npm publish` only |
 
 `_publish-sdk.yml` is intentionally `workflow_call`-only. npm validates the calling workflow name for reusable workflows, so the trusted-publisher filename is `release-sdk.yml`; both caller and called workflow grant `id-token: write`.
 
-For the first OIDC canary, leave the existing `NPM_TOKEN` stored but unused. Confirm the workflow contains no token reference:
-
-```bash
-rg 'NPM_TOKEN|NODE_AUTH_TOKEN' .github/workflows/release-sdk.yml .github/workflows/_publish-sdk.yml
-```
-
-The command must return no matches. After one successful OIDC publish and provenance verification, delete the obsolete automation token/secret. Do not add a token fallback: a fallback would hide a broken trusted-publisher binding.
+Bootstrap the package interactively with npm login and 2FA. Publish only
+`@alejoamiras/presto@0.0.0-bootstrap.0` under the `bootstrap` tag, configure the trust above,
+then deprecate that version after trust verification. Never use `latest` for the bootstrap.
+The real 5.2.0 release must be produced by CI with provenance; there is no token fallback.
 
 ## Preflight for every release
 
@@ -84,30 +112,31 @@ bun install --frozen-lockfile
 bun run test
 bun run lint:actions
 bun run audit:dependencies
-bun run --cwd packages/accelerator frontend:build
-cargo test --locked --manifest-path packages/accelerator/core/Cargo.toml
-cargo test --locked --manifest-path packages/accelerator/server/Cargo.toml
-cargo test --locked --manifest-path packages/accelerator/src-tauri/Cargo.toml
+bun run --cwd packages/presto frontend:build
+cargo test --locked --manifest-path packages/presto/core/Cargo.toml
+cargo test --locked --manifest-path packages/presto/server/Cargo.toml
+cargo test --locked --manifest-path packages/presto/src-tauri/Cargo.toml
 ```
 
 `audit:dependencies` combines `bun audit` with `cargo audit` over all three Rust lockfiles. Both release workflows run the same audit as a publication gate. New npm high/critical findings and every RustSec vulnerability block. npm moderate/low findings and RustSec informational warnings are reported. A blocking finding may be accepted only in `scripts/dependency-audit-allowlist.json` with an exact package/advisory pair, rationale, upgrade path, and future expiry. Never extend an expired exception just to make a release green.
 
-## Releasing the accelerator
+## Releasing the presto
 
 Publishing and promotion are separate, serialized events. Publish creates a tested GitHub release but never changes the live updater feed. Promotion verifies an already-published stable release and moves the feed; the same operation is the rollback lever.
 
 ### 1. Publish
 
 ```bash
-gh workflow run release-accelerator.yml --ref main -f version=X.Y.Z
+gh workflow run release-presto.yml --ref main -f version=X.Y.Z
 # or prerelease:
-gh workflow run release-accelerator.yml --ref main -f version=X.Y.Z-rc.N
+gh workflow run release-presto.yml --ref main -f version=X.Y.Z-rc.N
 ```
 
-Every publish requires a complete, published, lower release that uses the current updater key. The resolver
-includes prereleases, selects the greatest compatible version, and fails closed when none exists. There is no
-operator override. A future key rotation must arrive as a deliberately reviewed migration change rather than
-an evergreen release-dispatch option.
+Every ordinary publish requires a complete, published, lower release using the current updater key.
+The resolver includes prereleases and selects the greatest compatible version. Only the first
+`1.0.0-rc.1` may bootstrap without a baseline, and only when no Presto release exists. Stable
+1.0.0 must run the complete RC1 → stable updater and tamper suite. Future key rotation requires
+a separately reviewed migration; there is no dispatch override.
 
 The release path is:
 
@@ -125,7 +154,7 @@ validate/main-only + 3-OS WebDriver
 
 Desktop builds use fresh throwaway updater keys so a new binary can be produced without exposing the production key. Their temporary signatures are excluded. The `release-signing` job then signs the four exact updater payloads with the production key and verifies every payload and feed against the embedded public key. That job does not build, install, launch, or smoke-test applications. Smokes consume only the pre-signed artifacts. The updater baseline may be a prerelease: this is intentional, so RC2 exercises RC1 and GA exercises the newest same-key RC instead of falling back to an older incompatible key.
 
-The packaged composed-proof legs replace the playground's workspace SDK with the packed tarball, build the production playground, and serve that bundle only on `127.0.0.1:5173`. They deliberately do not use Vite's development dependency optimizer. Playwright is exact-pinned identically in the desktop and playground packages, and every browser install resolves from the consuming workspace instead of allowing a root-context `bunx` to fetch a different release. Each composed-proof step has a 35-minute ceiling; a failure or cancellation retains the accelerator, node, preview-server, and Playwright trace output in the attempt-specific Actions artifact.
+The packaged composed-proof legs replace the playground's workspace SDK with the packed tarball, build the production playground, and serve that bundle only on `127.0.0.1:5173`. They deliberately do not use Vite's development dependency optimizer. Playwright is exact-pinned identically in the desktop and playground packages, and every browser install resolves from the consuming workspace instead of allowing a root-context `bunx` to fetch a different release. Each composed-proof step has a 35-minute ceiling; a failure or cancellation retains the presto, node, preview-server, and Playwright trace output in the attempt-specific Actions artifact.
 
 A prerelease is public with `--latest=false` and omits `latest.json`. A stable release includes `latest.json`, but publishing still does not write KV, alter what installed clients receive, or mark the release GitHub Latest. After a real forward GA promotion verifies the signed public feed, the workflow marks that release GitHub Latest. A rollback changes only the authoritative updater feed and deliberately leaves GitHub Latest on the newest GA.
 
@@ -149,7 +178,7 @@ The Windows installer is deliberately not Authenticode-signed. SmartScreen there
 - Confirm macOS signature and notarization jobs passed.
 - Confirm macOS, Linux, and Windows updater smokes passed, including negative tamper controls.
 - For a stable, download its `latest.json` asset and confirm its version, four platform entries, non-empty signatures, sizes, and exact release URLs.
-- For Windows trust/certificate/HTTPS changes, complete the manual Windows composed-proof check in the [accelerator README](../packages/accelerator/README.md#windows-composed-proof--manual-pre-ga-check).
+- For Windows trust/certificate/HTTPS changes, complete the manual Windows composed-proof check in the [presto README](../packages/presto/README.md#windows-composed-proof--manual-pre-ga-check).
 
 Do not promote a release that needs unexplained retries or manual asset replacement. Published releases and tags are append-only; fix forward with a new version.
 
@@ -158,14 +187,14 @@ Do not promote a release that needs unexplained retries or manual asset replacem
 Rehearse the exact validation without writing production:
 
 ```bash
-gh workflow run release-accelerator.yml --ref main \
+gh workflow run release-presto.yml --ref main \
   -f version=X.Y.Z -f mode=promote-only -f dry_run=true
 ```
 
 For an ordinary GA, flip and verify the feed, mark the release GitHub Latest, and open the source-version bump PR:
 
 ```bash
-gh workflow run release-accelerator.yml --ref main \
+gh workflow run release-presto.yml --ref main \
   -f version=X.Y.Z -f mode=promote-only -f bump_source=true
 ```
 
@@ -173,19 +202,48 @@ Promotion independently requires a published, non-draft, non-prerelease release 
 
 Merge the source-version bump PR after an organic GA. Never request `bump_source` for a rollback.
 
-### Accelerator rollback
+### Presto rollback
 
 Move the live feed back to an intact previous stable; do not delete or rebuild any release:
 
 ```bash
-gh workflow run release-accelerator.yml --ref main \
+gh workflow run release-presto.yml --ref main \
   -f version=<PREVIOUS_GOOD> -f mode=promote-only -f dry_run=true
 
-gh workflow run release-accelerator.yml --ref main \
+gh workflow run release-presto.yml --ref main \
   -f version=<PREVIOUS_GOOD> -f mode=promote-only
 ```
 
 This stops new updater uptake and moves landing-page downloads back. It does not downgrade clients that already updated. Fix forward under the next version.
+
+The first stable release has no previous stable Presto release to restore. Do not use the RC or
+another product's feed as a rollback target. Likewise, the SDK bootstrap is not a functional
+rollback version. Preserve published versions and fix forward; these rollback commands become
+applicable only when a verified earlier stable version exists.
+
+### Site and feed-Worker rollback
+
+Before deployment, record each Worker's active version ID in the launch checkpoint. For the
+affected package (`landing`, `playground` or `release-feed`), list deployments and choose the
+explicit, previously verified version; do not infer it from a PR preview or list ordering:
+
+```bash
+bunx wrangler deployments list --config packages/landing/wrangler.jsonc --json
+bunx wrangler versions view '<VERIFIED_VERSION_ID>' --config packages/landing/wrangler.jsonc
+bunx wrangler versions deploy '<VERIFIED_VERSION_ID>@100' --config packages/landing/wrangler.jsonc --dry-run
+```
+
+After reviewing the target and its bindings, the deliberate mutation is:
+
+```bash
+bunx wrangler rollback '<VERIFIED_VERSION_ID>' --config packages/landing/wrangler.jsonc
+```
+
+Repeat the read-back and public endpoint checks after a rollback. A Worker rollback changes code
+and assets, **not KV contents**; signed-feed restoration still uses the guarded native promotion
+flow above. Keep the namespace and other bound resources intact. Cloudflare limits rollback to
+recent versions, so revalidate availability before each release rather than assuming a saved ID
+remains deployable forever. See [Cloudflare rollback semantics](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/).
 
 ## Releasing the SDK candidate
 
@@ -222,7 +280,7 @@ After npm accepts the package, the workflow requires all of the following before
 - the exact version is readable from npm;
 - `testnet` points to it;
 - npm's current verifier cryptographically validates registry signatures and the SLSA attestation for the exact installed package;
-- the verified attestation subject digest matches npm's exact tarball integrity, and its source dependency identifies `alejoamiras/aztec-accelerator`, `.github/workflows/release-sdk.yml`, `refs/heads/main`, and the dispatched commit.
+- the verified attestation subject digest matches npm's exact tarball integrity, and its source dependency identifies `alejoamiras/presto`, `.github/workflows/release-sdk.yml`, `refs/heads/main`, and the dispatched commit.
 
 It then tags the commit, creates a non-latest GitHub release, and verifies a fresh registry install. npm publication is irreversible, so if npm accepted the package but a later step failed, do not redispatch blindly; inspect and repair only the missing record.
 
@@ -300,7 +358,7 @@ Never delete or re-publish an npm version. Fix forward under a new derived revis
 Always read external state before retrying:
 
 ```bash
-npm view @alejoamiras/aztec-accelerator versions dist-tags --json
+npm view @alejoamiras/presto versions dist-tags --json
 gh run list --workflow release-sdk.yml --limit 20
 ```
 
@@ -320,7 +378,7 @@ bun scripts/verify-sdk-package-signatures.ts <VERSION>
 Then confirm the exact tag and release are absent, fetch the printed commit from `origin`, and inspect it before creating anything. Only when the package digest, source dependency, workflow, branch, and commit all match may you repair the append-only records:
 
 ```bash
-TAG="@alejoamiras/aztec-accelerator@<VERSION>"
+TAG="@alejoamiras/presto@<VERSION>"
 COMMIT="<PROVENANCE_COMMIT>"
 git fetch origin main
 git show --stat "$COMMIT"
@@ -337,13 +395,13 @@ Those last three commands mutate public state. Run them only as a deliberate rep
 
 | Platform | Logs |
 |---|---|
-| macOS | `~/Library/Application Support/aztec-accelerator/logs/` |
-| Linux | `~/.local/share/aztec-accelerator/logs/` |
-| Windows | `%LOCALAPPDATA%\\aztec-accelerator\\logs\\` |
+| macOS | `~/Library/Application Support/presto/logs/` |
+| Linux | `~/.local/share/presto/logs/` |
+| Windows | `%LOCALAPPDATA%/build.presto.presto/logs/` |
 
-Configuration is stored in `~/.aztec-accelerator/config.json` on macOS/Linux and the equivalent user profile location on Windows.
+Configuration is stored in `~/.presto/config.json` on macOS/Linux and the equivalent user profile location on Windows.
 
-- **Port 59833 in use:** another accelerator instance or local process owns the HTTP listener. Inspect it before terminating anything.
+- **Port 59833 in use:** another presto instance or local process owns the HTTP listener. Inspect it before terminating anything.
 - **bb unavailable:** inspect the health payload and logs; versioned proof requests should trigger a verified on-demand download.
 - **bb verification failed:** preserve the logs. Runtime downloads fail closed when the upstream digest is missing or mismatched.
 - **Updater failure:** inspect the published release's `latest.json`, exact platform URL, payload size/signature, and application logs. Never work around it by hand-editing the live feed.

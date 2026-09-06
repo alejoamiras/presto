@@ -42,4 +42,4 @@ for attempt in $(seq 1 60); do
 done
 
 echo "Running the packaged-app proof against the production preview..."
-PLAYWRIGHT_EXTERNAL_WEBSERVER=1 bunx playwright test --project=packaged-e2e --workers=1 "$@"
+PLAYWRIGHT_EXTERNAL_WEBSERVER=1 bunx playwright test --project="${PLAYWRIGHT_PROJECT:-packaged-e2e}" --workers=1 "$@"

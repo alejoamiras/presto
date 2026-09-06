@@ -1,0 +1,132 @@
+name: Setup Presto
+description: Install system deps, Bun, Rust toolchain, copy bb sidecar — common environment setup for presto CI jobs.
+
+inputs:
+  rust-target:
+    description: |
+      Optional Rust target triple for cross-toolchain install (e.g. `x86_64-apple-darwin`).
+      NOTE: the prebuild step (`packages/presto/scripts/copy-bb.ts`) chooses the bb sidecar
+      from the HOST `process.platform`/`process.arch`. Cross-compile is NOT supported by this
+      composite; callers must run on a matching host. This input only configures the
+      `dtolnay/rust-toolchain` `targets:` field. When set, the composite asserts host == target
+      and fails fast if they diverge.
+    required: false
+    default: ""
+  rust-cache-key:
+    description: |
+      `Swatinem/rust-cache` `shared-key` — replaces the per-job auto key so caches are SHARED
+      across jobs that pass the same value (the actual cross-warming mechanism). Scope it per
+      crate × target, e.g. `presto-desktop-${target}` or `presto-server-${target}`.
+      Jobs with the same shared-key + same rustc + same Cargo.lock restore each other's cache.
+    required: false
+    default: ""
+  rust-workspaces:
+    description: |
+      `Swatinem/rust-cache` `workspaces:` value — which crate's `target` to cache. Pass only the
+      one a job actually builds (desktop = src-tauri, server = server) to keep cache entries
+      small + stable. Defaults to both for back-compat with callers that don't specify.
+    required: false
+    default: |
+      packages/presto/src-tauri -> target
+      packages/presto/server -> target
+  rust-components:
+    description: |
+      Comma-separated Rust components. Default `clippy,rustfmt` preserves PR-gate behavior;
+      release jobs should pass an empty string to skip unused components.
+    required: false
+    default: "clippy,rustfmt"
+  install-tauri-system-deps:
+    description: |
+      When "false", install ONLY the headless build dep (libssl-dev, for reqwest) and SKIP the desktop
+      Tauri GUI libraries (WebKit/GTK/appindicator/rsvg/patchelf). Default "true" preserves desktop behavior.
+      Compared as a STRING (GHA inputs are strings) — gates use `!= 'false'` / `== 'false'`.
+    required: false
+    default: "true"
+  run-prebuild:
+    description: |
+      When "false", SKIP the copy-bb.ts prebuild (the bb-binary copy) AND the host/target assertion (which
+      exists only to protect host-selected sidecar copying, not pure headless builds). Default "true".
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Assert host matches rust-target
+      # The host==target guard protects host-selected bb-sidecar copying, so it is only relevant when the
+      # prebuild runs. Pure headless builds (run-prebuild: false) don't select a sidecar → skip it.
+      if: inputs.rust-target != '' && inputs.run-prebuild != 'false'
+      shell: bash
+      env:
+        REQUESTED_TARGET: ${{ inputs.rust-target }}
+        RUNNER_OS: ${{ runner.os }}
+        RUNNER_ARCH: ${{ runner.arch }}
+      run: |
+        case "$RUNNER_OS-$RUNNER_ARCH" in
+          Linux-X64)   HOST="x86_64-unknown-linux-gnu" ;;
+          Linux-ARM64) HOST="aarch64-unknown-linux-gnu" ;;
+          macOS-ARM64) HOST="aarch64-apple-darwin" ;;
+          macOS-X64)   HOST="x86_64-apple-darwin" ;;
+          Windows-X64) HOST="x86_64-pc-windows-msvc" ;;
+          *) echo "::error::Unsupported runner os/arch: $RUNNER_OS-$RUNNER_ARCH"; exit 1 ;;
+        esac
+        if [ "$HOST" != "$REQUESTED_TARGET" ]; then
+          echo "::error::rust-target ($REQUESTED_TARGET) does not match host triple ($HOST). The prebuild step chooses bb sidecar by host arch; cross-compile is not supported. Use a runner whose host triple matches the requested target."
+          exit 1
+        fi
+        echo "Host=$HOST matches rust-target=$REQUESTED_TARGET"
+
+    - name: Install Linux system dependencies (desktop — Tauri GUI + headless)
+      if: runner.os == 'Linux' && inputs.install-tauri-system-deps != 'false'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
+    - name: Install Linux system dependencies (headless-only — libssl for reqwest)
+      if: runner.os == 'Linux' && inputs.install-tauri-system-deps == 'false'
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y libssl-dev
+
+    - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+      with:
+        bun-version-file: .bun-version
+
+    - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ~/.bun/install/cache
+        key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+        restore-keys: ${{ runner.os }}-bun-
+
+    - run: bun install --frozen-lockfile
+      shell: bash
+
+    # F-015: pin to a master-history SHA (not the GC-able @stable commit) + explicit channel.
+    - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+      with:
+        toolchain: stable
+        components: ${{ inputs.rust-components }}
+        targets: ${{ inputs.rust-target }}
+
+    - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      with:
+        workspaces: ${{ inputs.rust-workspaces }}
+        shared-key: ${{ inputs.rust-cache-key }}
+        # PR refs restore main/base caches but never create refs/pull cache entries.
+        # Main pushes, main release dispatches, and main warm-cache runs may save.
+        save-if: ${{ github.ref == 'refs/heads/main' }}
+
+    - name: Copy bb sidecar
+      if: inputs.run-prebuild != 'false'
+      shell: bash
+      run: bun run --cwd packages/presto prebuild
+
+    # F-012: the desktop src-tauri build.rs fails if the gitignored frontend/assets/*.js bundles are
+    # missing or stale. Build them here so every downstream cargo command (clippy/test/build) in a
+    # desktop job has them. Headless server jobs (install-tauri-system-deps: false) don't build
+    # src-tauri, so they skip this.
+    - name: Build frontend bundles (F-012)
+      if: inputs.install-tauri-system-deps != 'false'
+      shell: bash
+      run: bun run --cwd packages/presto frontend:build

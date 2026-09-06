@@ -1,9 +1,9 @@
-export const SDK_PACKAGE = "@alejoamiras/aztec-accelerator";
+export const SDK_PACKAGE = "@alejoamiras/presto";
 export const SDK_RELEASE_WORKFLOW = ".github/workflows/release-sdk.yml";
 export const LEGACY_SDK_RELEASE_WORKFLOW = ".github/workflows/publish-testnet.yml";
-export const SDK_REPOSITORY = "https://github.com/alejoamiras/aztec-accelerator";
+export const SDK_REPOSITORY = "https://github.com/alejoamiras/presto";
 export const SDK_SOURCE_DEPENDENCY =
-  "git+https://github.com/alejoamiras/aztec-accelerator@refs/heads/main";
+  "git+https://github.com/alejoamiras/presto@refs/heads/main";
 export const SDK_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-revision\.\d+)?$/;
 
 interface AttestationResponse {
@@ -54,7 +54,7 @@ export function verifyProvenanceStatement(
   allowedWorkflows: readonly string[] = [SDK_RELEASE_WORKFLOW],
   expectedSha512?: string,
 ): VerifiedProvenance {
-  const expectedSubject = `pkg:npm/%40alejoamiras/aztec-accelerator@${version}`;
+  const expectedSubject = `pkg:npm/%40alejoamiras/presto@${version}`;
   const subject = statement.subject?.find((subject) => subject.name === expectedSubject);
   if (!subject) {
     throw new Error(`provenance subject does not contain ${expectedSubject}`);

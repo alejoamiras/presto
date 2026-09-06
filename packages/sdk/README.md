@@ -1,89 +1,89 @@
-# @alejoamiras/aztec-accelerator
+# @alejoamiras/presto
 
-TypeScript SDK that routes Aztec private kernel proving to a local native accelerator, bypassing browser WASM throttling. Zero-config — auto-detects the [Aztec Accelerator](../../packages/accelerator) desktop app on localhost, falls back to WASM if unavailable.
+TypeScript SDK that routes Aztec private kernel proving to a local native presto, bypassing browser WASM throttling. Zero-config — auto-detects the [Presto](../../packages/presto) desktop app on localhost, falls back to WASM if unavailable.
 
-[![SDK](https://github.com/alejoamiras/aztec-accelerator/actions/workflows/sdk.yml/badge.svg)](https://github.com/alejoamiras/aztec-accelerator/actions/workflows/sdk.yml)
-[![npm version](https://img.shields.io/npm/v/@alejoamiras/aztec-accelerator)](https://www.npmjs.com/package/@alejoamiras/aztec-accelerator)
-[![npm downloads](https://img.shields.io/npm/dm/@alejoamiras/aztec-accelerator)](https://www.npmjs.com/package/@alejoamiras/aztec-accelerator)
+[![SDK](https://github.com/alejoamiras/presto/actions/workflows/sdk.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/sdk.yml)
+[![npm version](https://img.shields.io/npm/v/@alejoamiras/presto)](https://www.npmjs.com/package/@alejoamiras/presto)
+[![npm downloads](https://img.shields.io/npm/dm/@alejoamiras/presto)](https://www.npmjs.com/package/@alejoamiras/presto)
 [![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
 
 ## Installation
 
 ```bash
-npm install @alejoamiras/aztec-accelerator
+npm install @alejoamiras/presto
 # or
-bun add @alejoamiras/aztec-accelerator
+bun add @alejoamiras/presto
 ```
 
-> The SDK's version mirrors the Aztec line it targets — SDK `X.Y.Z` is built against `@aztec/*` `X.Y.Z`. A bare install resolves npm `latest`, the release promoted as current-stable; the `testnet` dist-tag points at the newest release on that track (`npm install @alejoamiras/aztec-accelerator@testnet`). The two are usually the same version, and differ while a newer line is being validated or if `latest` has been rolled back.
+> The SDK's version mirrors the Aztec line it targets — SDK `X.Y.Z` is built against `@aztec/*` `X.Y.Z`. A bare install resolves npm `latest`, the release promoted as current-stable; the `testnet` dist-tag points at the newest release on that track (`npm install @alejoamiras/presto@testnet`). The two are usually the same version, and differ while a newer line is being validated or if `latest` has been rolled back.
 
 The SDK ships its `@aztec/*` packages as exact-pinned **dependencies** (not peer dependencies), so it installs standalone. When your project already depends on the same exact `@aztec` version — the normal case for an Aztec dApp — npm/Bun dedupe them to a single `@aztec` graph.
 
 ## Quick Start
 
 ```typescript
-import { AcceleratorProver } from "@alejoamiras/aztec-accelerator";
+import { PrestoProver } from "@alejoamiras/presto";
 
-// Zero-config — auto-detects the accelerator, falls back to WASM.
-const prover = new AcceleratorProver();
+// Zero-config — auto-detects the presto, falls back to WASM.
+const prover = new PrestoProver();
 ```
 
-Inject `prover` into your wallet through the PXE `proverOrOptions` option — see [Embedded Wallet](#embedded-wallet-browser-dapps) below. Every transaction then proves natively when the [Aztec Accelerator](https://github.com/alejoamiras/aztec-accelerator/releases) desktop app is running, and falls back to in-browser WASM automatically. No other code changes.
+Inject `prover` into your wallet through the PXE `proverOrOptions` option — see [Embedded Wallet](#embedded-wallet-browser-dapps) below. Every transaction then proves natively when the [Presto](https://github.com/alejoamiras/presto/releases) desktop app is running, and falls back to in-browser WASM automatically. No other code changes.
 
 ### Embedded Wallet (Browser dApps)
 
 For browser-based dApps using Aztec's embedded wallet, inject the prover via the unified `pxe` option:
 
 ```typescript
-import { AcceleratorProver } from "@alejoamiras/aztec-accelerator";
+import { PrestoProver } from "@alejoamiras/presto";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 
 const wallet = await EmbeddedWallet.create("http://localhost:8080", {
   pxe: {
     proverEnabled: true,
-    proverOrOptions: new AcceleratorProver(),
+    proverOrOptions: new PrestoProver(),
   },
 });
 ```
 
-Every transaction sent through this wallet will automatically use native proving when the accelerator is available, and fall back to WASM otherwise.
+Every transaction sent through this wallet will automatically use native proving when the presto is available, and fall back to WASM otherwise.
 
 ## API Reference
 
-### `AcceleratorProver`
+### `PrestoProver`
 
 The main class. Extends `BBLazyPrivateKernelProver` from `@aztec/bb-prover`.
 
 ```typescript
-const prover = new AcceleratorProver(options?: AcceleratorProverOptions);
+const prover = new PrestoProver(options?: PrestoProverOptions);
 ```
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `checkAcceleratorStatus(options?)` | `Promise<AcceleratorStatus>` | Probe the accelerator's health endpoint. `{ forceRefresh: true }` bypasses a settled cached status but still joins a current probe. |
-| `setAcceleratorConfig(config)` | `void` | Update connection and transport policy. Resets cached protocol/status. |
+| `checkPrestoStatus(options?)` | `Promise<PrestoStatus>` | Probe the presto's health endpoint. `{ forceRefresh: true }` bypasses a settled cached status but still joins a current probe. |
+| `setPrestoConfig(config)` | `void` | Update connection and transport policy. Resets cached protocol/status. |
 | `setOnPhase(callback)` | `void` | Register a phase transition callback for UI animation. |
-| `createChonkProof(steps)` | `Promise<ChonkProofWithPublicInputs>` | Generate a proof — routes to accelerator or falls back to WASM. |
-| `setForceLocal(force)` | `void` | Force WASM proving, bypassing accelerator detection (testing). |
+| `createChonkProof(steps)` | `Promise<ChonkProofWithPublicInputs>` | Generate a proof — routes to presto or falls back to WASM. |
+| `setForceLocal(force)` | `void` | Force WASM proving, bypassing presto detection (testing). |
 
-### `AcceleratorProverOptions`
+### `PrestoProverOptions`
 
 ```typescript
-interface AcceleratorProverOptions {
+interface PrestoProverOptions {
   simulator?: CircuitSimulator;  // Defaults to lazy-loaded WASMSimulator
-  accelerator?: AcceleratorConfig;
-  onPhase?: (phase: AcceleratorPhase, data?: AcceleratorPhaseData) => void;
+  presto?: PrestoConfig;
+  onPhase?: (phase: PrestoPhase, data?: PrestoPhaseData) => void;
 }
 
-interface AcceleratorStatusCheckOptions {
+interface PrestoStatusCheckOptions {
   forceRefresh?: boolean;
 }
 ```
 
-### `AcceleratorConfig`
+### `PrestoConfig`
 
 ```typescript
-interface AcceleratorConfig {
+interface PrestoConfig {
   port?: number;       // HTTP port. Default: 59833
   httpsPort?: number;  // HTTPS port. Default: 59834
   host?: string;       // Host — must be loopback. Default: "127.0.0.1"
@@ -92,24 +92,24 @@ interface AcceleratorConfig {
 }
 ```
 
-### `AcceleratorStatus`
+### `PrestoStatus`
 
-Returned by `checkAcceleratorStatus()`. A **discriminated union** on `available` — narrow on `available`
+Returned by `checkPrestoStatus()`. A **discriminated union** on `available` — narrow on `available`
 first (and on `reason` for the unavailable cases) so you only access fields valid for that state. (The
 prior flat interface let illegal field combinations typecheck; this is the post-Q12 shape — see
 [MIGRATION.md](./MIGRATION.md).)
 
 ```typescript
-type AcceleratorStatus =
+type PrestoStatus =
   | {
       available: true;
       needsDownload: boolean;        // must download bb for the SDK's Aztec version before proving
-      acceleratorVersion?: string;   // from /health (single-version protocol)
+      nativeAztecVersion?: string;   // from /health (single-version protocol)
       availableVersions?: string[];  // cached versions (multi-version protocol)
       sdkAztecVersion?: string;
       appVersion?: string;
       apiVersion?: number;
-      protocol: AcceleratorProtocol; // "http" | "https"
+      protocol: PrestoProtocol; // "http" | "https"
     }
   | { available: false; reason: "offline"; sdkAztecVersion?: string }
   | { available: false; reason: "permission-blocked"; sdkAztecVersion?: string }
@@ -119,26 +119,26 @@ type AcceleratorStatus =
       diagnosis:
         | "https-disabled"
         | "tls-or-trust-failure"
-        | "accelerator-reachable"
+        | "presto-reachable"
         | "unconfirmed";
       sdkAztecVersion?: string;
     }
-  | { available: false; reason: "error"; sdkAztecVersion?: string; protocol: AcceleratorProtocol }
+  | { available: false; reason: "error"; sdkAztecVersion?: string; protocol: PrestoProtocol }
   | {
       available: false;
       reason: "version-mismatch";
-      acceleratorVersion: string;
+      nativeAztecVersion: string;
       sdkAztecVersion?: string;
-      protocol: AcceleratorProtocol;
+      protocol: PrestoProtocol;
     };
 ```
 
 `permission-blocked` means the browser explicitly reports that this origin's loopback-network permission
-is denied; it does **not** mean the accelerator is installed or healthy. It has no `protocol` because
+is denied; it does **not** mean the presto is installed or healthy. It has no `protocol` because
 neither endpoint answered. Use a forced refresh after the user changes the site permission:
 
 ```typescript
-const status = await prover.checkAcceleratorStatus({ forceRefresh: true });
+const status = await prover.checkPrestoStatus({ forceRefresh: true });
 ```
 
 The refresh preserves the endpoint configuration, protocol pin, HTTPS history, and an existing
@@ -152,39 +152,39 @@ makes that endpoint eligible for proving. The diagnosis is best-effort:
 
 | Diagnosis | Meaning | Suggested recovery |
 |-----------|---------|--------------------|
-| `https-disabled` | A detailed Accelerator health response says HTTPS is disabled | Open Accelerator from the tray, open Settings, and enable **Encrypted Connection** |
-| `tls-or-trust-failure` | Accelerator advertises HTTPS, but the browser could not connect securely | Re-run certificate setup in Accelerator Settings, then restart the affected browser if required |
-| `accelerator-reachable` | A privacy-limited health response confirms Accelerator is reachable | Enable/check **Encrypted Connection**; approval gating prevents a more exact diagnosis |
-| `unconfirmed` | The diagnostic failed, was blocked, or did not match Accelerator's health contract | Ensure Accelerator is installed and running, then check Encrypted Connection and browser permissions |
+| `https-disabled` | A detailed Presto health response says HTTPS is disabled | Open Presto from the tray, open Settings, and enable **Encrypted Connection** |
+| `tls-or-trust-failure` | Presto advertises HTTPS, but the browser could not connect securely | Re-run certificate setup in Presto Settings, then restart the affected browser if required |
+| `presto-reachable` | A privacy-limited health response confirms Presto is reachable | Enable/check **Encrypted Connection**; approval gating prevents a more exact diagnosis |
+| `unconfirmed` | The diagnostic failed, was blocked, or did not match Presto's health contract | Ensure Presto is installed and running, then check Encrypted Connection and browser permissions |
 
 Keep Local Network Access recovery separate: an explicit permission denial is
 `permission-blocked`, not a secure-connection diagnosis.
 
 > **Origin approval affects `/health` detail.** Before the user approves your dApp's origin in the
-> accelerator popup, `/health` returns a *minimal* body, so `needsDownload` / `availableVersions` /
-> `acceleratorVersion` may be absent (and `needsDownload` can read `false` even though `bb` will
+> presto popup, `/health` returns a *minimal* body, so `needsDownload` / `availableVersions` /
+> `nativeAztecVersion` may be absent (and `needsDownload` can read `false` even though `bb` will
 > download on first use). After the user clicks **Allow**, the full status is reported. Proving works
 > in both cases — an unapproved-origin proof triggers an on-demand `bb` download rather than surfacing
-> the hint up front. (Applies to accelerators from the 2026-06 security-hardening release onward.)
+> the hint up front. (Applies to prestos from the 2026-06 security-hardening release onward.)
 
-### `AcceleratorProtocol`
+### `PrestoProtocol`
 
 ```typescript
-type AcceleratorProtocol = "http" | "https";
+type PrestoProtocol = "http" | "https";
 ```
 
-### `AcceleratorPhase`
+### `PrestoPhase`
 
 ```typescript
-type AcceleratorPhase =
+type PrestoPhase =
   | "detect" | "secure-connection-unavailable" | "serialize" | "transmit" | "proving"
   | "proved" | "receive" | "fallback" | "downloading" | "denied" | "version-mismatch";
 ```
 
-### `AcceleratorPhaseData`
+### `PrestoPhaseData`
 
 ```typescript
-interface AcceleratorPhaseData {
+interface PrestoPhaseData {
   durationMs: number;  // Actual proving duration in milliseconds
 }
 ```
@@ -195,7 +195,7 @@ interface AcceleratorPhaseData {
 1. detect       SDK probes the configured loopback health endpoint
 2. serialize    Execution steps serialized to msgpack
 3. transmit     POST /prove with x-aztec-version header
-4. proving      Accelerator runs bb binary natively
+4. proving      Presto runs bb binary natively
 5. proved       Proof returned with x-prove-duration-ms header
 6. receive      SDK deserializes proof buffer
 ```
@@ -205,17 +205,17 @@ If browser HTTPS cannot connect at step 1, the SDK reports
 `"fallback"`, and proves via WASM instead. This condition does not throw and HTTP proving is not
 activated automatically. Other unreachable cases continue to emit `"fallback"` and use WASM.
 
-If the user denies your site at step 3 (or authorization times out), the SDK emits `"denied"` → `"fallback"` and falls back to WASM automatically. Use the `onPhase` callback to show a hint like "Approve in the Accelerator app for faster proving". If the accelerator refuses this SDK's Aztec version (`403 version_not_allowed`), you get `"version-mismatch"` → `"fallback"` instead.
+If the user denies your site at step 3 (or authorization times out), the SDK emits `"denied"` → `"fallback"` and falls back to WASM automatically. Use the `onPhase` callback to show a hint like "Approve in the Presto app for faster proving". If the presto refuses this SDK's Aztec version (`403 version_not_allowed`), you get `"version-mismatch"` → `"fallback"` instead.
 
-**When proving throws.** The accelerator is an optimisation, so recognised failures — a denial, a version mismatch, an authorization cooldown, and capacity/transient errors (408/413/429/503, and `500 download_failed`/`prove_failed`) — all degrade to WASM silently. What DOES throw — surfaced as a typed [`AcceleratorHttpError`](https://github.com/alejoamiras/aztec-accelerator) (`.status`, `.code`) instead of masked as "slow but working" — is a `400` misconfiguration (`invalid_version`/`invalid_origin`), a `500` with an **unrecognised** code, or any other unexpected status. Note the degrade set is matched by status, not exhaustively by code: **every** `403` and **every** `408`/`413`/`429`/`503` falls back regardless of its `code`, so only genuinely unexpected responses reach your `catch`. Catch it if you integrate against a specific accelerator version:
+**When proving throws.** The presto is an optimisation, so recognised failures — a denial, a version mismatch, an authorization cooldown, and capacity/transient errors (408/413/429/503, and `500 download_failed`/`prove_failed`) — all degrade to WASM silently. What DOES throw — surfaced as a typed [`PrestoHttpError`](https://github.com/alejoamiras/presto) (`.status`, `.code`) instead of masked as "slow but working" — is a `400` misconfiguration (`invalid_version`/`invalid_origin`), a `500` with an **unrecognised** code, or any other unexpected status. Note the degrade set is matched by status, not exhaustively by code: **every** `403` and **every** `408`/`413`/`429`/`503` falls back regardless of its `code`, so only genuinely unexpected responses reach your `catch`. Catch it if you integrate against a specific presto version:
 
 ```ts
-import { AcceleratorHttpError } from "@alejoamiras/aztec-accelerator";
+import { PrestoHttpError } from "@alejoamiras/presto";
 try { await prover.createChonkProof(steps); }
-catch (e) { if (e instanceof AcceleratorHttpError) { /* e.status, e.code */ } }
+catch (e) { if (e instanceof PrestoHttpError) { /* e.status, e.code */ } }
 ```
 
-`checkAcceleratorStatus()` additionally surfaces the accelerator's `appVersion` and `apiVersion` on an available result.
+`checkPrestoStatus()` additionally surfaces the presto's `appVersion` and `apiVersion` on an available result.
 
 ## Configuration
 
@@ -237,7 +237,7 @@ diagnostic described above.
 Node, Bun, and SSR instances default to `httpsOnly: false` for compatibility with the TLS-free
 headless CI server. In that mode the existing dual probe prefers a healthy HTTPS endpoint and may
 select HTTP when HTTPS has never worked. An explicit option overrides the environment, and
-`AZTEC_ACCELERATOR_HTTPS_ONLY` overrides the runtime default.
+`PRESTO_HTTPS_ONLY` overrides the runtime default.
 
 Once HTTPS has answered successfully at an endpoint, the preference becomes a commitment: the SDK
 does not quietly re-pin HTTP if HTTPS later disappears. Changing the configured address resets that
@@ -257,7 +257,7 @@ is — and `/prove` carries the private witness, so a setting that re-points the
 machine.
 
 - `host` is parsed with `URL` and rejected if it carries a port, path, query, fragment, or
-  credentials, or resolves anywhere but `127.0.0.0/8`, `::1`, or `localhost`. The accelerator's CA is
+  credentials, or resolves anywhere but `127.0.0.0/8`, `::1`, or `localhost`. The presto's CA is
   name-constrained to loopback, so a remote host could not present a certificate this SDK's trust
   model would accept anyway.
 - `port` and `httpsPort` must be integers in 1–65535. A string here is not harmless: `"80@evil.com"`
@@ -270,11 +270,11 @@ A rejected setting throws and changes nothing at all — the transport is left e
 including its cached status and negotiated protocol.
 
 **Private transport policy (`httpsOnly`).** Browser dApps get this policy by default. An
-unreachable/untrusted HTTPS accelerator (or a mid-proof network failure) degrades to WASM rather
+unreachable/untrusted HTTPS presto (or a mid-proof network failure) degrades to WASM rather
 than sending the witness over plaintext.
 
 ```typescript
-const prover = new AcceleratorProver({ accelerator: { httpsOnly: true } });
+const prover = new PrestoProver({ presto: { httpsOnly: true } });
 ```
 
 > **What `httpsOnly` does and doesn't guarantee.** It guarantees no private proving payload and no
@@ -283,7 +283,7 @@ const prover = new AcceleratorProver({ accelerator: { httpsOnly: true } });
 > CORS, and health-shape protections. That response can only improve the diagnosis; it cannot select
 > HTTP for proving. TLS + the name-constrained local CA authenticate that the endpoint presented a
 > certificate your browser trusts for `127.0.0.1`. It is **not** cryptographic pairing with a
-> specific accelerator install: any same-machine process that obtained a browser-trusted certificate
+> specific presto install: any same-machine process that obtained a browser-trusted certificate
 > for localhost and squats the HTTPS port is past this line. The health-contract check is collision
 > resistance against accidental squatters, not authentication of a deliberate one.
 
@@ -291,20 +291,20 @@ const prover = new AcceleratorProver({ accelerator: { httpsOnly: true } });
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `AZTEC_ACCELERATOR_PORT` | `59833` | Override the HTTP port |
-| `AZTEC_ACCELERATOR_HTTPS_PORT` | `59834` | Override the HTTPS port |
-| `AZTEC_ACCELERATOR_HTTPS_ONLY` | Browser: `true`; Node/Bun/SSR: `false` | `1`/`true` or `0`/`false` overrides the runtime default |
-| `AZTEC_ACCELERATOR_ALLOW_INSECURE_DOWNGRADE` | `false` | `1`/`true` → after a healthy HTTPS endpoint fails mid-proof, allow the plaintext HTTP retry |
+| `PRESTO_PORT` | `59833` | Override the HTTP port |
+| `PRESTO_HTTPS_PORT` | `59834` | Override the HTTPS port |
+| `PRESTO_HTTPS_ONLY` | Browser: `true`; Node/Bun/SSR: `false` | `1`/`true` or `0`/`false` overrides the runtime default |
+| `PRESTO_ALLOW_INSECURE_DOWNGRADE` | `false` | `1`/`true` → after a healthy HTTPS endpoint fails mid-proof, allow the plaintext HTTP retry |
 
 ### Programmatic Configuration
 
 ```typescript
-const prover = new AcceleratorProver({
-  accelerator: { port: 51337, host: "127.0.0.1" },
+const prover = new PrestoProver({
+  presto: { port: 51337, host: "127.0.0.1" },
 });
 
 // Or update later
-prover.setAcceleratorConfig({ port: 51337 });
+prover.setPrestoConfig({ port: 51337 });
 ```
 
 ### Explicit HTTP fallback for the current session
@@ -313,16 +313,16 @@ A browser dApp may offer HTTP only after an informed user confirmation. Apply th
 current prover instance, then force-refresh status:
 
 ```typescript
-prover.setAcceleratorConfig({
+prover.setPrestoConfig({
   httpsOnly: false,
   allowInsecureDowngrade: true,
 });
-await prover.checkAcceleratorStatus({ forceRefresh: true });
+await prover.checkPrestoStatus({ forceRefresh: true });
 ```
 
 Use a warning such as: “HTTP can expose private proving data to another local user or process. Use
 it only if you accept this risk for the current tab.” Do not store the decision in local storage,
-cookies, URL parameters, or desktop configuration. A reload or new `AcceleratorProver` restores the
+cookies, URL parameters, or desktop configuration. A reload or new `PrestoProver` restores the
 browser HTTPS-only default. There is intentionally no production `?httpsOnly=false` switch.
 
 ## Phase Callbacks
@@ -330,7 +330,7 @@ browser HTTPS-only default. There is intentionally no production `?httpsOnly=fal
 Register a callback to animate proof progress in your UI:
 
 ```typescript
-const prover = new AcceleratorProver({
+const prover = new PrestoProver({
   onPhase: (phase, data) => {
     console.log(`Phase: ${phase}`, data);
   },
@@ -339,17 +339,17 @@ const prover = new AcceleratorProver({
 
 | Phase | Meaning |
 |-------|---------|
-| `detect` | Probing accelerator health endpoint |
+| `detect` | Probing presto health endpoint |
 | `secure-connection-unavailable` | HTTPS could not connect; emitted immediately before WASM `fallback` |
 | `serialize` | Serializing execution steps to msgpack |
-| `transmit` | Sending proof request to accelerator |
-| `proving` | Accelerator (or WASM fallback) is proving |
+| `transmit` | Sending proof request to presto |
+| `proving` | Presto (or WASM fallback) is proving |
 | `proved` | Proof complete — `data.durationMs` has the timing |
-| `downloading` | Accelerator is downloading `bb` for this Aztec version |
+| `downloading` | Presto is downloading `bb` for this Aztec version |
 | `receive` | Deserializing proof from response |
-| `fallback` | Accelerator unavailable, falling back to WASM |
-| `denied` | User denied this site access to the accelerator (403) — falling back to WASM |
-| `version-mismatch` | Accelerator refused this SDK's Aztec version (403) — falling back to WASM |
+| `fallback` | Presto unavailable, falling back to WASM |
+| `denied` | User denied this site access to the presto (403) — falling back to WASM |
+| `version-mismatch` | Presto refused this SDK's Aztec version (403) — falling back to WASM |
 
 ## Browser Compatibility
 
@@ -357,10 +357,10 @@ const prover = new AcceleratorProver({
 |---------|-------|-------|
 | Chrome | Yes* | Uses trusted HTTPS by default; Chrome 142+ shows a Local Network Access permission prompt (see below) |
 | Firefox | Yes* | Uses trusted HTTPS by default; Firefox 153+ enables Local Network Access prompting by default (see below) |
-| Safari | Yes* | Requires Encrypted Connection (HTTPS) in the accelerator app |
+| Safari | Yes* | Requires Encrypted Connection (HTTPS) in the presto app |
 
 All browsers require a trusted [Encrypted Connection
-(HTTPS)](../accelerator/README.md#encrypted-connection-https) for native proving by default. Chrome
+(HTTPS)](../presto/README.md#encrypted-connection-https) for native proving by default. Chrome
 and Firefox can use HTTP only after the dApp obtains explicit, session-scoped consent. Safari may
 block the HTTP diagnostic and fallback entirely when the dApp itself is served over HTTPS.
 
@@ -370,7 +370,7 @@ Current Chrome and Firefox gate requests from a public website to loopback addre
 
 - If the user **allows**, the HTTPS path can proceed.
 - If the browser's permission state is explicitly **denied**, status is `{ available: false, reason: "permission-blocked" }`; proving still falls back to WASM. Under the browser HTTPS-only default, a prompt that remains open, is dismissed without a persisted denial, or cannot be queried is inconclusive and normally appears as `secure-connection-unavailable` with `diagnosis: "unconfirmed"`.
-- The usual recovery is to open the site's permissions beside the address bar, allow local network or device access, then call `checkAcceleratorStatus({ forceRefresh: true })`. This is not guaranteed: managed policy may require an administrator, and an iframe may need top-level access or an appropriate Permissions Policy delegation.
+- The usual recovery is to open the site's permissions beside the address bar, allow local network or device access, then call `checkPrestoStatus({ forceRefresh: true })`. This is not guaranteed: managed policy may require an administrator, and an iframe may need top-level access or an appropriate Permissions Policy delegation.
 
 The SDK adds `targetAddressSpace: "loopback"` to supported plaintext Fetch requests. That declares
 intent so supporting browsers can apply their mixed-content/LNA flow; it does **not** grant or bypass permission.
@@ -378,9 +378,9 @@ The gate is about the destination address space, not the scheme, so HTTPS is not
 
 ## Security: local service discovery is shape-matched, not authenticated
 
-The SDK discovers the accelerator by probing fixed loopback ports and accepting any `/health`
+The SDK discovers the presto by probing fixed loopback ports and accepting any `/health`
 response matching `{"status":"ok","api_version":1}`. That is a **shape check, not server
-authentication**: while the accelerator app is *not running*, any local process can bind the port,
+authentication**: while the presto app is *not running*, any local process can bind the port,
 answer the probe, and receive whatever your dApp sends to `/prove` (the witness data). This
 inherits from the unauthenticated-localhost-service model every browser extension and dev tool
 shares; it is documented as an accepted trust boundary in the project's
@@ -388,8 +388,8 @@ shares; it is documented as an accepted trust boundary in the project's
 
 Practical guidance for integrators:
 
-- **Run the accelerator** — and keep Encrypted Connection enabled and trusted.
-- **Prefer the encrypted path**: when HTTPS mode is enabled in the accelerator app, its TLS
+- **Run the presto** — and keep Encrypted Connection enabled and trusted.
+- **Prefer the encrypted path**: when HTTPS mode is enabled in the presto app, its TLS
   leaf certificate chains to a name-constrained local CA and its private key is stored owner-only,
   so another *user* on a shared machine cannot impersonate the HTTPS endpoint by merely squatting
   the port. Same-user malware is out of scope for any localhost service.
@@ -400,20 +400,20 @@ Practical guidance for integrators:
 
 ## Version Compatibility
 
-The SDK auto-detects its Aztec version from `@aztec/stdlib` in its dependencies and sends it as the `x-aztec-version` header on prove requests. The accelerator uses this to select (or download) the correct `bb` binary — no manual version matching needed.
+The SDK auto-detects its Aztec version from `@aztec/stdlib` in its dependencies and sends it as the `x-aztec-version` header on prove requests. The presto uses this to select (or download) the correct `bb` binary — no manual version matching needed.
 
 ## Claude Code Skill
 
-This SDK ships with a [Claude Code](https://claude.com/claude-code) skill at `.claude/skills/aztec-accelerator/`. If you're using Claude Code in a project that depends on this SDK, the `/aztec-accelerator` slash command gives Claude full context on the integration patterns — EmbeddedWallet wiring, phase callbacks, Safari compatibility, Vite config, and more.
+This SDK ships with a [Claude Code](https://claude.com/claude-code) skill at `.claude/skills/presto/`. If you're using Claude Code in a project that depends on this SDK, the `/presto` slash command gives Claude full context on the integration patterns — EmbeddedWallet wiring, phase callbacks, Safari compatibility, Vite config, and more.
 
 To use it in your own project, copy the skill directory:
 
 ```bash
 mkdir -p .claude/skills
-cp -r node_modules/@alejoamiras/aztec-accelerator/.claude/skills/aztec-accelerator .claude/skills/
+cp -r node_modules/@alejoamiras/presto/.claude/skills/presto .claude/skills/
 ```
 
-Then use `/aztec-accelerator` in Claude Code for guided integration.
+Then use `/presto` in Claude Code for guided integration.
 
 ## Development
 

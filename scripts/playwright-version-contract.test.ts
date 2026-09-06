@@ -4,7 +4,7 @@ import path from "node:path";
 
 const REPO = path.resolve(import.meta.dir, "..");
 const packageFiles = [
-  "packages/accelerator/package.json",
+  "packages/presto/package.json",
   "packages/playground/package.json",
 ] as const;
 

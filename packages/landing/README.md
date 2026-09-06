@@ -1,15 +1,15 @@
-# Aztec Accelerator Landing Page
+# Presto Landing Page
 
-Static landing page for the Aztec Accelerator project.
+Static landing page for the Presto project.
 
-Accelerator detection is HTTPS-first and never treats its witness-free HTTP diagnostic as proving
+Presto detection is HTTPS-first and never treats its witness-free HTTP diagnostic as proving
 availability. The page can explain how to enable **Encrypted Connection** or repair certificate
 trust, but it never persists consent or enables plaintext proving. Deliberate, current-tab-only HTTP
 fallback belongs to an integrating dApp such as the playground.
 
 ## Live Site
 
-[aztec-accelerator.dev](https://aztec-accelerator.dev)
+[presto.build](https://presto.build)
 
 ## Development
 

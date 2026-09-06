@@ -6,18 +6,18 @@
  *   bun scripts/download-bb.ts <version>[,<version>,...]
  *   bun scripts/download-bb.ts --list
  *
- * Downloads from Aztec GitHub releases into ~/.aztec-accelerator/versions/{version}/bb
+ * Downloads from Aztec GitHub releases into ~/.presto/versions/{version}/bb
  * (or BB_VERSIONS_DIR if set), then runs retention cleanup.
  *
- * SECURITY (F-007): this cache is runtime-trusted — the accelerator executes `bb` from it over the
+ * SECURITY (F-007): this cache is runtime-trusted — the presto executes `bb` from it over the
  * private proving witness. So every download is verified against the GitHub release asset's published
  * SHA-256 digest, extracted into a PRIVATE per-run staging dir with archive-member safety checks,
  * ad-hoc re-signed (macOS), fingerprinted, and published atomically alongside a `bb.sha256.json` MARKER
  * (archive digest + final-binary digest). The Rust runtime rehashes the cached `bb` against that marker
  * on every use; a missing/tampered marker fails closed and re-downloads. Mirrors the fail-closed Rust
- * pipeline in packages/accelerator/core/src/versions/{downloader,release_metadata,cache_layout}.rs.
+ * pipeline in packages/presto/core/src/versions/{downloader,release_metadata,cache_layout}.rs.
  *
- * Windows: bb.exe ships as a bundled Tauri sidecar via packages/accelerator/scripts/copy-bb.ts — NOT
+ * Windows: bb.exe ships as a bundled Tauri sidecar via packages/presto/scripts/copy-bb.ts — NOT
  * this cache tool — so this script is Unix-only and refuses to run on win32.
  */
 import { createHash, randomBytes } from "node:crypto";
@@ -45,7 +45,7 @@ import { gunzipSync } from "node:zlib";
 // Constants
 // ---------------------------------------------------------------------------
 
-export const MARKER_SCHEMA = "aztec-accelerator/bb-cache-marker@1";
+export const MARKER_SCHEMA = "presto/bb-cache-marker@1";
 export const MARKER_NAME = "bb.sha256.json";
 // bb's tarball is ~5 MiB; cap far above that so a compromised CDN can't OOM us before the digest
 // mismatch is detected. Mirrors Rust MAX_DOWNLOAD_BYTES.
@@ -65,7 +65,7 @@ export interface BbMarker {
 }
 
 // ---------------------------------------------------------------------------
-// Platform detection — matches accelerator's current_platform() (release_metadata.rs)
+// Platform detection — matches presto's current_platform() (release_metadata.rs)
 // ---------------------------------------------------------------------------
 
 export function currentPlatform(): string {
@@ -111,16 +111,16 @@ export function assertValidVersion(version: string): void {
 // ---------------------------------------------------------------------------
 
 export function versionsBaseDir(): string {
-  return process.env.BB_VERSIONS_DIR || join(homedir(), ".aztec-accelerator", "versions");
+  return process.env.BB_VERSIONS_DIR || join(homedir(), ".presto", "versions");
 }
 function versionDir(version: string): string {
   return join(versionsBaseDir(), version);
 }
 
 /**
- * Refuse to mutate the cache while the accelerator app is running.
+ * Refuse to mutate the cache while the presto app is running.
  *
- * This script and the app share `~/.aztec-accelerator/versions` by default, and this script both
+ * This script and the app share `~/.presto/versions` by default, and this script both
  * replaces live entries and applies its own retention deletion. The app protects a binary a proof is
  * executing with an in-process lease (`core/src/versions/leases.rs`) — which, being in-process, is
  * blind to us. So `bun run bb:download` during a proof could delete the binary out from under it.
@@ -131,7 +131,7 @@ function versionDir(version: string): string {
  * independent cache. (Hole found by a codex review of the app-side lease.)
  */
 /**
- * Split the accelerator-guard flag out of the argument list.
+ * Split the presto-guard flag out of the argument list.
  *
  * `--force` is a FLAG, not a version. The first cut of the guard read it with `args.includes` but
  * left it in the list, so it flowed into the version parser and was downloaded as though it were a
@@ -151,7 +151,7 @@ export function usingSharedCache(): boolean {
   return !process.env.BB_VERSIONS_DIR;
 }
 
-async function acceleratorIsRunning(): Promise<boolean> {
+async function prestoIsRunning(): Promise<boolean> {
   try {
     const res = await fetch("http://127.0.0.1:59833/health", {
       signal: AbortSignal.timeout(700),
@@ -202,7 +202,7 @@ export async function fetchAssetDigest(version: string, asset: string): Promise<
   const apiUrl = `https://api.github.com/repos/AztecProtocol/aztec-packages/releases/tags/v${version}`;
   const headers: Record<string, string> = {
     accept: "application/vnd.github+json",
-    "user-agent": "aztec-accelerator",
+    "user-agent": "presto",
   };
   if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
 
@@ -394,7 +394,7 @@ function createStagingDir(version: string): string {
  * can start, publish this version itself, and lease it. Publishing then delete-renames a directory a
  * proof may be executing. Re-checking at the last moment narrows that to the gap between the check
  * and the rename; closing it entirely needs cross-process exclusion, which is the accepted residual
- * documented in `packages/accelerator/core/src/versions/leases.rs`. (Found by a codex review: the
+ * documented in `packages/presto/core/src/versions/leases.rs`. (Found by a codex review: the
  * first attempt at this re-probe covered only retention cleanup, which runs AFTER publication.)
  */
 export type PublishGuard = () => Promise<boolean>;
@@ -475,7 +475,7 @@ export async function downloadBb(version: string, guard?: PublishGuard): Promise
     if (existsSync(vdir) && guard && !(await guard())) {
       rmSync(stage, { recursive: true, force: true });
       throw new Error(
-        `the Aztec Accelerator started while this was downloading and may be using ${version}; ` +
+        `the Presto started while this was downloading and may be using ${version}; ` +
           "refusing to replace it. Quit the app and re-run, or pass --force.",
       );
     }
@@ -570,7 +570,7 @@ async function main(): Promise<void> {
   if (process.platform === "win32") {
     console.error(
       "download-bb.ts is not supported on Windows.\n" +
-        "The Windows bb.exe ships as a bundled Tauri sidecar via packages/accelerator/scripts/copy-bb.ts.",
+        "The Windows bb.exe ships as a bundled Tauri sidecar via packages/presto/scripts/copy-bb.ts.",
     );
     process.exit(1);
   }
@@ -585,9 +585,9 @@ async function main(): Promise<void> {
     rest.includes("--help") ||
     rest.includes("-h") ||
     rest.includes("--list");
-  if (!readOnly && !forced && usingSharedCache() && (await acceleratorIsRunning())) {
+  if (!readOnly && !forced && usingSharedCache() && (await prestoIsRunning())) {
     console.error(
-      "The Aztec Accelerator is running and shares this cache.\n" +
+      "The Presto is running and shares this cache.\n" +
         `Cache: ${versionsBaseDir()}\n\n` +
         "Downloading now can delete a binary a proof is currently executing. Quit the app first,\n" +
         "point this run at its own cache with BB_VERSIONS_DIR=..., or pass --force if you are sure.",
@@ -640,7 +640,7 @@ Platform: ${currentPlatform()}`);
       await downloadBb(version, async () => {
         // `true` = safe to publish. Mirrors the startup guard's policy exactly.
         if (forced || !usingSharedCache()) return true;
-        return !(await acceleratorIsRunning());
+        return !(await prestoIsRunning());
       });
       downloaded.add(version);
     } catch (err) {
@@ -655,9 +655,9 @@ Platform: ${currentPlatform()}`);
   // started in the meantime — and retention eviction below deletes live entries. This narrows the
   // window to the gap between this line and the deletions; it does not eliminate it, which is why
   // the residual is documented in `core/src/versions/leases.rs` rather than claimed closed.
-  if (!forced && usingSharedCache() && (await acceleratorIsRunning())) {
+  if (!forced && usingSharedCache() && (await prestoIsRunning())) {
     console.error(
-      "The Aztec Accelerator started while this was downloading; skipping retention cleanup so a\n" +
+      "The Presto started while this was downloading; skipping retention cleanup so a\n" +
         "binary in use is not deleted. Re-run once it has quit to reclaim space.",
     );
   } else {

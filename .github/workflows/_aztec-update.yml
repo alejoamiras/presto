@@ -165,7 +165,7 @@ jobs:
           # The updater rewrites more than manifests: aztec.ts (CRS cache version)
           # and copy-bb.ts (Windows bb checksum auto-pin) must land in the same PR.
           git add packages/*/package.json bun.lock \
-            packages/playground/src/aztec.ts packages/accelerator/scripts/copy-bb.ts
+            packages/playground/src/aztec.ts packages/presto/scripts/copy-bb.ts
           git commit -m "chore: update @aztec/* to ${NEW_VERSION}"
           # Fail loudly if the updater wrote anything this step didn't stage.
           git diff --exit-code || { echo "::error::updater produced unstaged changes — extend the git add list"; exit 1; }

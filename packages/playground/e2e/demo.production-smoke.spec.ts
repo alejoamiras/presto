@@ -29,7 +29,7 @@ test("production build loads without JS errors", async ({ page }) => {
 test("production build serves all static assets", async ({ page }) => {
   const failedResources: string[] = [];
   page.on("response", (response) => {
-    // Ignore proxy routes (Aztec node, accelerator) — they're expected to fail without services.
+    // Ignore proxy routes (Aztec node, presto) — they're expected to fail without services.
     // The node health probe is a POST to the bare /aztec RPC endpoint (no /status since 5.0).
     const url = response.url();
     if (

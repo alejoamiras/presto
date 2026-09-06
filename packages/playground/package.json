@@ -1,5 +1,5 @@
 {
-  "name": "@alejoamiras/aztec-accelerator-playground",
+  "name": "@alejoamiras/presto-playground",
   "private": true,
   "type": "module",
   "scripts": {
@@ -22,7 +22,7 @@
     "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json"
   },
   "dependencies": {
-    "@alejoamiras/aztec-accelerator": "workspace:*",
+    "@alejoamiras/presto": "workspace:*",
     "@aztec-foundation/aztec-standards": "5.0.1",
     "@aztec/accounts": "5.2.0",
     "@aztec/aztec.js": "5.2.0",
