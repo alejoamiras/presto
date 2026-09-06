@@ -277,3 +277,21 @@ The `available: true` status now also carries the presto app's own `appVersion` 
 build) and the negotiated `apiVersion`. `apiVersion` is present whenever the presto is available (a
 recognised `/health` must carry it). `appVersion` is optional — the origin-tiered MINIMAL `/health` served
 to an unapproved cross-origin withholds it. Additive; no break.
+
+## Retirement observation
+
+Final Aztec Accelerator `3.1.0` is published and its updater feed is frozen. It keeps proving
+functional and invites manual migration; it never installs or modifies Presto. All 44 legacy npm
+versions carry the migration warning and remain available with unchanged contents and dist-tags.
+
+- [Retirement PR #497](https://github.com/alejoamiras/aztec-accelerator/pull/497): implementation and acceptance.
+- [Native publication](https://github.com/alejoamiras/aztec-accelerator/actions/runs/34064422661)
+  and [feed promotion](https://github.com/alejoamiras/aztec-accelerator/actions/runs/34065998828):
+  real `3.0.0` updater baseline, production signing and live cryptographic verification passed.
+- [Monitoring PR #498](https://github.com/alejoamiras/aztec-accelerator/pull/498) and its
+  [first hosted run](https://github.com/alejoamiras/aztec-accelerator/actions/runs/34066744588):
+  frozen-feed/download checks and both migration paths passed.
+- [Dated observation record](https://github.com/alejoamiras/aztec-accelerator/pull/498#issuecomment-5562960872):
+  starts **2026-09-06T23:23:31Z**; earliest archive **2026-09-20T23:23:31Z**, conditional on
+  14 healthy elapsed days and final verification. The repository remains unarchived during that
+  window. Its retirement pages, frozen feed, releases and npm versions remain available afterward.
