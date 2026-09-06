@@ -216,6 +216,35 @@ gh workflow run release-presto.yml --ref main \
 
 This stops new updater uptake and moves landing-page downloads back. It does not downgrade clients that already updated. Fix forward under the next version.
 
+The first stable release has no previous stable Presto release to restore. Do not use the RC or
+another product's feed as a rollback target. Likewise, the SDK bootstrap is not a functional
+rollback version. Preserve published versions and fix forward; these rollback commands become
+applicable only when a verified earlier stable version exists.
+
+### Site and feed-Worker rollback
+
+Before deployment, record each Worker's active version ID in the launch checkpoint. For the
+affected package (`landing`, `playground` or `release-feed`), list deployments and choose the
+explicit, previously verified version; do not infer it from a PR preview or list ordering:
+
+```bash
+bunx wrangler deployments list --config packages/landing/wrangler.jsonc --json
+bunx wrangler versions view '<VERIFIED_VERSION_ID>' --config packages/landing/wrangler.jsonc
+bunx wrangler versions deploy '<VERIFIED_VERSION_ID>@100' --config packages/landing/wrangler.jsonc --dry-run
+```
+
+After reviewing the target and its bindings, the deliberate mutation is:
+
+```bash
+bunx wrangler rollback '<VERIFIED_VERSION_ID>' --config packages/landing/wrangler.jsonc
+```
+
+Repeat the read-back and public endpoint checks after a rollback. A Worker rollback changes code
+and assets, **not KV contents**; signed-feed restoration still uses the guarded native promotion
+flow above. Keep the namespace and other bound resources intact. Cloudflare limits rollback to
+recent versions, so revalidate availability before each release rather than assuming a saved ID
+remains deployable forever. See [Cloudflare rollback semantics](https://developers.cloudflare.com/workers/versions-and-deployments/rollbacks/).
+
 ## Releasing the SDK candidate
 
 `release-sdk.yml` has one manual entry point and three modes:

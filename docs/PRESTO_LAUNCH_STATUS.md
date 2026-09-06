@@ -403,3 +403,49 @@ feed, and npm dist-tags; do not unpublish or rewrite release assets.
   uninstall/updater and Linux coexistence execution. The complete local `bun run test` passes.
   Isolation failures now upload the existing runner logs; reaped Presto PIDs are cleared before
   subsequent fixture work so cleanup does not retain a stale process handle.
+
+## Rollback preflight without production mutation (2026-09-06)
+
+- Signed candidate `a4dd5b9cf9afebcd7c0a491d038af52660a6e99f` is on PR #6. Packaged run
+  `34032670064` and ephemeral Windows updater run `34032671223` are in progress.
+- Wrangler deployment read-back confirms unchanged active versions: landing
+  `7043a092-1556-4be0-a127-95cc3ef2a9dd`, playground `cfdd4dea-9eb3-4cf3-bd86-84706f0d53ac`,
+  release feed `678208cc-f854-4fa4-aef1-53f8274df9b7`. Select the latest deployment by its timestamp,
+  not array position: Wrangler's returned list was chronological, oldest first.
+- Pinned Wrangler 4.124.0 accepted each explicit version at 100% in `versions deploy --dry-run`.
+  All three commands exited successfully before deployment; this verifies the preparation path,
+  not a claim that production was rolled back. The runbook now separates Worker code/assets from
+  the guarded restoration of KV manifest bytes.
+- No Presto GitHub releases exist yet, and the public feed still returns the intended 503 with
+  `Cache-Control: no-store`. There is no prior stable native manifest or functional SDK release
+  available as a rollback target for the first launch; never substitute an RC, bootstrap package,
+  legacy feed or deleted/rebuilt release. Actual prior-stable restoration remains a later gate.
+- All three reviewers carried code approval to exact `a4dd5b9`, conditional on execution. The
+  dependency audit was rerun: zero blockers, nine existing accepted exceptions, 15 moderate/low
+  advisories and 20 informational RustSec warnings. All three deployment dry-runs also pass again
+  on this candidate; the earlier full local test includes the current feed-binding typecheck.
+- Candidate `34032670064` now passes Windows full uninstall: the installation directory, Run
+  entry, scheduled task and certificates are removed; config bytes are retained and the app stops.
+  The Linux coexistence/isolation leg also passes with the checksum-verified published incumbent.
+  Its real health endpoint remains available after Presto uninstall, with binary, historical files
+  and Chromium/Firefox trust preserved. The Windows data-path fix is verified end-to-end; browser
+  proving and the updater rerun are still pending at this checkpoint.
+
+## Pre-merge acceptance complete (2026-09-06)
+
+- Candidate `a4dd5b9` completed packaged run `34032670064` successfully on every leg, including
+  literal full-workspace checks, Linux/macOS native browser proving, HTTP consent/reset, legacy
+  coexistence/state/trust isolation and Linux/Windows uninstall. Windows updater-barrier run
+  `34032671223` passed with the relocated log directory. All functional native PR jobs in
+  `34032667039`, SDK `34032667014`, App `34032667020`, landing, workflow lint and PR previews passed.
+  Only the deliberately withheld readiness check and its aggregate failed on that candidate.
+- Credential-name inventory and branch-policy read-back confirm the recorded repo secrets and
+  main-only `release-signing`, `release-feed` and `npm-publish` environments remain configured.
+  No credential value was printed, rotated or replaced. Production Apple/updater use is still
+  verified by the release workflow after merge; protected release workflows remain disabled now.
+- Set `releaseReady=true` based on the accepted candidate and the previously verified permanent
+  identity, key recovery and routes. This attestation changes no native/SDK executable source and
+  does not waive any release-time baseline, signing, notarization, publication or promotion gate.
+  The final readiness/documentation commit still needs local checks, exact review and successful
+  required CI. Rename the old required native check only after `Presto Status` actually succeeds;
+  merge only the reviewed head. No Presto package, release or public updater manifest exists yet.

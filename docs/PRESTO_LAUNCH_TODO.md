@@ -21,8 +21,8 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 - [x] Give the Windows packaging smoke a matching ephemeral public/private key pair without modifying production identity; packaging/install smoke passes on `eb2158a`.
 - [x] Align the Windows NSIS harness runner with its renamed installation directory; real Windows certificate/hook CI passes on `6b7b6b0`.
 - [x] Fix the published legacy SDK fixture installer under CI's npm 12 and add regression coverage; actual npm 12 installation and native-proof E2E pass locally.
-- [ ] Refresh all remaining API/state/OS/release identity-contract and mutual wire-compatibility acceptance evidence.
-- [ ] Verify actionable port-conflict behavior and no modification of the other installation.
+- [x] Refresh API/state/OS/release identity-contract and mutual wire-compatibility acceptance evidence on `a4dd5b9`; native PR run `34032667039` and packaged run `34032670064`.
+- [x] Verify actionable port-conflict behavior and no modification of the other installation: installed `a4dd5b9` versus the actual published legacy server, with incumbent health/binary/state/trust preserved through uninstall (run `34032670064`).
 
 ## 2. Cloudflare and credentials
 
@@ -49,19 +49,19 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 
 ## 3. Verification, review and merge
 
-- [ ] Rerun `bun run test:all` against the final operational candidate.
-- [ ] Run all Rust tests, Clippy and format checks on the required platforms.
+- [x] Rerun `bun run test:all` against the operational candidate: `a4dd5b9` installed Linux HTTP job, run `34032670064`.
+- [x] Run Rust tests, Clippy and format checks on the required platforms: all functional jobs in `34032667039` passed.
 - [x] Diagnose and fix the core fake-prover test-isolation race; 10 consecutive parallel full suites pass.
-- [ ] Pass desktop WebDriver/Playwright, HTTPS/consent/LNA, certificate, installer, headless and release-contract gates.
-- [ ] Pass packaged-native state-isolation/uninstall and full-stack browser consent tests using real candidate artifacts.
+- [x] Pass desktop WebDriver/Playwright, HTTPS/consent/LNA, certificate, installer, headless and release-contract gates on `a4dd5b9`.
+- [x] Pass packaged-native state-isolation/uninstall and full-stack browser consent tests using real candidate artifacts (`34032670064`); Windows ephemeral updater rerun `34032671223` also passed.
 - [x] Wire the existing packaged checks to secretless `Build Test Bundle` dispatch (`platform=all`), with exact-SHA Linux/Windows/macOS artifacts and the existing HTTP consent/reset spec against an installed desktop app. Focused contracts, local checks and independent wiring reviews pass; hosted execution remains required.
-- [x] Pass dependency audit, actionlint, ShellCheck, Wrangler typecheck/dry-run and `git diff --check` for `76686a5`; existing audit exceptions remain explicitly reported.
-- [x] Refresh independent review: OS identity, uninstall, certificates and state isolation (`76686a5`, code approval conditional on execution gates).
-- [x] Refresh independent review: SDK/API compatibility and witness transport (`76686a5`, code approval conditional on required CI).
-- [x] Refresh independent review: release/npm/Actions/Cloudflare and rollback safety (`76686a5`, code approval conditional on execution/readiness gates).
-- [ ] Fix all high/critical and justified medium findings; rerun affected gates.
+- [x] Pass dependency audit, actionlint, ShellCheck, Wrangler typecheck/dry-run and `git diff --check` for `a4dd5b9`; existing audit exceptions remain explicitly reported.
+- [x] Refresh independent review: OS identity, uninstall, certificates and state isolation (`a4dd5b9`, code approval conditional on execution gates).
+- [x] Refresh independent review: SDK/API compatibility and witness transport (`a4dd5b9`, code approval conditional on required CI).
+- [x] Refresh independent review: release/npm/Actions/Cloudflare and rollback safety (`a4dd5b9`, code approval conditional on execution/readiness gates).
+- [x] Fix all high/critical and justified medium findings; rerun affected gates on `a4dd5b9`. Three exact-commit code approvals and successful hosted execution are recorded.
 - [x] Complete 1Password Git signing, push follow-up fixes as `e2f1235` and rerun remote CI.
-- [ ] Approve release readiness only after domain, updater recovery, routes, credentials and pre-release gates are evidenced.
+- [x] Approve release readiness after domain, updater recovery, routes, credential custody and pre-merge execution gates are evidenced. Production signing/notarization and RC-to-stable updater acceptance remain release-time gates.
 - [ ] Observe successful `Presto Status`, then replace the old native required-check name in the ruleset.
 - [ ] Babysit required checks and merge only the exact reviewed commit; keep releases separately gated.
 
