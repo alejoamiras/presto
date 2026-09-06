@@ -23,4 +23,12 @@ describe("SDK release workflow contract", () => {
     expect(verification).toBeGreaterThan(0);
     expect(records).toBeGreaterThan(verification);
   });
+
+  test("playground verification uses the publish job's Node/npm toolchain", () => {
+    const deploy = release.slice(release.indexOf("  deploy-app:"));
+    const setup = deploy.indexOf("uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020");
+    expect(setup).toBeGreaterThan(0);
+    expect(deploy.slice(setup)).toContain("node-version: 24");
+    expect(setup).toBeLessThan(deploy.indexOf("bun scripts/published-playground.ts"));
+  });
 });

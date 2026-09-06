@@ -1,8 +1,47 @@
 # Presto launch checkpoint
 
-The operational rename is a draft, not a release-ready commit. Do not merge it or publish until
-`bun scripts/presto-release-readiness.ts` passes and the remaining gates below are verified.
-The same check is wired into Presto Status and both release entry points.
+The operational rename is merged as `8325578491570b65616ec75dfab9d51f0eda7aed` (PR #6).
+Release readiness and required CI passed on the exact reviewed tree; publication still has
+separate execution gates. Earlier sections below are chronological checkpoints, not current blockers.
+
+## Current launch state — 2026-09-06
+
+- Final reviewed head `d4b72d1de73b9ddcba96a294e289a58c6937af10` passed required CI,
+  including native run `34036246805`. The protected squash merge used that exact head and
+  preserved its tree. Ruleset `22313900` changed only the native check name to `Presto Status`
+  after the successful check; no admin override or protection bypass was used.
+- Interactive npm login/2FA and bootstrap publication completed. The registry confirms
+  `@alejoamiras/presto@0.0.0-bootstrap.0`, SHA-1
+  `d548dba7a243698e6aaa7272567b5e0a26fb79a7`, and exact SHA-512 integrity
+  `sha512-vJNoA1iYAALUo1kCOwyP0wX2dEsunOu++kX0w1Jh+xbZBCPMI0hKd0GfLr4JG5VGcm+WHLO5yXqCZJQplzLMiQ==`.
+- Trusted-publisher configuration `21fbc340-7261-442f-9dc7-baed73ab4e88` was created and
+  independently read back after 2FA: repository `alejoamiras/presto`, workflow `release-sdk.yml`,
+  environment `npm-publish`, permissions `createPackage` and `createStagedPackage`.
+  The environment remains main-only with no npm secret. CI/OIDC publication passed below.
+- Bootstrap deprecation completed and the registry confirms its non-functional-SDK warning.
+  npm assigned both `bootstrap` and `latest` despite explicit `--tag bootstrap`; an authenticated
+  removal received HTTP 400 after browser approval. The owner approved this temporary exception:
+  leave `latest` on the deprecated placeholder until normal final SDK promotion. No version was
+  unpublished or republished; the real SDK is still required to publish to `testnet` first.
+- Enabled only `release-sdk.yml` and `dependency-audit.yml` for this step. SDK-and-playground
+  run [34054756788](https://github.com/alejoamiras/presto/actions/runs/34054756788) published
+  SDK `5.2.0` from merged main `8325578` to `testnet`. Real proving, dependency audit, exact
+  tarball consumer, OIDC/provenance publication, cryptographic signatures and a fresh registry
+  install all passed. The GitHub release and tag `@alejoamiras/presto@5.2.0` exist, and the
+  remote tag resolves to the exact source commit. Independent local provenance and signature
+  verification passed too. The approved temporary `latest` tag is unchanged.
+- The run failed only in playground preparation, before build or Cloudflare deployment.
+  Its default runner npm 10.9.8 omitted `verified` from the signature-audit JSON; the publish
+  job explicitly selected Node 24/npm 11.19.0 and passed the same verifier. A comparison against
+  the same installed SDK confirmed npm 10 returns only `invalid`/`missing`, while npm 11 also
+  reports the exact package's verified SLSA provenance. Both reported zero invalid or missing
+  signatures. The deployment job now selects the same Node 24 toolchain, with a regression
+  contract covering setup before verification. Hosted recovery remains required.
+- **Recovery:** after the reviewed fix passes CI and merges, dispatch only `playground-only`.
+  It must consume the existing provenance-verified `testnet` package. Do not rerun publication,
+  create an unnecessary SDK revision, replace the existing tag/release, or weaken verification.
+- Production signing keys and 1Password backups are unchanged. Native RC/stable publication,
+  stable feed promotion, final SDK promotion and separate legacy retirement remain pending.
 
 ## Completed
 
