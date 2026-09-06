@@ -6,6 +6,59 @@ separate execution gates. Earlier sections below are chronological checkpoints, 
 
 ## Current launch state — 2026-09-06
 
+### SDK, sites and RC accepted
+
+- Reviewed playground toolchain fix PR #12 merged as
+  `a4f6508b61efea0ae0a8f59990c14960f1a2be31`. Recovery run
+  [34055665189](https://github.com/alejoamiras/presto/actions/runs/34055665189) deployed the
+  exact provenance-verified SDK `5.2.0`; publication was skipped. Landing deployment
+  `34055773200` and feed-Worker deployment `34055774602` also passed.
+- Current immutable Worker versions: landing `26b34fec-13f5-4166-9723-44bc222f19f7`,
+  playground `87928d8d-6607-4e5e-8f0c-3eb9fa2e1a88`, feed
+  `c2a97d63-fc10-4c0e-8c18-f1cf29760f5b`. Production sites and workers.dev fallbacks
+  returned 200 with cross-origin isolation headers; both empty feeds returned 503/no-store.
+- RC run [34055896362](https://github.com/alejoamiras/presto/actions/runs/34055896362)
+  published `presto-v1.0.0-rc.1` from `a4f6508` at `2026-09-06T20:17:35Z`.
+  All desktop/headless builds, desktop WebDriver gates, production updater signing, macOS
+  Apple Silicon/Intel notarization, packaged native proofs and automated browser consent/reset
+  checks passed. The public prerelease has exactly 16 assets and no `latest.json`.
+  Its initial-baseline exception did not promote any feed or waive packaged acceptance.
+- Stable publish run [34057607592](https://github.com/alejoamiras/presto/actions/runs/34057607592)
+  passed from the same source commit, with RC1 resolved as its real same-key baseline.
+  Production signing, both notarization smokes, all four positive updater tests, all three
+  tamper-rejection tests, Linux state isolation, and real Linux/Windows uninstall checks passed.
+  Packaged proving and automated browser consent/reset checks passed too. The stable release
+  was published at `2026-09-06T20:40:23Z` with exactly 17 assets, including the signed
+  `latest.json`; its tag resolves to `a4f6508`. No signing keys or backups changed.
+- Feed dry run [34058796355](https://github.com/alejoamiras/presto/actions/runs/34058796355)
+  passed. Production promotion
+  [34058894564](https://github.com/alejoamiras/presto/actions/runs/34058894564) wrote the
+  exact signed manifest to the fresh Presto namespace, independently verified the live
+  signature and payload availability, then marked `presto-v1.0.0` GitHub Latest.
+  Both apex and workers.dev feed endpoints returned 200 and byte-for-byte equality with the
+  published release manifest. All 17 release assets returned 200. The live landing browser
+  smoke passed without JavaScript errors and its download link resolved to stable `1.0.0`.
+  The credential-free daily feed-health workflow was enabled and dispatched as `34059032016`.
+  Final interactive SDK promotion completed below; separate legacy retirement remains pending.
+- The promotion run's release/feed/verification jobs passed, but its final housekeeping job
+  failed after creating source-bump PR #13 (`9cc3bd9`): repository auto-merge is disabled.
+  This did not affect the published release or verified live feed. Do not rerun promotion
+  or change repository policy to hide that failure; review and merge the existing five-line
+  version-bump PR normally after its checks pass.
+- The guarded SDK promotion dry run passed for `5.2.0`, re-verifying provenance/signatures
+  and the SDK tag's source commit `8325578`; it did not change npm `latest`.
+- The subsequent guarded interactive promotion completed after owner npm browser approval.
+  The script's uncached read-back and a separate uncached registry fetch both verified
+  `latest: 5.2.0`, `testnet: 5.2.0`, `bootstrap: 0.0.0-bootstrap.0`. One cached `npm view`
+  response briefly retained the previous latest value; it was not used as authoritative
+  evidence or as a reason to repeat the mutation. No version was republished or unpublished.
+- A read-only browser smoke against `https://playground.presto.build` passed: HTTP 200,
+  expected proving controls visible, `crossOriginIsolated === true`, and no page JavaScript
+  errors. Loopback requests were blocked for this check; real packaged proving/consent
+  acceptance comes from the isolated release CI jobs, not this frontend-only smoke.
+
+### Earlier bootstrap and recovery checkpoint
+
 - Final reviewed head `d4b72d1de73b9ddcba96a294e289a58c6937af10` passed required CI,
   including native run `34036246805`. The protected squash merge used that exact head and
   preserved its tree. Ruleset `22313900` changed only the native check name to `Presto Status`

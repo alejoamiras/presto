@@ -45,7 +45,7 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 - [x] Securely re-enter Apple signing/notarization credentials for the newly named app; verify the account with read-only notarization history, certificate/private-key and team matching, exact Presto 1Password read-back, and all six GitHub secrets. Original Apple credentials unchanged; release-CI acceptance remains pending.
 - [x] Authorize the release GitHub App for Presto; verify exact App ID/PEM read-back from `Presto Release GitHub App`, authenticated App identity, preserved access to both repositories, and a narrowly scoped temporary token; configure GitHub without changing existing App keys. CI smoke acceptance is tracked below.
 - [x] Pass the existing release-bot CI credential smoke (`33984288576`): temporary branch/PR creation, label/comment and CI triggering succeeded; PR #7 was closed without merging. This is App credential acceptance, not release or package acceptance.
-- [ ] Verify credentials and environments without publishing; enable deployment/release workflows only when safe.
+- [x] Verify credentials and main-only environments before publishing; enable reviewed site/feed deployments and SDK/native release workflows. Keep feed-health scheduling disabled until a stable manifest is live.
 
 ## 3. Verification, review and merge
 
@@ -76,15 +76,15 @@ Presto releases; it must not waive other native acceptance checks.
 - [x] Configure GitHub OIDC trust for this repo, `release-sdk.yml`, and `npm-publish` with direct publishing permission. Independent 2FA read-back verified configuration `21fbc340-7261-442f-9dc7-baed73ab4e88`; npm also grants staged publishing.
 - [x] Verify trust and deprecate the bootstrap version; never unpublish it. Exact artifact hashes and deprecation warning were read back from npm. Real CI/OIDC acceptance remains below.
 - [x] Publish SDK `5.2.0` to `testnet` from CI with provenance and its matching GitHub tag/release. Run `34054756788` publish job passed; tag and provenance resolve to `8325578`. Only the subsequent playground job failed, before deployment; recover with `playground-only`, never republish.
-- [ ] Verify signatures/provenance and a clean tarball consumer install; deploy the exact published SDK to the playground.
-- [ ] Publish `presto-v1.0.0-rc.1` using the fresh key and the tightly scoped initial-baseline exception.
-- [ ] Keep the RC out of the public updater feed.
-- [ ] Pass packaged acceptance and real same-key RC-to-1.0.0 updater smokes before stable publication.
-- [ ] Publish `presto-v1.0.0` with the RC as its real same-key baseline.
-- [ ] Promote the signed stable manifest to the fresh KV feed.
-- [ ] Verify edge propagation, manifest signatures, exact assets, downloads, landing and production playground behavior.
-- [ ] Run the automated full-stack browser consent test against the release candidate and packaged app.
-- [ ] Promote SDK `5.2.0` from `testnet` to `latest` through the guarded interactive promotion flow.
+- [x] Verify signatures/provenance and a clean tarball consumer install; deploy the exact published SDK to the playground. Reviewed Node-toolchain fix PR #12 merged as `a4f6508`; playground-only recovery `34055665189` passed without republishing.
+- [x] Publish `presto-v1.0.0-rc.1` using the fresh key and the tightly scoped initial-baseline exception. Run `34055896362` passed, including production signing, both macOS notarizations and packaged proof/consent acceptance; the public prerelease has exactly 16 assets and tag commit `a4f6508`.
+- [x] Keep the RC out of the public updater feed. RC release has no `latest.json`; both public feed endpoints still returned 503/no-store after publication.
+- [x] Pass packaged acceptance and real same-key RC-to-1.0.0 updater smokes before stable publication. Run `34057607592`: all four positive updater tests, all three tamper-rejection tests, packaged proving/consent and real installer/uninstall checks passed.
+- [x] Publish `presto-v1.0.0` with the RC as its real same-key baseline. Run `34057607592` passed; public stable release at `2026-09-06T20:40:23Z`, exactly 17 assets, tag commit `a4f6508`.
+- [x] Promote the signed stable manifest to the fresh KV feed. Dry run `34058796355` passed; promotion `34058894564` wrote and cryptographically verified the live `1.0.0` feed, then marked the GitHub release Latest.
+- [x] Verify edge propagation, manifest signatures, exact assets, downloads, landing and production playground behavior. Both public feeds serve the exact release-manifest bytes; all 17 assets return 200; live browser loading/isolation checks pass and the landing download resolves to stable `1.0.0`.
+- [x] Run the automated full-stack browser consent test against the release candidate and packaged app. RC run `34055896362` and stable run `34057607592` both passed the installed-app consent/reset gate.
+- [x] Promote SDK `5.2.0` from `testnet` to `latest` through the guarded interactive promotion flow. Owner browser approval succeeded; the script and independent uncached registry read-back both confirm `latest` and `testnet` are `5.2.0`. The deprecated bootstrap remains only on its `bootstrap` tag.
 
 ## 5. Legacy retirement — only after Presto production is verified
 
