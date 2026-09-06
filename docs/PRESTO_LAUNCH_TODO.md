@@ -55,10 +55,10 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 - [ ] Pass desktop WebDriver/Playwright, HTTPS/consent/LNA, certificate, installer, headless and release-contract gates.
 - [ ] Pass packaged-native state-isolation/uninstall and full-stack browser consent tests using real candidate artifacts.
 - [x] Wire the existing packaged checks to secretless `Build Test Bundle` dispatch (`platform=all`), with exact-SHA Linux/Windows/macOS artifacts and the existing HTTP consent/reset spec against an installed desktop app. Focused contracts, local checks and independent wiring reviews pass; hosted execution remains required.
-- [ ] Pass dependency audit, actionlint, ShellCheck, Wrangler typecheck/dry-run and `git diff --check`.
-- [ ] Refresh independent review: OS identity, uninstall, certificates and state isolation.
-- [ ] Refresh independent review: SDK/API compatibility and witness transport.
-- [ ] Refresh independent review: release/npm/Actions/Cloudflare and rollback safety.
+- [x] Pass dependency audit, actionlint, ShellCheck, Wrangler typecheck/dry-run and `git diff --check` for `76686a5`; existing audit exceptions remain explicitly reported.
+- [x] Refresh independent review: OS identity, uninstall, certificates and state isolation (`76686a5`, code approval conditional on execution gates).
+- [x] Refresh independent review: SDK/API compatibility and witness transport (`76686a5`, code approval conditional on required CI).
+- [x] Refresh independent review: release/npm/Actions/Cloudflare and rollback safety (`76686a5`, code approval conditional on execution/readiness gates).
 - [ ] Fix all high/critical and justified medium findings; rerun affected gates.
 - [x] Complete 1Password Git signing, push follow-up fixes as `e2f1235` and rerun remote CI.
 - [ ] Approve release readiness only after domain, updater recovery, routes, credentials and pre-release gates are evidenced.

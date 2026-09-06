@@ -340,3 +340,36 @@ feed, and npm dist-tags; do not unpublish or rewrite release assets.
 - Focused independent release review approves the corrected Windows-only bundle override and
   ephemeral feed preparation, conditional on hosted execution. The pinned Tauri CLI help confirms
   that `all` is not a CLI bundle name, so non-Windows platforms keep their configuration defaults.
+
+## Signed candidate verification checkpoint (2026-09-06)
+
+- Owner-approved 1Password Git signing completed; GitHub verifies commit
+  `76686a50a35e8a21c70617110ca65e5c8b4369be`. Both earlier signing attempts ended without creating
+  a commit; edits remained staged and no release key changed. Operational PR #6 now points at
+  this signed candidate.
+- All three reviewers confirm exact-commit code approval, conditional on the required execution,
+  readiness and merge checks. This is not authorization to bypass an unfinished gate.
+- Candidate installer/packaged run `34030192155` and ephemeral Windows updater-barrier run
+  `34030193781` are executing. No release or feed promotion was dispatched.
+- Pinned Wrangler 4.124.0 dry-runs pass for landing, playground and release feed. Feed binding
+  type generation is current and its TypeScript check passes. These commands performed no upload;
+  fresh KV binding and custom routes remain as committed. Workflow lint, landing and PR-preview
+  CI have passed; the other candidate checks are still running at this checkpoint.
+
+## Packaged execution and bounded uninstall probe (2026-09-06)
+
+- At `76686a5`, all functional native PR jobs passed, including Rust, Clippy, certificate trust,
+  SDK native E2E and the desktop browser/WebDriver matrix. Readiness and its aggregate remain
+  deliberately blocked; no production release was attempted.
+- Windows ephemeral updater-barrier run `34030193781` passed end-to-end. The NSIS-only candidate
+  build and signed smoke-feed caller fixes are now supported by hosted execution, not only contracts.
+- Candidate run `34030192155` passed all three installer builds, Linux fresh-install/state isolation,
+  Linux uninstall and both Linux packaged HTTPS proving / HTTP consent checks. Windows uninstall
+  removed Run/task/certificate state, retained config bytes and stopped the app, but the install
+  directory survived its bounded wait. The log did not identify the residual file. Add a read-only
+  directory listing to that failure path and rerun the unchanged uninstall assertions before
+  deciding on a product fix; do not delete residuals from the test to make it pass.
+- Reuse the existing Linux HTTP packaged runner to execute the literal `bun run test:all` command
+  against its installed app, before the SDK tarball swap. This includes the published legacy SDK
+  fixture and avoids touching the owner's local native state. Independent release review approves
+  this bounded wiring addition; its hosted execution remains required.

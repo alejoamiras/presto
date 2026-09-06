@@ -92,6 +92,13 @@ test("candidate bundles run all packaged platforms without production keys or pu
   expect(PACKAGED).toContain("PRESTO_URL: http://127.0.0.1:59833");
   expect(PACKAGED).toContain("PLAYWRIGHT_PROJECT: local-network");
   expect(PACKAGED).toContain("test:e2e:packaged http-consent.local-network.spec.ts");
+  const workspaceChecks =
+    PACKAGED.split("- name: Run complete workspace checks against the installed app")[1]?.split(
+      "# Point the playground",
+    )[0] ?? "";
+  expect(workspaceChecks).toContain("if: matrix.transport == 'http'");
+  expect(workspaceChecks).toContain("LEGACY_SDK_ENTRY=$(bun scripts/install-legacy-sdk.ts)");
+  expect(workspaceChecks).toContain("bun run test:all");
   expect(PACKAGED_E2E_RUNNER).toContain(`"\${PLAYWRIGHT_PROJECT:-packaged-e2e}"`);
 });
 

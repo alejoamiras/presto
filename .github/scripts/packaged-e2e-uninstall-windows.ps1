@@ -185,7 +185,12 @@ do {
 
 # ── POSTCONDITIONS ──
 $failures = @()
-if (-not $gone) { $failures += "install dir still present: $installDir" }
+if (-not $gone) {
+  $failures += "install dir still present: $installDir"
+  # Identify the residual without deleting it or hiding a failed uninstall.
+  Get-ChildItem -LiteralPath $installDir -Recurse -Force |
+    Select-Object FullName, Length, Attributes | Format-Table -AutoSize | Out-String -Width 240 | Write-Host
+}
 
 # Run-value absence must not be FAIL-OPEN: `-EA SilentlyContinue` maps an unreadable-but-SURVIVING value to
 # $null, which would pass. Read the key and enumerate value NAMES instead, so a real read error throws.

@@ -236,6 +236,18 @@ jobs:
           cat /tmp/presto.log 2>/dev/null || true
           exit 1
 
+      - name: Run complete workspace checks against the installed app
+        if: matrix.transport == 'http'
+        timeout-minutes: 10
+        env:
+          AZTEC_NODE_URL: ${{ inputs.aztec_node_url }}
+          PRESTO_URL: http://127.0.0.1:59833
+        run: |
+          LEGACY_SDK_ENTRY=$(bun scripts/install-legacy-sdk.ts)
+          test -f "$LEGACY_SDK_ENTRY"
+          export LEGACY_SDK_ENTRY
+          bun run test:all
+
       # Point the playground at the PACKED SDK tarball (not the workspace source), so the composed proof
       # exercises the PUBLISHED artifact — the brief's "packed SDK" requirement (codex harness review).
       - name: Pack the SDK + install the tarball into the playground
