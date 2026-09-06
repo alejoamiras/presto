@@ -1,6 +1,6 @@
 [package]
 name = "presto"
-version = "1.0.0-rc.1"
+version = "1.0.1-rc.1"
 description = "Native prover for Aztec transactions"
 edition = "2021"
 rust-version = "1.77.2"
