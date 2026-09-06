@@ -75,7 +75,7 @@ Presto releases; it must not waive other native acceptance checks.
 - [x] Publish `@alejoamiras/presto@0.0.0-bootstrap.0` with explicit `--tag bootstrap`. **Owner-approved exception (2026-09-06):** npm also assigned `latest` and rejected authenticated removal with HTTP 400. It temporarily remains on the deprecated bootstrap; real SDK promotion is still separately gated.
 - [x] Configure GitHub OIDC trust for this repo, `release-sdk.yml`, and `npm-publish` with direct publishing permission. Independent 2FA read-back verified configuration `21fbc340-7261-442f-9dc7-baed73ab4e88`; npm also grants staged publishing.
 - [x] Verify trust and deprecate the bootstrap version; never unpublish it. Exact artifact hashes and deprecation warning were read back from npm. Real CI/OIDC acceptance remains below.
-- [ ] Publish SDK `5.2.0` to `testnet` from CI with provenance and its matching GitHub tag/release.
+- [x] Publish SDK `5.2.0` to `testnet` from CI with provenance and its matching GitHub tag/release. Run `34054756788` publish job passed; tag and provenance resolve to `8325578`. Only the subsequent playground job failed, before deployment; recover with `playground-only`, never republish.
 - [ ] Verify signatures/provenance and a clean tarball consumer install; deploy the exact published SDK to the playground.
 - [ ] Publish `presto-v1.0.0-rc.1` using the fresh key and the tightly scoped initial-baseline exception.
 - [ ] Keep the RC out of the public updater feed.

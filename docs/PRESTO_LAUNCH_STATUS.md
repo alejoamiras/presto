@@ -17,15 +17,29 @@ separate execution gates. Earlier sections below are chronological checkpoints, 
 - Trusted-publisher configuration `21fbc340-7261-442f-9dc7-baed73ab4e88` was created and
   independently read back after 2FA: repository `alejoamiras/presto`, workflow `release-sdk.yml`,
   environment `npm-publish`, permissions `createPackage` and `createStagedPackage`.
-  The environment remains main-only with no npm secret. Actual CI/OIDC acceptance is pending.
+  The environment remains main-only with no npm secret. CI/OIDC publication passed below.
 - Bootstrap deprecation completed and the registry confirms its non-functional-SDK warning.
   npm assigned both `bootstrap` and `latest` despite explicit `--tag bootstrap`; an authenticated
   removal received HTTP 400 after browser approval. The owner approved this temporary exception:
   leave `latest` on the deprecated placeholder until normal final SDK promotion. No version was
   unpublished or republished; the real SDK is still required to publish to `testnet` first.
 - Enabled only `release-sdk.yml` and `dependency-audit.yml` for this step. SDK-and-playground
-  run [34054756788](https://github.com/alejoamiras/presto/actions/runs/34054756788) is running
-  against merged main `8325578`; publication, provenance and playground acceptance are not yet claimed.
+  run [34054756788](https://github.com/alejoamiras/presto/actions/runs/34054756788) published
+  SDK `5.2.0` from merged main `8325578` to `testnet`. Real proving, dependency audit, exact
+  tarball consumer, OIDC/provenance publication, cryptographic signatures and a fresh registry
+  install all passed. The GitHub release and tag `@alejoamiras/presto@5.2.0` exist, and the
+  remote tag resolves to the exact source commit. Independent local provenance and signature
+  verification passed too. The approved temporary `latest` tag is unchanged.
+- The run failed only in playground preparation, before build or Cloudflare deployment.
+  Its default runner npm 10.9.8 omitted `verified` from the signature-audit JSON; the publish
+  job explicitly selected Node 24/npm 11.19.0 and passed the same verifier. A comparison against
+  the same installed SDK confirmed npm 10 returns only `invalid`/`missing`, while npm 11 also
+  reports the exact package's verified SLSA provenance. Both reported zero invalid or missing
+  signatures. The deployment job now selects the same Node 24 toolchain, with a regression
+  contract covering setup before verification. Hosted recovery remains required.
+- **Recovery:** after the reviewed fix passes CI and merges, dispatch only `playground-only`.
+  It must consume the existing provenance-verified `testnet` package. Do not rerun publication,
+  create an unnecessary SDK revision, replace the existing tag/release, or weaken verification.
 - Production signing keys and 1Password backups are unchanged. Native RC/stable publication,
   stable feed promotion, final SDK promotion and separate legacy retirement remain pending.
 
