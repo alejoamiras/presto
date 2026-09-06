@@ -6,6 +6,38 @@ separate execution gates. Earlier sections below are chronological checkpoints, 
 
 ## Current launch state — 2026-09-06
 
+### Legacy retirement delivered; observation remains
+
+- Separate retirement PR #497 (links in the [migration record](../packages/sdk/MIGRATION.md#retirement-observation))
+  passed all 40 checks and merged the exact reviewed tree as `b55250d`. The old app retains
+  its identity, updater key and functional proving; migration is explicit and dismissal stays
+  in legacy state. Production retirement pages passed live mobile/keyboard checks and contain
+  no old proving/download actions. The original repository remains unarchived.
+- Final native publication `34064422661`
+  passed using the real `3.0.0` same-key baseline: four positive updater tests, three tamper
+  rejections, macOS notarization and packaged proving/installer gates. Final `3.1.0` has exactly
+  17 assets; its signed manifest SHA-256 is
+  `21b1721586aa3ed868c62d00038dd6c21a8a6e154cff538ec6b96e270cafd286`.
+- Promotion `34065998828`
+  passed, including live cryptographic verification. Legacy GitHub Latest and its frozen feed
+  are `3.1.0`; native/SDK publication and feed-deployment workflows are disabled. Presto's
+  separate feed still matches its signed `1.0.0` release, SHA-256
+  `c2e1ef23d3b02fb3f1b39ada57dd529cf5db58e1930c7d58c0839132a7002d83`.
+- Owner-approved npm deprecation succeeded. Uncached read-back at `2026-09-06T23:18:10Z`
+  confirmed migration warnings on all 44 legacy versions, including prereleases; every other
+  version field and all dist-tags are unchanged. No package, release or tag was deleted or rebuilt.
+- Monitoring follow-up #498
+  extends the existing read-only daily workflow with final-feed pins and both migration paths.
+  It merged as `f513c58`, tree-identical to reviewed signed head `f62290d`, after all required
+  checks passed. First hosted run `34066744588`
+  passed both feed/download and migration-page/destination jobs. Observation starts
+  **2026-09-06T23:23:31Z**; earliest archive is **2026-09-20T23:23:31Z**, conditional on healthy
+  checks and final verification. The [dated observation record](../packages/sdk/MIGRATION.md#retirement-observation)
+  records that gate. Keep Cloudflare pages and the frozen feed online after any eventual archive.
+- Presto's standing health run `34059032016` remains queued with no jobs as of this checkpoint.
+  Equivalent live probes and release-time cryptographic checks passed, but those are not
+  evidence that this queued hosted run executed. It has not been cancelled or restarted.
+
 ### SDK, sites and RC accepted
 
 - Reviewed playground toolchain fix PR #12 merged as

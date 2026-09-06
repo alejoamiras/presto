@@ -88,20 +88,33 @@ Presto releases; it must not waive other native acceptance checks.
 
 ## 5. Legacy retirement — only after Presto production is verified
 
-- [ ] Open a separate retirement PR in the original repository.
-- [ ] Replace its landing/playground with accessible migration pages linking to corresponding Presto pages; remove old download/prove actions.
-- [ ] Add prominent retirement notices to the original README and repository metadata.
-- [ ] Recognize Presto production origins in the old app without weakening consent.
-- [ ] Add a one-time native migration window and permanent tray/menu migration link through the old domain.
-- [ ] Store dismissal only in legacy state; keep legacy proving functional and never install/modify Presto.
-- [ ] Publish/promote final legacy `3.1.0` using its existing updater key and real `3.0.0` baseline.
-- [ ] Freeze its updater feed at `3.1.0`.
-- [ ] After Presto production and npm/latest verification, deprecate every version of the legacy npm package with migration instructions.
+- [x] Open a separate retirement PR in the original repository. PR #497 merged the reviewed tree as `b55250d`, with all 40 checks passing.
+- [x] Replace its landing/playground with accessible migration pages linking to corresponding Presto pages; remove old download/prove actions. Both production pages match the reviewed static HTML and pass live keyboard/mobile browser checks.
+- [x] Add prominent retirement notices to the original README and repository metadata.
+- [x] Recognize Presto production origins in the old app without weakening consent.
+- [x] Add a one-time native migration window and permanent tray/menu migration link through the old domain.
+- [x] Store dismissal only in legacy state; keep legacy proving functional and never install/modify Presto. Reviewed legacy-only persistence and packaged proving/installer checks passed.
+- [x] Publish/promote final legacy `3.1.0` using its existing updater key and real `3.0.0` baseline. Publish `34064422661` and promotion `34065998828` passed, including live signature verification.
+- [x] Freeze its updater feed at `3.1.0`. Exact signed manifest verified; legacy native/SDK publication and feed deployment workflows are disabled. Presto's separate feed remains `1.0.0`.
+- [x] After Presto production and npm/latest verification, deprecate every version of the legacy npm package with migration instructions. Owner-approved npm operation and uncached read-back confirm all 44 versions; other version metadata and dist-tags are unchanged.
 - [ ] Observe redirects, downloads, feeds and migration messaging for 14 days with the original repo unarchived.
 - [ ] Archive the original repo read-only only after a healthy observation window; keep retirement pages and frozen feed online.
+
+Observation started **2026-09-06T23:23:31Z**, after the merged monitor's first successful hosted
+run `34066744588`. Earliest archive: **2026-09-20T23:23:31Z**, conditional on healthy checks and
+final verification. The [dated observation record](../packages/sdk/MIGRATION.md#retirement-observation)
+pins the release evidence and archive conditions. The existing workflow runs daily at 07:00 UTC;
+the two observation/archive checkboxes remain incomplete until the actual window has elapsed.
 
 ## Rollback invariants
 
 - [ ] Record and verify immutable Worker version rollback and prior signed KV-feed restoration before launch.
 - [ ] Verify guarded npm dist-tag rollback and native feed rollback procedures.
 - [ ] Keep published versions, release assets and GitHub releases append-only; fix defects forward.
+
+Rollback evidence is deliberately bounded: all three explicit Worker version deployment dry-runs
+passed before launch, and the runbook/guarded promotion paths were reviewed. Native promotion dry
+run `34058796355` and production live verification passed. Actual restoration of an earlier stable
+Presto manifest or functional SDK cannot be exercised on the first release: no such prior target
+exists. Never substitute RC1, the non-functional bootstrap or a legacy product. No production
+rollback is claimed; future releases must verify the then-available prior stable target.
