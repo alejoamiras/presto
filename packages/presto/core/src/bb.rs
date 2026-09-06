@@ -85,13 +85,13 @@ fn home_dir_fallback() -> Option<PathBuf> {
     std::env::var("HOME").ok().map(PathBuf::from)
 }
 
-/// Per-user private base for prove workspaces: `<data-local>/presto/prove-tmp`, created
+/// Per-user private base for prove workspaces: `<runtime-data>/prove-tmp`, created
 /// owner-only. Using our OWN per-user directory (not the shared OS temp) keeps the witness off a
 /// world-readable / shared `$TMPDIR`/`%TEMP%` and out of a non-sticky temp parent where an
 /// attacker could replace an ancestor between creation and use (F-003 hardening). `None` if no
 /// data-local dir is resolvable (caller falls back to OS temp).
 fn prove_tmp_parent() -> Option<PathBuf> {
-    let base = dirs::data_local_dir()?.join("presto").join("prove-tmp");
+    let base = crate::runtime_data_dir()?.join("prove-tmp");
     #[cfg(unix)]
     {
         use std::os::unix::fs::{DirBuilderExt, PermissionsExt};

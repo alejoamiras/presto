@@ -373,3 +373,33 @@ feed, and npm dist-tags; do not unpublish or rewrite release assets.
   against its installed app, before the SDK tarball swap. This includes the published legacy SDK
   fixture and avoids touching the owner's local native state. Independent release review approves
   this bounded wiring addition; its hosted execution remains required.
+
+## Confirmed Windows data collision and combined conflict acceptance (2026-09-06)
+
+- Signed, GitHub-verified candidate `bcb5556ead8b68fd24bf7ad67bc88fa6471fd789` completed packaged
+  run `34031198087`. Linux/macOS packaged proving, HTTP consent, Linux state isolation and uninstall
+  passed. The literal `bun run test:all` passed against the installed Linux app, including eight
+  SDK E2E tests (three remote-network cases remain explicitly skipped). Functional native PR jobs
+  also passed; readiness remains false.
+- The Windows diagnostic identified exactly `Presto/logs`, its current log file and `Presto/prove-tmp`
+  inside LocalAppData. Windows case-insensitivity made the renamed runtime directory collide with
+  the default installation directory. No executable, task, Run entry or certificate survived.
+- Separate Windows runtime data into `LocalAppData/build.presto.presto`, sharing the resolver between
+  logs and private proof workspaces. Preserve existing platform paths elsewhere and all permission
+  hardening. No migration, fallback read of the previous directory or deletion is introduced.
+  Update Windows smoke log readers and user documentation; add a Windows-native path regression.
+  The unchanged real uninstaller remains the end-to-end acceptance gate.
+- Independent SDK review identified a combined acceptance gap: occupied-socket and legacy-state
+  tests existed separately, but no packaged conflict test covered both. Extend the existing
+  disposable Linux isolation check with the checksum-pinned, published legacy headless `3.0.0`
+  binary as the incumbent. Require the installed Presto's actual conflict guidance, keep both
+  processes alive through that assertion, and verify incumbent health, binary bytes and seeded
+  historical files/trust remain intact through Presto uninstall. The tray's existing guidance is
+  now also written to its normal error log. No new framework or local OS-state test is introduced.
+- Local core Windows cross-check (including tests), core Clippy, formatting, workflow lint and
+  ShellCheck passed. Desktop Windows cross-check cannot finish locally because the MinGW C compiler
+  is absent; hosted Windows compilation and all affected runtime checks remain mandatory.
+- All three independent reviewers approve this bounded delta, conditional on hosted Windows
+  uninstall/updater and Linux coexistence execution. The complete local `bun run test` passes.
+  Isolation failures now upload the existing runner logs; reaped Presto PIDs are cleared before
+  subsequent fixture work so cleanup does not retain a stale process handle.

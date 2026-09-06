@@ -336,7 +336,7 @@ The presto writes daily-rotating logs. Open the log directory from the tray menu
 |----------|------|
 | macOS | `~/Library/Application Support/presto/logs/` |
 | Linux | `~/.local/share/presto/logs/` |
-| Windows | `%LOCALAPPDATA%\presto\logs\` |
+| Windows | `%LOCALAPPDATA%/build.presto.presto/logs/` |
 
 A crash additionally appends a one-line record (timestamp, location, message) to `panic.log` in that same directory — written synchronously so it survives even an immediate abort.
 

@@ -355,12 +355,12 @@ fn spawn_http_server(
                     );
                 }
             }
-            tracing::error!("Presto server error: {e}");
             let msg = if addr_in_use {
                 presto::server::PORT_CONFLICT_GUIDANCE
             } else {
                 "Error: server failed"
             };
+            tracing::error!("Presto server error: {e}. {msg}");
             let _ = status.set_text(msg);
             let _ = tray.set_tooltip(Some(msg));
         }

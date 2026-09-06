@@ -117,7 +117,7 @@ function Dump-Logs {
   Write-Host "── feed log ──"; Get-Content (Join-Path $Work "feed.log") -ErrorAction SilentlyContinue
   Write-Host "── feed err ──"; Get-Content (Join-Path $Work "feed.err") -ErrorAction SilentlyContinue
   Write-Host "── app log (what the updater actually did) ──"
-  Get-ChildItem "$env:LOCALAPPDATA\presto\logs" -ErrorAction SilentlyContinue |
+  Get-ChildItem "$env:LOCALAPPDATA\build.presto.presto\logs" -ErrorAction SilentlyContinue |
     ForEach-Object { Write-Host "-- $($_.Name) --"; Get-Content $_.FullName -Tail 80 -ErrorAction SilentlyContinue }
   Write-Host "── last /health ──"; try { Invoke-RestMethod -Uri $HealthUrl -TimeoutSec 3 | ConvertTo-Json -Compress } catch { "unreachable" }
 }
@@ -330,7 +330,7 @@ try {
     # earlier for the launch proof and its own 5s update poll may already have armed a marker, and
     # daily log files persist — so mere PRESENCE of the line could come from P, not the copy
     # (r4 #4). Only an INCREASE attributable to the copy counts.
-    $AppLogGlob = "$env:LOCALAPPDATA\presto\logs\*.log"
+    $AppLogGlob = "$env:LOCALAPPDATA\build.presto.presto\logs\*.log"
     $MarkerLogBefore = @(Select-String -Path $AppLogGlob -Pattern "update window marker armed" -ErrorAction SilentlyContinue).Count
     # Hash the copy BEFORE the update: on the dispatch path the copy has the SAME file name as N,
     # so "is there an Presto.exe beside the copy" is trivially true and cannot detect an
@@ -434,7 +434,7 @@ try {
     }
     if (-not $portFree) { Dump-Logs; Write-Error "BARRIER FAILED — :59833 still serving 15s into the window; N-1 did not exit for the install."; exit 1 }
     # Baselines for the D22 no-second-download proof. $AppLogGlob covers N-1's and Q's shared log.
-    $AppLogGlob = "$env:LOCALAPPDATA\presto\logs\*.log"
+    $AppLogGlob = "$env:LOCALAPPDATA\build.presto.presto\logs\*.log"
     $K1 = @(Select-String -Path $FeedLog -Pattern "/releases/latest.json" -ErrorAction SilentlyContinue).Count
     $D1 = @(Select-String -Path $FeedLog -Pattern "/releases/download/" -ErrorAction SilentlyContinue).Count
     $R1 = @(Select-String -Path $AppLogGlob -Pattern "an update window is still live" -ErrorAction SilentlyContinue).Count

@@ -453,6 +453,17 @@ jobs:
           DISPLAY=:99 stalonetray >/tmp/presto-isolation-tray.log 2>&1 &
       - name: Assert install, first launch and uninstall preserve unrelated state
         run: bash .github/scripts/packaged-e2e-state-isolation.sh
+      - name: Upload isolation failure logs
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: presto-state-isolation-logs
+          path: |
+            /tmp/presto-state-isolation.log
+            /tmp/presto-port-conflict.log
+            /tmp/presto-legacy-incumbent.log
+          if-no-files-found: ignore
+          retention-days: 7
 
   # B5 packaged uninstall: the ownership-checked teardown runs on the INSTALLED app, then the package is
   # removed. Asserts the flow succeeds end-to-end + the binary is gone (the per-store cleanup detail is B5's

@@ -368,7 +368,7 @@ Those last three commands mutate public state. Run them only as a deliberate rep
 |---|---|
 | macOS | `~/Library/Application Support/presto/logs/` |
 | Linux | `~/.local/share/presto/logs/` |
-| Windows | `%LOCALAPPDATA%\\presto\\logs\\` |
+| Windows | `%LOCALAPPDATA%/build.presto.presto/logs/` |
 
 Configuration is stored in `~/.presto/config.json` on macOS/Linux and the equivalent user profile location on Windows.
 

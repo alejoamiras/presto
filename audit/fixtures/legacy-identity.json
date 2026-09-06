@@ -9,6 +9,10 @@
   "sdkPackage": "@alejoamiras/aztec-accelerator",
   "sdkVersion": "5.2.0",
   "sdkIntegrity": "sha512-SjgdAEFcllcrbl0U6kZnbr3e16rHqjlAWoOXw1oUx0sLa5+1hiVylpeZn3/l0nMdtTso1ouGuDVF5ywLh1xOsQ==",
+  "nativeVersion": "3.0.0",
+  "serverBinary": "accelerator-server",
+  "linuxServerUrl": "https://github.com/alejoamiras/aztec-accelerator/releases/download/accelerator-v3.0.0/accelerator-server-3.0.0-linux-x86_64.tar.gz",
+  "linuxServerSha256": "ebe5a642ae2178fa4124c27962b24f075e0db2afd134b47f5ec13f2888be2090",
   "proverExport": "AcceleratorProver",
   "statusMethod": "checkAcceleratorStatus",
   "configOption": "accelerator"
