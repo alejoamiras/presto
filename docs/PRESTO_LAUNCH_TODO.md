@@ -62,8 +62,8 @@ implementation exists. Never merge or publish by bypassing an unresolved release
 - [x] Fix all high/critical and justified medium findings; rerun affected gates on `a4dd5b9`. Three exact-commit code approvals and successful hosted execution are recorded.
 - [x] Complete 1Password Git signing, push follow-up fixes as `e2f1235` and rerun remote CI.
 - [x] Approve release readiness after domain, updater recovery, routes, credential custody and pre-merge execution gates are evidenced. Production signing/notarization and RC-to-stable updater acceptance remain release-time gates.
-- [ ] Observe successful `Presto Status`, then replace the old native required-check name in the ruleset.
-- [ ] Babysit required checks and merge only the exact reviewed commit; keep releases separately gated.
+- [x] Observe successful `Presto Status`, then replace the old native required-check name in the ruleset. Final native run `34036246805` passed; ruleset `22313900` changed only that check name.
+- [x] Babysit required checks and merge only the exact reviewed commit; keep releases separately gated. PR #6 merged reviewed head `d4b72d1` as `8325578`, with identical trees and no admin override.
 
 Packaged RC-to-stable updater evidence necessarily belongs to the later release steps, not a fabricated
 pre-merge baseline. The first-RC exception is allowed only for exactly `1.0.0-rc.1` with no earlier
@@ -71,10 +71,10 @@ Presto releases; it must not waive other native acceptance checks.
 
 ## 4. npm bootstrap and release sequence
 
-- [ ] Complete interactive npm login/2FA. **Owner interaction required.**
-- [ ] Publish only `@alejoamiras/presto@0.0.0-bootstrap.0` under the `bootstrap` tag.
-- [ ] Configure GitHub OIDC trust for this repo, `release-sdk.yml`, and `npm-publish` with direct publishing permission.
-- [ ] Verify trust and deprecate the bootstrap version; never unpublish it.
+- [x] Complete interactive npm login/2FA; authenticated owner is `alejoamiras`.
+- [x] Publish `@alejoamiras/presto@0.0.0-bootstrap.0` with explicit `--tag bootstrap`. **Owner-approved exception (2026-09-06):** npm also assigned `latest` and rejected authenticated removal with HTTP 400. It temporarily remains on the deprecated bootstrap; real SDK promotion is still separately gated.
+- [x] Configure GitHub OIDC trust for this repo, `release-sdk.yml`, and `npm-publish` with direct publishing permission. Independent 2FA read-back verified configuration `21fbc340-7261-442f-9dc7-baed73ab4e88`; npm also grants staged publishing.
+- [x] Verify trust and deprecate the bootstrap version; never unpublish it. Exact artifact hashes and deprecation warning were read back from npm. Real CI/OIDC acceptance remains below.
 - [ ] Publish SDK `5.2.0` to `testnet` from CI with provenance and its matching GitHub tag/release.
 - [ ] Verify signatures/provenance and a clean tarball consumer install; deploy the exact published SDK to the playground.
 - [ ] Publish `presto-v1.0.0-rc.1` using the fresh key and the tightly scoped initial-baseline exception.

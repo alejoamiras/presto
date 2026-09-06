@@ -1,8 +1,33 @@
 # Presto launch checkpoint
 
-The operational rename is a draft, not a release-ready commit. Do not merge it or publish until
-`bun scripts/presto-release-readiness.ts` passes and the remaining gates below are verified.
-The same check is wired into Presto Status and both release entry points.
+The operational rename is merged as `8325578491570b65616ec75dfab9d51f0eda7aed` (PR #6).
+Release readiness and required CI passed on the exact reviewed tree; publication still has
+separate execution gates. Earlier sections below are chronological checkpoints, not current blockers.
+
+## Current launch state — 2026-09-06
+
+- Final reviewed head `d4b72d1de73b9ddcba96a294e289a58c6937af10` passed required CI,
+  including native run `34036246805`. The protected squash merge used that exact head and
+  preserved its tree. Ruleset `22313900` changed only the native check name to `Presto Status`
+  after the successful check; no admin override or protection bypass was used.
+- Interactive npm login/2FA and bootstrap publication completed. The registry confirms
+  `@alejoamiras/presto@0.0.0-bootstrap.0`, SHA-1
+  `d548dba7a243698e6aaa7272567b5e0a26fb79a7`, and exact SHA-512 integrity
+  `sha512-vJNoA1iYAALUo1kCOwyP0wX2dEsunOu++kX0w1Jh+xbZBCPMI0hKd0GfLr4JG5VGcm+WHLO5yXqCZJQplzLMiQ==`.
+- Trusted-publisher configuration `21fbc340-7261-442f-9dc7-baed73ab4e88` was created and
+  independently read back after 2FA: repository `alejoamiras/presto`, workflow `release-sdk.yml`,
+  environment `npm-publish`, permissions `createPackage` and `createStagedPackage`.
+  The environment remains main-only with no npm secret. Actual CI/OIDC acceptance is pending.
+- Bootstrap deprecation completed and the registry confirms its non-functional-SDK warning.
+  npm assigned both `bootstrap` and `latest` despite explicit `--tag bootstrap`; an authenticated
+  removal received HTTP 400 after browser approval. The owner approved this temporary exception:
+  leave `latest` on the deprecated placeholder until normal final SDK promotion. No version was
+  unpublished or republished; the real SDK is still required to publish to `testnet` first.
+- Enabled only `release-sdk.yml` and `dependency-audit.yml` for this step. SDK-and-playground
+  run [34054756788](https://github.com/alejoamiras/presto/actions/runs/34054756788) is running
+  against merged main `8325578`; publication, provenance and playground acceptance are not yet claimed.
+- Production signing keys and 1Password backups are unchanged. Native RC/stable publication,
+  stable feed promotion, final SDK promotion and separate legacy retirement remain pending.
 
 ## Completed
 

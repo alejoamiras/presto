@@ -91,13 +91,17 @@ The environment has no npm secret. Configure the package's [npm GitHub Actions t
 | Repository | `presto` |
 | Workflow filename | `release-sdk.yml` |
 | Environment | `npm-publish` |
-| Allowed action | `npm publish` only |
+| Allowed action | Direct `npm publish` enabled; npm also grants staged publishing |
 
 `_publish-sdk.yml` is intentionally `workflow_call`-only. npm validates the calling workflow name for reusable workflows, so the trusted-publisher filename is `release-sdk.yml`; both caller and called workflow grant `id-token: write`.
 
 Bootstrap the package interactively with npm login and 2FA. Publish only
 `@alejoamiras/presto@0.0.0-bootstrap.0` under the `bootstrap` tag, configure the trust above,
-then deprecate that version after trust verification. Never use `latest` for the bootstrap.
+then deprecate that version after trust verification. Never request `latest` for the bootstrap.
+On 2026-09-06 npm nevertheless assigned `latest` on the first publication and rejected its
+authenticated removal with HTTP 400. The owner approved leaving that tag on the deprecated,
+non-functional bootstrap temporarily. This does not authorize early promotion of the real SDK:
+publish 5.2.0 to `testnet`, then move `latest` only after the normal final-promotion gates.
 The real 5.2.0 release must be produced by CI with provenance; there is no token fallback.
 
 ## Preflight for every release
