@@ -33,6 +33,7 @@ jobs:
               - 'bun.lock'
               - 'bunfig.toml'
               - '.bun-version'
+              - 'rust-toolchain.toml'
               - '.github/workflows/app.yml'
               - '.github/workflows/_e2e-app.yml'
               - '.github/actions/setup-aztec/**'

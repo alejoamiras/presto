@@ -60,7 +60,10 @@ jobs:
           name: presto-preview-${{ matrix.site }}
           path: dist
       - name: Install the pinned deployment CLI without lifecycle scripts
-        run: npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/presto-preview-cli" wrangler@4.124.0
+        run: |
+          cutoff="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')"
+          npm install --before="$cutoff" --ignore-scripts --no-audit --no-fund \
+            --prefix "$RUNNER_TEMP/presto-preview-cli" wrangler@4.127.1
       - name: Write fixed preview configuration
         env:
           SITE: ${{ matrix.site }}

@@ -360,7 +360,7 @@ aztec install
 ## Development
 
 ```sh
-# Prerequisites: Rust toolchain, Tauri CLI
+# Prerequisites: Rust toolchain, CMake, Tauri CLI
 cargo install tauri-cli
 
 # Copy bb binary for sidecar (reads version from @aztec/bb.js)

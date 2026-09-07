@@ -451,7 +451,7 @@ fn validate_proof_len(len: u64) -> Result<(), Box<dyn std::error::Error + Send +
         )
         .into());
     }
-    if len % 32 != 0 {
+    if !len.is_multiple_of(32) {
         return Err(
             format!("bb proof is not a whole number of 32-byte fields ({len} bytes)").into(),
         );

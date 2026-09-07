@@ -64,6 +64,19 @@ describe("presto CI path routing", () => {
       ["scripts/download-bb.ts"],
       ["desktop_runtime", "release_tooling", "sdk_integration", "windows_bb", "windows_packaging"],
     ],
+    [
+      "Rust toolchain pin",
+      ["rust-toolchain.toml"],
+      [
+        "desktop_runtime",
+        "headless_server",
+        "release_tooling",
+        "rust_platform",
+        "sdk_integration",
+        "updater_feed",
+        "windows_packaging",
+      ],
+    ],
     ["unrelated documentation", ["docs/PLATFORM_SUPPORT.md"], []],
     ["unrelated workflow", [".github/workflows/deploy-landing.yml"], []],
     [
@@ -93,6 +106,17 @@ describe("presto CI path routing", () => {
     }
   });
 
+  test("the headless guard permits client rustls but rejects GUI and certificate serving", () => {
+    const guard =
+      workflow.split("      - name: Assert headless tree")[1]?.split("      - name: Launch")[0] ??
+      "";
+    expect(guard).not.toBeEmpty();
+    expect(guard).not.toContain("tokio-rustls");
+    for (const forbidden of ["tauri", "tao ", "wry", "rcgen", "x509-parser", "rustls-pemfile"]) {
+      expect(guard).toContain(forbidden);
+    }
+  });
+
   test("PR Rust caches restore but only refs/heads/main may save", () => {
     const setup = fs.readFileSync(
       path.join(REPO, ".github/actions/setup-presto/action.yml"),
@@ -115,6 +139,10 @@ describe("presto CI path routing", () => {
     expect(lna).toContain("'.github/workflows/app.yml'");
     expect(lna).not.toContain("'docs/");
     expect(lna).not.toContain("'.github/workflows/**'");
+    // local-network-e2e builds presto-server, so the compiler pin must wake the full App matrix.
+    const relevant =
+      app.split("            relevant:")[1]?.split("            lna_relevant:")[0] ?? "";
+    expect(relevant).toContain("'rust-toolchain.toml'");
   });
 
   test("dependency audit filters only PRs and keeps non-PR entry points", () => {

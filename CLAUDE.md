@@ -12,7 +12,7 @@
 - **Commit hygiene**: Husky + lint-staged + commitlint (conventional commits)
 - **CI**: GitHub Actions (required PR gates: `presto.yml`, `sdk.yml`, `app.yml`, `actionlint.yml`; presto jobs use the central `.github/filters/presto.yml` routing contract; dependency audits are PR-path-filtered but remain unconditional for schedules, manual runs, and release calls; PR Rust caches are restore-only). Reusable workflows include `_e2e.yml`, `_e2e-app.yml`, `_e2e-webdriver.yml`, and the macOS/Linux/Windows updater smokes, which use the greatest complete published lower same-key baseline (including prereleases) and fail closed if none exists. `release-presto.yml` has no evergreen key-rotation override; any future key migration requires a reviewed workflow change. `smoke-updater-windows.yml` remains the secretless ephemeral L8 barrier smoke.
 - **Testing**: 17 WebDriver E2E tests (macOS + Linux + Windows) via `tauri-plugin-webdriver` + WebdriverIO, 66 Playwright UI mock tests, 435 Rust tests (417 non-ignored; incl. `win_acl` inline DACL tests on the windows-build lane), ~280 TS unit tests (SDK 107 + presto scripts 53 + root scripts 64 + playground 55), plus `#[ignore]`d real-OS integration suites run per-OS in CI (`trust_*`, `autostart_heal`, `uninstall_ownership`). WebDriver tests run as PR gate and pre-release gate.
-- **TypeScript**: 6.0 with ES2025 target. Biome for lint/format.
+- **TypeScript**: 7.0 with ES2025 target. Biome for lint/format. Rust is pinned to 1.98.0 via `rust-toolchain.toml` (CI and local); `reqwest` uses rustls + `aws-lc-rs`, so native builds need CMake.
 - **Release pipeline (B6 publish/promote split)**: two dispatches. `mode=publish` (default) runs `validate → e2e-webdriver gate → build (3 Tauri + 4 headless platforms) → smoke → tag → sign-update-feed (stable) → release` and publishes the GitHub release **without touching the live feed** — stable is `--latest=false`, with the signed `latest.json` shipped as a release asset. A separate `mode=promote-only` dispatch re-verifies the published release (published/non-draft/non-prerelease, full asset set, production Ed25519 verifier over the release's own feed) then flips the KV-backed `latest.json` (`promote → verify-live-feed → bump-source` on organic GA). `promote-only <prev>` is the rollback lever; `dry_run` runs the pre-flight with no feed write. Prerelease `X.Y.Z-rc.N` publishes as a public prerelease and is never promoted. **Append-only**: no release/tag deletion (fix-forward on a colliding tag). The landing download version is derived from the signed feed, not the GitHub Latest badge.
 - **Hosting**: Cloudflare Workers Static Assets serves the landing and playground; a narrowly scoped Worker reads the signed updater feed from KV. Wrangler configuration lives with each package.
 
@@ -48,7 +48,7 @@ Before writing any code:
 
 - **Code changes**: `bun run lint` and `bun run test`
 - **Platform-gated Rust** (`#[cfg(windows)]` / `target_os` branches): also
-  `cargo check --target x86_64-pc-windows-gnu --lib` from `src-tauri` — Linux-only checks cannot see
+  `cargo check --target x86_64-pc-windows-gnu --lib` from `src-tauri` (`rustup target add x86_64-pc-windows-gnu` once for the pinned toolchain) — Linux-only checks cannot see
   a Windows compile break (twice bitten: a `pub(crate)` visibility error, and a `cfg` attribute
   detached from its function). Needs a one-off empty, gitignored
   `binaries/bb-x86_64-pc-windows-gnu.exe` placeholder for tauri-build's sidecar check; ~5s

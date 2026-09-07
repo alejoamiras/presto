@@ -25,3 +25,32 @@ Verdict: approve.
 Claude verified that the new wrong-key ordering case distinguishes the intended selector, the exact
 error assertions reject unrelated failures, runbook repetition is gone, the sentinel comment is
 useful, and no workflow/security behavior changed. No material findings remained.
+
+## Arc 2 — round 1
+
+Verdict: conditional approve.
+
+Claude confirmed the dependency selection was broad, compatibility work was readable, all three
+lockfiles were covered, Aztec exemptions were removed, and the policy used registry/release
+timestamps. It requested:
+
+1. Compare an automatically generated Aztec lockfile directly with `HEAD` because dispatch events
+   have no meaningful base SHA — adopted.
+2. Include nested workflows and composite Actions in the successful-result cache key — adopted.
+3. Document reqwest 0.13's rustls/platform-verifier change and remove the obsolete headless OpenSSL
+   installation — adopted and smoke-tested.
+4. Select eligible Rust 1.98.0 instead of 1.97.0 — adopted and tested across all three crates.
+5. Document that `dtolnay/rust-toolchain` has no GitHub Releases and remains unchanged; future pin
+   changes fail closed rather than using commit dates — adopted.
+6. Add narrow trust-boundary comments and Action/Cargo rejection tests — adopted.
+
+Session: `60045700-6f8d-449e-a1a2-55dc57a423ca`.
+
+## Arc 2 — round 2
+
+Verdict: approve.
+
+Claude verified all eight round-one findings were closed. It found no remaining policy, security,
+behavioral, metric-compression, or unnecessary-indirection problem. Two low-severity documentation
+corrections were adopted after approval: explicitly name the AWS-LC/CMake build dependency and fix
+the core crate's stale claim that all rustls code is excluded from the headless graph.

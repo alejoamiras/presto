@@ -1,6 +1,6 @@
 use rcgen::{
     BasicConstraints, CertificateParams, CidrSubnet, DnType, ExtendedKeyUsagePurpose,
-    GeneralSubtree, IsCa, KeyPair, KeyUsagePurpose, NameConstraints, SanType,
+    GeneralSubtree, IsCa, Issuer, KeyPair, KeyUsagePurpose, NameConstraints, SanType,
 };
 use std::io::BufReader;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -296,9 +296,12 @@ fn write_new_cert_set(paths: &CertPaths) -> Result<(), Box<dyn std::error::Error
     // plain drop scrubs nothing), and drop it as EARLY as possible — right after it signs the leaf, before
     // the fallible file writes.
     let ca_key = Zeroizing::new(KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)?);
-    let ca_cert = ca_params(now).self_signed(&ca_key)?;
+    let ca_parameters = ca_params(now);
+    let ca_cert = ca_parameters.self_signed(&*ca_key)?;
+    let issuer = Issuer::from_params(&ca_parameters, &*ca_key);
     let leaf_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256)?;
-    let leaf_cert = leaf_params(now)?.signed_by(&leaf_key, &ca_cert, &ca_key)?;
+    let leaf_cert = leaf_params(now)?.signed_by(&leaf_key, &issuer)?;
+    drop(issuer);
     // Scrub rcgen's serialized-DER CA key now. RESIDUAL (F-016): `Zeroizing` wipes ONLY that `Vec` — the
     // ring backend's ECDSA scalar/nonce, key-generation temporaries, swap pages, and any core dump are NOT
     // scrubbed, so this is best-effort post-use reduction, not a guarantee the CA key is unrecoverable. The
@@ -665,6 +668,7 @@ mod tests {
         ca_params.not_before = now;
         ca_params.not_after = now + time::Duration::days(TEST_CA_VALIDITY_DAYS);
         let ca_cert = ca_params.self_signed(&ca_key).unwrap();
+        let issuer = Issuer::from_params(&ca_params, &ca_key);
 
         let leaf_key = KeyPair::generate_for(&rcgen::PKCS_ECDSA_P256_SHA256).unwrap();
         let mut leaf_params = CertificateParams::default();
@@ -674,7 +678,7 @@ mod tests {
         leaf_params.subject_alt_names = vec![SanType::IpAddress(IpAddr::V4(Ipv4Addr::LOCALHOST))];
         leaf_params.not_before = now;
         leaf_params.not_after = now + time::Duration::days(TEST_LEAF_VALIDITY_DAYS);
-        let leaf_cert = leaf_params.signed_by(&leaf_key, &ca_cert, &ca_key).unwrap();
+        let leaf_cert = leaf_params.signed_by(&leaf_key, &issuer).unwrap();
 
         (ca_cert, ca_key, leaf_cert, leaf_key)
     }

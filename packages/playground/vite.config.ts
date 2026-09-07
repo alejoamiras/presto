@@ -112,7 +112,9 @@ export default defineConfig(({ mode, command }) => {
   };
 
   // Read @aztec/stdlib version from SDK package.json at build time
-  const sdkPkg = JSON.parse(readFileSync(resolve(__dirname, "../sdk/package.json"), "utf8"));
+  const sdkPkg = JSON.parse(
+    readFileSync(resolve(import.meta.dirname, "../sdk/package.json"), "utf8"),
+  );
   const aztecSdkVersion: string = sdkPkg.dependencies["@aztec/stdlib"] ?? "unknown";
 
   return {
@@ -130,7 +132,9 @@ export default defineConfig(({ mode, command }) => {
         // @aztec/kv-store's sqlite-opfs backend (the 5.0 browser default) uses package-internal
         // `#...` subpath imports, which Vite's dep optimizer can't resolve through the package's
         // `imports` map — map them to their browser-condition targets. Production rollup resolves
-        // them natively; this only affects the dev-server prebundle.
+        // them natively; this only affects the dev-server prebundle. The `msgpackr` devDependency
+        // exists solely for this alias and must stay on the version the @aztec graph resolves, or
+        // dev and production bundle different msgpackr majors.
         plugins: [
           {
             name: "aztec-kv-store-subpath-imports",
