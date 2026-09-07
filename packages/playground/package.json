@@ -43,7 +43,7 @@
     "@playwright/test": "1.62.1",
     "@tailwindcss/postcss": "^4.3.3",
     "autoprefixer": "^10.5.4",
-    "msgpackr": "2.1.0",
+    "msgpackr": "1.12.1",
     "postcss": "^8.5.26",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
