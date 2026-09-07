@@ -23,6 +23,12 @@ Session: `0420e2a8-f1e5-4ec9-8db2-ec902ea93258`.
 
 - Opened the reviewed stack as #16 (release baseline), #17 (dependencies), and #18 (complexity).
   Each PR targets the branch immediately below it; no branch was merged.
+- The first #18 headless smoke run caught an overbroad dependency-tree assertion: reqwest 0.13
+  legitimately brings client-side `tokio-rustls`, while the guard treated every rustls consumer as
+  certificate-serving residue. The dependency arc now permits that client transport while retaining
+  the GUI and certificate-serving bans, with a focused workflow-contract test. After cascading the
+  fix, the full test suite, all three Clippy gates, actionlint, dependency audit, and the cumulative
+  dependency-age check passed locally.
 - The regenerated Tauri Linux schema restores upstream `set-accelerator` command names; it is not a
   Presto brand regression.
 - Dependency-age composites intentionally no-op on dispatch-only workflows without a comparison
