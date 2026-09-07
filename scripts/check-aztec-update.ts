@@ -56,7 +56,9 @@ async function getLatestVersion(tag: string): Promise<string> {
   return version;
 }
 
-async function verifyAllPackagesExist(version: string): Promise<{ allExist: boolean; missing: string[] }> {
+async function verifyAllPackagesExist(
+  version: string,
+): Promise<{ allExist: boolean; missing: string[] }> {
   const missing: string[] = [];
 
   await Promise.all(
@@ -87,10 +89,14 @@ async function main() {
   const { missing } = await verifyAllPackagesExist(latest);
 
   if (missing.length > 0) {
-    console.error(`Warning: Not all packages available at ${latest}. Missing: ${missing.join(", ")}`);
+    console.error(
+      `Warning: Not all packages available at ${latest}. Missing: ${missing.join(", ")}`,
+    );
   }
 
-  console.log(JSON.stringify({ current, latest, needsUpdate: true, ...(missing.length > 0 && { missing }) }));
+  console.log(
+    JSON.stringify({ current, latest, needsUpdate: true, ...(missing.length > 0 && { missing }) }),
+  );
 }
 
 main().catch((err) => {
