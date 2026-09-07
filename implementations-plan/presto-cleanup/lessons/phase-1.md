@@ -24,3 +24,10 @@
 - Machine note: Cargo exists under `~/.cargo/bin` but that directory was absent from the session
   `PATH`; the successful full gate used an explicit tool-path prefix without changing repository
   configuration.
+
+## Claude review
+
+Round 1 conditionally approved. The useful finding was a missing discriminator: the tests selected
+the greatest same-key release only when it was also the greatest eligible release. Added the case
+where a newer wrong-key release must be skipped. Exact error assertions and small comment/runbook
+cleanups were also accepted; no release design or scope changes were needed.

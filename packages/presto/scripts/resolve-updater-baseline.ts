@@ -115,8 +115,8 @@ export async function loadUpdaterReleaseCandidates(
   const candidates: UpdaterReleaseCandidate[] = [];
   for (const release of releases) {
     if (typeof release.tag_name !== "string" || typeof release.draft !== "boolean") continue;
-    const version = versionFromTag(release.tag_name);
     if (!release.tag_name.startsWith(TAG_PREFIX)) continue;
+    const version = versionFromTag(release.tag_name);
 
     const assetNames = (release.assets ?? []).flatMap((asset) =>
       typeof asset.name === "string" ? [asset.name] : [],
@@ -127,7 +127,7 @@ export async function loadUpdaterReleaseCandidates(
       assetNames,
       pubkey: "",
     };
-    // Keep every Presto-shaped release here; selection applies the eligibility rules uniformly.
+    // Ineligible releases skip config fetches; selection rejects their empty-key sentinels.
     if (!version || release.draft || !hasCompleteInstallerSet(shapeOnly, version)) {
       candidates.push(shapeOnly);
       continue;

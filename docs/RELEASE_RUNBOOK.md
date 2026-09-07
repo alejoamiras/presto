@@ -45,8 +45,6 @@ updater key, certificates, native identifier, or installation.
 Release sequence: SDK 5.2.0 to `testnet` with provenance; native `1.0.0-rc.1`; native
 `1.0.0` using RC1 as its actual same-key baseline; stable feed promotion; full-stack consent
 verification; then guarded SDK `latest` promotion. RCs must never enter the public feed.
-That one-time first-release exception is retired. Every future native release requires a complete,
-published, lower same-key baseline and the full updater suite.
 
 ### Cloudflare deployment credentials
 
@@ -129,8 +127,7 @@ gh workflow run release-presto.yml --ref main -f version=X.Y.Z-rc.N
 
 Every ordinary publish requires a complete, published, lower release using the current updater key.
 The resolver includes prereleases and selects the greatest compatible version. Missing baselines
-fail closed, including for `1.0.0-rc.1`. Future key rotation requires a separately reviewed migration;
-there is no dispatch override.
+fail closed. Future key rotation requires a separately reviewed migration. There is no dispatch override.
 
 The release path is:
 
