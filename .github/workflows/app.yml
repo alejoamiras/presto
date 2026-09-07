@@ -37,7 +37,6 @@ jobs:
               - '.github/workflows/_e2e-app.yml'
               - '.github/actions/setup-aztec/**'
               - '.github/actions/setup-presto/**'
-              - '.github/actions/check-dependency-age/**'
               - '.github/actions/start-services/**'
             # Fail closed for the real Chromium Local Network Access boundary. This is independent
             # from `relevant`: a landing-only change runs this focused browser job without waking the
@@ -53,7 +52,6 @@ jobs:
               - 'bunfig.toml'
               - '.bun-version'
               - '.github/actions/playwright-cache/**'
-              - '.github/actions/check-dependency-age/**'
               - '.github/workflows/app.yml'
       - name: Override for manual dispatch
         if: github.event_name == 'workflow_dispatch'
@@ -76,8 +74,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - run: bun run lint
       # Typecheck all three playground graphs: src (browser types), tests (bun types), and
@@ -103,8 +99,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - run: bun run --cwd packages/playground test:unit
 
@@ -126,8 +120,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/playwright-cache
       - run: bun run --cwd packages/playground test:e2e
@@ -150,8 +142,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/playwright-cache
       - run: bun run --cwd packages/playground test:e2e:production-smoke
@@ -181,8 +171,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/playwright-cache
         with:

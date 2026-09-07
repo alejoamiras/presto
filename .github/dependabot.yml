@@ -22,24 +22,3 @@ updates:
       github-actions:
         patterns:
           - "*"
-  - package-ecosystem: "npm"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    cooldown:
-      default-days: 7
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: "chore(deps)"
-  - package-ecosystem: "cargo"
-    directories:
-      - "/packages/presto/core"
-      - "/packages/presto/server"
-      - "/packages/presto/src-tauri"
-    schedule:
-      interval: "weekly"
-    cooldown:
-      default-days: 7
-    open-pull-requests-limit: 5
-    commit-message:
-      prefix: "chore(deps)"

@@ -10,14 +10,9 @@ on:
       - 'bun.lock'
       - '**/Cargo.toml'
       - '**/Cargo.lock'
-      - 'bunfig.toml'
-      - 'rust-toolchain.toml'
       - 'scripts/dependency-audit.ts'
       - 'scripts/dependency-audit.test.ts'
       - 'scripts/dependency-audit-allowlist.json'
-      - 'scripts/dependency-age.ts'
-      - 'scripts/dependency-age.test.ts'
-      - '.github/actions/check-dependency-age/action.yml'
       - '.github/workflows/dependency-audit.yml'
   schedule:
     - cron: "23 9 * * 1"
@@ -49,8 +44,6 @@ jobs:
             ~/.cargo/bin/cargo-audit
           key: ${{ runner.os }}-dependency-audit-bun-${{ hashFiles('bun.lock') }}-cargo-audit-0.22.2
           restore-keys: ${{ runner.os }}-dependency-audit-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - name: Install pinned cargo-audit
         run: |

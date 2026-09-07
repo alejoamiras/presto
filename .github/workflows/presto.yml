@@ -390,8 +390,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - run: bun run lint
       - name: Unit-test build scripts (copy-bb supply-chain gate)
@@ -529,8 +527,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - uses: ./.github/actions/playwright-cache
         with:
@@ -593,8 +589,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - name: Fetch + verify the Windows bb.exe sidecar (real copy-bb.ts path)
         run: bun run --cwd packages/presto prebuild

@@ -31,8 +31,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - run: bun run --cwd packages/release-feed typecheck
       - run: bun run --cwd packages/release-feed test

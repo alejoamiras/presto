@@ -14,7 +14,6 @@
     "aztec:update": "bun scripts/update-aztec-version.ts",
     "bb:download": "bun scripts/download-bb.ts",
     "bb:list": "bun scripts/download-bb.ts --list",
-    "dependencies:age": "bun scripts/dependency-age.ts",
     "format": "biome format --write .",
     "lint": "biome check . && bun run lint:pkg && bun run lint:shell && bun run lint:rust",
     "lint:actions": "actionlint",
