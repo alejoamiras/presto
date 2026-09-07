@@ -63,11 +63,11 @@ describe("complexity policy", () => {
   test("local and CI gates check all crates with committed lockfiles", () => {
     const packageJson = JSON.parse(read("package.json")) as { scripts: Record<string, string> };
     for (const manifest of manifests) {
-      expect(packageJson.scripts["lint:clippy"]).toContain(`--manifest-path ${manifest}`);
+      expect(packageJson.scripts["lint:clippy"]).toContain(
+        `cargo clippy --locked --manifest-path ${manifest} --all-targets -- -D warnings`,
+      );
       expect(packageJson.scripts["lint:rust"]).toContain(`--manifest-path ${manifest}`);
     }
-    expect(packageJson.scripts["lint:clippy"]).toContain("--locked");
-    expect(packageJson.scripts["lint:clippy"]).toContain("--all-targets");
     const workflow = read(".github/workflows/presto.yml");
     expect(workflow).toContain("bun run lint:rust");
     expect(workflow).toContain("bun run lint:clippy");

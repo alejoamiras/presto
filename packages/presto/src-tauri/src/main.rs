@@ -434,7 +434,8 @@ fn spawn_floor_tracker() {
 
 // ── Desktop bootstrap ────────────────────────────────────────────────────
 // The setup sequence stays explicit because CA-key migration must precede HTTPS, and shared state
-// must be managed before commands, WebDriver windows, or either server can observe it.
+// must be managed before commands or WebDriver windows can observe it (each server receives its own
+// clone of that state directly).
 
 /// Build the tray menu + icon with the static menu-event handler.
 fn build_tray(
