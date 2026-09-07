@@ -196,10 +196,6 @@ fn is_stale_prove_workspace(path: &Path, floor: Duration) -> bool {
             .is_some_and(|age| age >= floor)
 }
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the metric expands tracing fields; the function is one filesystem result match"
-)]
 fn remove_prove_workspace(path: &Path) -> bool {
     match std::fs::remove_dir_all(path) {
         Ok(()) => {
@@ -294,10 +290,6 @@ pub async fn prove(
 
 /// The body of [`prove`], with the timeout injected so tests can drive the timeout/kill path without a
 /// 5-minute wait (the same externalized-`Duration` shape as `bind_with_retry_inner`).
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the linear child/guard/drain teardown order is a process-containment invariant"
-)]
 async fn prove_with_timeout(
     ivc_inputs: &[u8],
     version: Option<&versions::AztecVersion>,
@@ -438,11 +430,15 @@ async fn wait_for_bb(
 }
 
 fn log_bb_stderr(stderr_acc: &DrainAcc) {
-    let guard = stderr_acc.lock().unwrap();
-    let stderr = String::from_utf8_lossy(&guard.0);
+    // Snapshot under the lock; the drain task may still be live and must not block on log I/O.
+    let (retained, total) = {
+        let guard = stderr_acc.lock().unwrap();
+        (guard.0.clone(), guard.1)
+    };
+    let stderr = String::from_utf8_lossy(&retained);
     if !stderr.is_empty() {
         tracing::warn!(
-            stderr_total_bytes = guard.1,
+            stderr_total_bytes = total,
             "bb stderr:\n{}",
             truncate_stderr(&stderr)
         );
