@@ -37,6 +37,9 @@
   0.13 HTTPS path.
 - Desktop compilation initially failed because rcgen 0.14 changed its issuer API. The focused API
   migration above compiled and passed the full desktop suite on the next attempt.
+- PR CI caught a stale headless-tree tripwire that still rejected `tokio-rustls` after reqwest moved
+  to rustls. The guard now permits client TLS while continuing to reject GUI and certificate-serving
+  crates, with a focused contract test.
 
 ## Claude review — round 1
 

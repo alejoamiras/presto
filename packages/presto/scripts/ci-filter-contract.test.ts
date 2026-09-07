@@ -93,6 +93,17 @@ describe("presto CI path routing", () => {
     }
   });
 
+  test("the headless guard permits client rustls but rejects GUI and certificate serving", () => {
+    const guard =
+      workflow.split("      - name: Assert headless tree")[1]?.split("      - name: Launch")[0] ??
+      "";
+    expect(guard).not.toBeEmpty();
+    expect(guard).not.toContain("tokio-rustls");
+    for (const forbidden of ["tauri", "tao ", "wry", "rcgen", "x509-parser", "rustls-pemfile"]) {
+      expect(guard).toContain(forbidden);
+    }
+  });
+
   test("PR Rust caches restore but only refs/heads/main may save", () => {
     const setup = fs.readFileSync(
       path.join(REPO, ".github/actions/setup-presto/action.yml"),
