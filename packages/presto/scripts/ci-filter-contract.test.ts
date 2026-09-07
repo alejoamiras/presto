@@ -74,7 +74,6 @@ describe("presto CI path routing", () => {
         "rust_platform",
         "sdk_integration",
         "updater_feed",
-        "windows_bb",
         "windows_packaging",
       ],
     ],
@@ -140,6 +139,10 @@ describe("presto CI path routing", () => {
     expect(lna).toContain("'.github/workflows/app.yml'");
     expect(lna).not.toContain("'docs/");
     expect(lna).not.toContain("'.github/workflows/**'");
+    // local-network-e2e builds presto-server, so the compiler pin must wake the full App matrix.
+    const relevant =
+      app.split("            relevant:")[1]?.split("            lna_relevant:")[0] ?? "";
+    expect(relevant).toContain("'rust-toolchain.toml'");
   });
 
   test("dependency audit filters only PRs and keeps non-PR entry points", () => {

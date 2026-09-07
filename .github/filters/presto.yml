@@ -165,7 +165,6 @@ windows_bb:
   - 'bun.lock'
   - 'bunfig.toml'
   - '.bun-version'
-  - 'rust-toolchain.toml'
   - '.github/actions/setup-presto/**'
   - '.github/workflows/presto.yml'
   - '.github/filters/presto.yml'
