@@ -209,25 +209,48 @@ fn try_enter(waiters: Arc<Semaphore>) -> Result<OwnedSemaphorePermit, ProveError
         .map_err(|_| ProveError::ProveQueueFull)
 }
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the handler keeps authorization, resource guards, download status, and prove permit order visible"
-)]
 pub(crate) async fn prove(
     State(state): State<AppState>,
     request: Request,
 ) -> Result<impl IntoResponse, ProveError> {
     tracing::info!("Received /prove request");
+    let admitted = admit(&state, request).await?;
+    let prover = acquire_prover(&state, &admitted.requested_version).await?;
 
+    let start = std::time::Instant::now();
+    let result = bb::prove(&admitted.body, prover.version.as_ref(), prover.threads).await;
+    let elapsed = start.elapsed();
+    log_prove_outcome(result.as_ref().map(Vec::len), elapsed);
+
+    let proof = result.map_err(|e| ProveError::ProveFailed(e.to_string()))?;
+    let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &proof);
+    let mut response = axum::Json(json!({ "proof": encoded })).into_response();
+    set_duration_header(&mut response, elapsed);
+    Ok(response)
+}
+
+/// What a scheme handler holds after the shared admission gate. Field order is the drop order:
+/// the tray returns to Idle before the inflight slot is released, exactly as the inlined handler did.
+pub(super) struct Admitted {
+    pub(super) body: Bytes,
+    pub(super) requested_version: Option<String>,
+    _status: StatusGuard,
+    _inflight: OwnedSemaphorePermit,
+}
+
+/// Stage 1 of every prove: authorize → inflight slot → declared-size reject → capped, timed body read
+/// → version header → `Proving`. Nothing here depends on the body's meaning (chonk hands it to bb
+/// verbatim; ultra_honk validates it next) and nothing here touches the download, lease, or permit.
+pub(super) async fn admit(state: &AppState, request: Request) -> Result<Admitted, ProveError> {
     // Extract headers before consuming the request body. Run authorization FIRST
     // so unapproved origins are rejected without buffering the (potentially large) body.
     let (parts, raw_body) = request.into_parts();
-    authorize_origin(&state, &parts.headers).await?;
+    authorize_origin(state, &parts.headers).await?;
 
     // F-009: cap total in-flight + waiting authorized /prove requests. Held (RAII) for the whole
     // request; a burst beyond MAX_INFLIGHT_PROVE is shed immediately with 429 instead of queueing
     // behind slow uploaders and stacking fresh per-request read timeouts.
-    let _inflight = try_enter(state.prove_waiters.clone())?;
+    let inflight = try_enter(state.prove_waiters.clone())?;
 
     // F-009: turn away an honestly-declared oversize body before taking the prove permit.
     reject_declared_oversize(&parts.headers)?;
@@ -243,15 +266,37 @@ pub(crate) async fn prove(
     if let Some(ref cb) = state.on_status {
         cb(ServerStatus::Proving);
     }
-    let _guard = StatusGuard {
+    let status = StatusGuard {
         cb: state.on_status.clone(),
     };
+    Ok(Admitted {
+        body,
+        requested_version,
+        _status: status,
+        _inflight: inflight,
+    })
+}
 
-    // `prove` emits Proving and its guard emits Idle; download_if_needed owns the temporary
-    // Downloading→Proving transition. Version resolution itself remains side-effect free.
-    let resolved = resolve_version(&state, &requested_version)?;
-    download_if_needed(&state, &resolved).await?;
-    let threads = compute_threads(&state);
+/// What is held while bb runs. Field order is the drop order: the prove permit is released before
+/// the version lease, exactly as the inlined handler did.
+pub(super) struct Prover {
+    pub(super) version: Option<versions::AztecVersion>,
+    pub(super) threads: Option<usize>,
+    _permit: OwnedSemaphorePermit,
+    _version_lease: Option<versions::Lease>,
+}
+
+/// Stage 2 of every prove: resolve → download (owning the Downloading→Proving status transition) →
+/// thread cap → version lease → the single prove permit.
+pub(super) async fn acquire_prover(
+    state: &AppState,
+    requested_version: &Option<String>,
+) -> Result<Prover, ProveError> {
+    // Version resolution itself remains side-effect free; download_if_needed owns the temporary
+    // Downloading→Proving transition.
+    let resolved = resolve_version(state, requested_version)?;
+    download_if_needed(state, &resolved).await?;
+    let threads = compute_threads(state);
 
     // Lease the version BEFORE waiting for the prove permit. `bb::prove` leases too, but that is far
     // too late on its own: this request may sit in the permit queue for the length of another proof,
@@ -261,51 +306,56 @@ pub(crate) async fn prove(
     //
     // `None` means a cleanup is deleting this version right now; report unavailable rather than race
     // it. The next request re-downloads.
-    let _version_lease = acquire_version_lease(resolved.version.as_ref())?;
+    let version_lease = acquire_version_lease(resolved.version.as_ref())?;
 
     // A1: acquire the single prove permit ONLY now — around the CPU-bound proof — not across the body
     // read + version download above (which ran concurrently under the inflight cap). bb saturates all
     // cores, so proofs still run strictly one at a time; only the serialized *proving* is gated, not I/O.
-    // Held (RAII) until this function returns.
-    let _permit = state
+    // Held (RAII) until the handler returns.
+    let permit = state
         .prove_semaphore
         .clone()
         .acquire_owned()
         .await
         .map_err(|_| ProveError::ServiceUnavailable)?;
+    Ok(Prover {
+        version: resolved.version,
+        threads,
+        _permit: permit,
+        _version_lease: version_lease,
+    })
+}
 
-    let start = std::time::Instant::now();
-    let result = bb::prove(&body, resolved.version.as_ref(), threads).await;
-    let elapsed = start.elapsed();
-
-    match &result {
-        Ok(proof) => {
-            tracing::info!("Proving succeeded");
-            tracing::debug!(
-                elapsed_ms = elapsed.as_millis() as u64,
-                proof_bytes = proof.len(),
-                "Proving timing and size"
-            );
-        }
-        Err(e) => {
-            tracing::error!("Proving failed: {e}");
-            tracing::debug!(
-                elapsed_ms = elapsed.as_millis() as u64,
-                "Failed prove timing"
-            );
-        }
+fn log_prove_outcome<E: std::fmt::Display>(result: Result<usize, &E>, elapsed: Duration) {
+    match result {
+        Ok(proof_bytes) => log_prove_success(proof_bytes, elapsed),
+        Err(e) => log_prove_failure(e, elapsed),
     }
+}
 
-    let proof = result.map_err(|e| ProveError::ProveFailed(e.to_string()))?;
-    let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &proof);
+fn log_prove_success(proof_bytes: usize, elapsed: Duration) {
+    tracing::info!("Proving succeeded");
+    tracing::debug!(
+        elapsed_ms = elapsed.as_millis() as u64,
+        proof_bytes,
+        "Proving timing and size"
+    );
+}
 
-    let mut response = axum::Json(json!({ "proof": encoded })).into_response();
+fn log_prove_failure(error: &impl std::fmt::Display, elapsed: Duration) {
+    tracing::error!("Proving failed: {error}");
+    tracing::debug!(
+        elapsed_ms = elapsed.as_millis() as u64,
+        "Failed prove timing"
+    );
+}
+
+/// `x-prove-duration-ms` is bb's wall time only — never queue, download, or authorization time.
+pub(super) fn set_duration_header(response: &mut axum::response::Response, elapsed: Duration) {
     response.headers_mut().insert(
         "x-prove-duration-ms",
         HeaderValue::from_str(&elapsed.as_millis().to_string()).unwrap(),
     );
-
-    Ok(response)
 }
 
 fn requested_version(headers: &axum::http::HeaderMap) -> Option<String> {
