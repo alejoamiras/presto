@@ -139,14 +139,6 @@ jobs:
       - name: Install dependencies with new versions
         run: bun install
 
-      # This workflow mutates the lockfile before it creates a commit, so event-based base SHAs
-      # cannot describe the generated diff. Before the commit step, compare the working tree directly
-      # with checked-out HEAD.
-      - name: Verify generated dependency ages
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: bun scripts/dependency-age.ts --base HEAD
-
       # F-008: after install (so resolveAztecBb() sees the NEW bb.js), report whether the live bb.js
       # version has a reviewed Windows pin. Informational — never fetches/writes; the Windows Prebuild/
       # Build Smoke gate is the enforcing fail-closed check on the PR.

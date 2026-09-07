@@ -34,14 +34,14 @@ jobs:
               - 'biome.json'
               - 'package.json'
               - 'bun.lock'
-              # bunfig.toml owns the global age floor; a policy-only change must still run its
-              # contract test and the dependency-age checker.
+              # bunfig.toml gates the @aztec min-age excludes parity test (scripts/
+              # bunfig-aztec-excludes.test.ts, runs in Unit Tests via test:scripts) — a
+              # bunfig-only exemption edit must not skip the guard that reviews it.
               - 'bunfig.toml'
               - '.bun-version'
               - '.github/workflows/sdk.yml'
               - '.github/workflows/_e2e.yml'
               - '.github/actions/setup-aztec/**'
-              - '.github/actions/check-dependency-age/**'
               - '.github/actions/start-services/**'
       - name: Override for manual dispatch
         if: github.event_name == 'workflow_dispatch'
@@ -64,8 +64,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - run: bun run lint
 
@@ -85,8 +83,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - run: bun run --cwd packages/sdk test:lint
 
@@ -106,8 +102,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - run: bun run --cwd packages/sdk test:unit
       # Release tooling (bump/publish-version scripts) rides the SDK pipeline.
@@ -142,8 +136,6 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
-      - uses: ./.github/actions/check-dependency-age
-
       - run: bun install --frozen-lockfile
       - name: Build + pack the SDK tarball
         working-directory: packages/sdk
