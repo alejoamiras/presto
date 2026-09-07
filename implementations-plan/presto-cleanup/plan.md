@@ -16,7 +16,7 @@ Readability is the objective; metric-driven compression is forbidden.
 - [x] Arc 1: first-release exception removal
 - [x] Arc 2: dependency refresh and age enforcement
 - [x] Arc 3: complexity enforcement and readable refactoring
-- [ ] Final cross-arc review and delivery
+- [x] Final cross-arc review and delivery
 
 ## Architecture & Implementation
 
@@ -166,6 +166,9 @@ review for seams, duplication, and drift before opening any PR.
 
 After every arc and the final cross-arc pass converge, initialize/sync the stack, submit the three
 PRs, write accurate PR bodies, run `gh pr checks --watch`, and do not merge automatically.
+
+Delivered as stacked PRs #16, #17, and #18. Claude approved the cumulative implementation and its
+targeted fix pass before the stack was opened.
 
 ## Seed
 

@@ -21,6 +21,8 @@ Session: `0420e2a8-f1e5-4ec9-8db2-ec902ea93258`.
 
 ## Delivery notes
 
+- Opened the reviewed stack as #16 (release baseline), #17 (dependencies), and #18 (complexity).
+  Each PR targets the branch immediately below it; no branch was merged.
 - The regenerated Tauri Linux schema restores upstream `set-accelerator` command names; it is not a
   Presto brand regression.
 - Dependency-age composites intentionally no-op on dispatch-only workflows without a comparison
