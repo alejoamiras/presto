@@ -27,9 +27,16 @@ function mappingEntry(line: string): { indent: number; key: string } | undefined
   return match ? { indent: match[1]?.length ?? 0, key: match[2] ?? "" } : undefined;
 }
 
+function mappingIndent(line: string): number | undefined {
+  const match = line.match(/^(\s*)[A-Za-z_-]+\s*:/);
+  return match?.[1]?.length;
+}
+
 function hasBunVersionFile(lines: string[], start: number, stepIndent: number): boolean {
   const block = stepBlock(lines, start, stepIndent);
-  const mappings = block.map(mappingEntry).filter((entry) => entry !== undefined);
+  const mappings = block
+    .map(mappingEntry)
+    .filter((entry) => entry !== undefined && entry.indent > stepIndent);
   const childIndent = Math.min(...mappings.map((entry) => entry.indent));
   const withIndex = block.findIndex((line) => {
     const entry = mappingEntry(line);
@@ -40,7 +47,11 @@ function hasBunVersionFile(lines: string[], start: number, stepIndent: number): 
   const withBlock = block.slice(withIndex + 1);
   const nextSibling = withBlock.findIndex((line) => mappingEntry(line)?.indent === childIndent);
   const inputs = withBlock.slice(0, nextSibling === -1 ? undefined : nextSibling);
-  return inputs.some((line) => /^\s*bun-version-file\s*:\s*\.bun-version\s*$/.test(line));
+  const inputIndent = inputs.map(mappingIndent).find((indent) => indent !== undefined);
+  return inputs.some((line) => {
+    const pin = line.match(/^(\s*)bun-version-file\s*:\s*\.bun-version\s*$/);
+    return pin?.[1]?.length === inputIndent;
+  });
 }
 
 function setupBunSteps(file: string): Array<{ line: number; pinned: boolean }> {
@@ -85,5 +96,24 @@ describe("bun version pin", () => {
       }
     }
     expect(stepCount, "sweep is vacuous — no setup-bun steps found").toBeGreaterThan(20);
+  });
+
+  test("pin association ignores later jobs and nested block-scalar text", () => {
+    const pinnedLastStep = [
+      "      - uses: oven-sh/setup-bun@sha",
+      "        with:",
+      "          bun-version-file: .bun-version",
+      "  next-job:",
+      "    name:",
+    ];
+    expect(hasBunVersionFile(pinnedLastStep, 0, 6)).toBe(true);
+
+    const nestedImpostor = [
+      "      - uses: oven-sh/setup-bun@sha",
+      "        with:",
+      "          post-run: |",
+      "            bun-version-file: .bun-version",
+    ];
+    expect(hasBunVersionFile(nestedImpostor, 0, 6)).toBe(false);
   });
 });

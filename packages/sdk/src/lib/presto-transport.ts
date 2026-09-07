@@ -371,6 +371,9 @@ interface StreamBuffer {
   emptyChunks: number;
 }
 
+const MAX_EMPTY_STREAM_CHUNKS = 64;
+const INITIAL_STREAM_BUFFER_BYTES = 64 * 1024;
+
 function appendStreamChunk(
   buffer: StreamBuffer,
   chunk: Uint8Array,
@@ -378,7 +381,7 @@ function appendStreamChunk(
 ): "accepted" | "empty" | "rejected" {
   if (chunk.byteLength === 0) {
     buffer.emptyChunks++;
-    return buffer.emptyChunks <= 64 ? "empty" : "rejected";
+    return buffer.emptyChunks <= MAX_EMPTY_STREAM_CHUNKS ? "empty" : "rejected";
   }
   const nextTotal = buffer.total + chunk.byteLength;
   if (nextTotal > maxBytes) return "rejected";
@@ -400,8 +403,9 @@ async function readStreamedText(
   timeoutMs: number,
 ): Promise<string | undefined> {
   const reader = stream.getReader();
+  // One geometrically grown buffer bounds per-chunk object overhead from a hostile dribbling peer.
   const buffer: StreamBuffer = {
-    bytes: new Uint8Array(Math.min(maxBytes, 64 * 1024)),
+    bytes: new Uint8Array(Math.min(maxBytes, INITIAL_STREAM_BUFFER_BYTES)),
     total: 0,
     emptyChunks: 0,
   };
@@ -430,6 +434,7 @@ async function readStreamedText(
   } finally {
     clearTimeout(deadline);
   }
+  // A deadline-cancelled partial body must never be accepted as a complete health response.
   if (timedOut) return undefined;
   return new TextDecoder().decode(buffer.bytes.subarray(0, buffer.total));
 }

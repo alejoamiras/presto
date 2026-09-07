@@ -84,7 +84,7 @@ fn assert_healthy_at(target: &StoredTarget, expect: &Path) {
 )]
 #[expect(
     clippy::too_many_lines,
-    reason = "test bodies are exempt from the function-length limit"
+    reason = "the real-OS lifecycle is clearest as one ordered enable, break, heal, and disable scenario"
 )]
 fn linux_full_lifecycle_enable_break_heal_disable() {
     let home = tempfile::tempdir().expect("temp HOME");

@@ -247,9 +247,8 @@ pub(crate) async fn prove(
         cb: state.on_status.clone(),
     };
 
-    // Resolve (pure: parse + cache check), then OWN the status sequence here (F-08): the whole
-    // Proving→(Downloading→Proving)→Idle machine lives in one function. `resolve_version` no longer
-    // emits status or downloads.
+    // `prove` emits Proving and its guard emits Idle; download_if_needed owns the temporary
+    // Downloading→Proving transition. Version resolution itself remains side-effect free.
     let resolved = resolve_version(&state, &requested_version)?;
     download_if_needed(&state, &resolved).await?;
     let threads = compute_threads(&state);

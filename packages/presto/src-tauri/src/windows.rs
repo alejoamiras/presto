@@ -204,6 +204,7 @@ pub fn open_settings_window(app: &AppHandle) {
 
 /// Open or focus the first-run onboarding wizard (shown once on first launch, and re-openable via the
 /// Settings "Run setup again" action). Single-card layout — see `onboarding.html`.
+#[cfg(not(feature = "webdriver"))]
 pub fn show_onboarding_window(app: &AppHandle) {
     open_or_focus_window(
         app,

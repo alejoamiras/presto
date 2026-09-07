@@ -18,7 +18,7 @@
     "lint": "biome check . && bun run lint:pkg && bun run lint:shell && bun run lint:rust",
     "lint:actions": "actionlint",
     "lint:clippy": "cargo clippy --locked --manifest-path packages/presto/core/Cargo.toml --all-targets -- -D warnings && cargo clippy --locked --manifest-path packages/presto/server/Cargo.toml --all-targets -- -D warnings && cargo clippy --locked --manifest-path packages/presto/src-tauri/Cargo.toml --all-targets -- -D warnings",
-    "lint:fix": "biome check --write . && cd packages/presto/src-tauri && cargo fmt",
+    "lint:fix": "biome check --write . && cargo fmt --manifest-path packages/presto/core/Cargo.toml && cargo fmt --manifest-path packages/presto/server/Cargo.toml && cargo fmt --manifest-path packages/presto/src-tauri/Cargo.toml",
     "lint:pkg": "sort-package-json --check package.json packages/*/package.json",
     "lint:rust": "cargo fmt --check --manifest-path packages/presto/core/Cargo.toml && cargo fmt --check --manifest-path packages/presto/server/Cargo.toml && cargo fmt --check --manifest-path packages/presto/src-tauri/Cargo.toml",
     "lint:shell": "shellcheck packages/*/scripts/*.sh",

@@ -34,3 +34,5 @@ branch-heavy test bodies therefore need the same refactoring or a narrow, reason
 
 Rust exceptions use `#[expect(..., reason = "...")]` on one function. Unlike a blanket `allow`, an
 expectation warns when the function stops violating the rule, making obsolete exceptions visible.
+The compilation-based Clippy gate currently runs on Linux; prepared macOS and Windows jobs compile
+and exercise their platform-specific branches without claiming cross-platform Clippy coverage.

@@ -166,12 +166,14 @@ fn reap_prove_dirs_older_than(parent: &Path, floor: Duration) -> usize {
     let Ok(entries) = std::fs::read_dir(parent) else {
         return 0;
     };
-    entries
-        .flatten()
-        .map(|entry| entry.path())
-        .filter(|path| is_stale_prove_workspace(path, floor))
-        .filter(|path| remove_prove_workspace(path))
-        .count()
+    let mut removed = 0;
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if is_stale_prove_workspace(&path, floor) && remove_prove_workspace(&path) {
+            removed += 1;
+        }
+    }
+    removed
 }
 
 fn is_stale_prove_workspace(path: &Path, floor: Duration) -> bool {
@@ -320,25 +322,12 @@ async fn prove_with_timeout(
     );
 
     let mut cmd = build_prove_command(&bb_path, &workspace, threads)?;
-    // kill_on_drop ensures the DIRECT bb process is killed if the future is cancelled (e.g. client
-    // disconnect, timeout). Without it, an orphaned bb would run to completion wasting CPU while holding
-    // the prove semaphore. B3 (F6): `configure` additionally puts bb in its own process group (Unix) so
-    // the whole TREE — including any process bb forks — can be reaped, and the guard below covers the
-    // exit/restart/update paths `kill_on_drop` cannot.
-    // B3 (F6 + codex r3 H2a): SPAWN and register the child's group ATOMICALLY under the containment lock so
-    // a quit/restart/update (via `terminate_inflight`) — or a cancellation/timeout (via the guard's Drop) —
-    // reaps the whole bb tree, AND so the spawn→contain window is serialized against `begin_quiesce` (no bb
-    // can exist un-tracked while an install confirms nothing is running). Fail-closed: if the child can't be
-    // contained, or an install is quiescing, don't prove.
+    // Spawn and register atomically so quiescing never observes an untracked bb process tree.
     let (mut child, guard) = containment::spawn_and_register(&mut cmd)?;
-    // B3 (F4): drain stderr CAP-and-CONTINUE in a CONCURRENT TASK so the pipe never fills (bb would block
-    // writing) — and, importantly, so `child.wait()` (which does NOT depend on stderr EOF) can clear the
-    // containment registration the instant bb exits rather than after the drain. Without that split, a
-    // grandchild that inherits and holds the stderr pipe would keep the drain — and thus the now-stale
-    // pgid — alive for the whole timeout (codex M4). `wait_with_output()` also buffered ALL of stderr in
-    // memory up to the timeout; the retain cap bounds that.
+    // Drain stderr concurrently so a full pipe cannot block bb and a grandchild holding the pipe open
+    // cannot delay clearing the containment registration after bb exits.
     let stderr_pipe = child.stderr.take().expect("spawn captures stderr");
-    // codex r3 M4b: the drain writes into a SHARED accumulator so the partial stderr survives an abort.
+    // The shared accumulator preserves partial stderr when the drain task is aborted.
     let stderr_acc: DrainAcc = std::sync::Arc::new(std::sync::Mutex::new((Vec::new(), 0)));
     let mut drain = AbortingDrain(tokio::spawn(drain_capped_into(
         stderr_pipe,
@@ -346,26 +335,21 @@ async fn prove_with_timeout(
         stderr_acc.clone(),
     )));
 
+    // `?` here drops `guard`, which reaps the whole bb tree on timeout or wait failure.
     let status = wait_for_bb(&mut child, timeout).await?;
-    // bb has EXITED (reaped by child.wait()). Finish the guard IMMEDIATELY — before the stderr drain
-    // necessarily finishes — so the pgid can't go stale while a lingering pipe-holder keeps draining. On
-    // Unix `finish()` SIGKILLs the group first (reaping any child bb orphaned before we clear the registry —
-    // codex r2 M4a) then clears; that kill is also what makes the drain above EOF promptly.
+    // Finish containment before waiting for stderr EOF so a lingering pipe holder cannot leave a stale
+    // process-group registration. On Unix, finish kills the group before clearing the registry.
     guard.finish();
 
     // Wait (bounded) for the concurrent drain to finish: `finish()` above SIGKILLed the group, so any
-    // grandchild holding the pipe open is now dead and stderr EOFs promptly — the 2s bound is a backstop,
-    // not the expected path. Whether it completes or times out, the retained bytes are in `stderr_acc`
-    // (codex r3 M4b), and `drain` drops + aborts the task on the way out / on any early return.
+    // grandchild holding the pipe open is now dead and stderr EOFs promptly. The two-second bound is a
+    // backstop; partial retained bytes survive in `stderr_acc` if `drain` must abort.
     let _ = tokio::time::timeout(Duration::from_secs(2), &mut drain.0).await;
     log_bb_stderr(&stderr_acc);
     require_success(status)?;
 
-    // B3 (F5): validate the proof output before trusting it. Exit-code success was the ONLY gate, so an
-    // empty or truncated `proof` file produced a "successful" response (a 0-byte proof → a 4-byte
-    // header-only body; a non-32-aligned file → silently floor-divided). Read through a capped reader in a
-    // SINGLE open (no metadata-then-read TOCTOU — codex M5): at most MAX_PROOF_BYTES+1 bytes, so an
-    // oversized file reads as MAX+1 and is rejected. Then validate the ACTUAL bytes read.
+    // Exit success is insufficient: read once through a cap, then reject empty, oversized, or
+    // non-field-aligned proof bytes without a metadata/read race.
     let proof_path = workspace.output_dir.join("proof");
     let raw_proof = read_capped(&proof_path, MAX_PROOF_BYTES)?;
     validate_proof_len(raw_proof.len() as u64)?;
@@ -434,6 +418,7 @@ fn build_prove_command(
         // bb controls worker count through this variable; `-t` now selects a verifier target.
         command.env("HARDWARE_CONCURRENCY", threads.to_string());
     }
+    // Direct-child cancellation plus a process group gives the containment guard whole-tree cleanup.
     command.kill_on_drop(true);
     containment::configure(&mut command);
     Ok(command)

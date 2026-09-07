@@ -68,7 +68,6 @@ describe("complexity policy", () => {
     }
     expect(packageJson.scripts["lint:clippy"]).toContain("--locked");
     expect(packageJson.scripts["lint:clippy"]).toContain("--all-targets");
-
     const workflow = read(".github/workflows/presto.yml");
     expect(workflow).toContain("bun run lint:rust");
     expect(workflow).toContain("bun run lint:clippy");

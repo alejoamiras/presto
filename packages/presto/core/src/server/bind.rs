@@ -19,6 +19,10 @@ pub async fn bind_with_retry(addr: SocketAddr) -> std::io::Result<TcpListener> {
 
 /// Inner form with injectable timings so tests can exercise the wait-it-out,
 /// hard-deadline, and immediate-propagation paths without real-time sleeps.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "the hard-deadline and one-time-warning branches are the complete retry policy"
+)]
 async fn bind_with_retry_inner(
     addr: SocketAddr,
     interval: Duration,
@@ -30,44 +34,28 @@ async fn bind_with_retry_inner(
         match TcpListener::bind(addr).await {
             Ok(listener) => return Ok(listener),
             Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                wait_for_port_release(addr, interval, max_wait, deadline, &mut warned, e).await?;
+                // Sleep only the time actually left so the retry never overshoots its hard deadline.
+                let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+                if remaining.is_zero() {
+                    tracing::warn!(
+                        "port {} still in use after {max_wait:?} — giving up",
+                        addr.port()
+                    );
+                    return Err(e);
+                }
+                if !warned {
+                    tracing::warn!(
+                        "port {} in use — retrying for up to {max_wait:?} (waiting out an updater restart)",
+                        addr.port()
+                    );
+                    warned = true;
+                }
+                tokio::time::sleep(interval.min(remaining)).await;
             }
             // Any non-AddrInUse error propagates immediately — never masked by the retry.
             Err(e) => return Err(e),
         }
     }
-}
-
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the hard-deadline and one-time-warning branches are the complete retry policy"
-)]
-async fn wait_for_port_release(
-    addr: SocketAddr,
-    interval: Duration,
-    max_wait: Duration,
-    deadline: std::time::Instant,
-    warned: &mut bool,
-    error: std::io::Error,
-) -> std::io::Result<()> {
-    // Sleep only the time actually left so the retry never overshoots its hard deadline.
-    let remaining = deadline.saturating_duration_since(std::time::Instant::now());
-    if remaining.is_zero() {
-        tracing::warn!(
-            "port {} still in use after {max_wait:?} — giving up",
-            addr.port()
-        );
-        return Err(error);
-    }
-    if !*warned {
-        tracing::warn!(
-            "port {} in use — retrying for up to {max_wait:?} (waiting out an updater restart)",
-            addr.port()
-        );
-        *warned = true;
-    }
-    tokio::time::sleep(interval.min(remaining)).await;
-    Ok(())
 }
 
 #[cfg(test)]

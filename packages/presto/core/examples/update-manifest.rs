@@ -89,7 +89,8 @@ fn verify_feed(args: &[String]) -> ExitCode {
     if platforms.is_empty() {
         die("feed has no platforms to verify".into());
     }
-    let all_valid = platforms.iter().all(|(target, platform)| {
+    let mut all_valid = true;
+    for (target, platform) in platforms {
         let url = platform["url"].as_str().unwrap_or_default();
         let signature = platform["signature"].as_str().unwrap_or_default();
         match verify_manifest(&feed, pubkey.trim(), version, url, signature) {
@@ -98,14 +99,13 @@ fn verify_feed(args: &[String]) -> ExitCode {
                     "OK  {target}: v{} ({} bytes)",
                     verified.version, verified.size
                 );
-                true
             }
             Err(error) => {
                 eprintln!("FAIL {target}: {error}");
-                false
+                all_valid = false;
             }
         }
-    });
+    }
     if !all_valid {
         return ExitCode::from(1);
     }

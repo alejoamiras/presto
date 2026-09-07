@@ -70,8 +70,7 @@ fn open_in_browser(target: &impl AsRef<Path>) {
 
 // ── HTTPS startup ────────────────────────────────────────────────────────
 
-/// q7e3-F-01: the launch-time HTTPS gate as a pure value, lifted out of `try_start_https` so the
-/// reset-vs-skip asymmetry (the audit's most-fragile point) is unit-testable with zero mocks.
+/// Pure launch-time HTTPS gate, separated so reset-vs-skip behavior is testable without mocks.
 #[derive(Debug, PartialEq, Eq)]
 enum LaunchHttpsGate {
     /// HTTPS is off — do nothing.
@@ -109,7 +108,7 @@ fn classify_launch_https(
 /// **Must be called while holding the HTTPS lifecycle lock.** Every cert read and write in here —
 /// `certs_exist`, `is_ca_trusted`, the rotation's `swap_into`, the TLS load — has to be serialized
 /// against the enable and renewal paths, or launch can observe a MIXED new-leaf/old-key set mid-swap
-/// and then reset `https_enabled` over an enable that just succeeded (post-impl codex Medium).
+/// and then reset `https_enabled` over an enable that just succeeded.
 /// `None` ⇒ don't start a listener.
 #[expect(
     clippy::cognitive_complexity,
@@ -119,10 +118,10 @@ fn prepare_launch_https(
     state: &AppState,
 ) -> Option<std::sync::Arc<tokio_rustls::rustls::ServerConfig>> {
     let cfg = config::load();
-    // q7e3-F-01: the pre-load gate is a tested pure classifier; the load-failure reset stays below
+    // The pre-load gate is a tested pure classifier; the load-failure reset stays below
     // (it depends on load_rustls_config's Result, not on these three booleans).
     //
-    // Linux (plan R3): trust is inherently per-browser/partial, and a bound-but-untrusted loopback
+    // Linux trust is inherently per-browser/partial, and a bound-but-untrusted loopback
     // listener is harmless — browsers fast-fail the HTTPS probe and the SDK falls back to HTTP. So
     // serve whenever certs are valid, decoupled from trust (which the *wizard* still checks). macOS
     // and Windows keep the verify-trust gate (they'd otherwise present an untrusted cert with a real
@@ -148,7 +147,7 @@ fn prepare_launch_https(
     // Pre-expiry renewal (§7). Linux: SILENT rotation (user NSS needs no prompt) done BEFORE loading +
     // binding the TLS config, so the FRESH leaf is what we serve. Doing it after the bind left the
     // acceptor holding the OLD leaf for the whole session — a long-running tray app would eventually
-    // serve an EXPIRED cert (post-impl codex Medium). macOS/Windows do NOT rotate here — the setup
+    // serve an EXPIRED cert. macOS/Windows do NOT rotate here — the setup
     // closure surfaces a renewal *consent window* instead of a surprise background OS trust prompt.
     #[cfg(target_os = "linux")]
     if let Err(e) = certs::regenerate_leaf_if_expiring() {
@@ -172,7 +171,7 @@ fn prepare_launch_https(
 ///
 /// Runs entirely off the setup thread. It **waits** for the HTTPS lifecycle lock rather than standing
 /// down on a failed try-lock: renewal can own that lock without ever binding a listener, so standing
-/// down would leave HTTPS unstarted for the whole session (post-impl codex Medium). After acquiring
+/// down would leave HTTPS unstarted for the whole session. After acquiring
 /// it, re-check `https_bound` — an enable path may have completed the entire bring-up while we waited.
 /// The blocking cert work then runs on a blocking thread so it never occupies an async worker.
 #[expect(
@@ -564,7 +563,7 @@ fn status_callback(
     })
 }
 
-/// Remove the local CA from every trust store without starting the GUI.
+/// Print per-store results for NSIS and fail its uninstall hook if CA removal is incomplete.
 fn handle_remove_ca_trust() -> bool {
     if !std::env::args().any(|arg| arg == "--remove-ca-trust") {
         return false;
@@ -588,7 +587,7 @@ fn handle_remove_ca_trust() -> bool {
     true
 }
 
-/// Run the ownership-checked teardown while the executable still exists.
+/// Print ownership-checked teardown results for NSIS and fail its hook if cleanup is incomplete.
 fn handle_prepare_uninstall() -> bool {
     if !std::env::args().any(|arg| arg == "--prepare-uninstall") {
         return false;
@@ -678,9 +677,12 @@ fn initialize_logging() -> tracing_appender::non_blocking::WorkerGuard {
     guard
 }
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "marker reconciliation must precede both healing and intent-keyed recovery rearming"
+#[cfg_attr(
+    not(feature = "webdriver"),
+    expect(
+        clippy::cognitive_complexity,
+        reason = "marker reconciliation must precede both healing and intent-keyed recovery rearming"
+    )
 )]
 fn reconcile_startup_autostart(app: &tauri::AppHandle) {
     if !presto::autostart::startup_reconcile() {
@@ -728,9 +730,9 @@ fn report_missing_bb(
     let _ = tray_icon.set_tooltip(Some("Warning: bb not found"));
 }
 
-fn show_startup_windows(app: &tauri::AppHandle, config_state: &ConfigState) {
+fn show_startup_windows(app: &tauri::AppHandle, _config_state: &ConfigState) {
     #[cfg(not(feature = "webdriver"))]
-    if config_state.read().onboarding_version < config::ONBOARDING_VERSION {
+    if _config_state.read().onboarding_version < config::ONBOARDING_VERSION {
         windows::show_onboarding_window(app);
     }
     #[cfg(all(
@@ -809,7 +811,7 @@ fn setup_desktop(
         auth_manager,
     );
     spawn_launch_https(&state);
-    // Commands and WebDriver windows must observe this state before either server is started.
+    // Commands and WebDriver windows must not run before the shared state is managed.
     app.manage::<SharedAppState>(Arc::new(state.clone()));
     report_missing_bb(&diagnostic_status, &diagnostic_tray);
     show_startup_windows(app.handle(), config_state);
@@ -824,6 +826,13 @@ fn setup_desktop(
     Ok(())
 }
 
+#[cfg_attr(
+    feature = "webdriver",
+    expect(
+        clippy::cognitive_complexity,
+        reason = "webdriver adds one compile-time plugin-registration branch to the startup sequence"
+    )
+)]
 fn main() {
     if handle_remove_ca_trust() || handle_prepare_uninstall() {
         return;
@@ -955,8 +964,7 @@ mod tests {
         assert_eq!(contents.lines().count(), 2, "one line per panic");
     }
 
-    // q7e3-F-01 characterization (test-FIRST): the launch HTTPS gate's four outcomes + the
-    // reset-vs-skip asymmetry + both short-circuits (panicking thunks prove the unevaluated checks).
+    // The four outcomes pin reset-vs-skip behavior; panicking thunks prove both short-circuits.
     #[test]
     fn launch_gate_disabled_short_circuits_everything() {
         assert_eq!(
@@ -984,7 +992,7 @@ mod tests {
 
     #[test]
     fn launch_gate_untrusted_skips_without_reset() {
-        // certs present but untrusted → SKIP, NOT reset (the asymmetry the audit flagged as fragile).
+        // Certs present but untrusted preserve the user's opt-in rather than resetting it.
         assert_eq!(
             classify_launch_https(true, || true, || false),
             LaunchHttpsGate::UntrustedSkip

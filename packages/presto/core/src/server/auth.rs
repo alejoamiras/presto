@@ -86,9 +86,11 @@ async fn request_authorization(
         .request(origin)
         .map_err(|error| map_request_error(origin, error))?;
 
-    if let (true, Some(show_popup)) = (is_first, state.show_auth_popup.as_ref()) {
-        // The popup arms its deadline when the request becomes active, not while it waits in the queue.
-        show_popup(origin, &request_id);
+    if is_first {
+        if let Some(show_popup) = state.show_auth_popup.as_ref() {
+            // The popup arms its deadline when the request becomes active, not while it waits in the queue.
+            show_popup(origin, &request_id);
+        }
     }
 
     // C9 (D18): wait up to the QUEUE BACKSTOP, not 60 s-from-enqueue. The real per-popup 60 s deadline is
@@ -130,15 +132,8 @@ fn persist_approved_origin(state: &AppState, origin: CanonicalOrigin) -> Result<
     // Unconditional: there is no ephemeral Allow any more. The popup discloses that approving
     // is permanent, so this write IS the thing the user consented to.
     if let Some(ref store) = state.config {
-        // q7e3-F-13: shared core helper; the closure's bool keeps the conditional save (only
-        // when the origin is new) — no always-write on the piggyback-Allow path. Warn-and-
-        // continue on save failure (a config-write error must NOT fail an approved prove).
-        // NOTE this is why the popup copy says "stays approved until you remove it in
-        // Settings" rather than promising the write succeeded: if it fails the user is asked
-        // again, which is safer than promised, never less safe.
-        // B4: persist only with the capability — a config written by a NEWER build yields none, so
-        // an older app must not overwrite it (the approval simply isn't remembered; the user is
-        // re-asked next time — safer, per the popup copy, never less safe).
+        // Save only a new origin, and never fail an approved proof because persistence failed.
+        // A capability prevents an older app from overwriting a config written by a newer build.
         match store.cap.as_ref() {
             Some(cap) => {
                 if let Err(e) = config::lock_mutate_save_to(

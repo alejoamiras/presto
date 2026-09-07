@@ -602,6 +602,7 @@ interface TokenFlowContext {
 }
 
 async function resolveBob(context: TokenFlowContext): Promise<AztecAddress> {
+  // Registered addresses can be imported; only session accounts have usable entrypoint notes here.
   const existing = state.sessionAddresses.find((address) => !address.equals(context.alice));
   if (existing) return existing;
 

@@ -583,7 +583,8 @@ export class PrestoProver extends BBLazyPrivateKernelProver {
     const retryUrl = attempt.httpRetryUrl;
     if (!retryUrl || !this.#transport.allowsHttpDowngrade) {
       logger.warn(
-        "HTTPS /prove failed after this presto proved HTTPS health; refusing plaintext retry",
+        "HTTPS /prove failed after this presto proved HTTPS health; refusing plaintext retry. " +
+          "Set presto.allowInsecureDowngrade or PRESTO_ALLOW_INSECURE_DOWNGRADE=1 to allow it.",
       );
       return this.#fallbackToWasm(executionSteps, "Local proof completed after transport failure");
     }
