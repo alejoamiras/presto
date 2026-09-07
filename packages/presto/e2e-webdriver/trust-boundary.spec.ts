@@ -114,6 +114,7 @@ async function waitForNewWindow(existing: string[]): Promise<string | null> {
   return null;
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("Trust boundary (F-012)", () => {
   let settingsHandle: string;
 

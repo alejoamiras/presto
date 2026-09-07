@@ -108,6 +108,50 @@ export function isBrowserRuntime(): boolean {
   return typeof workerGlobalScope === "function" && globalThis instanceof workerGlobalScope;
 }
 
+interface ResolvedPrestoConfig {
+  host: string;
+  port: number;
+  httpsPort: number;
+  httpsOnly: boolean;
+  allowInsecureDowngrade: boolean;
+}
+
+interface RemoteProofAttempt {
+  generation: number;
+  url: string;
+  wasHttps: boolean;
+  httpRetryUrl: string | null;
+  payload: Uint8Array<ArrayBuffer>;
+  aztecVersion: string | undefined;
+  startedAt: number;
+}
+
+function parsePort(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isNaN(parsed) ? fallback : parsed;
+}
+
+function resolvePrestoConfig(options: PrestoProverOptions): ResolvedPrestoConfig {
+  const configured = options.presto ?? {};
+  const environment = typeof process === "undefined" ? undefined : process.env;
+  return {
+    host: configured.host ?? DEFAULT_PRESTO_HOST,
+    port: configured.port ?? parsePort(environment?.PRESTO_PORT, DEFAULT_PRESTO_PORT),
+    httpsPort:
+      configured.httpsPort ?? parsePort(environment?.PRESTO_HTTPS_PORT, DEFAULT_PRESTO_HTTPS_PORT),
+    httpsOnly: resolveHttpsOnly(
+      configured.httpsOnly,
+      environment?.PRESTO_HTTPS_ONLY,
+      isBrowserRuntime(),
+    ),
+    allowInsecureDowngrade:
+      configured.allowInsecureDowngrade ??
+      parseOptionalBooleanEnv(environment?.PRESTO_ALLOW_INSECURE_DOWNGRADE) ??
+      false,
+  };
+}
+
 /**
  * Aztec private kernel prover that routes proving to a local native presto
  * running `bb` on the user's machine through a validated loopback endpoint. Browser proving uses
@@ -136,52 +180,14 @@ export class PrestoProver extends BBLazyPrivateKernelProver {
   constructor(options?: PrestoProverOptions) {
     const opts = options ?? {};
     super(opts.simulator ?? createLazySimulator());
-
-    if (opts.onPhase) this.#onPhase = opts.onPhase;
-
-    // Initialize with undefined to defer to env/defaults below
-    let port: number | undefined;
-    let httpsPort: number | undefined;
-    let host: string | undefined;
-    let httpsOnly: boolean | undefined;
-    let allowInsecureDowngrade: boolean | undefined;
-
-    if (opts.presto) {
-      if (opts.presto.port !== undefined) port = opts.presto.port;
-      if (opts.presto.httpsPort !== undefined) httpsPort = opts.presto.httpsPort;
-      if (opts.presto.host !== undefined) host = opts.presto.host;
-      if (opts.presto.httpsOnly !== undefined) httpsOnly = opts.presto.httpsOnly;
-      if (opts.presto.allowInsecureDowngrade !== undefined)
-        allowInsecureDowngrade = opts.presto.allowInsecureDowngrade;
-    }
-
-    const envPort = typeof process !== "undefined" ? process.env?.PRESTO_PORT : undefined;
-    const envHttpsPort =
-      typeof process !== "undefined" ? process.env?.PRESTO_HTTPS_PORT : undefined;
-    const envHttpsOnly =
-      typeof process !== "undefined" ? process.env?.PRESTO_HTTPS_ONLY : undefined;
-    const envAllowDowngrade =
-      typeof process !== "undefined" ? process.env?.PRESTO_ALLOW_INSECURE_DOWNGRADE : undefined;
-
-    const parsedPort = envPort ? Number.parseInt(envPort, 10) : NaN;
-    const parsedHttpsPort = envHttpsPort ? Number.parseInt(envHttpsPort, 10) : NaN;
-    const resolvedPort = port ?? (Number.isNaN(parsedPort) ? DEFAULT_PRESTO_PORT : parsedPort);
-    const resolvedHttpsPort =
-      httpsPort ?? (Number.isNaN(parsedHttpsPort) ? DEFAULT_PRESTO_HTTPS_PORT : parsedHttpsPort);
-    const resolvedHost = host ?? DEFAULT_PRESTO_HOST;
-    // Browser proving is encrypted by default. Server runtimes retain HTTP compatibility for the
-    // TLS-free headless presto. Explicit option > environment > runtime default.
-    const resolvedHttpsOnly = resolveHttpsOnly(httpsOnly, envHttpsOnly, isBrowserRuntime());
-    // F-01: plaintext retry remains off unless explicitly asked for by option or environment.
-    const resolvedAllowDowngrade =
-      allowInsecureDowngrade ??
-      (envAllowDowngrade === "1" || envAllowDowngrade?.toLowerCase() === "true");
+    this.#onPhase = opts.onPhase ?? null;
+    const config = resolvePrestoConfig(opts);
     this.#transport = new PrestoTransport(
-      resolvedHost,
-      resolvedPort,
-      resolvedHttpsPort,
-      resolvedHttpsOnly,
-      resolvedAllowDowngrade,
+      config.host,
+      config.port,
+      config.httpsPort,
+      config.httpsOnly,
+      config.allowInsecureDowngrade,
     );
   }
 
@@ -508,118 +514,21 @@ export class PrestoProver extends BBLazyPrivateKernelProver {
       return this.#fallbackToWasm(executionSteps, "Local proof completed after endpoint change");
     }
 
-    const start = performance.now();
+    const attempt: RemoteProofAttempt = {
+      generation: attemptGen,
+      url: attemptUrl,
+      wasHttps: attemptWasHttps,
+      httpRetryUrl,
+      payload: Uint8Array.from(msgpack),
+      aztecVersion,
+      startedAt: performance.now(),
+    };
     let res: Response;
     try {
-      res = await this.#transport.postProve(new Uint8Array(msgpack), aztecVersion, attemptUrl);
+      res = await this.#transport.postProve(attempt.payload, attempt.aztecVersion, attempt.url);
     } catch (err) {
-      // Network-level failure: no HTTP response at all (TLS handshake/cert failure, connection
-      // refused, timeout). The HTTPS listener/trust may have changed since /health pinned it.
-      if (!(err instanceof TransportHttpError)) {
-        // The endpoint was reconfigured while this proof was in flight — do NOT touch the new endpoint
-        // (don't demote its pin, don't POST the witness to it). Degrade to WASM (codex High).
-        if (this.#transport.generation !== attemptGen) {
-          logger.warn("Endpoint reconfigured during a failing proof; falling back to WASM", {
-            error: String(err),
-          });
-          return this.#fallbackToWasm(
-            executionSteps,
-            "Local proof completed after endpoint change",
-          );
-        }
-        // This request went over HTTPS with plaintext proving explicitly permitted → the HTTP endpoint
-        // may still be healthy.
-        // Retry THIS request explicitly over HTTP (independent of the shared pin, so a concurrent
-        // failure that already cleared the pin doesn't stop us). `demoteHttpsPin()` only hints FUTURE
-        // probes to re-check; the retry itself targets the http URL for this attempt's generation.
-        // `httpRetryUrl` is non-null exactly when this attempt went over HTTPS with downgrade consent —
-        // guarding on it (rather than re-deriving the condition) also narrows the type.
-        if (httpRetryUrl) {
-          // F-01: a healthy HTTPS presto answered at this endpoint, so a network-layer failure
-          // is not a reason to hand the same private witness to whatever is on the plaintext port.
-          // The `isProtocolHealthy` check below is the `/health` SHAPE contract, not authentication —
-          // any local account can bind 127.0.0.1:59833 and satisfy it. WASM is the safe outcome.
-          if (!this.#transport.allowsHttpDowngrade) {
-            logger.warn(
-              "HTTPS /prove failed, but this presto was reachable over HTTPS — refusing to " +
-                "retry over plaintext HTTP; falling back to WASM. Set " +
-                "`presto.allowInsecureDowngrade` (or PRESTO_ALLOW_INSECURE_DOWNGRADE=1) " +
-                "to allow it.",
-            );
-            return this.#fallbackToWasm(
-              executionSteps,
-              "Local proof completed after transport failure",
-            );
-          }
-          this.#transport.demoteHttpsPin();
-          // VALIDATE the HTTP endpoint before sending it the witness. A healthy HTTPS probe says
-          // nothing about who is listening on the HTTP port; without this check a foreign responder
-          // there receives the serialized witness the instant HTTPS fails (post-impl codex Critical).
-          // Re-check the generation too, since this probe is another await point.
-          const httpIsOurs = await this.#transport.isProtocolHealthy("http");
-          if (!httpIsOurs || this.#transport.generation !== attemptGen) {
-            logger.warn(
-              "HTTPS /prove failed, but the HTTP endpoint did not answer the presto's health " +
-                "contract — refusing to downgrade; falling back to WASM",
-            );
-            return this.#fallbackToWasm(
-              executionSteps,
-              "Local proof completed after transport failure",
-            );
-          }
-          logger.warn(
-            "HTTPS /prove failed at the network layer; retrying once over validated HTTP",
-            {
-              error: String(err),
-            },
-          );
-          try {
-            // The SNAPSHOT http url (captured at attempt entry), not a freshly-derived one — the
-            // retry must target the same endpoint this attempt probed, never a reconfigured host/port.
-            res = await this.#transport.postProve(
-              new Uint8Array(msgpack),
-              aztecVersion,
-              httpRetryUrl,
-            );
-            // `return await`, not a bare `return`: without the await the promise escapes this
-            // try/catch, so a rejected body read (over-cap, stalled, malformed — F-11) would never
-            // reach the fallback handling below and would surface to the dApp instead of degrading
-            // to WASM. The sibling call on the non-retry path already awaited; this one did not.
-            return await this.#decodeProof(res, start);
-          } catch (retryErr) {
-            // A network-level retry failure (no HTTP response) still degrades to WASM; an HTTP error the
-            // presto returned goes through the SAME F14 classifier as the primary path — so a
-            // misconfiguration surfaced only on the HTTP retry is not silently masked either.
-            if (!(retryErr instanceof TransportHttpError)) {
-              logger.warn("HTTP retry failed at the network layer, falling back to WASM", {
-                error: String(retryErr),
-              });
-              return this.#fallbackToWasm(
-                executionSteps,
-                "Local proof completed after transport failure",
-              );
-            }
-            return this.#fallbackOrThrowHttp(retryErr, executionSteps);
-          }
-        }
-        // HTTPS-only (never retry plaintext), OR the attempt was already HTTP (nothing better to
-        // try): degrade to WASM rather than failing the dApp.
-        logger.warn("Local presto /prove failed at the network layer, falling back to WASM", {
-          error: String(err),
-          httpsOnly: this.#transport.httpsOnly,
-        });
-        if (attemptWasHttps && this.#transport.requiresSecureConnection) {
-          this.#onPhase?.("secure-connection-unavailable");
-        }
-        return this.#fallbackToWasm(
-          executionSteps,
-          "Local proof completed after transport failure",
-        );
-      }
-      // The presto ANSWERED with a non-2xx — F14: recognised conditions degrade to WASM, a
-      // caller misconfiguration / unrecognised status throws a typed `PrestoHttpError` (never the
-      // internal transport error, which is not part of the SDK's public surface).
-      return this.#fallbackOrThrowHttp(err, executionSteps);
+      if (err instanceof TransportHttpError) return this.#fallbackOrThrowHttp(err, executionSteps);
+      return this.#recoverFromNetworkFailure(err, executionSteps, attempt);
     }
 
     // Decode OUTSIDE the transport try/catch — a decode failure is not a transport failure and must
@@ -629,7 +538,7 @@ export class PrestoProver extends BBLazyPrivateKernelProver {
     // response to break the dApp on the primary path and be absorbed on the retry (post-impl codex
     // Medium). Nothing about a 200 with an undecodable body says WASM can't finish the proof.
     try {
-      return await this.#decodeProof(res, start);
+      return await this.#decodeProof(res, attempt.startedAt);
     } catch (decodeErr) {
       logger.warn("Presto returned a proof that could not be decoded, falling back to WASM", {
         error: String(decodeErr),
@@ -638,6 +547,77 @@ export class PrestoProver extends BBLazyPrivateKernelProver {
         executionSteps,
         "Local proof completed after a malformed response",
       );
+    }
+  }
+
+  async #recoverFromNetworkFailure(
+    error: unknown,
+    executionSteps: PrivateExecutionStep[],
+    attempt: RemoteProofAttempt,
+  ): Promise<ChonkProofWithPublicInputs> {
+    if (this.#transport.generation !== attempt.generation) {
+      logger.warn("Endpoint reconfigured during a failing proof; falling back to WASM", {
+        error: String(error),
+      });
+      return this.#fallbackToWasm(executionSteps, "Local proof completed after endpoint change");
+    }
+    if (attempt.httpRetryUrl) {
+      return this.#retryProofOverHttp(error, executionSteps, attempt);
+    }
+
+    logger.warn("Local presto /prove failed at the network layer, falling back to WASM", {
+      error: String(error),
+      httpsOnly: this.#transport.httpsOnly,
+    });
+    if (attempt.wasHttps && this.#transport.requiresSecureConnection) {
+      this.#onPhase?.("secure-connection-unavailable");
+    }
+    return this.#fallbackToWasm(executionSteps, "Local proof completed after transport failure");
+  }
+
+  async #retryProofOverHttp(
+    originalError: unknown,
+    executionSteps: PrivateExecutionStep[],
+    attempt: RemoteProofAttempt,
+  ): Promise<ChonkProofWithPublicInputs> {
+    const retryUrl = attempt.httpRetryUrl;
+    if (!retryUrl || !this.#transport.allowsHttpDowngrade) {
+      logger.warn(
+        "HTTPS /prove failed after this presto proved HTTPS health; refusing plaintext retry",
+      );
+      return this.#fallbackToWasm(executionSteps, "Local proof completed after transport failure");
+    }
+
+    this.#transport.demoteHttpsPin();
+    // The health shape is not authentication, but explicit downgrade consent still requires proving
+    // that the plaintext port speaks Presto before it receives the witness.
+    const httpIsOurs = await this.#transport.isProtocolHealthy("http");
+    if (!httpIsOurs || this.#transport.generation !== attempt.generation) {
+      logger.warn(
+        "HTTPS /prove failed, but HTTP did not answer the presto health contract; refusing downgrade",
+      );
+      return this.#fallbackToWasm(executionSteps, "Local proof completed after transport failure");
+    }
+
+    logger.warn("HTTPS /prove failed at the network layer; retrying once over validated HTTP", {
+      error: String(originalError),
+    });
+    try {
+      const response = await this.#transport.postProve(
+        attempt.payload,
+        attempt.aztecVersion,
+        retryUrl,
+      );
+      // Await inside this try so body-read failures follow the same fallback path as POST failures.
+      return await this.#decodeProof(response, attempt.startedAt);
+    } catch (error) {
+      if (error instanceof TransportHttpError) {
+        return this.#fallbackOrThrowHttp(error, executionSteps);
+      }
+      logger.warn("HTTP retry failed at the network layer, falling back to WASM", {
+        error: String(error),
+      });
+      return this.#fallbackToWasm(executionSteps, "Local proof completed after transport failure");
     }
   }
 

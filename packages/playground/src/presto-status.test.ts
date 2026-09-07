@@ -64,6 +64,7 @@ describe("prestoStatusView", () => {
   });
 });
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("PrestoStatusController", () => {
   test("a stale result cannot overwrite a newer forced refresh", async () => {
     let resolveFirst!: (status: PrestoStatus) => void;

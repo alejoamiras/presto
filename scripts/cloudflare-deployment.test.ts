@@ -10,7 +10,7 @@ describe("Cloudflare deployment contract", () => {
     const landing = read(".github/workflows/deploy-landing.yml");
     const sdk = read(".github/workflows/release-sdk.yml");
     expect(landing).toContain("wrangler deploy --config packages/landing/wrangler.jsonc");
-    expect(sdk).toContain("AZTEC_NODE_URL: ${{ secrets.TESTNET_AZTEC_NODE_URL }}");
+    expect(sdk).toContain(["AZTEC_NODE_URL: $", "{{ secrets.TESTNET_AZTEC_NODE_URL }}"].join(""));
     expect(sdk).toContain("wrangler deploy --config packages/playground/wrangler.jsonc");
     expect(`${landing}\n${sdk}`).not.toMatch(/aws-actions|aws s3|cloudfront/i);
 
@@ -24,9 +24,7 @@ describe("Cloudflare deployment contract", () => {
 
   test("only the promote workflow writes the exact verified feed bytes to production KV", () => {
     const release = read(".github/workflows/release-presto.yml");
-    expect(release).toContain(
-      "wrangler kv key put latest.json --path feed/latest.json --remote",
-    );
+    expect(release).toContain("wrangler kv key put latest.json --path feed/latest.json --remote");
     expect(release.match(/wrangler kv key put/g)).toHaveLength(1);
     expect(release).toContain("CLOUDFLARE_RELEASE_FEED_API_TOKEN");
     expect(release.match(/environment: release-feed/g)).toHaveLength(2);
@@ -35,8 +33,12 @@ describe("Cloudflare deployment contract", () => {
 
   test("the release-feed Worker is deployed independently from feed promotion", () => {
     const deploy = read(".github/workflows/deploy-release-feed.yml");
-    expect(deploy).toContain("wrangler versions upload --config packages/release-feed/wrangler.jsonc");
-    expect(deploy).toContain('wrangler versions deploy "$VERSION_ID@100%" --yes --config packages/release-feed/wrangler.jsonc');
+    expect(deploy).toContain(
+      "wrangler versions upload --config packages/release-feed/wrangler.jsonc",
+    );
+    expect(deploy).toContain(
+      'wrangler versions deploy "$VERSION_ID@100%" --yes --config packages/release-feed/wrangler.jsonc',
+    );
     expect(deploy).toContain("WRANGLER_OUTPUT_FILE_PATH");
     expect(deploy).toContain('entry.type === "version-upload"');
     expect(deploy).toContain('upload.worker_name !== "presto-release-feed"');

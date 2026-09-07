@@ -1787,6 +1787,10 @@ pub(crate) fn gated_enable_crash_recovery() -> Result<(), String> {
 /// half performed under `autostart.lock` behind a marker re-check — the rearm is a gated mutation
 /// like any other, and the unlocked-gate version was the audits' second TOCTOU. Sequential with
 /// the heal's own lock hold, never nested (the lock is not reentrant).
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "platform-specific intent and ownership gates are clearer as one startup policy"
+)]
 pub fn startup_rearm(app: &tauri::AppHandle) {
     #[cfg(windows)]
     {
@@ -2725,6 +2729,10 @@ mod tests {
     }
 
     #[test]
+    #[expect(
+        clippy::cognitive_complexity,
+        reason = "the table test keeps each platform-state assertion beside its fixture"
+    )]
     fn classify_state_table() {
         let dir = tempfile::tempdir().unwrap();
         let live = dir.path().join("live-exe");

@@ -39,6 +39,77 @@ export function buildDotRow(
   return row;
 }
 
+function appendSimulationRows(
+  container: HTMLElement,
+  simulation: NonNullable<StepTiming["simulation"]>,
+) {
+  container.appendChild(
+    buildDotRow(
+      "step-sim-row",
+      "sim",
+      "text-brand-text-muted",
+      formatMs(simulation.totalMs),
+      "tabular-nums",
+    ),
+  );
+  container.appendChild(
+    buildDotRow(
+      "step-sim-row",
+      "sync",
+      "text-brand-text-muted",
+      formatMs(simulation.syncMs),
+      "tabular-nums",
+    ),
+  );
+  for (const fn of simulation.perFunction) {
+    container.appendChild(
+      buildDotRow(
+        "step-sim-row",
+        shortFnName(fn.name),
+        "text-brand-text-muted",
+        formatMs(fn.ms),
+        "tabular-nums",
+      ),
+    );
+  }
+}
+
+function appendTimingRow(container: HTMLElement, label: string, durationMs: number | undefined) {
+  if (durationMs == null) return;
+  container.appendChild(
+    buildDotRow(
+      "step-sim-row",
+      label,
+      "text-brand-text-muted",
+      formatMs(durationMs),
+      "tabular-nums",
+    ),
+  );
+}
+
+function buildStepGroup(step: StepTiming): HTMLDivElement {
+  const group = document.createElement("div");
+  group.appendChild(
+    buildDotRow(
+      "step-row",
+      step.step,
+      "text-brand-text",
+      formatMs(step.durationMs),
+      "text-brand-accent/80 tabular-nums",
+    ),
+  );
+
+  if (!step.simulation && step.proveSendMs == null) return group;
+  const details = document.createElement("div");
+  details.className = "step-sim";
+  if (step.simulation) appendSimulationRows(details, step.simulation);
+  appendTimingRow(details, "prove", step.proveMs);
+  appendTimingRow(details, "prove + send", step.proveSendMs);
+  appendTimingRow(details, "confirm", step.confirmMs);
+  group.appendChild(details);
+  return group;
+}
+
 export function renderSteps(container: HTMLElement, steps: StepTiming[]): void {
   container.replaceChildren();
   const details = document.createElement("details");
@@ -50,100 +121,7 @@ export function renderSteps(container: HTMLElement, steps: StepTiming[]): void {
   list.className = "mt-1.5 space-y-1.5";
 
   for (const step of steps) {
-    const group = document.createElement("div");
-
-    // Step header row
-    group.appendChild(
-      buildDotRow(
-        "step-row",
-        step.step,
-        "text-brand-text",
-        formatMs(step.durationMs),
-        "text-brand-accent/80 tabular-nums",
-      ),
-    );
-
-    // Sub-phase details (simulation + prove/send + confirm)
-    if (step.simulation || step.proveSendMs != null) {
-      const sub = document.createElement("div");
-      sub.className = "step-sim";
-
-      // Simulation sub-details
-      if (step.simulation) {
-        const sim = step.simulation;
-        sub.appendChild(
-          buildDotRow(
-            "step-sim-row",
-            "sim",
-            "text-brand-text-muted",
-            formatMs(sim.totalMs),
-            "tabular-nums",
-          ),
-        );
-        sub.appendChild(
-          buildDotRow(
-            "step-sim-row",
-            "sync",
-            "text-brand-text-muted",
-            formatMs(sim.syncMs),
-            "tabular-nums",
-          ),
-        );
-        for (const fn of sim.perFunction) {
-          sub.appendChild(
-            buildDotRow(
-              "step-sim-row",
-              shortFnName(fn.name),
-              "text-brand-text-muted",
-              formatMs(fn.ms),
-              "tabular-nums",
-            ),
-          );
-        }
-      }
-
-      // Pure proving time (subset of prove + send)
-      if (step.proveMs != null) {
-        sub.appendChild(
-          buildDotRow(
-            "step-sim-row",
-            "prove",
-            "text-brand-text-muted",
-            formatMs(step.proveMs),
-            "tabular-nums",
-          ),
-        );
-      }
-
-      // Prove + send / confirm sub-rows
-      if (step.proveSendMs != null) {
-        sub.appendChild(
-          buildDotRow(
-            "step-sim-row",
-            "prove + send",
-            "text-brand-text-muted",
-            formatMs(step.proveSendMs),
-            "tabular-nums",
-          ),
-        );
-      }
-
-      if (step.confirmMs != null) {
-        sub.appendChild(
-          buildDotRow(
-            "step-sim-row",
-            "confirm",
-            "text-brand-text-muted",
-            formatMs(step.confirmMs),
-            "tabular-nums",
-          ),
-        );
-      }
-
-      group.appendChild(sub);
-    }
-
-    list.appendChild(group);
+    list.appendChild(buildStepGroup(step));
   }
 
   details.appendChild(list);

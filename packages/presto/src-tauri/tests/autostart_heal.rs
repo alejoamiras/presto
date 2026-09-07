@@ -78,6 +78,14 @@ fn assert_healthy_at(target: &StoredTarget, expect: &Path) {
 #[cfg(target_os = "linux")]
 #[test]
 #[ignore = "real-OS integration: writes a .desktop under a throwaway $HOME; CI runs with --ignored"]
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "Clippy scores ignored integration tests; this one intentionally reads as a sequential OS lifecycle"
+)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "test bodies are exempt from the function-length limit"
+)]
 fn linux_full_lifecycle_enable_break_heal_disable() {
     let home = tempfile::tempdir().expect("temp HOME");
     // SAFETY: single #[test] in this binary on this OS — no parallel env mutation. Both HOME and

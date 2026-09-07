@@ -15,19 +15,48 @@ test("npm 11 arrays and npm 12 package-keyed objects identify the same tarball",
 });
 
 test("malformed, multiple, or differently named package results fail closed", () => {
-  for (const value of [null, 42, "text", [], {}, [entry, entry], { wrong: entry }, { [entry.name]: entry, other: entry }, [null], ["text"], [[]]]) {
+  for (const value of [
+    null,
+    42,
+    "text",
+    [],
+    {},
+    [entry, entry],
+    { wrong: entry },
+    { [entry.name]: entry, other: entry },
+    [null],
+    ["text"],
+    [[]],
+  ]) {
     expect(() => parseNpmPackResult(value, entry.name, entry.version)).toThrow();
   }
-  for (const changed of [{ ...entry, name: "other" }, { ...entry, version: "6.0.0" }]) {
+  for (const changed of [
+    { ...entry, name: "other" },
+    { ...entry, version: "6.0.0" },
+  ]) {
     expect(() => parseNpmPackResult([changed], entry.name, entry.version)).toThrow("identity");
   }
 });
 
 test("unsafe tarball paths and absent SHA-512 metadata are rejected", () => {
-  for (const filename of ["../outside.tgz", "/tmp/outside.tgz", "dir/file.tgz", "dir\\file.tgz", ".hidden.tgz", "file.zip", "file.tgz\0", "", null]) {
-    expect(() => parseNpmPackResult([{ ...entry, filename }], entry.name, entry.version)).toThrow("filename");
+  for (const filename of [
+    "../outside.tgz",
+    "/tmp/outside.tgz",
+    "dir/file.tgz",
+    "dir\\file.tgz",
+    ".hidden.tgz",
+    "file.zip",
+    "file.tgz\0",
+    "",
+    null,
+  ]) {
+    expect(() => parseNpmPackResult([{ ...entry, filename }], entry.name, entry.version)).toThrow(
+      "filename",
+    );
   }
   for (const integrity of [null, "", "sha1-abc", "sha512-*"]) {
-    expect(() => parseNpmPackResult([{ ...entry, integrity }], entry.name, entry.version)).toThrow("SHA-512");
+    expect(() => parseNpmPackResult([{ ...entry, integrity }], entry.name, entry.version)).toThrow(
+      "SHA-512",
+    );
   }
 });

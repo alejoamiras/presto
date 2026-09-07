@@ -29,11 +29,11 @@ describe("updatePackageJson", () => {
         "@aztec/bb-prover": "4.1.0-rc.4",
         "@aztec-foundation/aztec-standards": "5.0.1",
         "@aztec-foundation/some-other-package": "1.2.3",
-        "ky": "^1.14.3",
+        ky: "^1.14.3",
       },
       devDependencies: {
         "@aztec/simulator": "4.1.0-rc.4",
-        "typescript": "^5.9.3",
+        typescript: "^5.9.3",
       },
     },
     null,
@@ -82,10 +82,14 @@ describe("updatePackageJson", () => {
   });
 
   test("updates from stable version to newer", () => {
-    const stablePkg = JSON.stringify({
-      name: "test",
-      dependencies: { "@aztec/stdlib": "4.1.0" },
-    }, null, 2);
+    const stablePkg = JSON.stringify(
+      {
+        name: "test",
+        dependencies: { "@aztec/stdlib": "4.1.0" },
+      },
+      null,
+      2,
+    );
     const result = updatePackageJson(stablePkg, "4.2.0-rc.1");
     const pkg = JSON.parse(result);
     expect(pkg.dependencies["@aztec/stdlib"]).toBe("4.2.0-rc.1");

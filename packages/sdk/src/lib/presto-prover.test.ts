@@ -61,6 +61,7 @@ function mockSerializer() {
 
 // --- Tests ---
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("PrestoProver", () => {
   let originalFetch: typeof globalThis.fetch;
 
@@ -72,6 +73,7 @@ describe("PrestoProver", () => {
     globalThis.fetch = originalFetch;
   });
 
+  // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
   describe("Proving", () => {
     test("emits secure-connection-unavailable immediately before fallback and never POSTs HTTP", async () => {
       const requests: Request[] = [];
@@ -471,6 +473,7 @@ describe("PrestoProver", () => {
     });
   });
 
+  // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
   describe("checkPrestoStatus", () => {
     test.each([
       [
@@ -1068,6 +1071,7 @@ describe("PrestoProver", () => {
     });
   });
 
+  // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
   describe("Constructor", () => {
     test.each([
       ["browser default", undefined, undefined, true, true],
@@ -1260,6 +1264,7 @@ describe("PrestoProver", () => {
 
   // Post-impl hardening (codex bug-hunt fixes): strict health contract, single-flight probes, and
   // the /prove network-failure demotion path.
+  // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
   describe("hardening — strict health contract + prove demotion", () => {
     const healthyBody = () =>
       Response.json({
@@ -1596,6 +1601,7 @@ describe("PrestoProver", () => {
   // its body stalls, overflows the cap, or is garbage — body-read failure demoting the error to the
   // network-failure path would mask misconfigurations as WASM and, worse, could activate the
   // plaintext downgrade retry with the witness.
+  // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
   describe("F14 classification with unreadable error bodies", () => {
     const healthyBody = () =>
       Response.json({

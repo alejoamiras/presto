@@ -7,7 +7,12 @@ export function parseNpmPackResult(
   let entries: unknown[];
   if (Array.isArray(value)) {
     entries = value;
-  } else if (value && typeof value === "object" && Object.keys(value).length === 1 && Object.hasOwn(value, expectedName)) {
+  } else if (
+    value &&
+    typeof value === "object" &&
+    Object.keys(value).length === 1 &&
+    Object.hasOwn(value, expectedName)
+  ) {
     // npm 12 reports a record keyed by package name; npm 11 reports an array.
     entries = Object.values(value);
   } else {

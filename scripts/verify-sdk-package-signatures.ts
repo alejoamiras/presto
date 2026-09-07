@@ -21,10 +21,7 @@ function run(command: string[], cwd: string): string {
   return result.stdout.toString();
 }
 
-export function hasVerifiedSdkProvenance(
-  report: SignatureAudit,
-  version: string,
-): boolean {
+export function hasVerifiedSdkProvenance(report: SignatureAudit, version: string): boolean {
   return Boolean(
     report.verified?.some(
       (item) =>
@@ -48,11 +45,7 @@ export async function verifySdkPackageSignatures(version: string): Promise<void>
       directory,
     );
     const installed = run(
-      [
-        "node",
-        "-p",
-        "require('./node_modules/@alejoamiras/presto/package.json').version",
-      ],
+      ["node", "-p", "require('./node_modules/@alejoamiras/presto/package.json').version"],
       directory,
     ).trim();
     if (installed !== version) throw new Error(`installed ${installed}, expected ${version}`);
@@ -60,7 +53,9 @@ export async function verifySdkPackageSignatures(version: string): Promise<void>
       run(["npm", "audit", "signatures", "--json", "--include-attestations"], directory),
     ) as SignatureAudit;
     if (!hasVerifiedSdkProvenance(report, version)) {
-      throw new Error(`npm did not cryptographically verify provenance for ${SDK_PACKAGE}@${version}`);
+      throw new Error(
+        `npm did not cryptographically verify provenance for ${SDK_PACKAGE}@${version}`,
+      );
     }
   } finally {
     await rm(directory, { recursive: true, force: true });

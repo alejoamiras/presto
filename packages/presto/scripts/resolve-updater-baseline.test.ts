@@ -27,6 +27,7 @@ function candidate(
   };
 }
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("updater smoke baseline selection", () => {
   test("rejects a missing baseline, including the former first-RC exception", () => {
     for (const version of ["1.0.0-rc.1", "1.0.0", "1.0.0-rc.2", "0.9.0-rc.1", "2.0.0-rc.1"]) {

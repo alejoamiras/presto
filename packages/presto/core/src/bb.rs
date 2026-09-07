@@ -166,41 +166,49 @@ fn reap_prove_dirs_older_than(parent: &Path, floor: Duration) -> usize {
     let Ok(entries) = std::fs::read_dir(parent) else {
         return 0;
     };
-    let mut removed = 0;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .is_some_and(|n| n.starts_with("prove-"))
-        {
-            continue;
-        }
-        // symlink_metadata, NOT metadata: a symlink here must be judged as a symlink (and skipped),
-        // never followed to its target's mtime and then removed.
-        let Ok(meta) = std::fs::symlink_metadata(&path) else {
-            continue;
-        };
-        if !meta.is_dir() {
-            continue;
-        }
-        let aged = meta
+    entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| is_stale_prove_workspace(path, floor))
+        .filter(|path| remove_prove_workspace(path))
+        .count()
+}
+
+fn is_stale_prove_workspace(path: &Path, floor: Duration) -> bool {
+    let has_our_prefix = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .is_some_and(|name| name.starts_with("prove-"));
+    if !has_our_prefix {
+        return false;
+    }
+    // Never follow a planted symlink to its target's mtime or contents.
+    let Ok(metadata) = std::fs::symlink_metadata(path) else {
+        return false;
+    };
+    metadata.is_dir()
+        && metadata
             .modified()
             .ok()
-            .and_then(|m| m.elapsed().ok())
-            .is_some_and(|age| age >= floor);
-        if !aged {
-            continue;
+            .and_then(|modified| modified.elapsed().ok())
+            .is_some_and(|age| age >= floor)
+}
+
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "the metric expands tracing fields; the function is one filesystem result match"
+)]
+fn remove_prove_workspace(path: &Path) -> bool {
+    match std::fs::remove_dir_all(path) {
+        Ok(()) => {
+            tracing::info!(dir = %path.display(), "reaped an abandoned prove workspace");
+            true
         }
-        match std::fs::remove_dir_all(&path) {
-            Ok(()) => {
-                removed += 1;
-                tracing::info!(dir = %path.display(), "reaped an abandoned prove workspace");
-            }
-            Err(e) => tracing::warn!(dir = %path.display(), "could not reap prove workspace: {e}"),
+        Err(error) => {
+            tracing::warn!(dir = %path.display(), "could not reap prove workspace: {error}");
+            false
         }
     }
-    removed
 }
 
 /// Create the per-prove temp workspace under the per-user private base (see `prove_tmp_parent`).
@@ -284,6 +292,10 @@ pub async fn prove(
 
 /// The body of [`prove`], with the timeout injected so tests can drive the timeout/kill path without a
 /// 5-minute wait (the same externalized-`Duration` shape as `bind_with_retry_inner`).
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "the linear child/guard/drain teardown order is a process-containment invariant"
+)]
 async fn prove_with_timeout(
     ivc_inputs: &[u8],
     version: Option<&versions::AztecVersion>,
@@ -296,23 +308,10 @@ async fn prove_with_timeout(
     // The server leases before it waits for the prove permit; this second lease covers direct callers
     // of `prove` and costs nothing (the registry is refcounted, so nesting is fine). `None` means a
     // cleanup is deleting this version right now — fail rather than execute a binary being unlinked.
-    let _lease = match version {
-        Some(v) => match versions::acquire_lease(v.as_str()) {
-            Some(l) => Some(l),
-            None => {
-                return Err(format!("bb {v}: the cached version is being evicted").into());
-            }
-        },
-        None => None,
-    };
+    let _lease = acquire_version_lease(version)?;
     let bb_path =
         find_bb(version).map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
-
-    let tmp_dir = create_prove_tempdir()?;
-    let input_path = tmp_dir.path().join("ivc-inputs.msgpack");
-    let output_dir = tmp_dir.path().join("output");
-    std::fs::create_dir_all(&output_dir)?;
-    write_witness(&input_path, ivc_inputs)?;
+    let workspace = ProveWorkspace::create(ivc_inputs)?;
 
     tracing::info!(
         version = version.map_or("bundled", |v| v.as_str()),
@@ -320,32 +319,12 @@ async fn prove_with_timeout(
         "Starting bb prove"
     );
 
-    let mut cmd = tokio::process::Command::new(&bb_path);
-    cmd.args([
-        "prove",
-        "--scheme",
-        "chonk",
-        "--ivc_inputs_path",
-        input_path
-            .to_str()
-            .ok_or("temp input path contains non-UTF-8 characters")?,
-        "-o",
-        output_dir
-            .to_str()
-            .ok_or("temp output path contains non-UTF-8 characters")?,
-    ]);
-    if let Some(t) = threads {
-        // bb uses HARDWARE_CONCURRENCY env var to control thread count.
-        // The -t flag was repurposed to --verifier_target in recent versions.
-        cmd.env("HARDWARE_CONCURRENCY", t.to_string());
-    }
+    let mut cmd = build_prove_command(&bb_path, &workspace, threads)?;
     // kill_on_drop ensures the DIRECT bb process is killed if the future is cancelled (e.g. client
     // disconnect, timeout). Without it, an orphaned bb would run to completion wasting CPU while holding
     // the prove semaphore. B3 (F6): `configure` additionally puts bb in its own process group (Unix) so
     // the whole TREE — including any process bb forks — can be reaped, and the guard below covers the
     // exit/restart/update paths `kill_on_drop` cannot.
-    cmd.kill_on_drop(true);
-    containment::configure(&mut cmd);
     // B3 (F6 + codex r3 H2a): SPAWN and register the child's group ATOMICALLY under the containment lock so
     // a quit/restart/update (via `terminate_inflight`) — or a cancellation/timeout (via the guard's Drop) —
     // reaps the whole bb tree, AND so the spawn→contain window is serialized against `begin_quiesce` (no bb
@@ -358,10 +337,7 @@ async fn prove_with_timeout(
     // grandchild that inherits and holds the stderr pipe would keep the drain — and thus the now-stale
     // pgid — alive for the whole timeout (codex M4). `wait_with_output()` also buffered ALL of stderr in
     // memory up to the timeout; the retain cap bounds that.
-    let stderr_pipe = child
-        .stderr
-        .take()
-        .expect("spawn_capturing_stderr pipes stderr");
+    let stderr_pipe = child.stderr.take().expect("spawn captures stderr");
     // codex r3 M4b: the drain writes into a SHARED accumulator so the partial stderr survives an abort.
     let stderr_acc: DrainAcc = std::sync::Arc::new(std::sync::Mutex::new((Vec::new(), 0)));
     let mut drain = AbortingDrain(tokio::spawn(drain_capped_into(
@@ -370,17 +346,7 @@ async fn prove_with_timeout(
         stderr_acc.clone(),
     )));
 
-    let status = match tokio::time::timeout(timeout, child.wait()).await {
-        Ok(Ok(status)) => status,
-        // bb may still be running on these paths; returning drops `guard`, whose Drop reaps the whole tree
-        // (Unix: SIGKILLs the group; Windows: TerminateJobObject), and `kill_on_drop` reaps the direct
-        // child.
-        Ok(Err(e)) => return Err(Box::new(e)),
-        Err(_) => {
-            tracing::error!("bb prove timed out after {:?}", timeout);
-            return Err("bb prove timed out after 5 minutes".into());
-        }
-    };
+    let status = wait_for_bb(&mut child, timeout).await?;
     // bb has EXITED (reaped by child.wait()). Finish the guard IMMEDIATELY — before the stderr drain
     // necessarily finishes — so the pgid can't go stale while a lingering pipe-holder keeps draining. On
     // Unix `finish()` SIGKILLs the group first (reaping any child bb orphaned before we clear the registry —
@@ -392,39 +358,121 @@ async fn prove_with_timeout(
     // not the expected path. Whether it completes or times out, the retained bytes are in `stderr_acc`
     // (codex r3 M4b), and `drain` drops + aborts the task on the way out / on any early return.
     let _ = tokio::time::timeout(Duration::from_secs(2), &mut drain.0).await;
-    let (stderr_retained, stderr_total) = {
-        let g = stderr_acc.lock().unwrap();
-        (g.0.clone(), g.1)
-    };
-
-    let stderr = String::from_utf8_lossy(&stderr_retained);
-    if !stderr.is_empty() {
-        tracing::warn!(
-            stderr_total_bytes = stderr_total,
-            "bb stderr:\n{}",
-            truncate_stderr(&stderr)
-        );
-    }
-
-    if !status.success() {
-        // Log full stderr server-side, but return only a generic error to HTTP clients
-        // to avoid leaking bb internals (file paths, witness data) to the browser.
-        tracing::error!(exit_code = %status, "bb prove failed");
-        return Err(format!("bb prove failed (exit {status})").into());
-    }
+    log_bb_stderr(&stderr_acc);
+    require_success(status)?;
 
     // B3 (F5): validate the proof output before trusting it. Exit-code success was the ONLY gate, so an
     // empty or truncated `proof` file produced a "successful" response (a 0-byte proof → a 4-byte
     // header-only body; a non-32-aligned file → silently floor-divided). Read through a capped reader in a
     // SINGLE open (no metadata-then-read TOCTOU — codex M5): at most MAX_PROOF_BYTES+1 bytes, so an
     // oversized file reads as MAX+1 and is rejected. Then validate the ACTUAL bytes read.
-    let proof_path = output_dir.join("proof");
+    let proof_path = workspace.output_dir.join("proof");
     let raw_proof = read_capped(&proof_path, MAX_PROOF_BYTES)?;
     validate_proof_len(raw_proof.len() as u64)?;
 
     tracing::debug!(proof_bytes = raw_proof.len(), "bb prove completed");
 
     Ok(prepend_field_count_header(&raw_proof))
+}
+
+fn acquire_version_lease(
+    version: Option<&versions::AztecVersion>,
+) -> Result<Option<versions::Lease>, Box<dyn std::error::Error + Send + Sync>> {
+    let Some(version) = version else {
+        return Ok(None);
+    };
+    versions::acquire_lease(version.as_str())
+        .map(Some)
+        .ok_or_else(|| format!("bb {version}: the cached version is being evicted").into())
+}
+
+struct ProveWorkspace {
+    _dir: tempfile::TempDir,
+    input_path: PathBuf,
+    output_dir: PathBuf,
+}
+
+impl ProveWorkspace {
+    fn create(ivc_inputs: &[u8]) -> std::io::Result<Self> {
+        let dir = create_prove_tempdir()?;
+        let input_path = dir.path().join("ivc-inputs.msgpack");
+        let output_dir = dir.path().join("output");
+        std::fs::create_dir_all(&output_dir)?;
+        write_witness(&input_path, ivc_inputs)?;
+        Ok(Self {
+            _dir: dir,
+            input_path,
+            output_dir,
+        })
+    }
+}
+
+fn build_prove_command(
+    bb_path: &Path,
+    workspace: &ProveWorkspace,
+    threads: Option<usize>,
+) -> Result<tokio::process::Command, Box<dyn std::error::Error + Send + Sync>> {
+    let input = workspace
+        .input_path
+        .to_str()
+        .ok_or("temp input path contains non-UTF-8 characters")?;
+    let output = workspace
+        .output_dir
+        .to_str()
+        .ok_or("temp output path contains non-UTF-8 characters")?;
+    let mut command = tokio::process::Command::new(bb_path);
+    command.args([
+        "prove",
+        "--scheme",
+        "chonk",
+        "--ivc_inputs_path",
+        input,
+        "-o",
+        output,
+    ]);
+    if let Some(threads) = threads {
+        // bb controls worker count through this variable; `-t` now selects a verifier target.
+        command.env("HARDWARE_CONCURRENCY", threads.to_string());
+    }
+    command.kill_on_drop(true);
+    containment::configure(&mut command);
+    Ok(command)
+}
+
+async fn wait_for_bb(
+    child: &mut tokio::process::Child,
+    timeout: Duration,
+) -> Result<std::process::ExitStatus, Box<dyn std::error::Error + Send + Sync>> {
+    match tokio::time::timeout(timeout, child.wait()).await {
+        Ok(result) => Ok(result?),
+        Err(_) => {
+            tracing::error!("bb prove timed out after {:?}", timeout);
+            Err("bb prove timed out after 5 minutes".into())
+        }
+    }
+}
+
+fn log_bb_stderr(stderr_acc: &DrainAcc) {
+    let guard = stderr_acc.lock().unwrap();
+    let stderr = String::from_utf8_lossy(&guard.0);
+    if !stderr.is_empty() {
+        tracing::warn!(
+            stderr_total_bytes = guard.1,
+            "bb stderr:\n{}",
+            truncate_stderr(&stderr)
+        );
+    }
+}
+
+fn require_success(
+    status: std::process::ExitStatus,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    if status.success() {
+        return Ok(());
+    }
+    // Never return stderr to HTTP clients; it may contain paths or witness diagnostics.
+    tracing::error!(exit_code = %status, "bb prove failed");
+    Err(format!("bb prove failed (exit {status})").into())
 }
 
 /// B3 (F5): read `path` in ONE open, at most `cap`+1 bytes (no metadata/read TOCTOU). Reading `cap`+1

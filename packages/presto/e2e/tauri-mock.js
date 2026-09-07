@@ -101,7 +101,7 @@ window.__TAURI_INTERNALS__ = {
     const callIndex = callCounts[cmd];
     window.__TAURI_MOCK__.calls.push({ cmd, args, callIndex, timestamp: Date.now() });
     const handler = handlers[cmd] || defaults[cmd];
-    if (!handler) throw new Error("Unmocked command: " + cmd);
+    if (!handler) throw new Error(`Unmocked command: ${cmd}`);
     return handler(args, callIndex);
   },
   // No window API: pages never close themselves (F-012 — windows are closed from Rust, and the

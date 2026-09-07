@@ -3,10 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 
 const REPO = path.resolve(import.meta.dir, "..");
-const packageFiles = [
-  "packages/presto/package.json",
-  "packages/playground/package.json",
-] as const;
+const packageFiles = ["packages/presto/package.json", "packages/playground/package.json"] as const;
 
 describe("Playwright version contract", () => {
   test("every Playwright consumer uses one exact version", () => {

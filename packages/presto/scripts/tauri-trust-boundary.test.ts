@@ -318,9 +318,12 @@ describe("NSIS uninstall hook — an upgrade must not wipe trust", () => {
     const delstore = nsi.search(/-delstore\s+Root/i);
     const rmdir = nsi.search(/RMDir\s+\/r/i);
     // The LAST ${EndIf} closes the destructive block; earlier ones close the path canonicalization.
-    const guardClose = nsi.lastIndexOf("${EndIf}");
+    const guardClose = nsi.lastIndexOf(["$", "{EndIf}"].join(""));
 
-    expect(guardOpen, "an ${If} $UpdateMode <> 1 guard must exist").toBeGreaterThanOrEqual(0);
+    expect(
+      guardOpen,
+      ["an $", "{If} $UpdateMode <> 1 guard must exist"].join(""),
+    ).toBeGreaterThanOrEqual(0);
     expect(
       andGuard,
       "the in-place-vs-temp-copy result must be ANDed into the SAME condition",

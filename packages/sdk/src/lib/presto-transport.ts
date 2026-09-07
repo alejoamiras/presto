@@ -345,6 +345,95 @@ async function readJsonBounded(
   }
 }
 
+async function readUnstreamedText(
+  response: Response,
+  maxBytes: number,
+  timeoutMs: number,
+): Promise<string | undefined> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const text = await Promise.race([
+    response.text(),
+    new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error("body deadline")), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+  return new TextEncoder().encode(text).length <= maxBytes ? text : undefined;
+}
+
+function cancelReader(reader: ReadableStreamDefaultReader<Uint8Array>): void {
+  // Cancellation is deliberately fire-and-forget: a hostile stream may never settle `cancel()`.
+  void reader.cancel().catch(() => {});
+}
+
+interface StreamBuffer {
+  bytes: Uint8Array;
+  total: number;
+  emptyChunks: number;
+}
+
+function appendStreamChunk(
+  buffer: StreamBuffer,
+  chunk: Uint8Array,
+  maxBytes: number,
+): "accepted" | "empty" | "rejected" {
+  if (chunk.byteLength === 0) {
+    buffer.emptyChunks++;
+    return buffer.emptyChunks <= 64 ? "empty" : "rejected";
+  }
+  const nextTotal = buffer.total + chunk.byteLength;
+  if (nextTotal > maxBytes) return "rejected";
+  if (nextTotal > buffer.bytes.byteLength) {
+    const grown = new Uint8Array(
+      Math.min(maxBytes, Math.max(buffer.bytes.byteLength * 2, nextTotal)),
+    );
+    grown.set(buffer.bytes.subarray(0, buffer.total));
+    buffer.bytes = grown;
+  }
+  buffer.bytes.set(chunk, buffer.total);
+  buffer.total = nextTotal;
+  return "accepted";
+}
+
+async function readStreamedText(
+  stream: ReadableStream<Uint8Array>,
+  maxBytes: number,
+  timeoutMs: number,
+): Promise<string | undefined> {
+  const reader = stream.getReader();
+  const buffer: StreamBuffer = {
+    bytes: new Uint8Array(Math.min(maxBytes, 64 * 1024)),
+    total: 0,
+    emptyChunks: 0,
+  };
+  let timedOut = false;
+  const started = performance.now();
+  const deadline = setTimeout(() => {
+    timedOut = true;
+    cancelReader(reader);
+  }, timeoutMs);
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      // Check elapsed time before `done`: empty chunks can starve the timer and then close cleanly.
+      if (performance.now() - started > timeoutMs) {
+        cancelReader(reader);
+        return undefined;
+      }
+      if (done) break;
+      const outcome = appendStreamChunk(buffer, value, maxBytes);
+      if (outcome === "rejected") {
+        cancelReader(reader);
+        return undefined;
+      }
+    }
+  } finally {
+    clearTimeout(deadline);
+  }
+  if (timedOut) return undefined;
+  return new TextDecoder().decode(buffer.bytes.subarray(0, buffer.total));
+}
+
 /** The bounded-read MECHANICS behind {@link readJsonBounded}, returning the raw text — the error
  * pre-read needs the undecoded shape (content-type decides string vs object, matching what
  * `parseServerError` distinguishes). Same single-implementation rule: policy varies, mechanics
@@ -355,84 +444,9 @@ async function readTextBounded(
   timeoutMs: number = HEALTH_BODY_TIMEOUT_MS,
 ): Promise<string | undefined> {
   try {
-    const stream = response.body;
-    if (!stream) {
-      // No stream (exotic environments / test doubles): deadline-race a plain text() read, ALWAYS
-      // clearing the timer so it can't keep the event loop alive past the read (codex Low).
-      let timer: ReturnType<typeof setTimeout> | undefined;
-      const text = await Promise.race([
-        response.text(),
-        new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error("body deadline")), timeoutMs);
-        }),
-      ]).finally(() => clearTimeout(timer));
-      // Measure ENCODED bytes, not UTF-16 code units (codex Low).
-      if (new TextEncoder().encode(text).length > maxBytes) return undefined;
-      return text;
-    }
-    const reader = stream.getReader();
-    // A CONTIGUOUS buffer grown geometrically, not an array of chunks. Retaining one `Uint8Array`
-    // object per chunk bounds the BYTES but not the allocation: a peer that dribbles millions of
-    // one-byte chunks stays under the cap while the per-object overhead consumes orders of magnitude
-    // more (post-impl codex round 7). Copying as we go makes peak memory O(maxBytes).
-    let buffer = new Uint8Array(Math.min(maxBytes, 64 * 1024));
-    let total = 0;
-    // A deadline that fires mid-body cancels the reader → the pending read() resolves `done` with a
-    // PARTIAL buffer. Track that it fired so a truncated-but-coincidentally-valid body is NOT parsed as
-    // healthy (codex Medium). Cancellation is fire-and-forget — a never-settling `cancel()` must not
-    // hang us (codex Medium).
-    let timedOut = false;
-    const deadline = setTimeout(() => {
-      timedOut = true;
-      void reader.cancel().catch(() => {});
-    }, timeoutMs);
-    const started = performance.now();
-    // A stream that endlessly enqueues ZERO-LENGTH chunks resolves every read() immediately, starving
-    // the microtask loop so the `setTimeout` deadline never fires and `total` never grows (codex).
-    // Three defences: an in-loop wall-clock check that does not depend on the timer; never RETAINING
-    // empty chunks (their repro accumulated ~936 MB); and a hard cap on how many we tolerate, so the
-    // spin ends immediately rather than burning CPU until the deadline.
-    const MAX_EMPTY_CHUNKS = 64;
-    let emptyChunks = 0;
-    try {
-      for (;;) {
-        const { done, value } = await reader.read();
-        // Elapsed check BEFORE `done`: a stream that spams empty chunks past the deadline and THEN
-        // closes would otherwise reach `done` first, skip this check, clear the still-unfired timer,
-        // and get parsed as healthy (codex Medium).
-        if (performance.now() - started > timeoutMs) {
-          timedOut = true;
-          void reader.cancel().catch(() => {});
-          return undefined;
-        }
-        if (done) break;
-        if (value.byteLength === 0) {
-          if (++emptyChunks > MAX_EMPTY_CHUNKS) {
-            void reader.cancel().catch(() => {});
-            return undefined;
-          }
-          continue; // never retained — empty chunks carry no body bytes
-        }
-        if (total + value.byteLength > maxBytes) {
-          void reader.cancel().catch(() => {}); // fire-and-forget — do not await a possibly-stuck cancel
-          return undefined;
-        }
-        if (total + value.byteLength > buffer.byteLength) {
-          const grown = new Uint8Array(
-            Math.min(maxBytes, Math.max(buffer.byteLength * 2, total + value.byteLength)),
-          );
-          grown.set(buffer.subarray(0, total));
-          buffer = grown;
-        }
-        buffer.set(value, total);
-        total += value.byteLength;
-      }
-    } finally {
-      clearTimeout(deadline);
-    }
-    if (timedOut) return undefined; // partial body from a deadline cancel — never "healthy"
-    const merged = buffer.subarray(0, total);
-    return new TextDecoder().decode(merged);
+    return response.body
+      ? await readStreamedText(response.body, maxBytes, timeoutMs)
+      : await readUnstreamedText(response, maxBytes, timeoutMs);
   } catch {
     return undefined;
   }

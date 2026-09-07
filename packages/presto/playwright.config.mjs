@@ -1,6 +1,6 @@
-import { defineConfig } from "@playwright/test";
-import { join, dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { defineConfig } from "@playwright/test";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const frontendDir = join(__dirname, "src-tauri", "frontend");

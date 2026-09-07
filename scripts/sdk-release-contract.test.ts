@@ -12,7 +12,7 @@ describe("SDK release workflow contract", () => {
     expect(publish).toContain("id-token: write");
     expect(publish).toContain("environment: npm-publish");
     expect(`${release}\n${publish}`).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN/);
-    expect(publish).toContain("npm publish \"$TARBALL\" --provenance --access public --tag testnet");
+    expect(publish).toContain('npm publish "$TARBALL" --provenance --access public --tag testnet');
   });
 
   test("dependency audit and exact cryptographic verification gate publication records", () => {
@@ -26,7 +26,9 @@ describe("SDK release workflow contract", () => {
 
   test("playground verification uses the publish job's Node/npm toolchain", () => {
     const deploy = release.slice(release.indexOf("  deploy-app:"));
-    const setup = deploy.indexOf("uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020");
+    const setup = deploy.indexOf(
+      "uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
+    );
     expect(setup).toBeGreaterThan(0);
     expect(deploy.slice(setup)).toContain("node-version: 24");
     expect(setup).toBeLessThan(deploy.indexOf("bun scripts/published-playground.ts"));

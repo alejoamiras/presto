@@ -6,6 +6,7 @@ import {
   watchLoopbackPermissionChanges,
 } from "./presto-detection";
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("landing presto detection", () => {
   let originalFetch: typeof fetch;
   let targetDescriptor: PropertyDescriptor | undefined;

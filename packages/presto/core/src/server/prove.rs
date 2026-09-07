@@ -51,41 +51,14 @@ pub(crate) fn resolve_version(
     state: &AppState,
     requested: &Option<String>,
 ) -> Result<ResolvedVersion, ProveError> {
-    let v = match requested {
-        Some(v) => v,
-        None => {
-            return Ok(ResolvedVersion {
-                version: None,
-                needs_download: false,
-            })
-        }
-    };
-
-    // Construct the validated value object ONCE at the ingress boundary (Q3). Parse failure returns
-    // the same 400 the bare `is_valid_version` check did; every downstream sink takes `&AztecVersion`,
-    // so the #99 traversal guard is enforced by construction rather than re-checked per sink.
-    let version = match versions::AztecVersion::parse(v) {
-        Some(av) => av,
-        None => {
-            return Err(ProveError::InvalidVersion(v.to_string()));
-        }
-    };
-    tracing::info!(version = %version, "Requested Aztec version");
-
-    // `x-aztec-version` is remote-controlled, so check well-formedness + the known-vulnerable REVOCATION
-    // denylist FIRST — BEFORE the bundled short-circuit below (codex denylist-review #1), so a version
-    // the owner has revoked is refused even if it happens to be the bundled one (fail closed; the owner
-    // ships a new bundled version alongside any such revocation). There is NO version FLOOR: the header
-    // is the Aztec version (not a bb version) and many Aztec releases share one bb, so an
-    // older-but-compatible request must be honoured (downloads are still digest-verified against Aztec's
-    // published hash). The denylist is empty by default ⇒ any well-formed version is allowed.
-    if let Err(rej) = versions::check_version_selectable(&version) {
-        tracing::warn!(version = %version, reason = rej.reason(), "Refused remote Aztec version");
-        return Err(ProveError::VersionNotAllowed {
-            version: version.to_string(),
-            reason: rej.reason(),
+    let Some(requested) = requested else {
+        return Ok(ResolvedVersion {
+            version: None,
+            needs_download: false,
         });
-    }
+    };
+    let version = parse_selectable_version(requested)?;
+    tracing::info!(version = %version, "Requested Aztec version");
 
     let bundled = state
         .bundled_version
@@ -96,7 +69,7 @@ pub(crate) fn resolve_version(
     // the version cache, so it resolves via `find_bb(None)`. This also makes any `Some(v)` downstream an
     // unambiguously NON-bundled request, so `find_bb` can hard-error on a bad cache entry without a
     // wrong-version fallback (a bundled `Some(v)` would otherwise be indistinguishable).
-    if v == bundled {
+    if requested == bundled {
         return Ok(ResolvedVersion {
             version: None,
             needs_download: false,
@@ -114,6 +87,21 @@ pub(crate) fn resolve_version(
         version: Some(version),
         needs_download,
     })
+}
+
+fn parse_selectable_version(requested: &str) -> Result<versions::AztecVersion, ProveError> {
+    // The validated value is the traversal guard for every downstream path and URL sink.
+    let version = versions::AztecVersion::parse(requested)
+        .ok_or_else(|| ProveError::InvalidVersion(requested.to_string()))?;
+    // Apply revocations before the bundled shortcut: a revoked bundled version must also fail closed.
+    if let Err(rejection) = versions::check_version_selectable(&version) {
+        tracing::warn!(version = %version, reason = rejection.reason(), "Refused remote Aztec version");
+        return Err(ProveError::VersionNotAllowed {
+            version: version.to_string(),
+            reason: rejection.reason(),
+        });
+    }
+    Ok(version)
 }
 
 /// Read the speed setting from config and convert to thread count.
@@ -221,6 +209,10 @@ fn try_enter(waiters: Arc<Semaphore>) -> Result<OwnedSemaphorePermit, ProveError
         .map_err(|_| ProveError::ProveQueueFull)
 }
 
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "the handler keeps authorization, resource guards, download status, and prove permit order visible"
+)]
 pub(crate) async fn prove(
     State(state): State<AppState>,
     request: Request,
@@ -246,11 +238,7 @@ pub(crate) async fn prove(
     let body = read_body(raw_body, MAX_BODY_SIZE, BODY_READ_TIMEOUT).await?;
     tracing::debug!(payload_bytes = body.len(), "Prove request payload size");
 
-    let requested_version = parts
-        .headers
-        .get("x-aztec-version")
-        .and_then(|v| v.to_str().ok())
-        .map(|v| v.to_string());
+    let requested_version = requested_version(&parts.headers);
 
     if let Some(ref cb) = state.on_status {
         cb(ServerStatus::Proving);
@@ -262,56 +250,8 @@ pub(crate) async fn prove(
     // Resolve (pure: parse + cache check), then OWN the status sequence here (F-08): the whole
     // Proving→(Downloading→Proving)→Idle machine lives in one function. `resolve_version` no longer
     // emits status or downloads.
-    let ResolvedVersion {
-        version: version_for_prove,
-        needs_download,
-    } = resolve_version(&state, &requested_version)?;
-    // q7e3-F-08 borrow discipline: borrow the version for the download arm (`as_ref`), never move it —
-    // `bb::prove` still needs it after the download.
-    if let (true, Some(version)) = (needs_download, version_for_prove.as_ref()) {
-        if let Some(ref cb) = state.on_status {
-            cb(ServerStatus::Downloading);
-        }
-        match versions::download_bb(version).await {
-            Ok(_) => {
-                tracing::info!(version = %version, "Download complete");
-                let bundled_owned = state
-                    .bundled_version
-                    .as_deref()
-                    .unwrap_or(super::DEFAULT_BB_VERSION)
-                    .to_string();
-                // F-007: the version we just downloaded is about to be proved — exempt it from this
-                // cleanup so the detached eviction can't delete it out from under `bb::prove`.
-                let in_use_owned = version.as_str().to_string();
-                let on_versions_changed = state.on_versions_changed.clone();
-                tokio::spawn(async move {
-                    // q7e3-F-08: the caller parses now; an unparseable bundled (defensive,
-                    // unreachable in practice) skips cleanup — same outcome as the old internal
-                    // parse-else-return. The "unknown" sentinel still parses, so eviction semantics
-                    // in unknown-bundled builds are unchanged (#352 stays deferred).
-                    if let Some(bundled) = versions::AztecVersion::parse(&bundled_owned) {
-                        let in_use = versions::AztecVersion::parse(&in_use_owned);
-                        versions::cleanup_old_versions(&bundled, in_use.as_ref()).await;
-                    }
-                    if let Some(cb) = on_versions_changed {
-                        cb();
-                    }
-                });
-            }
-            Err(e) => {
-                tracing::error!(version = %version, error = %e, "Failed to download bb");
-                return Err(ProveError::DownloadFailed {
-                    version: version.to_string(),
-                    detail: e.to_string(),
-                });
-            }
-        }
-        // Re-emit Proving after the Downloading interlude — preserves the redundant leading Proving so
-        // the download-arm sequence stays [Proving, Downloading, Proving, Idle]. (F-08 / opus H2)
-        if let Some(ref cb) = state.on_status {
-            cb(ServerStatus::Proving);
-        }
-    }
+    let resolved = resolve_version(&state, &requested_version)?;
+    download_if_needed(&state, &resolved).await?;
     let threads = compute_threads(&state);
 
     // Lease the version BEFORE waiting for the prove permit. `bb::prove` leases too, but that is far
@@ -322,16 +262,7 @@ pub(crate) async fn prove(
     //
     // `None` means a cleanup is deleting this version right now; report unavailable rather than race
     // it. The next request re-downloads.
-    let _version_lease = match version_for_prove.as_ref() {
-        Some(v) => match versions::acquire_lease(v.as_str()) {
-            Some(lease) => Some(lease),
-            None => {
-                tracing::warn!(version = %v, "Version is being evicted; refusing rather than racing the deletion");
-                return Err(ProveError::VersionEvicting);
-            }
-        },
-        None => None,
-    };
+    let _version_lease = acquire_version_lease(resolved.version.as_ref())?;
 
     // A1: acquire the single prove permit ONLY now — around the CPU-bound proof — not across the body
     // read + version download above (which ran concurrently under the inflight cap). bb saturates all
@@ -345,7 +276,7 @@ pub(crate) async fn prove(
         .map_err(|_| ProveError::ServiceUnavailable)?;
 
     let start = std::time::Instant::now();
-    let result = bb::prove(&body, version_for_prove.as_ref(), threads).await;
+    let result = bb::prove(&body, resolved.version.as_ref(), threads).await;
     let elapsed = start.elapsed();
 
     match &result {
@@ -376,6 +307,76 @@ pub(crate) async fn prove(
     );
 
     Ok(response)
+}
+
+fn requested_version(headers: &axum::http::HeaderMap) -> Option<String> {
+    headers
+        .get("x-aztec-version")
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string)
+}
+
+async fn download_if_needed(
+    state: &AppState,
+    resolved: &ResolvedVersion,
+) -> Result<(), ProveError> {
+    let Some(version) = resolved
+        .version
+        .as_ref()
+        .filter(|_| resolved.needs_download)
+    else {
+        return Ok(());
+    };
+    if let Some(callback) = state.on_status.as_ref() {
+        callback(ServerStatus::Downloading);
+    }
+    versions::download_bb(version).await.map_err(|error| {
+        tracing::error!(version = %version, error = %error, "Failed to download bb");
+        ProveError::DownloadFailed {
+            version: version.to_string(),
+            detail: error.to_string(),
+        }
+    })?;
+    tracing::info!(version = %version, "Download complete");
+    spawn_cache_cleanup(state, version);
+    // The established observable sequence is Proving → Downloading → Proving → Idle.
+    if let Some(callback) = state.on_status.as_ref() {
+        callback(ServerStatus::Proving);
+    }
+    Ok(())
+}
+
+fn spawn_cache_cleanup(state: &AppState, version: &versions::AztecVersion) {
+    let bundled = state
+        .bundled_version
+        .as_deref()
+        .unwrap_or(super::DEFAULT_BB_VERSION)
+        .to_string();
+    let in_use = version.as_str().to_string();
+    let on_versions_changed = state.on_versions_changed.clone();
+    tokio::spawn(async move {
+        if let Some(bundled) = versions::AztecVersion::parse(&bundled) {
+            let in_use = versions::AztecVersion::parse(&in_use);
+            versions::cleanup_old_versions(&bundled, in_use.as_ref()).await;
+        }
+        if let Some(callback) = on_versions_changed {
+            callback();
+        }
+    });
+}
+
+fn acquire_version_lease(
+    version: Option<&versions::AztecVersion>,
+) -> Result<Option<versions::Lease>, ProveError> {
+    let Some(version) = version else {
+        return Ok(None);
+    };
+    versions::acquire_lease(version.as_str())
+        .map(Some)
+        .ok_or_else(|| {
+            tracing::warn!(version = %version, "Version is being evicted; refusing rather than racing deletion");
+            ProveError::VersionEvicting
+        })
 }
 
 #[cfg(test)]

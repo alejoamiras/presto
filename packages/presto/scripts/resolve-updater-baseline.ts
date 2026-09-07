@@ -88,15 +88,11 @@ function githubHeaders(token: string): HeadersInit {
   };
 }
 
-export async function loadUpdaterReleaseCandidates(
+async function loadGitHubReleases(
   repository: string,
   token: string,
-  fetchImpl: FetchLike = fetch,
-): Promise<UpdaterReleaseCandidate[]> {
-  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
-    throw new Error(`invalid GitHub repository: ${repository}`);
-  }
-
+  fetchImpl: FetchLike,
+): Promise<GitHubRelease[]> {
   const releases: GitHubRelease[] = [];
   for (let page = 1; ; page++) {
     const response = await fetchImpl(
@@ -109,49 +105,77 @@ export async function loadUpdaterReleaseCandidates(
     const batch = (await response.json()) as GitHubRelease[];
     if (!Array.isArray(batch)) throw new Error("GitHub releases response was not an array");
     releases.push(...batch);
-    if (batch.length < 100) break;
+    if (batch.length < 100) return releases;
+  }
+}
+
+function releaseShape(release: GitHubRelease): UpdaterReleaseCandidate | undefined {
+  if (typeof release.tag_name !== "string" || typeof release.draft !== "boolean") return undefined;
+  if (!release.tag_name.startsWith(TAG_PREFIX)) return undefined;
+  return {
+    tagName: release.tag_name,
+    draft: release.draft,
+    assetNames: (release.assets ?? []).flatMap((asset) =>
+      typeof asset.name === "string" ? [asset.name] : [],
+    ),
+    pubkey: "",
+  };
+}
+
+async function loadReleasePubkey(
+  repository: string,
+  token: string,
+  tagName: string,
+  fetchImpl: FetchLike,
+): Promise<string> {
+  const response = await fetchImpl(
+    `https://api.github.com/repos/${repository}/contents/packages/presto/src-tauri/tauri.conf.json?ref=${encodeURIComponent(tagName)}`,
+    { headers: githubHeaders(token) },
+  );
+  if (!response.ok) {
+    throw new Error(`failed to read updater configuration at ${tagName}: HTTP ${response.status}`);
+  }
+  const content = (await response.json()) as GitHubContent;
+  if (content.encoding !== "base64" || typeof content.content !== "string") {
+    throw new Error(`invalid updater configuration response at ${tagName}`);
+  }
+  const config = JSON.parse(Buffer.from(content.content.replace(/\s/g, ""), "base64").toString());
+  const pubkey = config?.plugins?.updater?.pubkey;
+  if (typeof pubkey !== "string" || pubkey.length === 0) {
+    throw new Error(`missing updater public key at ${tagName}`);
+  }
+  return pubkey;
+}
+
+async function buildReleaseCandidate(
+  repository: string,
+  token: string,
+  release: GitHubRelease,
+  fetchImpl: FetchLike,
+): Promise<UpdaterReleaseCandidate | undefined> {
+  const candidate = releaseShape(release);
+  if (!candidate) return undefined;
+  const version = versionFromTag(candidate.tagName);
+  // Ineligible releases skip config fetches; selection filters them before comparing keys.
+  if (!version || candidate.draft || !hasCompleteInstallerSet(candidate, version)) return candidate;
+  const pubkey = await loadReleasePubkey(repository, token, candidate.tagName, fetchImpl);
+  return { ...candidate, pubkey };
+}
+
+export async function loadUpdaterReleaseCandidates(
+  repository: string,
+  token: string,
+  fetchImpl: FetchLike = fetch,
+): Promise<UpdaterReleaseCandidate[]> {
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(repository)) {
+    throw new Error(`invalid GitHub repository: ${repository}`);
   }
 
+  const releases = await loadGitHubReleases(repository, token, fetchImpl);
   const candidates: UpdaterReleaseCandidate[] = [];
   for (const release of releases) {
-    if (typeof release.tag_name !== "string" || typeof release.draft !== "boolean") continue;
-    const version = versionFromTag(release.tag_name);
-    if (!release.tag_name.startsWith(TAG_PREFIX)) continue;
-
-    const assetNames = (release.assets ?? []).flatMap((asset) =>
-      typeof asset.name === "string" ? [asset.name] : [],
-    );
-    const shapeOnly: UpdaterReleaseCandidate = {
-      tagName: release.tag_name,
-      draft: release.draft,
-      assetNames,
-      pubkey: "",
-    };
-    // Ineligible releases skip config fetches; selection filters them before comparing keys.
-    if (!version || release.draft || !hasCompleteInstallerSet(shapeOnly, version)) {
-      candidates.push(shapeOnly);
-      continue;
-    }
-
-    const configResponse = await fetchImpl(
-      `https://api.github.com/repos/${repository}/contents/packages/presto/src-tauri/tauri.conf.json?ref=${encodeURIComponent(release.tag_name)}`,
-      { headers: githubHeaders(token) },
-    );
-    if (!configResponse.ok) {
-      throw new Error(
-        `failed to read updater configuration at ${release.tag_name}: HTTP ${configResponse.status}`,
-      );
-    }
-    const content = (await configResponse.json()) as GitHubContent;
-    if (content.encoding !== "base64" || typeof content.content !== "string") {
-      throw new Error(`invalid updater configuration response at ${release.tag_name}`);
-    }
-    const config = JSON.parse(Buffer.from(content.content.replace(/\s/g, ""), "base64").toString());
-    const pubkey = config?.plugins?.updater?.pubkey;
-    if (typeof pubkey !== "string" || pubkey.length === 0) {
-      throw new Error(`missing updater public key at ${release.tag_name}`);
-    }
-    candidates.push({ ...shapeOnly, pubkey });
+    const candidate = await buildReleaseCandidate(repository, token, release, fetchImpl);
+    if (candidate) candidates.push(candidate);
   }
   return candidates;
 }

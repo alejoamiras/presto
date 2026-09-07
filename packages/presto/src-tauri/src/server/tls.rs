@@ -18,6 +18,10 @@ use presto_core::server::{bind_with_retry, router_for_port, AppState, HTTPS_PORT
 /// awaits it so it persists `https_enabled = true` only once HTTPS is genuinely live (post-impl codex
 /// High: bind failure used to be swallowed as success, silently breaking Safari/strict users). The
 /// launch-time caller ignores the receiver.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "listener readiness and the accept/handshake loop are one long-lived server lifecycle"
+)]
 pub async fn start_https(
     state: AppState,
     tls_config: Arc<tokio_rustls::rustls::ServerConfig>,

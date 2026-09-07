@@ -242,6 +242,10 @@ pub fn running_below_floor(current: &Version, state: &LoadedState) -> bool {
 /// Move an unreadable state file aside so the next load bootstraps cleanly, keeping the original for
 /// forensics. Best-effort: if the rename fails we still proceed (the caller overwrites), because a
 /// file we cannot even rename must not be able to hold the update channel shut (F-04).
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "the metric expands tracing fields; the function is one best-effort rename match"
+)]
 fn quarantine_corrupt(path: &Path, now: u64) {
     let aside = path.with_extension(format!("corrupt-{now}"));
     match std::fs::rename(path, &aside) {

@@ -33,7 +33,8 @@ const AZTEC_PACKAGES = [
 
 async function getCurrentVersion(): Promise<string> {
   const sdkPkg = await Bun.file("packages/sdk/package.json").json();
-  const version = sdkPkg.devDependencies?.["@aztec/aztec.js"] ?? sdkPkg.dependencies?.["@aztec/aztec.js"];
+  const version =
+    sdkPkg.devDependencies?.["@aztec/aztec.js"] ?? sdkPkg.dependencies?.["@aztec/aztec.js"];
   if (!version) throw new Error("Could not find @aztec/aztec.js in packages/sdk/package.json");
   return version;
 }

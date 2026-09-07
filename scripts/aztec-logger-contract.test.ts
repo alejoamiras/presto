@@ -1,6 +1,6 @@
+import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { describe, expect, test } from "bun:test";
 
 /**
  * Tripwire for the JEST_WORKER_ID contract the test preloads rely on: @aztec/foundation's logger
@@ -24,18 +24,23 @@ describe("@aztec/foundation logger JEST_WORKER_ID contract", () => {
     // The condition must be the bare truthy read — a negated (`!JEST_WORKER_ID`) or
     // equality-restricted (`=== "x"`) rewrite would invert/narrow the bypass while still
     // matching a loose contains-check.
-    const m = src.match(/if\s*\(\s*(!?)\s*process\.env\.JEST_WORKER_ID\s*([^)]*)\)\s*(\{[\s\S]*?\n\s*\})/);
+    const m = src.match(
+      /if\s*\(\s*(!?)\s*process\.env\.JEST_WORKER_ID\s*([^)]*)\)\s*(\{[\s\S]*?\n\s*\})/,
+    );
     expect(m, `no JEST_WORKER_ID conditional found in ${loggerPath}`).toBeTruthy();
     expect(m?.[1], "JEST_WORKER_ID condition is NEGATED — the bypass polarity flipped").toBe("");
-    expect((m?.[2] ?? "").trim(), "JEST_WORKER_ID condition is no longer a bare truthy check").toBe("");
+    expect((m?.[2] ?? "").trim(), "JEST_WORKER_ID condition is no longer a bare truthy check").toBe(
+      "",
+    );
     const consequent = m?.[3] ?? "";
     expect(
       /pino\.destination\(\s*2\s*\)/.test(consequent),
       "Jest branch no longer calls pino.destination(2) — the sync stderr-fd contract broke",
     ).toBe(true);
-    expect(consequent, "Jest branch unexpectedly builds a transport (worker) — the bypass is gone").not.toContain(
-      "pino.transport",
-    );
+    expect(
+      consequent,
+      "Jest branch unexpectedly builds a transport (worker) — the bypass is gone",
+    ).not.toContain("pino.transport");
   });
 
   test("the worker transport is still what the non-Jest path builds (bypass is meaningful)", () => {

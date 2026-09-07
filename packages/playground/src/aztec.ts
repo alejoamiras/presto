@@ -592,6 +592,138 @@ export async function deployTestAccount(
   }
 }
 
+interface TokenFlowContext {
+  alice: AztecAddress;
+  fee: { paymentMethod: SponsoredFeePaymentMethod };
+  steps: StepTiming[];
+  log: LogFn;
+  onStep: (stepName: string) => void;
+  proveTracker: ReturnType<typeof createProveTracker>;
+}
+
+async function resolveBob(context: TokenFlowContext): Promise<AztecAddress> {
+  const existing = state.sessionAddresses.find((address) => !address.equals(context.alice));
+  if (existing) return existing;
+
+  context.onStep("deploying bob account");
+  context.log("Deploying second account (Bob) for transfer...");
+  const manager = await state.embeddedWallet!.createSchnorrAccount(
+    Fr.random(),
+    Fr.random(),
+    Fq.random(),
+  );
+  const method = await manager.getDeployMethod();
+  const { timing, txHash } = await executeStep({
+    step: "deploy bob",
+    method,
+    // NO_FROM lets DeployAccountMethod scope and tag the new account's constructor notes.
+    sendOpts: { from: NO_FROM, skipClassPublication: true, fee: context.fee },
+    log: context.log,
+    onConfirming: () => context.onStep("confirming bob"),
+    proveTracker: context.proveTracker,
+  });
+  const bob = manager.address;
+  state.sessionAddresses.push(bob);
+  state.registeredAddresses.push(bob);
+  context.steps.push(timing);
+  context.log(
+    `Bob deployed in ${(timing.durationMs / 1000).toFixed(1)}s`,
+    "success",
+    `${EXPLORER_BASE}/${txHash}`,
+  );
+  return bob;
+}
+
+async function deployToken(context: TokenFlowContext): Promise<TokenContract> {
+  context.onStep("deploying token");
+  context.log("Deploying TokenContract (minter=Alice)...");
+  const deployment = TokenContract.deployWithOpts(
+    { method: "constructor_with_minter", wallet: state.wallet! },
+    "Presto",
+    "ACEL",
+    18,
+    context.alice,
+    AztecAddress.ZERO,
+  );
+  const { timing, txHash } = await executeStep({
+    step: "deploy token",
+    method: deployment,
+    sendOpts: { from: context.alice, fee: context.fee },
+    log: context.log,
+    onConfirming: () => context.onStep("confirming token deploy"),
+    proveTracker: context.proveTracker,
+  });
+  const token = TokenContract.at(await deployment.getAddress(), state.wallet!);
+  context.steps.push(timing);
+  context.log(
+    `Token deployed in ${(timing.durationMs / 1000).toFixed(1)}s → ${token.address.toString()}`,
+    "success",
+    `${EXPLORER_BASE}/${txHash}`,
+  );
+  return token;
+}
+
+async function mintAndTransfer(
+  context: TokenFlowContext,
+  token: TokenContract,
+  bob: AztecAddress,
+): Promise<void> {
+  context.onStep("minting 1000 ACEL");
+  context.log("Minting 1000 ACEL to Alice...");
+  const mint = await executeStep({
+    step: "mint to private",
+    method: token.methods.mint_to_private(context.alice, 1000n),
+    sendOpts: { from: context.alice, fee: context.fee },
+    log: context.log,
+    onConfirming: () => context.onStep("confirming mint"),
+    proveTracker: context.proveTracker,
+  });
+  context.steps.push(mint.timing);
+  context.log(
+    `Minted in ${(mint.timing.durationMs / 1000).toFixed(1)}s`,
+    "success",
+    `${EXPLORER_BASE}/${mint.txHash}`,
+  );
+
+  context.onStep("transferring 500 ACEL");
+  context.log("Transferring 500 ACEL Alice → Bob...");
+  const transfer = await executeStep({
+    step: "private transfer",
+    method: token.methods.transfer_private_to_private(context.alice, bob, 500n, 0),
+    sendOpts: { from: context.alice, fee: context.fee },
+    log: context.log,
+    onConfirming: () => context.onStep("confirming transfer"),
+    proveTracker: context.proveTracker,
+  });
+  context.steps.push(transfer.timing);
+  context.log(
+    `Transferred in ${(transfer.timing.durationMs / 1000).toFixed(1)}s`,
+    "success",
+    `${EXPLORER_BASE}/${transfer.txHash}`,
+  );
+}
+
+async function readTokenBalances(
+  context: TokenFlowContext,
+  token: TokenContract,
+  bob: AztecAddress,
+): Promise<{ alice: bigint; bob: bigint }> {
+  context.onStep("checking balances");
+  context.log("Checking balances...");
+  const startedAt = Date.now();
+  const [{ result: alice }, { result: bobBalance }] = await Promise.all([
+    token.methods.balance_of_private(context.alice).simulate({ from: context.alice }),
+    token.methods.balance_of_private(bob).simulate({ from: bob }),
+  ]);
+  const durationMs = Date.now() - startedAt;
+  context.steps.push({ step: "check balances", durationMs });
+  context.log(
+    `Balances — Alice: ${alice}, Bob: ${bobBalance} (${(durationMs / 1000).toFixed(1)}s)`,
+    "success",
+  );
+  return { alice: BigInt(alice.toString()), bob: BigInt(bobBalance.toString()) };
+}
+
 export async function runTokenFlow(
   log: LogFn,
   onTick: (elapsedMs: number) => void,
@@ -624,124 +756,11 @@ export async function runTokenFlow(
   }, 100);
 
   try {
-    // We may need to deploy a second account (bob) for the transfer step. Bob must also be
-    // session-deployed — an imported account can't even receive-and-later-spend reliably here.
-    let bob: AztecAddress;
-    const bobCandidate = state.sessionAddresses.find((a) => !a.equals(alice));
-    if (bobCandidate) {
-      bob = bobCandidate;
-    } else {
-      onStep("deploying bob account");
-      log("Deploying second account (Bob) for transfer...");
-      const bobManager = await state.embeddedWallet!.createSchnorrAccount(
-        Fr.random(),
-        Fr.random(),
-        Fq.random(),
-      );
-      const bobDeploy = await bobManager.getDeployMethod();
-      // from: NO_FROM → DeployAccountMethod auto-scopes the new account + sets its tag sender (5.0).
-      const bobSendOpts = {
-        from: NO_FROM,
-        skipClassPublication: true,
-        fee,
-      };
-      const { timing: bobStep, txHash: bobTxHash } = await executeStep({
-        step: "deploy bob",
-        method: bobDeploy,
-        sendOpts: bobSendOpts,
-        log,
-        onConfirming: () => onStep("confirming bob"),
-        proveTracker,
-      });
-      bob = bobManager.address;
-      state.sessionAddresses.push(bob);
-      state.registeredAddresses.push(bob);
-      steps.push(bobStep);
-      log(
-        `Bob deployed in ${(bobStep.durationMs / 1000).toFixed(1)}s`,
-        "success",
-        `${EXPLORER_BASE}/${bobTxHash}`,
-      );
-    }
-
-    // Step 1: Deploy TokenContract (standards token; minter constructor, auth hooks disabled)
-    onStep("deploying token");
-    log("Deploying TokenContract (minter=Alice)...");
-    const tokenDeploy = TokenContract.deployWithOpts(
-      { method: "constructor_with_minter", wallet: state.wallet },
-      "Presto",
-      "ACEL",
-      18,
-      alice,
-      AztecAddress.ZERO,
-    );
-    const { timing: tokenStep, txHash: tokenTxHash } = await executeStep({
-      step: "deploy token",
-      method: tokenDeploy,
-      sendOpts: { from: alice, fee },
-      log,
-      onConfirming: () => onStep("confirming token deploy"),
-      proveTracker,
-    });
-    const token = TokenContract.at(await tokenDeploy.getAddress(), state.wallet);
-    steps.push(tokenStep);
-    log(
-      `Token deployed in ${(tokenStep.durationMs / 1000).toFixed(1)}s → ${token.address.toString()}`,
-      "success",
-      `${EXPLORER_BASE}/${tokenTxHash}`,
-    );
-
-    // Step 2: Mint 1000 ACEL to Alice (private)
-    onStep("minting 1000 ACEL");
-    log("Minting 1000 ACEL to Alice...");
-    const { timing: mintStep, txHash: mintTxHash } = await executeStep({
-      step: "mint to private",
-      method: token.methods.mint_to_private(alice, 1000n),
-      sendOpts: { from: alice, fee },
-      log,
-      onConfirming: () => onStep("confirming mint"),
-      proveTracker,
-    });
-    steps.push(mintStep);
-    log(
-      `Minted in ${(mintStep.durationMs / 1000).toFixed(1)}s`,
-      "success",
-      `${EXPLORER_BASE}/${mintTxHash}`,
-    );
-
-    // Step 3: Transfer 500 ACEL Alice → Bob (private)
-    onStep("transferring 500 ACEL");
-    log("Transferring 500 ACEL Alice → Bob...");
-    const { timing: transferStep, txHash: transferTxHash } = await executeStep({
-      step: "private transfer",
-      // Standards API: explicit from/to + authwit nonce (0 = the standard self-call path).
-      method: token.methods.transfer_private_to_private(alice, bob, 500n, 0),
-      sendOpts: { from: alice, fee },
-      log,
-      onConfirming: () => onStep("confirming transfer"),
-      proveTracker,
-    });
-    steps.push(transferStep);
-    log(
-      `Transferred in ${(transferStep.durationMs / 1000).toFixed(1)}s`,
-      "success",
-      `${EXPLORER_BASE}/${transferTxHash}`,
-    );
-
-    // Step 4: Check balances (simulate, no proof needed)
-    onStep("checking balances");
-    log("Checking balances...");
-    const balanceStart = Date.now();
-    const [{ result: aliceBalance }, { result: bobBalance }] = await Promise.all([
-      token.methods.balance_of_private(alice).simulate({ from: alice }),
-      token.methods.balance_of_private(bob).simulate({ from: bob }),
-    ]);
-    const balanceDuration = Date.now() - balanceStart;
-    steps.push({ step: "check balances", durationMs: balanceDuration });
-    log(
-      `Balances — Alice: ${aliceBalance}, Bob: ${bobBalance} (${(balanceDuration / 1000).toFixed(1)}s)`,
-      "success",
-    );
+    const context = { alice, fee, steps, log, onStep, proveTracker };
+    const bob = await resolveBob(context);
+    const token = await deployToken(context);
+    await mintAndTransfer(context, token, bob);
+    const balances = await readTokenBalances(context, token, bob);
 
     const totalDurationMs = Date.now() - totalStart;
     log(`Token flow complete in ${(totalDurationMs / 1000).toFixed(1)}s`, "success");
@@ -750,8 +769,8 @@ export async function runTokenFlow(
       mode,
       steps,
       totalDurationMs,
-      aliceBalance: BigInt(aliceBalance.toString()),
-      bobBalance: BigInt(bobBalance.toString()),
+      aliceBalance: balances.alice,
+      bobBalance: balances.bob,
       tokenAddress: token.address.toString(),
     };
   } finally {
