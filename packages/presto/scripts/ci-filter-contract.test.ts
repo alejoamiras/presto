@@ -64,6 +64,20 @@ describe("presto CI path routing", () => {
       ["scripts/download-bb.ts"],
       ["desktop_runtime", "release_tooling", "sdk_integration", "windows_bb", "windows_packaging"],
     ],
+    [
+      "Rust toolchain pin",
+      ["rust-toolchain.toml"],
+      [
+        "desktop_runtime",
+        "headless_server",
+        "release_tooling",
+        "rust_platform",
+        "sdk_integration",
+        "updater_feed",
+        "windows_bb",
+        "windows_packaging",
+      ],
+    ],
     ["unrelated documentation", ["docs/PLATFORM_SUPPORT.md"], []],
     ["unrelated workflow", [".github/workflows/deploy-landing.yml"], []],
     [
