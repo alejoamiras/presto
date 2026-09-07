@@ -127,7 +127,7 @@ export async function loadUpdaterReleaseCandidates(
       assetNames,
       pubkey: "",
     };
-    // Ineligible releases skip config fetches; selection rejects their empty-key sentinels.
+    // Ineligible releases skip config fetches; selection filters them before comparing keys.
     if (!version || release.draft || !hasCompleteInstallerSet(shapeOnly, version)) {
       candidates.push(shapeOnly);
       continue;
