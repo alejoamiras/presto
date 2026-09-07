@@ -14,7 +14,7 @@ Readability is the objective; metric-driven compression is forbidden.
 ## Status
 
 - [x] Arc 1: first-release exception removal
-- [ ] Arc 2: dependency refresh and age enforcement
+- [~] Arc 2: dependency refresh and age enforcement (implementation green; review pending)
 - [ ] Arc 3: complexity enforcement and readable refactoring
 - [ ] Final cross-arc review and delivery
 

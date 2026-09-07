@@ -34,14 +34,14 @@ jobs:
               - 'biome.json'
               - 'package.json'
               - 'bun.lock'
-              # bunfig.toml gates the @aztec min-age excludes parity test (scripts/
-              # bunfig-aztec-excludes.test.ts, runs in Unit Tests via test:scripts) — a
-              # bunfig-only exemption edit must not skip the guard that reviews it.
+              # bunfig.toml owns the global age floor; a policy-only change must still run its
+              # contract test and the dependency-age checker.
               - 'bunfig.toml'
               - '.bun-version'
               - '.github/workflows/sdk.yml'
               - '.github/workflows/_e2e.yml'
               - '.github/actions/setup-aztec/**'
+              - '.github/actions/check-dependency-age/**'
               - '.github/actions/start-services/**'
       - name: Override for manual dispatch
         if: github.event_name == 'workflow_dispatch'
@@ -64,6 +64,8 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
+      - uses: ./.github/actions/check-dependency-age
+
       - run: bun install --frozen-lockfile
       - run: bun run lint
 
@@ -83,6 +85,8 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
+      - uses: ./.github/actions/check-dependency-age
+
       - run: bun install --frozen-lockfile
       - run: bun run --cwd packages/sdk test:lint
 
@@ -102,6 +106,8 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
+      - uses: ./.github/actions/check-dependency-age
+
       - run: bun install --frozen-lockfile
       - run: bun run --cwd packages/sdk test:unit
       # Release tooling (bump/publish-version scripts) rides the SDK pipeline.
@@ -130,12 +136,14 @@ jobs:
       # reproducible; a real consumer uses npm, not Bun.
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: "24"
+          node-version: "24.20.0"
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
+      - uses: ./.github/actions/check-dependency-age
+
       - run: bun install --frozen-lockfile
       - name: Build + pack the SDK tarball
         working-directory: packages/sdk

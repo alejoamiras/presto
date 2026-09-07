@@ -3,7 +3,7 @@ name = "presto"
 version = "1.0.1-rc.1"
 description = "Native prover for Aztec transactions"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.93.1"
 default-run = "Presto"
 # Disable Cargo's `src/bin/*` auto-discovery. `tauri build` bundles every
 # `[[bin]]` defined in this crate into the desktop `.app`'s `MacOS/` folder.
@@ -43,23 +43,23 @@ tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 parking_lot = "0.12"
 serde_json = "1"
-base64 = "0.22"
+base64 = "0.23"
 tempfile = "3"
 tracing = "0.1"
 tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "registry"] }
 dirs = "6"
-which = "7"
-tower-http = { version = "0.6", features = ["cors", "set-header"] }
+which = "8"
+tower-http = { version = "0.7", features = ["cors", "set-header"] }
 http = "1"
 # Owned autostart (plan D7 — replaces tauri-plugin-autostart, whose Windows enable() wrote the Run
 # value unquoted, a same-user persistence-hijack primitive). `plist` mutates ProgramArguments[0]
 # with a real parser (plan D15): it is ALREADY compiled into every build via tauri-utils, so this
 # direct dependency adds zero crates.
 plist = "1"
-tauri-plugin-updater = "2"
+tauri-plugin-updater = "2.11"
 tauri-plugin-process = "2"
-reqwest = { version = "0.12", features = ["stream", "json"] }
+reqwest = { version = "0.13", features = ["stream", "json"] }
 flate2 = "1"
 tar = "0.4"
 hex = "0.4"
@@ -67,7 +67,7 @@ hex = "0.4"
 # wrap the in-memory CA signing key in `Zeroizing` and early-drop it after leaf signing — best-effort
 # post-use scrubbing (the ring backend scalar/nonce + swap + core dumps are NOT covered; documented in
 # certs.rs). The CA key is never written to disk.
-rcgen = { version = "0.13", features = ["pem", "x509-parser", "zeroize"] }
+rcgen = { version = "0.14", features = ["pem", "x509-parser", "zeroize"] }
 # Direct dep so we can name `Zeroizing` (rcgen does not re-export it); already locked at 1.8.2 transitively
 # via rcgen, so this adds no new package version.
 zeroize = "1"
@@ -97,7 +97,7 @@ winreg = "0.55"
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }
 tokio = { version = "1", features = ["test-util"] }
-serial_test = "3"
+serial_test = "4"
 
 # L3 (tests/autostart_heal.rs): execute a healed Run value through REAL CreateProcessW — the same
 # semantics Run-key processing uses — so the quoting claim is proven against the OS, not against our

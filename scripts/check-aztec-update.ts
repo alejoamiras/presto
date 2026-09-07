@@ -8,28 +8,7 @@
  * Output: JSON with { current, latest, needsUpdate }
  */
 
-const distTag = process.argv[2] ?? "";
-if (!distTag) {
-  console.error("Usage: bun scripts/check-aztec-update.ts <dist-tag>");
-  console.error("Examples:");
-  console.error("  bun scripts/check-aztec-update.ts nightly");
-  console.error("  bun scripts/check-aztec-update.ts devnet");
-  process.exit(1);
-}
-
-const AZTEC_PACKAGES = [
-  "@aztec/accounts",
-  "@aztec/aztec.js",
-  "@aztec/bb-prover",
-  "@aztec/foundation",
-  "@aztec/noir-acvm_js",
-  "@aztec/noir-contracts.js",
-  "@aztec/noir-noirc_abi",
-  "@aztec/pxe",
-  "@aztec/simulator",
-  "@aztec/stdlib",
-  "@aztec/wallets",
-];
+import { assertAztecReleaseEligible, readManagedAztecPackages } from "./aztec-release";
 
 async function getCurrentVersion(): Promise<string> {
   const sdkPkg = await Bun.file("packages/sdk/package.json").json();
@@ -55,26 +34,11 @@ async function getLatestVersion(tag: string): Promise<string> {
   return version;
 }
 
-async function verifyAllPackagesExist(version: string): Promise<{ allExist: boolean; missing: string[] }> {
-  const missing: string[] = [];
-
-  await Promise.all(
-    AZTEC_PACKAGES.map(async (pkg) => {
-      const proc = Bun.spawn(["npm", "view", `${pkg}@${version}`, "version", "--json"], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) {
-        missing.push(pkg);
-      }
-    }),
-  );
-
-  return { allExist: missing.length === 0, missing };
-}
-
 async function main() {
+  const distTag = process.argv[2] ?? "";
+  if (!distTag) {
+    throw new Error("Usage: bun scripts/check-aztec-update.ts <dist-tag>");
+  }
   const current = await getCurrentVersion();
   const latest = await getLatestVersion(distTag);
 
@@ -83,13 +47,8 @@ async function main() {
     return;
   }
 
-  const { missing } = await verifyAllPackagesExist(latest);
-
-  if (missing.length > 0) {
-    console.error(`Warning: Not all packages available at ${latest}. Missing: ${missing.join(", ")}`);
-  }
-
-  console.log(JSON.stringify({ current, latest, needsUpdate: true, ...(missing.length > 0 && { missing }) }));
+  await assertAztecReleaseEligible(latest, await readManagedAztecPackages());
+  console.log(JSON.stringify({ current, latest, needsUpdate: true }));
 }
 
 main().catch((err) => {

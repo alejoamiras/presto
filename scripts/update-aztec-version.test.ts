@@ -65,14 +65,6 @@ describe("updatePackageJson", () => {
     expect(pkg.dependencies["@aztec-foundation/some-other-package"]).toBe("1.2.3");
   });
 
-  test("respects skipPackages set", () => {
-    const skip = new Set(["@aztec/simulator"]);
-    const result = updatePackageJson(samplePkg, "5.0.0-nightly.20260224", skip);
-    const pkg = JSON.parse(result);
-    expect(pkg.dependencies["@aztec/stdlib"]).toBe("5.0.0-nightly.20260224");
-    expect(pkg.devDependencies["@aztec/simulator"]).toBe("4.1.0-rc.4");
-  });
-
   test("updates to stable version", () => {
     const result = updatePackageJson(samplePkg, "4.1.0");
     const pkg = JSON.parse(result);

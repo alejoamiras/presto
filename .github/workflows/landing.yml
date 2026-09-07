@@ -58,6 +58,8 @@ jobs:
           path: ~/.bun/install/cache
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
+      - uses: ./.github/actions/check-dependency-age
+
       - run: bun install --frozen-lockfile
       # feed.ts is the B6 untrusted-feed parser behind the download button — unit-gate it.
       - run: bun run --cwd packages/landing test

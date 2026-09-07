@@ -1,5 +1,5 @@
 {
-  "reviewed": "2026-08-31",
+  "reviewed": "2026-09-07",
   "exceptions": [
     {
       "ecosystem": "npm",
@@ -56,22 +56,6 @@
       "expires": "2026-11-30",
       "reason": "Mocha 10 pins serialize-javascript 6. It is used only by the desktop test runner with repository-controlled values.",
       "upgrade": "Remove after the WebdriverIO Mocha adapter accepts serialize-javascript 7.1.1 or newer."
-    },
-    {
-      "ecosystem": "rust",
-      "id": "RUSTSEC-2026-0194",
-      "package": "quick-xml",
-      "expires": "2026-11-30",
-      "reason": "Tauri and the app's plist dependency resolve quick-xml 0.38.4; the affected XML deserialization path is not used on untrusted XML.",
-      "upgrade": "Remove when plist/Tauri can resolve quick-xml 0.41.0 or newer."
-    },
-    {
-      "ecosystem": "rust",
-      "id": "RUSTSEC-2026-0195",
-      "package": "quick-xml",
-      "expires": "2026-11-30",
-      "reason": "Tauri and the app's plist dependency resolve quick-xml 0.38.4; the affected XML deserialization path is not used on untrusted XML.",
-      "upgrade": "Remove when plist/Tauri can resolve quick-xml 0.41.0 or newer."
     }
   ]
 }

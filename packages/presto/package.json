@@ -21,11 +21,11 @@
     "@playwright/test": "1.62.1",
     "@resvg/resvg-wasm": "^2.6.2",
     "@tauri-apps/api": "2.11.1",
-    "@tauri-apps/cli": "^2",
-    "@wdio/cli": "^9",
-    "@wdio/local-runner": "^9",
-    "@wdio/mocha-framework": "^9",
-    "@wdio/spec-reporter": "^9",
-    "webdriverio": "^9"
+    "@tauri-apps/cli": "^2.11.4",
+    "@wdio/cli": "^9.31.5",
+    "@wdio/local-runner": "^9.31.5",
+    "@wdio/mocha-framework": "^9.31.5",
+    "@wdio/spec-reporter": "^9.31.2",
+    "webdriverio": "^9.31.5"
   }
 }

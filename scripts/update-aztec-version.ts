@@ -5,31 +5,25 @@
  * Example: bun scripts/update-aztec-version.ts 5.0.0-nightly.20260220
  */
 
+import {
+  assertAztecReleaseEligible,
+  AZTEC_PACKAGE_FILES,
+  isAztecManagedDependency,
+  readManagedAztecPackages,
+} from "./aztec-release";
+
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly\.\d{8}|rc\.\d+|aztecnr-rc\.\d+))?$/;
 const AZTEC_VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly|spartan|devnet|aztecnr-rc|rc)[\w.-]*)?$/;
 
-const PACKAGE_JSON_FILES = [
-  "packages/sdk/package.json",
-  "packages/playground/package.json",
-];
-
-/**
- * Companion packages that must stay in version-lockstep with @aztec/*: their generated
- * code carries undeclared runtime imports of @aztec/aztec.js resolved against OUR pins,
- * so version skew breaks at runtime, silently. Explicit allowlist — NOT a scope prefix —
- * so unrelated @aztec-foundation packages never get swept up.
- */
-const LOCKSTEP_PACKAGES = new Set(["@aztec-foundation/aztec-standards"]);
-
 export function isAztecManagedDep(key: string): boolean {
-  return key.startsWith("@aztec/") || LOCKSTEP_PACKAGES.has(key);
+  return isAztecManagedDependency(key);
 }
 
 export function validateVersion(version: string): boolean {
   return VERSION_PATTERN.test(version);
 }
 
-export function updatePackageJson(content: string, newVersion: string, skipPackages?: Set<string>): string {
+export function updatePackageJson(content: string, newVersion: string): string {
   const pkg = JSON.parse(content);
 
   for (const section of ["dependencies", "devDependencies"] as const) {
@@ -37,43 +31,12 @@ export function updatePackageJson(content: string, newVersion: string, skipPacka
     if (!deps) continue;
     for (const [key, value] of Object.entries(deps)) {
       if (isAztecManagedDep(key) && typeof value === "string" && AZTEC_VERSION_PATTERN.test(value)) {
-        if (skipPackages?.has(key)) continue;
         deps[key] = newVersion;
       }
     }
   }
 
   return `${JSON.stringify(pkg, null, 2)}\n`;
-}
-
-async function findMissingPackages(version: string, packageFiles: string[]): Promise<Set<string>> {
-  const allAztecPackages = new Set<string>();
-  for (const filePath of packageFiles) {
-    const pkg = await Bun.file(filePath).json();
-    for (const section of ["dependencies", "devDependencies"] as const) {
-      const deps = pkg[section];
-      if (!deps) continue;
-      for (const [key, value] of Object.entries(deps)) {
-        if (isAztecManagedDep(key) && typeof value === "string" && AZTEC_VERSION_PATTERN.test(value)) {
-          allAztecPackages.add(key);
-        }
-      }
-    }
-  }
-
-  const missing = new Set<string>();
-  await Promise.all(
-    [...allAztecPackages].map(async (pkg) => {
-      const proc = Bun.spawn(["npm", "view", `${pkg}@${version}`, "version", "--json"], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) missing.add(pkg);
-    }),
-  );
-
-  return missing;
 }
 
 const CRS_FILE = "packages/playground/src/aztec.ts";
@@ -108,29 +71,16 @@ async function main() {
     process.exit(1);
   }
 
-  const skipPackages = await findMissingPackages(newVersion, PACKAGE_JSON_FILES);
-  if (skipPackages.size > 0) {
-    console.log(`Skipping unpublished packages: ${[...skipPackages].join(", ")}`);
-    // LOCKSTEP packages track @aztec/* releases from a DIFFERENT publisher — a skip here means
-    // the app would run mixed versions (undeclared runtime imports of @aztec/aztec.js make that
-    // lockstep a hard requirement). Loud, not fatal: nightlies stay unblocked, and the CI token
-    // spec is the behavioral gate that catches a truly broken mix.
-    const lockstepSkipped = [...skipPackages].filter((p) => LOCKSTEP_PACKAGES.has(p));
-    if (lockstepSkipped.length > 0) {
-      console.warn(
-        `⚠️  LOCKSTEP PACKAGE(S) NOT PUBLISHED AT ${newVersion}: ${lockstepSkipped.join(", ")} — ` +
-          `left at their previous version; the app will mix versions until they publish. ` +
-          `Verify the CI token spec passes before trusting this bump.`,
-      );
-    }
-  }
+  // Validate the complete lockstep set before the first write. Partial releases must never leave
+  // package manifests or the CRS cache at mixed versions.
+  await assertAztecReleaseEligible(newVersion, await readManagedAztecPackages());
 
   let updatedFiles = 0;
 
-  for (const filePath of PACKAGE_JSON_FILES) {
+  for (const filePath of AZTEC_PACKAGE_FILES) {
     const file = Bun.file(filePath);
     const original = await file.text();
-    const updated = updatePackageJson(original, newVersion, skipPackages);
+    const updated = updatePackageJson(original, newVersion);
     if (updated !== original) {
       await Bun.write(filePath, updated);
       console.log(`Updated ${filePath}`);
@@ -150,21 +100,7 @@ async function main() {
   }
 
   console.log("\nNext steps:");
-  console.log(
-    "  1. bun install   (a <7-day-old @aztec release is exempted via bunfig.toml's minimumReleaseAgeExcludes;",
-  );
-  console.log(
-    "     if a NEW @aztec transitive trips the min-age gate, add that exact name to the excludes list —",
-  );
-  console.log(
-    "     @aztec/-scoped names only, prune departed ones; scripts/bunfig-aztec-excludes.test.ts enforces both",
-  );
-  console.log(
-    "     directions. NEVER --minimum-release-age=0: that regen lifts the 7-day quarantine for every",
-  );
-  console.log(
-    "     third-party package in the tree — the snappy class the quarantine exists for.)",
-  );
+  console.log("  1. bun install   (the requested version and every managed companion were age-checked first)");
   console.log(
     "  2. bun run --cwd packages/playground typecheck:scripts   (catch @aztec API breaks in the deploy/fund scripts)",
   );

@@ -112,7 +112,9 @@ export default defineConfig(({ mode, command }) => {
   };
 
   // Read @aztec/stdlib version from SDK package.json at build time
-  const sdkPkg = JSON.parse(readFileSync(resolve(__dirname, "../sdk/package.json"), "utf8"));
+  const sdkPkg = JSON.parse(
+    readFileSync(resolve(import.meta.dirname, "../sdk/package.json"), "utf8"),
+  );
   const aztecSdkVersion: string = sdkPkg.dependencies["@aztec/stdlib"] ?? "unknown";
 
   return {

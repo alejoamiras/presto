@@ -48,6 +48,8 @@ jobs:
           key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
           restore-keys: ${{ runner.os }}-bun-
 
+      - uses: ./.github/actions/check-dependency-age
+
       - run: bun install --frozen-lockfile
 
       - uses: ./.github/actions/playwright-cache

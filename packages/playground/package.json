@@ -23,7 +23,7 @@
   },
   "dependencies": {
     "@alejoamiras/presto": "workspace:*",
-    "@aztec-foundation/aztec-standards": "5.0.1",
+    "@aztec-foundation/aztec-standards": "5.2.0",
     "@aztec/accounts": "5.2.0",
     "@aztec/aztec.js": "5.2.0",
     "@aztec/bb-prover": "5.2.0",
@@ -39,16 +39,16 @@
     "@aztec/wallets": "5.2.0"
   },
   "devDependencies": {
-    "@happy-dom/global-registrator": "^20.8.4",
+    "@happy-dom/global-registrator": "^20.12.0",
     "@playwright/test": "1.62.1",
-    "@tailwindcss/postcss": "^4.2.2",
-    "autoprefixer": "^10.4.27",
-    "msgpackr": "1.11.9",
-    "postcss": "^8.5.8",
-    "tailwindcss": "^4.2.2",
-    "typescript": "^6",
+    "@tailwindcss/postcss": "^4.3.3",
+    "autoprefixer": "^10.5.4",
+    "msgpackr": "2.1.0",
+    "postcss": "^8.5.26",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^7.0.2",
     "viem": "npm:@aztec/viem@2.38.2",
-    "vite": "^7.3.6",
+    "vite": "^8.2.2",
     "vite-plugin-node-polyfills": "^0.28"
   }
 }

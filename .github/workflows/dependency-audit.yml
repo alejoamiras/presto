@@ -10,9 +10,14 @@ on:
       - 'bun.lock'
       - '**/Cargo.toml'
       - '**/Cargo.lock'
+      - 'bunfig.toml'
+      - 'rust-toolchain.toml'
       - 'scripts/dependency-audit.ts'
       - 'scripts/dependency-audit.test.ts'
       - 'scripts/dependency-audit-allowlist.json'
+      - 'scripts/dependency-age.ts'
+      - 'scripts/dependency-age.test.ts'
+      - '.github/actions/check-dependency-age/action.yml'
       - '.github/workflows/dependency-audit.yml'
   schedule:
     - cron: "23 9 * * 1"
@@ -36,7 +41,7 @@ jobs:
           bun-version-file: .bun-version
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         with:
-          toolchain: stable
+          toolchain: 1.97.0
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: |
@@ -44,6 +49,8 @@ jobs:
             ~/.cargo/bin/cargo-audit
           key: ${{ runner.os }}-dependency-audit-bun-${{ hashFiles('bun.lock') }}-cargo-audit-0.22.2
           restore-keys: ${{ runner.os }}-dependency-audit-
+      - uses: ./.github/actions/check-dependency-age
+
       - run: bun install --frozen-lockfile
       - name: Install pinned cargo-audit
         run: |

@@ -3,7 +3,7 @@ name = "presto-server"
 version = "1.0.1-rc.1"
 description = "Headless Presto HTTP server (no GUI, no Tauri runtime)"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.93.1"
 
 # Sibling crate to `../src-tauri`. Lives in a separate Cargo package so that
 # `tauri build` (which scans `cargo metadata` and bundles every `[[bin]]` in

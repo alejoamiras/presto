@@ -729,10 +729,10 @@
           "markdownDescription": "Denies the size command without any pre-configured scope."
         },
         {
-          "description": "Default permissions for the plugin, which enables all commands.\n#### This default permission set includes:\n\n- `allow-new`\n- `allow-append`\n- `allow-prepend`\n- `allow-insert`\n- `allow-remove`\n- `allow-remove-at`\n- `allow-items`\n- `allow-get`\n- `allow-popup`\n- `allow-create-default`\n- `allow-set-as-app-menu`\n- `allow-set-as-window-menu`\n- `allow-text`\n- `allow-set-text`\n- `allow-is-enabled`\n- `allow-set-enabled`\n- `allow-set-presto`\n- `allow-set-as-windows-menu-for-nsapp`\n- `allow-set-as-help-menu-for-nsapp`\n- `allow-is-checked`\n- `allow-set-checked`\n- `allow-set-icon`",
+          "description": "Default permissions for the plugin, which enables all commands.\n#### This default permission set includes:\n\n- `allow-new`\n- `allow-append`\n- `allow-prepend`\n- `allow-insert`\n- `allow-remove`\n- `allow-remove-at`\n- `allow-items`\n- `allow-get`\n- `allow-popup`\n- `allow-create-default`\n- `allow-set-as-app-menu`\n- `allow-set-as-window-menu`\n- `allow-text`\n- `allow-set-text`\n- `allow-is-enabled`\n- `allow-set-enabled`\n- `allow-set-accelerator`\n- `allow-set-as-windows-menu-for-nsapp`\n- `allow-set-as-help-menu-for-nsapp`\n- `allow-is-checked`\n- `allow-set-checked`\n- `allow-set-icon`",
           "type": "string",
           "const": "core:menu:default",
-          "markdownDescription": "Default permissions for the plugin, which enables all commands.\n#### This default permission set includes:\n\n- `allow-new`\n- `allow-append`\n- `allow-prepend`\n- `allow-insert`\n- `allow-remove`\n- `allow-remove-at`\n- `allow-items`\n- `allow-get`\n- `allow-popup`\n- `allow-create-default`\n- `allow-set-as-app-menu`\n- `allow-set-as-window-menu`\n- `allow-text`\n- `allow-set-text`\n- `allow-is-enabled`\n- `allow-set-enabled`\n- `allow-set-presto`\n- `allow-set-as-windows-menu-for-nsapp`\n- `allow-set-as-help-menu-for-nsapp`\n- `allow-is-checked`\n- `allow-set-checked`\n- `allow-set-icon`"
+          "markdownDescription": "Default permissions for the plugin, which enables all commands.\n#### This default permission set includes:\n\n- `allow-new`\n- `allow-append`\n- `allow-prepend`\n- `allow-insert`\n- `allow-remove`\n- `allow-remove-at`\n- `allow-items`\n- `allow-get`\n- `allow-popup`\n- `allow-create-default`\n- `allow-set-as-app-menu`\n- `allow-set-as-window-menu`\n- `allow-text`\n- `allow-set-text`\n- `allow-is-enabled`\n- `allow-set-enabled`\n- `allow-set-accelerator`\n- `allow-set-as-windows-menu-for-nsapp`\n- `allow-set-as-help-menu-for-nsapp`\n- `allow-is-checked`\n- `allow-set-checked`\n- `allow-set-icon`"
         },
         {
           "description": "Enables the append command without any pre-configured scope.",
@@ -807,10 +807,10 @@
           "markdownDescription": "Enables the remove_at command without any pre-configured scope."
         },
         {
-          "description": "Enables the set_presto command without any pre-configured scope.",
+          "description": "Enables the set_accelerator command without any pre-configured scope.",
           "type": "string",
-          "const": "core:menu:allow-set-presto",
-          "markdownDescription": "Enables the set_presto command without any pre-configured scope."
+          "const": "core:menu:allow-set-accelerator",
+          "markdownDescription": "Enables the set_accelerator command without any pre-configured scope."
         },
         {
           "description": "Enables the set_as_app_menu command without any pre-configured scope.",
@@ -939,10 +939,10 @@
           "markdownDescription": "Denies the remove_at command without any pre-configured scope."
         },
         {
-          "description": "Denies the set_presto command without any pre-configured scope.",
+          "description": "Denies the set_accelerator command without any pre-configured scope.",
           "type": "string",
-          "const": "core:menu:deny-set-presto",
-          "markdownDescription": "Denies the set_presto command without any pre-configured scope."
+          "const": "core:menu:deny-set-accelerator",
+          "markdownDescription": "Denies the set_accelerator command without any pre-configured scope."
         },
         {
           "description": "Denies the set_as_app_menu command without any pre-configured scope.",

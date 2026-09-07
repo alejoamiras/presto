@@ -32,6 +32,8 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
+      - uses: ./.github/actions/check-dependency-age
+
       - run: bun install --frozen-lockfile
       - name: Build without deployment credentials
         env:
@@ -60,7 +62,10 @@ jobs:
           name: presto-preview-${{ matrix.site }}
           path: dist
       - name: Install the pinned deployment CLI without lifecycle scripts
-        run: npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/presto-preview-cli" wrangler@4.124.0
+        run: |
+          cutoff="$(date -u -d '7 days ago' '+%Y-%m-%dT%H:%M:%SZ')"
+          npm install --before="$cutoff" --ignore-scripts --no-audit --no-fund \
+            --prefix "$RUNNER_TEMP/presto-preview-cli" wrangler@4.127.1
       - name: Write fixed preview configuration
         env:
           SITE: ${{ matrix.site }}
