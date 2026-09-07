@@ -17,3 +17,11 @@ untouched, and failure modes remained closed. It requested:
 6. Minor ordering and whitespace cleanup — adopted.
 
 Session: `e45d368e-08bf-4a9f-b9b6-45dea20941c6`.
+
+## Arc 1 — round 2
+
+Verdict: approve.
+
+Claude verified that the new wrong-key ordering case distinguishes the intended selector, the exact
+error assertions reject unrelated failures, runbook repetition is gone, the sentinel comment is
+useful, and no workflow/security behavior changed. No material findings remained.
