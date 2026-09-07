@@ -7,8 +7,9 @@ Commit dates were not used as publication evidence.
 
 ## Selected direct versions
 
-- JavaScript tooling: Biome 2.5.11, TypeScript 7.0.2, Vite 8.2.2, Wrangler 4.127.1,
-  lint-staged 17.4.1, sort-package-json 4.0.0, Node typings 24.13.3, and the existing Bun 1.4.0.
+- JavaScript tooling: Biome 2.5.11, TypeScript 7.0.2, Vite 8.2.2 for the landing site,
+  Vite 7.3.6 for the playground, Wrangler 4.127.1, lint-staged 17.4.1,
+  sort-package-json 4.0.0, Node typings 24.13.3, and the existing Bun 1.4.0.
 - Browser/test tooling: happy-dom 20.12.0, Tailwind 4.3.3, PostCSS 8.5.26,
   Autoprefixer 10.5.4, msgpackr 2.1.0, WebdriverIO 9.31.5 (spec reporter 9.31.2), and the
   existing Playwright 1.62.1.
@@ -42,9 +43,10 @@ upstream provides timestamped stable release evidence; no commit-date substitute
   the supported runtime.
 - Foundry stays at 1.4.1: Aztec 5.2's deployment wrapper passes a CLI combination rejected by
   Foundry 1.7 and later. The independently reviewed Windows bb checksum remains unchanged.
-- Vite 8 still supports the existing esbuild dependency-optimizer hook, which is required to map
-  Aztec package-internal imports in development. Its deprecation warning is recorded; replacing it
-  without an equivalent Rolldown resolver would break the dev server.
+- Playground Vite 8.2.2 is withheld. Its Rolldown production build miscompiles the Aztec
+  sqlite-opfs ordered-key path, which then calls `utf8Write` on an undefined target during browser
+  initialization. The same dependency graph passes the existing production smoke on Vite 7.3.6;
+  the landing site remains on Vite 8 because its smaller graph passes its production build.
 - reqwest 0.13 replaces the OpenSSL/native-tls graph with rustls plus the platform verifier and
   native certificate roots. Rustls's AWS-LC provider adds `aws-lc-sys` and a CMake build dependency.
   Headless Linux CI therefore no longer installs `libssl-dev`; desktop jobs retain it as part of

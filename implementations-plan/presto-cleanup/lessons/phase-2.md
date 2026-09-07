@@ -17,8 +17,9 @@
 - Wrangler 4.127.1 required regenerated Worker runtime types.
 - rcgen 0.14 replaced the certificate-plus-key signing call with an `Issuer`; the CA key remains
   zeroized immediately after leaf signing. Certificate-chain and live TLS-handshake tests pass.
-- Vite 8's native config loader requires `import.meta.dirname`; the existing Aztec dev-server
-  resolver remains on the still-supported esbuild hook for behavioral compatibility.
+- Vite 8 remains valid for the landing site, but its Rolldown production build miscompiles the
+  playground's Aztec sqlite-opfs ordered-key path. The playground therefore stays on eligible Vite
+  7.3.6 while retaining the other dependency upgrades.
 - reqwest 0.13 moved HTTP TLS to rustls with platform verification, removing the headless Linux
   OpenSSL build dependency. This also supersedes Dependabot #11 by removing its package graph.
 - quick-xml 0.41 removed two RustSec findings, so their stale audit exceptions were deleted.
@@ -28,7 +29,7 @@
 - `bun run test`: passed.
 - `bun run lint:actions`: passed.
 - `bun run audit:dependencies`: passed with no blocked findings or stale exceptions.
-- The live seven-day sweep checked 94 npm and 215 Cargo resolved changes; all passed.
+- The live seven-day sweep checked 120 npm and 215 Cargo resolved changes; all passed.
 - SDK, playground, and landing production builds: passed.
 - Core: 266 Rust tests passed. Server: 12 passed. Desktop: 134 passed, 7 prepared-platform tests
   ignored locally; certificate generation and real loopback TLS handshake passed.
@@ -40,6 +41,10 @@
 - PR CI caught a stale headless-tree tripwire that still rejected `tokio-rustls` after reqwest moved
   to rustls. The guard now permits client TLS while continuing to reject GUI and certificate-serving
   crates, with a focused contract test.
+- PR CI also reproduced the playground failure its production smoke was designed to catch: Vite 8's
+  Rolldown bundle reached `Cannot read properties of undefined (reading 'utf8Write')` during browser
+  initialization. Reverting only msgpackr did not help; retaining msgpackr 2.1.0 while withholding
+  playground Vite 8 passed the same smoke locally.
 
 ## Claude review — round 1
 
