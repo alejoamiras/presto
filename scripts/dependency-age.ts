@@ -91,6 +91,7 @@ export function parseCargoLock(text: string): ResolvedDependency[] {
 }
 
 function dependencyIdentity(record: ResolvedDependency): string {
+  // A source change is a new trust decision even when the package name and version stay constant.
   return [record.ecosystem, record.name, record.version, record.source].join("\0");
 }
 
@@ -108,6 +109,7 @@ function uniqueDependencies(records: ResolvedDependency[]): ResolvedDependency[]
 
 export function parseActionReferences(text: string): ActionReference[] {
   const references: ActionReference[] = [];
+  // action-pins.test.ts enforces this exact SHA plus human-readable tag form across the repository.
   const pattern = /uses:\s*([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+(?:\/[^@\s]+)?)@([0-9a-f]{40})\s*#\s*(\S+)/g;
 
   for (const match of text.matchAll(pattern)) {
@@ -291,6 +293,7 @@ async function readAtRef(ref: string, path: string): Promise<string> {
   try {
     return await runGit(["show", `${ref}:${path}`]);
   } catch {
+    // A missing base path becomes an empty baseline, so every current entry is checked fail-closed.
     return "";
   }
 }

@@ -88,11 +88,9 @@ async function main() {
     }
   }
 
-  // Companion bumps an @aztec version change also requires (lessons from the 5.0.0-rc.2 bump):
+  // Update the generated CRS cache key required by every @aztec version change.
   const crsBumped = await updateCrsCacheVersion(newVersion);
   if (crsBumped) console.log(`Bumped CRS_CACHE_VERSION → ${newVersion} in ${CRS_FILE}.`);
-  // The Windows bb.exe pin is intentionally NOT touched here (F-008) — see check-windows-bb-pin.ts.
-
   if (updatedFiles === 0 && !crsBumped) {
     console.log("\nAll files already at target version. No changes needed.");
   } else {

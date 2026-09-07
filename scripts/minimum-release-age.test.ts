@@ -39,7 +39,7 @@ describe("npm release-age enforcement", () => {
 
     const aztecUpdate = readFileSync(join(ROOT, ".github/workflows/_aztec-update.yml"), "utf8");
     expect(aztecUpdate).toMatch(
-      /run: bun install[\s\S]{0,160}uses: \.\/\.github\/actions\/check-dependency-age/,
+      /run: bun install[\s\S]{0,320}GITHUB_TOKEN: \$\{\{ github\.token \}\}[\s\S]{0,80}run: bun scripts\/dependency-age\.ts --base HEAD/,
     );
   });
 });

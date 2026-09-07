@@ -93,9 +93,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
       ecosystem: "cargo",
       name: "transitive",
       version: "2.0.0",
-      source: "git+https://example.test/repo",
+      source: "registry+https://github.com/rust-lang/crates.io-index",
     };
-    await expect(verifyCargoDependency(cargo, NOW)).rejects.toThrow("unsupported Cargo source");
+    await expect(
+      verifyCargoDependency(cargo, NOW, async () =>
+        response({
+          versions: [{ num: "2.0.0", created_at: "2026-09-01T00:00:00Z", yanked: false }],
+        }),
+      ),
+    ).rejects.toThrow("eligible");
+    await expect(
+      verifyCargoDependency(cargo, NOW, async () =>
+        response({ versions: [{ num: "2.0.0", created_at: BOUNDARY, yanked: true }] }),
+      ),
+    ).rejects.toThrow("release is yanked");
+    await expect(
+      verifyCargoDependency({ ...cargo, source: "git+https://example.test/repo" }, NOW),
+    ).rejects.toThrow("unsupported Cargo source");
   });
 
   test("scans composite Actions and verifies release age plus exact tag commit", async () => {
@@ -141,6 +155,47 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
         return response({ object: { type: "commit", sha: "3".repeat(40) } });
       }),
     ).rejects.toThrow("tag resolves to");
+  });
+
+  test("rejects unstable Action releases and resolves annotated tags", async () => {
+    const reference = {
+      repository: "owner/action",
+      path: "",
+      sha: "2".repeat(40),
+      tag: "v2.0.0",
+    };
+    for (const release of [
+      { tag_name: "v2.0.0", published_at: BOUNDARY, draft: true, prerelease: false },
+      { tag_name: "v2.0.0", published_at: BOUNDARY, draft: false, prerelease: true },
+      { tag_name: "v2.0.1", published_at: BOUNDARY, draft: false, prerelease: false },
+    ]) {
+      await expect(
+        verifyActionReference(reference, NOW, async () => response(release)),
+      ).rejects.toThrow("tag is not an exact stable release");
+    }
+
+    const calls: string[] = [];
+    await verifyActionReference(reference, NOW, async (input) => {
+      const url = String(input);
+      calls.push(url);
+      if (url.includes("/releases/tags/")) {
+        return response({
+          tag_name: reference.tag,
+          published_at: BOUNDARY,
+          draft: false,
+          prerelease: false,
+        });
+      }
+      if (url.includes("/git/ref/tags/")) {
+        return response({ object: { type: "tag", url: "https://api.example.test/tag-object" } });
+      }
+      return response({ object: { type: "commit", sha: reference.sha } });
+    });
+    expect(calls).toEqual([
+      "https://api.github.com/repos/owner/action/releases/tags/v2.0.0",
+      "https://api.github.com/repos/owner/action/git/ref/tags/v2.0.0",
+      "https://api.example.test/tag-object",
+    ]);
   });
 });
 

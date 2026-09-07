@@ -17,15 +17,19 @@ Commit dates were not used as publication evidence.
 - Rust: base64 0.23, which 8, tower-http 0.7, reqwest 0.13, uuid 1.26.0,
   tauri-plugin-updater 2.11, rcgen 0.14, and serial_test 4. All three independent lockfiles were
   regenerated and every newly resolved crates.io entry was age-checked.
-- CI tools: Node 24.20.0, npm 12.0.2, cargo-audit 0.22.2, and Rust 1.97.0. The declared Rust
-  requirement is 1.93.1 because serial_test 4.0.1 is the highest selected dependency MSRV.
+- CI tools: Node 24.20.0, npm 12.0.2, cargo-audit 0.22.2, and Rust 1.98.0. Rust 1.98.0 was
+  [released on 2026-08-20](https://blog.rust-lang.org/2026/08/20/Rust-1.98.0/), before the cutoff.
+  The declared Rust requirement is 1.93.1 because serial_test 4.0.1 is the highest selected
+  dependency MSRV.
 
 The SHA-pinned Actions were already the newest eligible stable releases: checkout 7.0.1,
 cache 6.1.0, setup-node 7.0.0, setup-bun 2.2.0, upload-artifact 7.0.1,
 download-artifact 8.0.1, paths-filter 4.0.3, create-github-app-token 3.2.0,
-rust-cache 2.9.2, foundry-toolchain 1.9.1, and dtolnay/rust-toolchain's documented `v1` ref.
-Their release timestamps and exact tag-to-commit relationships were checked; unchanged pins remain
-outside the stacked diff.
+rust-cache 2.9.2, and foundry-toolchain 1.9.1. Their release timestamps and exact
+tag-to-commit relationships were checked; unchanged pins remain outside the stacked diff.
+`dtolnay/rust-toolchain` publishes no GitHub Releases, so its unchanged SHA-pinned documented `v1`
+ref cannot satisfy the release-timestamp policy. A future pin change will fail closed until the
+upstream provides timestamped stable release evidence; no commit-date substitute or exemption was added.
 
 ## Withheld candidates and constraints
 
@@ -41,6 +45,9 @@ outside the stacked diff.
 - Vite 8 still supports the existing esbuild dependency-optimizer hook, which is required to map
   Aztec package-internal imports in development. Its deprecation warning is recorded; replacing it
   without an equivalent Rolldown resolver would break the dev server.
+- reqwest 0.13 replaces the OpenSSL/native-tls graph with rustls plus the platform verifier and
+  native certificate roots. Headless Linux CI therefore no longer installs `libssl-dev`; desktop
+  jobs retain it as part of the existing Tauri system-dependency bundle.
 - The stable Wrangler release depends on an alpha-labelled Miniflare build. That transitive is an
   upstream exact compatibility choice, not a direct prerelease selection, and its publication age
   is still enforced.
@@ -48,5 +55,6 @@ outside the stacked diff.
 ## Dependabot baseline
 
 Open at implementation start: #8 (`tar 0.4.46`), #9 (`tauri 2.11.1`), #10 (`serde_with 3.22.0`),
-and #11 (`openssl 0.10.81`). This refresh supersedes their dependency changes. They should be marked
-superseded only after this stacked dependency PR merges.
+and #11 (`openssl 0.10.81`). This refresh supersedes their dependency changes; #11 is superseded by
+removing OpenSSL from all three resolved graphs. They should be marked superseded only after this
+stacked dependency PR merges.

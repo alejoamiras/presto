@@ -39,14 +39,6 @@ jobs:
           aztec_node_url: ${{ inputs.aztec_node_url }}
 
       # ── Presto (optional) ──────────────────────────────────────
-      - name: Install system dependencies (presto)
-        if: inputs.build_presto
-        run: |
-          sudo apt-get update
-          # Headless only: this leg builds just `presto-server` (no Tauri GUI) → drop WebKit/GTK; keep
-          # libssl-dev for reqwest (the bb download). (core-extraction Phase 3b follow-up)
-          sudo apt-get install -y libssl-dev
-
       - name: Copy bb sidecar
         if: inputs.build_presto
         run: bun run --cwd packages/presto prebuild
@@ -68,7 +60,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
         if: inputs.build_presto
         with:
-          toolchain: 1.97.0
+          toolchain: 1.98.0
 
       # This job builds the server crate FROM packages/presto/server, so
       # Cargo writes all artifacts (incl. the src-tauri path-dep) under

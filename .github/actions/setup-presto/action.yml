@@ -37,8 +37,8 @@ inputs:
     default: "clippy,rustfmt"
   install-tauri-system-deps:
     description: |
-      When "false", install ONLY the headless build dep (libssl-dev, for reqwest) and SKIP the desktop
-      Tauri GUI libraries (WebKit/GTK/appindicator/rsvg/patchelf). Default "true" preserves desktop behavior.
+      When "false", SKIP the desktop Tauri GUI libraries (WebKit/GTK/appindicator/rsvg/patchelf).
+      Headless reqwest uses rustls and needs no apt package. Default "true" preserves desktop behavior.
       Compared as a STRING (GHA inputs are strings) — gates use `!= 'false'` / `== 'false'`.
     required: false
     default: "true"
@@ -76,19 +76,12 @@ runs:
         fi
         echo "Host=$HOST matches rust-target=$REQUESTED_TARGET"
 
-    - name: Install Linux system dependencies (desktop — Tauri GUI + headless)
+    - name: Install Linux system dependencies (desktop — Tauri GUI)
       if: runner.os == 'Linux' && inputs.install-tauri-system-deps != 'false'
       shell: bash
       run: |
         sudo apt-get update
         sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf libssl-dev libgtk-3-dev
-    - name: Install Linux system dependencies (headless-only — libssl for reqwest)
-      if: runner.os == 'Linux' && inputs.install-tauri-system-deps == 'false'
-      shell: bash
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y libssl-dev
-
     - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
       with:
         bun-version-file: .bun-version
@@ -107,7 +100,7 @@ runs:
     # F-015: pin to a master-history SHA (not the GC-able @stable commit) + explicit channel.
     - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
       with:
-        toolchain: 1.97.0
+        toolchain: 1.98.0
         components: ${{ inputs.rust-components }}
         targets: ${{ inputs.rust-target }}
 

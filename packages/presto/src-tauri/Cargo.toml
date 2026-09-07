@@ -68,8 +68,8 @@ hex = "0.4"
 # post-use scrubbing (the ring backend scalar/nonce + swap + core dumps are NOT covered; documented in
 # certs.rs). The CA key is never written to disk.
 rcgen = { version = "0.14", features = ["pem", "x509-parser", "zeroize"] }
-# Direct dep so we can name `Zeroizing` (rcgen does not re-export it); already locked at 1.8.2 transitively
-# via rcgen, so this adds no new package version.
+# Direct dep so we can name `Zeroizing` (rcgen does not re-export it); already present transitively via
+# rcgen, so this adds no new package version.
 zeroize = "1"
 # `verify` gates X509Certificate::verify_signature, used to prove the live leaf is actually signed
 # by the live CA (a partial cert swap otherwise passes every other check). It pulls `ring`, which

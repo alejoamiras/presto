@@ -9,6 +9,7 @@ export const AZTEC_PACKAGE_FILES = [
   "packages/playground/package.json",
 ];
 
+// This package imports generated @aztec code without declaring it, so mixed versions fail at runtime.
 const LOCKSTEP_PACKAGES = new Set(["@aztec-foundation/aztec-standards"]);
 
 export function isAztecManagedDependency(name: string): boolean {

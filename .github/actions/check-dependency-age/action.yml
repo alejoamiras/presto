@@ -8,7 +8,7 @@ runs:
       id: result-cache
       with:
         path: ${{ runner.temp }}/presto-dependency-age
-        key: dependency-age-v1-${{ runner.os }}-${{ github.event.pull_request.base.sha || github.event.before }}-${{ hashFiles('bun.lock', '**/Cargo.lock', 'scripts/dependency-age.ts', '.github/workflows/*.yml', '.github/actions/*/action.yml') }}
+        key: dependency-age-v1-${{ runner.os }}-${{ github.event.pull_request.base.sha || github.event.before }}-${{ hashFiles('bun.lock', '**/Cargo.lock', 'scripts/dependency-age.ts', '.github/**/*.yml', '.github/**/*.yaml') }}
 
     - name: Check changed dependency references
       if: steps.result-cache.outputs.cache-hit != 'true'
@@ -28,5 +28,6 @@ runs:
         fi
         git cat-file -e "$BASE_SHA^{commit}" 2>/dev/null || git fetch --no-tags --depth=1 origin "$BASE_SHA"
         bun scripts/dependency-age.ts --base "$BASE_SHA"
+        # The cache marker is written only after the exact base/content pair passes every check.
         mkdir -p "$RUNNER_TEMP/presto-dependency-age"
         touch "$RUNNER_TEMP/presto-dependency-age/passed"
