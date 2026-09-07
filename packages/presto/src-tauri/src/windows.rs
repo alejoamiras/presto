@@ -72,6 +72,23 @@ fn focus_window(window: &tauri::WebviewWindow) {
     let _ = window.set_focus();
 }
 
+fn reassert_theme(window: &tauri::WebviewWindow) {
+    let theme = match window.app_handle().try_state::<commands::ConfigState>() {
+        Some(state) => state.lock.read().theme,
+        None => {
+            // ConfigState is managed before any window is built, so absence is a wiring regression.
+            tracing::warn!("No ConfigState while re-asserting the theme; using the default");
+            config::Theme::default()
+        }
+    };
+    if let Err(error) = window.eval(commands::theme_script(
+        theme,
+        commands::ThemeSource::Authoritative,
+    )) {
+        tracing::warn!(window = %window.label(), error = %error, "Could not re-assert the theme after a page load");
+    }
+}
+
 /// Parameters for [`open_or_focus_window`]. `url`, `label` are owned/borrowed as the call site needs
 /// (the auth/update labels + URLs are built per-call; settings' are static).
 struct WindowConfig<'a> {
@@ -120,7 +137,10 @@ fn open_or_focus_window(app: &AppHandle, config: WindowConfig) -> Option<tauri::
     };
     match WebviewWindowBuilder::new(app, config.label, WebviewUrl::App(config.url.into()))
         .title(config.title)
-        .initialization_script(commands::theme_script(theme, commands::ThemeSource::PreferStored))
+        .initialization_script(commands::theme_script(
+            theme,
+            commands::ThemeSource::PreferStored,
+        ))
         .inner_size(config.width, config.height)
         .resizable(false)
         .center()
@@ -144,18 +164,7 @@ fn open_or_focus_window(app: &AppHandle, config: WindowConfig) -> Option<tauri::
             if payload.event() != tauri::webview::PageLoadEvent::Finished {
                 return;
             }
-            let theme = match window.app_handle().try_state::<commands::ConfigState>() {
-                Some(state) => state.lock.read().theme,
-                None => {
-                    // Registered before any window is built, so absence is a wiring regression.
-                    tracing::warn!("No ConfigState while re-asserting the theme; using the default");
-                    config::Theme::default()
-                }
-            };
-            if let Err(e) = window.eval(commands::theme_script(theme, commands::ThemeSource::Authoritative))
-            {
-                tracing::warn!(window = %window.label(), error = %e, "Could not re-assert the theme after a page load");
-            }
+            reassert_theme(&window);
         })
         .build()
     {
@@ -192,6 +201,7 @@ pub fn open_settings_window(app: &AppHandle) {
 
 /// Open or focus the first-run onboarding wizard (shown once on first launch, and re-openable via the
 /// Settings "Run setup again" action). Single-card layout — see `onboarding.html`.
+#[cfg(not(feature = "webdriver"))]
 pub fn show_onboarding_window(app: &AppHandle) {
     open_or_focus_window(
         app,

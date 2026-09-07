@@ -2,8 +2,7 @@ export const SDK_PACKAGE = "@alejoamiras/presto";
 export const SDK_RELEASE_WORKFLOW = ".github/workflows/release-sdk.yml";
 export const LEGACY_SDK_RELEASE_WORKFLOW = ".github/workflows/publish-testnet.yml";
 export const SDK_REPOSITORY = "https://github.com/alejoamiras/presto";
-export const SDK_SOURCE_DEPENDENCY =
-  "git+https://github.com/alejoamiras/presto@refs/heads/main";
+export const SDK_SOURCE_DEPENDENCY = "git+https://github.com/alejoamiras/presto@refs/heads/main";
 export const SDK_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-revision\.\d+)?$/;
 
 interface AttestationResponse {
@@ -76,11 +75,11 @@ export function verifyProvenanceStatement(
   }
 
   const commit = definition?.resolvedDependencies?.find(
-    (dependency) =>
-      dependency.uri === SDK_SOURCE_DEPENDENCY && dependency.digest?.gitCommit,
+    (dependency) => dependency.uri === SDK_SOURCE_DEPENDENCY && dependency.digest?.gitCommit,
   )?.digest?.gitCommit;
   if (!commit) throw new Error("provenance has no resolved git commit");
-  if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error(`provenance has invalid git commit ${commit}`);
+  if (!/^[0-9a-f]{40}$/.test(commit))
+    throw new Error(`provenance has invalid git commit ${commit}`);
   if (expectedCommit && commit !== expectedCommit) {
     throw new Error(`provenance commit ${commit} does not match expected ${expectedCommit}`);
   }

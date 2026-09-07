@@ -119,6 +119,7 @@ test("ephemeral Windows updater smoke prepares its signed feed before running th
   expect(workflow.replace(/^\s*#.*$/gm, "")).not.toMatch(/\$\{\{ secrets\./);
 });
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("release-presto.yml — B6 publish/promote contract", () => {
   test("least privilege: `promote` is the only leg that writes the feed", () => {
     expect(WF.match(/wrangler kv key put/g)).toHaveLength(1);

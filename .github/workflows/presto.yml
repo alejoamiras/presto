@@ -52,9 +52,6 @@ jobs:
     if: needs.changes.outputs.rust_platform == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: packages/presto/src-tauri
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-presto
@@ -63,11 +60,9 @@ jobs:
           rust-workspaces: |
             packages/presto/src-tauri -> target
             packages/presto/core -> target
-      - run: cargo fmt --check
-      - run: cargo clippy --all-targets -- -D warnings
-      # presto-core is standalone (compiled as a path-dep of src-tauri, but not lint-covered by it).
-      - run: cargo fmt --check --manifest-path ../core/Cargo.toml
-      - run: cargo clippy --manifest-path ../core/Cargo.toml --all-targets -- -D warnings
+            packages/presto/server -> target
+      - run: bun run lint:rust
+      - run: bun run lint:clippy
 
   test:
     name: Rust Tests
@@ -78,9 +73,6 @@ jobs:
     # `gh run rerun`, which does not restore the cache) does a full workspace rebuild that can
     # exceed 10 min and time out. 20 gives a cold build headroom without masking a real hang.
     timeout-minutes: 20
-    defaults:
-      run:
-        working-directory: packages/presto/src-tauri
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-presto
@@ -89,10 +81,11 @@ jobs:
           rust-workspaces: |
             packages/presto/src-tauri -> target
             packages/presto/core -> target
+            packages/presto/server -> target
           rust-components: ""
-      - run: cargo test
-      # presto-core's own unit tests (113) — not exercised by `cargo test` in src-tauri.
-      - run: cargo test --manifest-path ../core/Cargo.toml
+      - run: cargo test --locked --manifest-path packages/presto/src-tauri/Cargo.toml
+      - run: cargo test --locked --manifest-path packages/presto/core/Cargo.toml
+      - run: cargo test --locked --manifest-path packages/presto/server/Cargo.toml
 
   cert-trust:
     name: Cert Trust (${{ matrix.platform }})

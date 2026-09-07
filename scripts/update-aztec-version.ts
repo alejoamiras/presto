@@ -8,10 +8,7 @@
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly\.\d{8}|rc\.\d+|aztecnr-rc\.\d+))?$/;
 const AZTEC_VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly|spartan|devnet|aztecnr-rc|rc)[\w.-]*)?$/;
 
-const PACKAGE_JSON_FILES = [
-  "packages/sdk/package.json",
-  "packages/playground/package.json",
-];
+const PACKAGE_JSON_FILES = ["packages/sdk/package.json", "packages/playground/package.json"];
 
 /**
  * Companion packages that must stay in version-lockstep with @aztec/*: their generated
@@ -29,14 +26,22 @@ export function validateVersion(version: string): boolean {
   return VERSION_PATTERN.test(version);
 }
 
-export function updatePackageJson(content: string, newVersion: string, skipPackages?: Set<string>): string {
+export function updatePackageJson(
+  content: string,
+  newVersion: string,
+  skipPackages?: Set<string>,
+): string {
   const pkg = JSON.parse(content);
 
   for (const section of ["dependencies", "devDependencies"] as const) {
     const deps = pkg[section];
     if (!deps) continue;
     for (const [key, value] of Object.entries(deps)) {
-      if (isAztecManagedDep(key) && typeof value === "string" && AZTEC_VERSION_PATTERN.test(value)) {
+      if (
+        isAztecManagedDep(key) &&
+        typeof value === "string" &&
+        AZTEC_VERSION_PATTERN.test(value)
+      ) {
         if (skipPackages?.has(key)) continue;
         deps[key] = newVersion;
       }
@@ -54,7 +59,11 @@ async function findMissingPackages(version: string, packageFiles: string[]): Pro
       const deps = pkg[section];
       if (!deps) continue;
       for (const [key, value] of Object.entries(deps)) {
-        if (isAztecManagedDep(key) && typeof value === "string" && AZTEC_VERSION_PATTERN.test(value)) {
+        if (
+          isAztecManagedDep(key) &&
+          typeof value === "string" &&
+          AZTEC_VERSION_PATTERN.test(value)
+        ) {
           allAztecPackages.add(key);
         }
       }

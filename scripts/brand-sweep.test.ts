@@ -67,7 +67,6 @@ const IDENTITY_PRESENT: Record<string, string[]> = {
   ".github/workflows/release-presto.yml": ["Presto-"],
 };
 
-
 describe("brand sweep", () => {
   test("retired visual values are gone from every product surface", async () => {
     const hits: string[] = [];
@@ -92,24 +91,42 @@ describe("brand sweep", () => {
   });
 
   test("retired operational names occur only in historical audits and the migration guide", async () => {
-    const files = Bun.spawnSync(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], { cwd: ROOT });
-    expect(files.exitCode).toBe(0);
+    const paths = trackedAndUnignoredPaths();
     // Build the retired spelling so the guard does not match its own source.
-    const retired = new RegExp("aztec[ _%-]*" + "accelerator|aztec%20" + "accelerator|AZTEC_" + "ACCEL_|\\bAccelerator(?:Prover|Config|Status|Phase|Protocol|HttpError)|accelerator" + "Version", "i");
-    const hits: string[] = [];
-    const paths = new Set(files.stdout.toString().split("\0").filter(Boolean));
+    const retired = new RegExp(
+      "aztec[ _%-]*" +
+        "accelerator|aztec%20" +
+        "accelerator|AZTEC_" +
+        "ACCEL_|\\bAccelerator(?:Prover|Config|Status|Phase|Protocol|HttpError)|accelerator" +
+        "Version",
+      "i",
+    );
     expect(paths.size).toBeGreaterThan(100);
     expect(paths.has("packages/presto/src-tauri/tauri.conf.json")).toBe(true);
     expect(retired.test("Accelerator" + "Prover")).toBe(true);
-    for (const rel of paths) {
-      if (rel.startsWith("audit/") || rel === "packages/sdk/MIGRATION.md") continue;
-      const path = join(ROOT, rel);
-      if (!existsSync(path)) continue; // Staged deletions.
-      const bytes = await Bun.file(path).arrayBuffer();
-      if (new Uint8Array(bytes).includes(0)) continue; // Binary assets.
-      const text = new TextDecoder().decode(bytes);
-      if (retired.test(rel) || retired.test(text)) hits.push(rel);
-    }
-    expect(hits).toEqual([]);
+    expect(await findRetiredNames(paths, retired)).toEqual([]);
   });
 });
+
+function trackedAndUnignoredPaths(): Set<string> {
+  const files = Bun.spawnSync(
+    ["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"],
+    { cwd: ROOT },
+  );
+  expect(files.exitCode).toBe(0);
+  return new Set(files.stdout.toString().split("\0").filter(Boolean));
+}
+
+async function findRetiredNames(paths: Set<string>, retired: RegExp): Promise<string[]> {
+  const hits: string[] = [];
+  for (const rel of paths) {
+    if (rel.startsWith("audit/") || rel === "packages/sdk/MIGRATION.md") continue;
+    const path = join(ROOT, rel);
+    if (!existsSync(path)) continue; // Staged deletions.
+    const bytes = await Bun.file(path).arrayBuffer();
+    if (new Uint8Array(bytes).includes(0)) continue; // Binary assets.
+    const text = new TextDecoder().decode(bytes);
+    if (retired.test(rel) || retired.test(text)) hits.push(rel);
+  }
+  return hits;
+}

@@ -70,8 +70,7 @@ fn open_in_browser(target: &impl AsRef<Path>) {
 
 // ── HTTPS startup ────────────────────────────────────────────────────────
 
-/// q7e3-F-01: the launch-time HTTPS gate as a pure value, lifted out of `try_start_https` so the
-/// reset-vs-skip asymmetry (the audit's most-fragile point) is unit-testable with zero mocks.
+/// Pure launch-time HTTPS gate, separated so reset-vs-skip behavior is testable without mocks.
 #[derive(Debug, PartialEq, Eq)]
 enum LaunchHttpsGate {
     /// HTTPS is off — do nothing.
@@ -109,16 +108,20 @@ fn classify_launch_https(
 /// **Must be called while holding the HTTPS lifecycle lock.** Every cert read and write in here —
 /// `certs_exist`, `is_ca_trusted`, the rotation's `swap_into`, the TLS load — has to be serialized
 /// against the enable and renewal paths, or launch can observe a MIXED new-leaf/old-key set mid-swap
-/// and then reset `https_enabled` over an enable that just succeeded (post-impl codex Medium).
+/// and then reset `https_enabled` over an enable that just succeeded.
 /// `None` ⇒ don't start a listener.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "the launch gate, optional rotation, and TLS load are one fail-closed certificate decision"
+)]
 fn prepare_launch_https(
     state: &AppState,
 ) -> Option<std::sync::Arc<tokio_rustls::rustls::ServerConfig>> {
     let cfg = config::load();
-    // q7e3-F-01: the pre-load gate is a tested pure classifier; the load-failure reset stays below
+    // The pre-load gate is a tested pure classifier; the load-failure reset stays below
     // (it depends on load_rustls_config's Result, not on these three booleans).
     //
-    // Linux (plan R3): trust is inherently per-browser/partial, and a bound-but-untrusted loopback
+    // Linux trust is inherently per-browser/partial, and a bound-but-untrusted loopback
     // listener is harmless — browsers fast-fail the HTTPS probe and the SDK falls back to HTTP. So
     // serve whenever certs are valid, decoupled from trust (which the *wizard* still checks). macOS
     // and Windows keep the verify-trust gate (they'd otherwise present an untrusted cert with a real
@@ -144,7 +147,7 @@ fn prepare_launch_https(
     // Pre-expiry renewal (§7). Linux: SILENT rotation (user NSS needs no prompt) done BEFORE loading +
     // binding the TLS config, so the FRESH leaf is what we serve. Doing it after the bind left the
     // acceptor holding the OLD leaf for the whole session — a long-running tray app would eventually
-    // serve an EXPIRED cert (post-impl codex Medium). macOS/Windows do NOT rotate here — the setup
+    // serve an EXPIRED cert. macOS/Windows do NOT rotate here — the setup
     // closure surfaces a renewal *consent window* instead of a surprise background OS trust prompt.
     #[cfg(target_os = "linux")]
     if let Err(e) = certs::regenerate_leaf_if_expiring() {
@@ -168,9 +171,13 @@ fn prepare_launch_https(
 ///
 /// Runs entirely off the setup thread. It **waits** for the HTTPS lifecycle lock rather than standing
 /// down on a failed try-lock: renewal can own that lock without ever binding a listener, so standing
-/// down would leave HTTPS unstarted for the whole session (post-impl codex Medium). After acquiring
+/// down would leave HTTPS unstarted for the whole session. After acquiring
 /// it, re-check `https_bound` — an enable path may have completed the entire bring-up while we waited.
 /// The blocking cert work then runs on a blocking thread so it never occupies an async worker.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "lifecycle locking, blocking preparation, and bind readiness are one launch transaction"
+)]
 async fn launch_https(state: AppState) {
     // Cheap config read — no lock needed to learn HTTPS is simply off.
     if !config::load().https_enabled {
@@ -425,11 +432,10 @@ fn spawn_floor_tracker() {
     });
 }
 
-// ── Desktop bootstrap (q7e3-F-04) ────────────────────────────────────────
-// `.setup()` was a ~150-line Long Method closure. These phase helpers carry the capture-heavy
-// construction; the closure stays a thin, visibly-ordered sequencer because two orderings there are
-// load-bearing: SEC-08 migrate-first before HTTPS, and `manage::<SharedAppState>` before the
-// webdriver settings-window + HTTP spawn (commands/webdriver break at RUNTIME if reordered).
+// ── Desktop bootstrap ────────────────────────────────────────────────────
+// The setup sequence stays explicit because CA-key migration must precede HTTPS, and shared state
+// must be managed before commands or WebDriver windows can observe it (each server receives its own
+// clone of that state directly).
 
 /// Build the tray menu + icon with the static menu-event handler.
 fn build_tray(
@@ -479,55 +485,15 @@ fn build_desktop_state(
     config_state: &ConfigState,
     auth_manager: &AuthState,
 ) -> AppState {
-    let status_clone = status.clone();
-    let tray_clone = tray.clone();
-
-    // Versions changed callback: rebuild the Versions submenu when versions change.
-    let app_handle = app.handle().clone();
-    let bundled_for_cb = bundled_version.clone();
-    let tray_for_versions = tray.clone();
-    let on_versions_changed: presto::server::VersionsChangedCallback = Arc::new(move || {
-        if !dev_mode {
-            return;
-        }
-        match tray::build_tray_menu(&app_handle, dev_mode, &bundled_for_cb, &status) {
-            Ok(new_menu) => {
-                let _ = tray_for_versions.set_menu(Some(new_menu));
-                tracing::info!("Tray menu rebuilt (versions changed)");
-            }
-            Err(e) => {
-                tracing::warn!("Failed to rebuild tray menu: {e}");
-            }
-        }
-    });
-
-    // Auth popup callback
-    let app_handle_for_auth = app.handle().clone();
-    let auth_manager_for_timeout = auth_manager.clone();
-    let show_auth_popup: presto::server::ShowAuthPopupCallback = Arc::new(
-        move |origin: &presto::authorization::CanonicalOrigin, request_id: &str| {
-            // Deref-coerces to &str at the window boundary; the origin is canonical by type.
-            windows::show_auth_popup_window(
-                &app_handle_for_auth,
-                origin,
-                request_id,
-                &auth_manager_for_timeout,
-            );
-        },
+    let on_versions_changed = versions_changed_callback(
+        app.handle().clone(),
+        dev_mode,
+        bundled_version.clone(),
+        status.clone(),
+        tray.clone(),
     );
-
-    let is_animating_for_status = is_animating.clone();
-    let on_status = Arc::new(move |status: ServerStatus| {
-        let text = status.display_text();
-        tracing::info!(text, "on_status callback fired");
-        if let Err(e) = status_clone.set_text(text) {
-            tracing::error!("set_text failed: {e}");
-        }
-        if let Err(e) = tray_clone.set_tooltip(Some(text)) {
-            tracing::error!("set_tooltip failed: {e}");
-        }
-        is_animating_for_status.store(status.is_busy(), Ordering::Release);
-    });
+    let show_auth_popup = auth_popup_callback(app.handle().clone(), auth_manager.clone());
+    let on_status = status_callback(status, tray.clone(), is_animating.clone());
 
     let core = HeadlessState::headless(
         env!("CARGO_PKG_VERSION"),
@@ -538,89 +504,149 @@ fn build_desktop_state(
     AppState::desktop(core, on_status, on_versions_changed, show_auth_popup)
 }
 
-fn main() {
-    // `--remove-ca-trust`: remove the local CA from every browser trust store, then exit WITHOUT
-    // starting the GUI. Used by scripted cleanup and the Windows NSIS uninstaller (Phase 6). Runs
-    // before anything else so it never spins up a tray/server.
-    if std::env::args().any(|a| a == "--remove-ca-trust") {
-        let report = presto::trust::remove_ca_trust(&certs::live_ca_cert_path());
-        for s in &report.stores {
+fn versions_changed_callback(
+    app: tauri::AppHandle,
+    dev_mode: bool,
+    bundled_version: String,
+    status: tauri::menu::MenuItem<tauri::Wry>,
+    tray_icon: tauri::tray::TrayIcon,
+) -> presto::server::VersionsChangedCallback {
+    Arc::new(move || {
+        if !dev_mode {
+            return;
+        }
+        match tray::build_tray_menu(&app, dev_mode, &bundled_version, &status) {
+            Ok(menu) => {
+                let _ = tray_icon.set_menu(Some(menu));
+                tracing::info!("Tray menu rebuilt (versions changed)");
+            }
+            Err(error) => tracing::warn!("Failed to rebuild tray menu: {error}"),
+        }
+    })
+}
+
+fn auth_popup_callback(
+    app: tauri::AppHandle,
+    auth_manager: AuthState,
+) -> presto::server::ShowAuthPopupCallback {
+    Arc::new(move |origin, request_id| {
+        windows::show_auth_popup_window(&app, origin, request_id, &auth_manager);
+    })
+}
+
+fn status_callback(
+    status_item: tauri::menu::MenuItem<tauri::Wry>,
+    tray_icon: tauri::tray::TrayIcon,
+    is_animating: Arc<AtomicBool>,
+) -> presto::server::StatusCallback {
+    Arc::new(move |status: ServerStatus| {
+        let text = status.display_text();
+        tracing::info!(text, "on_status callback fired");
+        if let Err(error) = status_item.set_text(text) {
+            tracing::error!("set_text failed: {error}");
+        }
+        if let Err(error) = tray_icon.set_tooltip(Some(text)) {
+            tracing::error!("set_tooltip failed: {error}");
+        }
+        is_animating.store(status.is_busy(), Ordering::Release);
+    })
+}
+
+/// Print per-store results for NSIS and fail its uninstall hook if CA removal is incomplete.
+fn handle_remove_ca_trust() -> bool {
+    if !std::env::args().any(|arg| arg == "--remove-ca-trust") {
+        return false;
+    }
+    let report = presto::trust::remove_ca_trust(&certs::live_ca_cert_path());
+    for store in &report.stores {
+        println!(
+            "{}: {}",
+            store.store,
+            if store.installed {
+                "still trusted"
+            } else {
+                "removed / absent"
+            }
+        );
+    }
+    if report.removal_incomplete() {
+        eprintln!("error: CA trust removal was incomplete — see the per-store lines above");
+        std::process::exit(1);
+    }
+    true
+}
+
+/// Print ownership-checked teardown results for NSIS and fail its hook if cleanup is incomplete.
+fn handle_prepare_uninstall() -> bool {
+    if !std::env::args().any(|arg| arg == "--prepare-uninstall") {
+        return false;
+    }
+    let outcome = presto::uninstall::prepare_uninstall();
+    for line in outcome.report_lines() {
+        println!("{line}");
+    }
+    if outcome.incomplete() {
+        eprintln!("error: uninstall cleanup was incomplete — see the lines above");
+        std::process::exit(1);
+    }
+    true
+}
+
+/// Generate the real certificate set for headless packaging tests; trust installation remains external.
+fn handle_generate_certs() -> bool {
+    if !std::env::args().any(|arg| arg == "--generate-certs-only") {
+        return false;
+    }
+    match certs::generate_and_save() {
+        Ok(()) => {
             println!(
-                "{}: {}",
-                s.store,
-                if s.installed {
-                    "still trusted"
-                } else {
-                    "removed / absent"
-                }
+                "generated CA + leaf at {}",
+                certs::live_ca_cert_path().display()
             );
+            true
         }
-        // Exit NON-ZERO if any store still trusts the anchor (or removal couldn't be confirmed) so a
-        // scripted uninstall / NSIS hook can detect the failure instead of always seeing success
-        // (post-impl codex High).
-        if report.removal_incomplete() {
-            eprintln!("error: CA trust removal was incomplete — see the per-store lines above");
+        Err(error) => {
+            eprintln!("error: certificate generation failed: {error}");
             std::process::exit(1);
         }
-        return;
     }
+}
 
-    // `--prepare-uninstall`: the ownership-checked teardown the NSIS uninstaller runs (from the
-    // PREUNINSTALL hook, while this exe still exists) before the app is deleted — and the manual/scripted
-    // wrappers on other OSes. Removes autostart + crash-recovery + (only if THIS install owns the shared
-    // state) CA trust + certs. Runs before anything else so it never spins up a tray/server. Exits NON-ZERO
-    // if any attempted removal failed, so a scripted uninstall / NSIS hook can detect it; a deliberate
-    // "left, another install owns it" is success (exit 0).
-    if std::env::args().any(|a| a == "--prepare-uninstall") {
-        let outcome = presto::uninstall::prepare_uninstall();
-        for line in outcome.report_lines() {
-            println!("{line}");
-        }
-        if outcome.incomplete() {
-            eprintln!("error: uninstall cleanup was incomplete — see the lines above");
-            std::process::exit(1);
-        }
-        return;
-    }
+fn install_panic_hook(log_path: &Path) {
+    let panic_log = log_path.join("panic.log");
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        let location = info
+            .location()
+            .map(|location| {
+                format!(
+                    "{}:{}:{}",
+                    location.file(),
+                    location.line(),
+                    location.column()
+                )
+            })
+            .unwrap_or_else(|| "unknown".to_string());
+        let payload = info
+            .payload()
+            .downcast_ref::<&str>()
+            .map(|message| (*message).to_string())
+            .or_else(|| info.payload().downcast_ref::<String>().cloned())
+            .unwrap_or_else(|| "<non-string panic payload>".to_string());
+        write_panic_record(&panic_log, &location, &payload);
+        tracing::error!(%location, payload = %payload, "PANIC");
+        previous(info);
+    }));
+}
 
-    // Install a default rustls CryptoProvider. Both aws-lc-rs (from tauri-plugin-updater)
-    // and ring (from tokio-rustls) are available — rustls panics if it can't auto-detect.
-    let _ = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider().install_default();
-
-    // `--generate-certs-only`: B4 packaged-E2E bootstrap. Generate the app's real CA/leaf/key headlessly and
-    // exit WITHOUT installing OS trust or starting the GUI, so a CI harness can seed the generated CA into the
-    // trust store out-of-band (the app's own `enable_https` trust-install is INTERACTIVE on macOS/Windows and
-    // hangs a headless runner) and then relaunch into a Ready HTTPS state. This is NOT a trust bypass: it
-    // writes exactly the cert files `enable_https_inner` would, minus `install_ca_trust` — the OS trust step
-    // still has to happen (the harness does it out-of-band; a real user still gets the consent dialog). Placed
-    // AFTER the CryptoProvider install because `generate_and_save` validates the leaf+key load into a rustls
-    // ServerConfig. No-op-safe when a valid set already exists.
-    if std::env::args().any(|a| a == "--generate-certs-only") {
-        match certs::generate_and_save() {
-            Ok(()) => {
-                println!(
-                    "generated CA + leaf at {}",
-                    certs::live_ca_cert_path().display()
-                );
-                return;
-            }
-            Err(e) => {
-                eprintln!("error: certificate generation failed: {e}");
-                std::process::exit(1);
-            }
-        }
-    }
-
+fn initialize_logging() -> tracing_appender::non_blocking::WorkerGuard {
     let log_path = log_dir();
     std::fs::create_dir_all(&log_path).ok();
-
-    // Restrict log directory permissions to owner-only on Unix (0o700)
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&log_path, std::fs::Permissions::from_mode(0o700));
     }
-
     let file_appender = tracing_appender::rolling::RollingFileAppender::builder()
         .rotation(tracing_appender::rolling::Rotation::DAILY)
         .filename_prefix("presto")
@@ -628,43 +654,181 @@ fn main() {
         .max_log_files(7)
         .build(&log_path)
         .expect("failed to create log appender");
-    let (file_writer, _guard) = tracing_appender::non_blocking(file_appender);
-
+    let (file_writer, guard) = tracing_appender::non_blocking(file_appender);
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-
     tracing_subscriber::registry()
         .with(env_filter)
         .with(fmt::layer().with_writer(std::io::stdout))
         .with(fmt::layer().with_writer(file_writer).with_ansi(false))
         .init();
-
     tracing::info!(log_dir = %log_path.display(), "Logging initialized");
+    install_panic_hook(&log_path);
+    guard
+}
 
-    // B3 (observability): persist panics to disk. The tray app runs without a console, so the default
-    // hook's stderr output is lost, and `panic = "abort"` (release profile) means there is no unwind.
-    // The tracing file layer above is `non_blocking`, whose background worker is NOT guaranteed a
-    // scheduling slot to flush before the process aborts — so we ALSO write the panic SYNCHRONOUSLY to
-    // `panic.log` (the guaranteed record), then best-effort log through tracing and chain the previous
-    // hook (which prints the backtrace to stderr).
-    {
-        let panic_log = log_path.join("panic.log");
-        let previous = std::panic::take_hook();
-        std::panic::set_hook(Box::new(move |info| {
-            let location = info
-                .location()
-                .map(|l| format!("{}:{}:{}", l.file(), l.line(), l.column()))
-                .unwrap_or_else(|| "unknown".to_string());
-            let payload = info
-                .payload()
-                .downcast_ref::<&str>()
-                .map(|s| (*s).to_string())
-                .or_else(|| info.payload().downcast_ref::<String>().cloned())
-                .unwrap_or_else(|| "<non-string panic payload>".to_string());
-            write_panic_record(&panic_log, &location, &payload);
-            tracing::error!(%location, payload = %payload, "PANIC");
-            previous(info);
-        }));
+fn reconcile_startup_autostart(app: &tauri::AppHandle) {
+    if !presto::autostart::startup_reconcile() {
+        return;
     }
+    #[cfg(not(feature = "webdriver"))]
+    match presto::autostart::heal_if_broken(app) {
+        presto::autostart::HealOutcome::Healed { from, to } => {
+            tracing::info!(%from, %to, "startup autostart heal applied");
+        }
+        presto::autostart::HealOutcome::Failed(error) => {
+            tracing::warn!("startup autostart heal failed: {error}");
+        }
+        presto::autostart::HealOutcome::Skipped(reason) => {
+            tracing::debug!("startup autostart heal skipped: {reason}");
+        }
+        presto::autostart::HealOutcome::NotNeeded => {}
+    }
+    presto::autostart::startup_rearm(app);
+}
+
+fn spawn_launch_https(state: &AppState) {
+    match certs::migrate_legacy_ca_key() {
+        Ok(()) => {
+            tauri::async_runtime::spawn(launch_https(state.clone()));
+        }
+        Err(error) => {
+            tracing::error!(
+                error = %error,
+                "SECURITY: legacy ca.key could not be removed — HTTPS NOT started (HTTP unaffected)"
+            );
+        }
+    };
+}
+
+fn report_missing_bb(
+    status: &tauri::menu::MenuItem<tauri::Wry>,
+    tray_icon: &tauri::tray::TrayIcon,
+) {
+    if presto::bb::find_bb(None).is_ok() {
+        return;
+    }
+    tracing::warn!("bb binary not found at startup");
+    let _ = status.set_text("Warning: bb not found");
+    let _ = tray_icon.set_tooltip(Some("Warning: bb not found"));
+}
+
+#[cfg_attr(
+    feature = "webdriver",
+    expect(
+        unused_variables,
+        reason = "webdriver opens settings directly and does not inspect onboarding state"
+    )
+)]
+fn show_startup_windows(app: &tauri::AppHandle, config_state: &ConfigState) {
+    #[cfg(not(feature = "webdriver"))]
+    if config_state.read().onboarding_version < config::ONBOARDING_VERSION {
+        windows::show_onboarding_window(app);
+    }
+    #[cfg(all(
+        any(target_os = "macos", target_os = "windows"),
+        not(feature = "webdriver")
+    ))]
+    maybe_show_renewal_window(app);
+    #[cfg(feature = "webdriver")]
+    windows::open_settings_window(app);
+}
+
+#[cfg(all(
+    any(target_os = "macos", target_os = "windows"),
+    not(feature = "webdriver")
+))]
+fn maybe_show_renewal_window(app: &tauri::AppHandle) {
+    const RENEWAL_THROTTLE_SECS: i64 = 20 * 3600;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|duration| duration.as_secs() as i64)
+        .unwrap_or(0);
+    let config = config::load();
+    let recently_prompted = config
+        .last_rotation_prompt_at
+        .is_some_and(|time| now.saturating_sub(time) < RENEWAL_THROTTLE_SECS);
+    if config.https_enabled
+        && !recently_prompted
+        && certs::certs_exist()
+        && certs::leaf_is_expiring()
+    {
+        windows::show_renewal_window(app);
+    }
+}
+
+#[cfg(not(feature = "webdriver"))]
+fn start_background_tasks(app: &tauri::AppHandle, config_state: &ConfigState) {
+    if should_poll_for_updates() {
+        spawn_update_poller(app.clone(), config_state.clone());
+        spawn_floor_tracker();
+    }
+}
+
+fn setup_desktop(
+    app: &mut tauri::App,
+    dev_mode: bool,
+    config_state: &ConfigState,
+    auth_manager: &AuthState,
+) -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "macos")]
+    app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+
+    let bundled_version = env!("AZTEC_BB_VERSION").to_string();
+    let status = MenuItemBuilder::with_id("status", "Ready")
+        .enabled(false)
+        .build(app)?;
+    reconcile_startup_autostart(app.handle());
+
+    let tray_icon = build_tray(app, dev_mode, &bundled_version, &status)?;
+    let is_animating = Arc::new(AtomicBool::new(false));
+    tray::start_animation_loop(
+        tray_icon.clone(),
+        app.handle().clone(),
+        is_animating.clone(),
+    );
+
+    let diagnostic_status = status.clone();
+    let diagnostic_tray = tray_icon.clone();
+    let state = build_desktop_state(
+        app,
+        dev_mode,
+        bundled_version,
+        status,
+        &tray_icon,
+        &is_animating,
+        config_state,
+        auth_manager,
+    );
+    spawn_launch_https(&state);
+    // Commands and WebDriver windows must not run before the shared state is managed.
+    app.manage::<SharedAppState>(Arc::new(state.clone()));
+    report_missing_bb(&diagnostic_status, &diagnostic_tray);
+    show_startup_windows(app.handle(), config_state);
+    spawn_http_server(
+        state,
+        diagnostic_status,
+        diagnostic_tray,
+        app.handle().clone(),
+    );
+    #[cfg(not(feature = "webdriver"))]
+    start_background_tasks(app.handle(), config_state);
+    Ok(())
+}
+
+fn main() {
+    if handle_remove_ca_trust() || handle_prepare_uninstall() {
+        return;
+    }
+
+    // Install a default rustls CryptoProvider. Both aws-lc-rs (from tauri-plugin-updater)
+    // and ring (from tokio-rustls) are available — rustls panics if it can't auto-detect.
+    let _ = tokio_rustls::rustls::crypto::aws_lc_rs::default_provider().install_default();
+
+    // Certificate generation needs the CryptoProvider, but intentionally starts no GUI or server.
+    if handle_generate_certs() {
+        return;
+    }
+    let _logging_guard = initialize_logging();
 
     let dev_mode = is_dev_mode();
     if dev_mode {
@@ -717,160 +881,7 @@ fn main() {
             commands::set_auto_update,
             commands::respond_update_prompt,
         ])
-        .setup(move |app| {
-            // Hide from Dock — tray-only app
-            #[cfg(target_os = "macos")]
-            app.set_activation_policy(tauri::ActivationPolicy::Accessory);
-
-            let bundled_version = env!("AZTEC_BB_VERSION").to_string();
-
-            let status = MenuItemBuilder::with_id("status", "Ready")
-                .enabled(false)
-                .build(app)?;
-
-            // Startup autostart reconciliation (piece-2 plan §4): marker reconcile FIRST (the
-            // removal transaction — the only rearm path allowed while a window exists), then the
-            // heal, then the intent-keyed rearm. Suppressed ⇒ BOTH heal and rearm are skipped
-            // this launch: "no process heals, no process rearms while a marker is live".
-            {
-                if presto::autostart::startup_reconcile() {
-                    // The heal now runs on Windows too — the marker above is what piece 1 gated
-                    // it on. Webdriver builds still skip the unattended heal (S1: E2E must not
-                    // mutate a runner's real login items; the command path stays live for L7).
-                    #[cfg(not(feature = "webdriver"))]
-                    match presto::autostart::heal_if_broken(app.handle()) {
-                        presto::autostart::HealOutcome::Healed { from, to } => {
-                            tracing::info!(%from, %to, "startup autostart heal applied");
-                        }
-                        presto::autostart::HealOutcome::Failed(e) => {
-                            tracing::warn!("startup autostart heal failed: {e}");
-                        }
-                        presto::autostart::HealOutcome::Skipped(reason) => {
-                            tracing::debug!("startup autostart heal skipped: {reason}");
-                        }
-                        presto::autostart::HealOutcome::NotNeeded => {}
-                    }
-                    presto::autostart::startup_rearm(app.handle());
-                }
-            }
-
-            // ── Build tray ──
-            let tray = build_tray(app, dev_mode, &bundled_version, &status)?;
-
-            // ── Animation ──
-            let is_animating = Arc::new(AtomicBool::new(false));
-            tray::start_animation_loop(tray.clone(), app.handle().clone(), is_animating.clone());
-
-            // ── Callbacks and AppState wiring ──
-            // q7e3-F-04: build_desktop_state CONSUMES `status`, so anything needed below must be
-            // cloned first — the old "clone before the move" comment, now compiler-enforced.
-            let status_for_diagnostics = status.clone();
-            let state = build_desktop_state(
-                app,
-                dev_mode,
-                bundled_version,
-                status,
-                &tray,
-                &is_animating,
-                &config_state,
-                &auth_manager,
-            );
-
-            // ── HTTPS startup ──
-            // One-time migration: delete any legacy on-disk CA private key (older installs) — it was
-            // a readable mint-any-cert primitive. SEC-08 fail-closed: if it CANNOT be removed, do NOT
-            // bring up HTTPS — a live HTTPS server next to a readable mint-any-cert key + its
-            // still-trusted anchor is the exposure we're closing. HTTP is unaffected. Idempotent.
-            match certs::migrate_legacy_ca_key() {
-                Ok(()) => {
-                    // Run the HTTPS bring-up OFF the setup thread. It waits on the lifecycle lock and
-                    // then does SYNCHRONOUS trust-store queries (`is_ca_trusted` shells out to
-                    // `security`/`certutil`) with no timeout — on its own blocking thread, so the setup
-                    // thread still reaches the HTTP-server spawn below regardless. HTTP is the critical
-                    // path and must never be blocked by a slow/hung HTTPS trust query (post-impl codex
-                    // Medium). HTTPS binds a different port, so there's no race with the HTTP listener.
-                    let https_state = state.clone();
-                    tauri::async_runtime::spawn(launch_https(https_state));
-                }
-                Err(e) => tracing::error!(error = %e,
-                    "SECURITY: legacy ca.key could not be removed — HTTPS NOT started (HTTP unaffected)"),
-            }
-
-            // Manage the shared state for Tauri commands (e.g. enable_https). It shares the
-            // Arc'd https_bound flag with the HTTP server's state, so start_https flipping it after a
-            // successful bind is visible to /health (no separate https_port propagation needed). (Q7)
-            app.manage::<SharedAppState>(Arc::new(state.clone()));
-
-            // ── Startup diagnostics ──
-            // Update both the status menu item text AND tray tooltip so the
-            // message is visible in production builds (where the status item
-            // is not in the tray menu but the tooltip is always visible).
-            let tray_for_diagnostics = tray.clone();
-            if presto::bb::find_bb(None).is_err() {
-                tracing::warn!("bb binary not found at startup");
-                let _ = status_for_diagnostics.set_text("Warning: bb not found");
-                let _ = tray_for_diagnostics.set_tooltip(Some("Warning: bb not found"));
-            }
-
-            // ── First-run onboarding wizard ──
-            // Shown once when the config's onboarding_version is behind — new installs AND existing
-            // upgraders (whose config lacks the marker → 0). Gated off for webdriver builds, which
-            // bootstrap the Settings window as their browsing context (the wizard E2E drives it
-            // explicitly instead of relying on auto-show, so the existing specs stay unaffected).
-            #[cfg(not(feature = "webdriver"))]
-            if config_state.read().onboarding_version < config::ONBOARDING_VERSION {
-                windows::show_onboarding_window(app.handle());
-            }
-
-            // ── Certificate renewal consent (macOS/Windows, §7) ──
-            // When the leaf is within the pre-expiry window, offer renewal via a consent window rather
-            // than a silent background OS trust prompt (Linux rotates silently in try_start_https).
-            // Throttled by `last_rotation_prompt_at` so clicking "Later" suppresses the re-prompt for a
-            // day even across quick restarts (it still reappears on later launches until expiry).
-            #[cfg(all(any(target_os = "macos", target_os = "windows"), not(feature = "webdriver")))]
-            {
-                const RENEWAL_THROTTLE_SECS: i64 = 20 * 3600;
-                let now = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs() as i64)
-                    .unwrap_or(0);
-                let cfg = config::load();
-                let recently_prompted = cfg
-                    .last_rotation_prompt_at
-                    .is_some_and(|t| now.saturating_sub(t) < RENEWAL_THROTTLE_SECS);
-                if cfg.https_enabled
-                    && !recently_prompted
-                    && certs::certs_exist()
-                    && certs::leaf_is_expiring()
-                {
-                    windows::show_renewal_window(app.handle());
-                }
-            }
-
-            // ── WebDriver: open Settings window so WebDriver has a browsing context ──
-            #[cfg(feature = "webdriver")]
-            windows::open_settings_window(app.handle());
-
-            // ── HTTP server ──
-            spawn_http_server(
-                state,
-                status_for_diagnostics,
-                tray_for_diagnostics,
-                app.handle().clone(),
-            );
-
-            // ── Background update check ──
-            // Compile-gated off for `webdriver` builds (the prompt window would steal WebDriver's
-            // active context mid-test); runtime-gated off for dev/CI via `should_poll_for_updates`.
-            #[cfg(not(feature = "webdriver"))]
-            if should_poll_for_updates() {
-                spawn_update_poller(app.handle().clone(), config_state.clone());
-                // F-004 Layer B: advance the monotonic version floor once this build proves it runs.
-                spawn_floor_tracker();
-            }
-
-            Ok(())
-        })
+        .setup(move |app| setup_desktop(app, dev_mode, &config_state, &auth_manager))
         .build(tauri::generate_context!())
         .expect("error while building Presto")
         .run(|_app, event| {
@@ -935,8 +946,7 @@ mod tests {
         assert_eq!(contents.lines().count(), 2, "one line per panic");
     }
 
-    // q7e3-F-01 characterization (test-FIRST): the launch HTTPS gate's four outcomes + the
-    // reset-vs-skip asymmetry + both short-circuits (panicking thunks prove the unevaluated checks).
+    // The four outcomes pin reset-vs-skip behavior; panicking thunks prove both short-circuits.
     #[test]
     fn launch_gate_disabled_short_circuits_everything() {
         assert_eq!(
@@ -964,7 +974,7 @@ mod tests {
 
     #[test]
     fn launch_gate_untrusted_skips_without_reset() {
-        // certs present but untrusted → SKIP, NOT reset (the asymmetry the audit flagged as fragile).
+        // Certs present but untrusted preserve the user's opt-in rather than resetting it.
         assert_eq!(
             classify_launch_https(true, || true, || false),
             LaunchHttpsGate::UntrustedSkip

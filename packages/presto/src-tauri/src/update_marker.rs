@@ -379,6 +379,10 @@ pub enum ReconcileOutcome {
 /// - `disarm_confirmed`: `disable_crash_recovery`, true only when confirmed gone.
 ///
 /// This transaction is the ONLY rearm path allowed while a marker exists (the r5 exemption).
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "the marker decision table and intent-sensitive recovery order are a single transaction"
+)]
 pub fn reconcile_under_lock(
     paths: &MarkerPaths,
     now_unix: i64,
@@ -482,6 +486,10 @@ pub fn reconcile_under_lock(
 ///
 /// Returns whether the caller's `CrashRecoveryGuard` must be DEFUSED (always true: after this
 /// function, any further Drop-rearm would act on stale state).
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "intent-on and intent-off require visibly different cleanup ordering"
+)]
 pub fn post_create_failure_cleanup(
     paths: &MarkerPaths,
     intent_read: &dyn Fn() -> Result<bool, String>,

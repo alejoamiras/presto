@@ -27,13 +27,13 @@ import {
   listCachedVersions,
   MARKER_NAME,
   MARKER_SCHEMA,
+  parseGuardFlags,
   readMarker,
   sha256Hex,
+  usingSharedCache,
   verifyCachedBb,
   versionBbPath,
   versionMarkerPath,
-  parseGuardFlags,
-  usingSharedCache,
 } from "./download-bb";
 
 // These tests exercise the exported functions on the host platform (Linux CI = amd64-linux, matching
@@ -116,14 +116,20 @@ function wireHappyFetch(version: string, tarball: Uint8Array): void {
   const digest = sha256Hex(tarball);
   routeFetch((url) => {
     if (url.includes("api.github.com")) {
+      expect(url).toContain(`/tags/v${version}`);
       return jsonResp(200, { assets: [{ name: asset, digest: `sha256:${digest}` }] });
     }
+    expect(url).toContain(`/download/v${version}/${asset}`);
     return streamResp(tarball);
   });
 }
 
 /** Write a valid { bb, marker } cache entry by hand (bypassing the download path). */
-function writeCacheEntry(version: string, bbContent: string, markerOverride: Partial<BbMarker> = {}): void {
+function writeCacheEntry(
+  version: string,
+  bbContent: string,
+  markerOverride: Partial<BbMarker> = {},
+): void {
   const dir = join(base, version);
   mkdirSync(dir, { recursive: true });
   writeFileSync(join(dir, "bb"), bbContent);
@@ -148,7 +154,17 @@ describe("assertValidVersion / isValidVersionName (mirrors Rust is_valid_version
     }
   });
   test("rejects traversal + injection", () => {
-    for (const v of ["", ".hidden", "5.0.0.", "a..b", "../etc", "5.0.0/bb", "a b", "a;b", "x".repeat(129)]) {
+    for (const v of [
+      "",
+      ".hidden",
+      "5.0.0.",
+      "a..b",
+      "../etc",
+      "5.0.0/bb",
+      "a b",
+      "a;b",
+      "x".repeat(129),
+    ]) {
       expect(isValidVersionName(v)).toBe(false);
       expect(() => assertValidVersion(v)).toThrow();
     }
@@ -394,7 +410,11 @@ describe("listCachedVersions (inventory excludes stages + unmarked)", () => {
 
 describe("cleanupOldVersions", () => {
   test("never evicts a protected (this-invocation) version", () => {
-    for (const v of ["5.0.0-nightly.20260301", "5.0.0-nightly.20260302", "5.0.0-nightly.20260303"]) {
+    for (const v of [
+      "5.0.0-nightly.20260301",
+      "5.0.0-nightly.20260302",
+      "5.0.0-nightly.20260303",
+    ]) {
       writeCacheEntry(v, "x");
     }
     // nightly limit is 2; protect the OLDEST so a non-protected one is evicted instead.
@@ -407,7 +427,9 @@ describe("cleanupOldVersions", () => {
 
 describe("cross-language contract fixtures", () => {
   test("bb-cache-marker.json matches the marker schema", () => {
-    const m = JSON.parse(readFileSync(join(import.meta.dir, "__fixtures__", "bb-cache-marker.json"), "utf8"));
+    const m = JSON.parse(
+      readFileSync(join(import.meta.dir, "__fixtures__", "bb-cache-marker.json"), "utf8"),
+    );
     expect(m.schema).toBe(MARKER_SCHEMA);
     for (const f of [m.archive_sha256, m.binary_sha256]) expect(f).toMatch(/^[0-9a-f]{64}$/);
     expect(typeof m.version).toBe("string");

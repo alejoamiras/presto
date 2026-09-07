@@ -1,6 +1,6 @@
+import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, test } from "bun:test";
 
 /**
  * Pin invariant for third-party GitHub Actions: every `uses:` of an external action is a full
@@ -24,7 +24,13 @@ function ymlFiles(dir: string): string[] {
     .map((e) => join(e.parentPath, e.name));
 }
 
-function externalUses(): { file: string; line: number; action: string; ref: string; label: string }[] {
+function externalUses(): {
+  file: string;
+  line: number;
+  action: string;
+  ref: string;
+  label: string;
+}[] {
   const out: { file: string; line: number; action: string; ref: string; label: string }[] = [];
   for (const dir of [join(ROOT, ".github/workflows"), join(ROOT, ".github/actions")]) {
     for (const file of ymlFiles(dir)) {
@@ -35,7 +41,10 @@ function externalUses(): { file: string; line: number; action: string; ref: stri
         if (!/^\s*-?\s*uses\s*:/.test(raw)) return;
         const m = raw.match(/^\s*-?\s*uses\s*:\s*([^\s#]+)\s*(#[^\n]*?)?\s*$/);
         const target = m?.[1];
-        expect(target, `${file}:${i + 1} — unparseable uses: declaration: ${JSON.stringify(raw)}`).toBeTruthy();
+        expect(
+          target,
+          `${file}:${i + 1} — unparseable uses: declaration: ${JSON.stringify(raw)}`,
+        ).toBeTruthy();
         if (!target) return;
         const comment = m?.[2] ?? "";
         if (target.startsWith("./")) return;
@@ -63,19 +72,26 @@ describe("third-party action pins", () => {
 
   test("every external action is pinned to a full commit SHA", () => {
     for (const u of uses) {
-      expect(PIN_RE.test(u.ref), `${u.file}:${u.line} — ${u.action}@${u.ref} is not a 40-hex SHA pin`).toBe(true);
+      expect(
+        PIN_RE.test(u.ref),
+        `${u.file}:${u.line} — ${u.action}@${u.ref} is not a 40-hex SHA pin`,
+      ).toBe(true);
     }
   });
 
   test("every pin carries an exact release label (or is a named exception)", () => {
     for (const u of uses) {
       if (EXCEPTIONS.has(u.action)) {
-        expect(u.label, `${u.file}:${u.line} — exception ${u.action} must be labeled exactly "# v1"`).toBe("# v1");
+        expect(
+          u.label,
+          `${u.file}:${u.line} — exception ${u.action} must be labeled exactly "# v1"`,
+        ).toBe("# v1");
         continue;
       }
-      expect(LABEL_RE.test(u.label), `${u.file}:${u.line} — ${u.action} label "${u.label}" is not "# vX.Y.Z"`).toBe(
-        true,
-      );
+      expect(
+        LABEL_RE.test(u.label),
+        `${u.file}:${u.line} — ${u.action} label "${u.label}" is not "# vX.Y.Z"`,
+      ).toBe(true);
     }
   });
 
@@ -90,10 +106,16 @@ describe("third-party action pins", () => {
       labelsByAction.get(key)?.add(u.label);
     }
     for (const [action, shas] of shasByAction) {
-      expect(shas.size, `${action} is pinned to ${shas.size} different SHAs: ${[...shas].join(", ")}`).toBe(1);
+      expect(
+        shas.size,
+        `${action} is pinned to ${shas.size} different SHAs: ${[...shas].join(", ")}`,
+      ).toBe(1);
     }
     for (const [action, labels] of labelsByAction) {
-      expect(labels.size, `${action} carries ${labels.size} different labels: ${[...labels].join(", ")}`).toBe(1);
+      expect(
+        labels.size,
+        `${action} carries ${labels.size} different labels: ${[...labels].join(", ")}`,
+      ).toBe(1);
     }
   });
 });

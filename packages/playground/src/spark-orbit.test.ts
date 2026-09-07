@@ -72,6 +72,7 @@ describe("phaseToDial", () => {
   });
 });
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("SparkOrbitController", () => {
   let host: HTMLElement;
   let elapsed: HTMLElement;

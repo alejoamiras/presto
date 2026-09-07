@@ -202,6 +202,19 @@ pub struct LoadedConfig {
     pub cap: Option<PersistCapability>,
 }
 
+impl LoadedConfig {
+    fn read_only(config: PrestoConfig) -> Self {
+        Self { config, cap: None }
+    }
+
+    fn persistable(config: PrestoConfig) -> Self {
+        Self {
+            config,
+            cap: Some(PersistCapability { _seal: () }),
+        }
+    }
+}
+
 /// B4: the config lock bundled with its persist capability. Shared between the desktop's Tauri-managed
 /// state and the headless server's `HeadlessState.config`, so the cap travels with the config to every
 /// save site. `Deref`s to the inner lock — all existing `.read()/.write()` uses are unchanged; the cap
@@ -311,60 +324,61 @@ pub fn load_with_cap() -> LoadedConfig {
 /// current config — yields `cap: None` and a best-effort read, so this build never overwrites a config it
 /// couldn't confidently interpret (a newer one, or a partially-recoverable one whose values would be lost).
 pub fn load_with_cap_from(path: &std::path::Path) -> LoadedConfig {
-    let read_only = |config| LoadedConfig { config, cap: None };
-    // Only reachable below where we've confirmed the config is current-or-migratable.
-    let persistable = |config| LoadedConfig {
-        config,
-        cap: Some(PersistCapability { _seal: () }),
-    };
-
     let contents = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             // Fresh install: current-schema defaults, persist allowed.
-            return persistable(PrestoConfig::default());
+            return LoadedConfig::persistable(PrestoConfig::default());
         }
         Err(e) => {
             // I/O / permission error — we could NOT read the existing config (it may be valid, even newer).
             // Never mint a cap for a file we couldn't read. Run read-only on defaults.
             tracing::warn!(path = %path.display(), error = %e, "Could not read config; running read-only (no persist)");
-            return read_only(PrestoConfig::default());
+            return LoadedConfig::read_only(PrestoConfig::default());
         }
     };
 
+    load_config_contents(path, &contents)
+}
+
+fn load_config_contents(path: &std::path::Path, contents: &str) -> LoadedConfig {
     // Stage 1: version probe. If the version can't be determined, FAIL CLOSED (no cap).
-    let version = match probe_config_version(&contents) {
+    let version = match probe_config_version(contents) {
         Some(v) => v,
         None => {
             tracing::warn!(path = %path.display(), "Config version unreadable (malformed?); running read-only (no persist)");
-            return read_only(PrestoConfig::default());
+            return LoadedConfig::read_only(PrestoConfig::default());
         }
     };
     if version > CONFIG_VERSION {
         // A NEWER build wrote this — best-effort read for the UI, NEVER persist.
         tracing::warn!(path = %path.display(), on_disk = version, supported = CONFIG_VERSION, "Config from a newer build; running read-only (no persist)");
-        return read_only(serde_json::from_str(&contents).unwrap_or_default());
+        return LoadedConfig::read_only(serde_json::from_str(contents).unwrap_or_default());
     }
 
+    load_migrated_config(path, contents)
+}
+
+fn load_migrated_config(path: &std::path::Path, contents: &str) -> LoadedConfig {
     // Stage 2: raw-Value parse + migration + deserialize (current-or-older schema). A malformed current
     // config FAILS CLOSED (read-only, no cap) rather than overwriting the user's file with defaults — a
     // partial corruption (e.g. a bad `https_enabled`) would otherwise discard a recoverable `safari_support`.
-    let mut value: serde_json::Value = match serde_json::from_str(&contents) {
+    let mut value: serde_json::Value = match serde_json::from_str(contents) {
         Ok(v) => v,
         Err(e) => {
             tracing::warn!(path = %path.display(), error = %e, "Malformed config; running read-only (no persist)");
-            return read_only(PrestoConfig::default());
+            return LoadedConfig::read_only(PrestoConfig::default());
         }
     };
     migrate_value(&mut value);
     match serde_json::from_value::<PrestoConfig>(value) {
         Ok(mut config) => {
             config.config_version = CONFIG_VERSION;
-            persistable(config)
+            LoadedConfig::persistable(config)
         }
         Err(e) => {
             tracing::warn!(path = %path.display(), error = %e, "Config failed to deserialize post-migration; running read-only (no persist)");
-            read_only(PrestoConfig::default())
+            LoadedConfig::read_only(PrestoConfig::default())
         }
     }
 }

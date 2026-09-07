@@ -1783,10 +1783,12 @@ pub(crate) fn gated_enable_crash_recovery() -> Result<(), String> {
     }
 }
 
-/// Piece-2 startup rearm seam (plan §4): the intent-keyed crash-recovery rearm, with the Windows
-/// half performed under `autostart.lock` behind a marker re-check — the rearm is a gated mutation
-/// like any other, and the unlocked-gate version was the audits' second TOCTOU. Sequential with
-/// the heal's own lock hold, never nested (the lock is not reentrant).
+/// Rearm crash recovery from current autostart intent. Windows holds `autostart.lock` across a
+/// marker re-check; this stays sequential with the heal because the lock is not reentrant.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "platform-specific intent and ownership gates are clearer as one startup policy"
+)]
 pub fn startup_rearm(app: &tauri::AppHandle) {
     #[cfg(windows)]
     {
@@ -1828,14 +1830,13 @@ pub fn startup_rearm(app: &tauri::AppHandle) {
     }
     #[cfg(not(windows))]
     {
-        // C8 (D12): log-and-continue — a rearm hiccup at startup must NEVER abort launch, and it
-        // must NOT be silently swallowed. codex #7: a READ ERROR is not a confirmed "off". D13:
-        // keyed on INTENT, never health — a Broken entry still means "the user wants autostart".
+        // A rearm failure must be visible without aborting launch. Key on intent, never health: a
+        // broken entry still means the user wants autostart, while a read error is not confirmed off.
         match intent_enabled(app) {
             Ok(true) => {
                 // Linux gates (systemd ExecStart embeds a path, so a copy could capture it) with an
-                // AppImage-aware reference — desired_path resolves $APPIMAGE (r3 #3). macOS does
-                // NOT gate (r5 #3): its crash recovery patches KeepAlive into the app's own fixed
+                // AppImage-aware reference — desired_path resolves $APPIMAGE. macOS does NOT gate:
+                // its crash recovery patches KeepAlive into the app's own fixed
                 // plist and writes no executable path, so it cannot steal another binary's entry —
                 // gating there would only widen the Unreadable residual for no safety gain.
                 #[cfg(target_os = "linux")]

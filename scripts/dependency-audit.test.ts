@@ -1,5 +1,10 @@
 import { describe, expect, test } from "bun:test";
-import { evaluateFindings, parseAllowlist, parseBunAudit, parseCargoAudit } from "./dependency-audit.ts";
+import {
+  evaluateFindings,
+  parseAllowlist,
+  parseBunAudit,
+  parseCargoAudit,
+} from "./dependency-audit.ts";
 
 describe("dependency audit gate", () => {
   test("parses npm advisory ids from their canonical URL", () => {

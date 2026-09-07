@@ -5,6 +5,10 @@ description = "Headless Presto HTTP server (no GUI, no Tauri runtime)"
 edition = "2021"
 rust-version = "1.93.1"
 
+[lints.clippy]
+cognitive_complexity = "deny"
+too_many_lines = "deny"
+
 # Sibling crate to `../src-tauri`. Lives in a separate Cargo package so that
 # `tauri build` (which scans `cargo metadata` and bundles every `[[bin]]` in
 # the same package as the desktop main into the .app's `MacOS/` folder) does

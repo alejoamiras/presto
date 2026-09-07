@@ -50,7 +50,8 @@ function isIsoDate(value: string): boolean {
 }
 
 export function parseAllowlist(value: unknown): Allowlist {
-  if (!value || typeof value !== "object") throw new Error("dependency audit allowlist must be an object");
+  if (!value || typeof value !== "object")
+    throw new Error("dependency audit allowlist must be an object");
   const input = value as Record<string, unknown>;
   if (typeof input.reviewed !== "string" || !isIsoDate(input.reviewed)) {
     throw new Error("dependency audit allowlist reviewed must be a real YYYY-MM-DD date");
@@ -59,7 +60,8 @@ export function parseAllowlist(value: unknown): Allowlist {
     throw new Error("dependency audit allowlist exceptions must be an array");
   }
   const exceptions = input.exceptions.map((value, index) => {
-    if (!value || typeof value !== "object") throw new Error(`exception ${index} must be an object`);
+    if (!value || typeof value !== "object")
+      throw new Error(`exception ${index} must be an object`);
     const item = value as Record<string, unknown>;
     if (item.ecosystem !== "npm" && item.ecosystem !== "rust") {
       throw new Error(`exception ${index} has invalid ecosystem`);
@@ -116,6 +118,21 @@ export function evaluateFindings(
   exceptions: AuditException[],
   today: string,
 ) {
+  const { exceptionMap, invalidExceptions } = validateExceptions(exceptions);
+  const accepted: Array<{ finding: AuditFinding; exception: AuditException }> = [];
+  const blocked: AuditFinding[] = [];
+  const reported: AuditFinding[] = [];
+  const seen = new Set<string>();
+
+  for (const finding of findings) {
+    classifyFinding(finding, exceptionMap, today, { accepted, blocked, reported, seen });
+  }
+
+  const stale = exceptions.filter((exception) => !seen.has(exceptionKey(exception)));
+  return { accepted, blocked, reported, stale, invalidExceptions };
+}
+
+function validateExceptions(exceptions: AuditException[]) {
   const exceptionMap = new Map<string, AuditException>();
   const invalidExceptions: string[] = [];
 
@@ -130,30 +147,35 @@ export function evaluateFindings(
     }
     exceptionMap.set(key, exception);
   }
+  return { exceptionMap, invalidExceptions };
+}
 
-  const accepted: Array<{ finding: AuditFinding; exception: AuditException }> = [];
-  const blocked: AuditFinding[] = [];
-  const reported: AuditFinding[] = [];
-  const seen = new Set<string>();
+interface FindingBuckets {
+  accepted: Array<{ finding: AuditFinding; exception: AuditException }>;
+  blocked: AuditFinding[];
+  reported: AuditFinding[];
+  seen: Set<string>;
+}
 
-  for (const finding of findings) {
-    const key = exceptionKey(finding);
-    const exception = exceptionMap.get(key);
-    const blocks = finding.ecosystem === "rust" || BLOCKING_SEVERITIES.has(finding.severity);
-    if (!blocks) {
-      reported.push(finding);
-      continue;
-    }
-    if (exception && exception.expires >= today) {
-      accepted.push({ finding, exception });
-      seen.add(key);
-    } else {
-      blocked.push(finding);
-    }
+function classifyFinding(
+  finding: AuditFinding,
+  exceptionMap: Map<string, AuditException>,
+  today: string,
+  buckets: FindingBuckets,
+): void {
+  const key = exceptionKey(finding);
+  const exception = exceptionMap.get(key);
+  const blocks = finding.ecosystem === "rust" || BLOCKING_SEVERITIES.has(finding.severity);
+  if (!blocks) {
+    buckets.reported.push(finding);
+    return;
   }
-
-  const stale = exceptions.filter((exception) => !seen.has(exceptionKey(exception)));
-  return { accepted, blocked, reported, stale, invalidExceptions };
+  if (!exception || exception.expires < today) {
+    buckets.blocked.push(finding);
+    return;
+  }
+  buckets.accepted.push({ finding, exception });
+  buckets.seen.add(key);
 }
 
 function runJson(command: string[], acceptedExitCodes: number[]): unknown {
@@ -172,7 +194,9 @@ function runJson(command: string[], acceptedExitCodes: number[]): unknown {
 
 function printFinding(prefix: string, finding: AuditFinding) {
   const source = finding.source ? ` (${finding.source})` : "";
-  console.log(`${prefix} ${finding.ecosystem}/${finding.severity} ${finding.id} ${finding.package}${source}`);
+  console.log(
+    `${prefix} ${finding.ecosystem}/${finding.severity} ${finding.id} ${finding.package}${source}`,
+  );
   console.log(`  ${finding.title}`);
 }
 
@@ -190,7 +214,10 @@ async function main() {
   ];
   let rustWarningCount = 0;
   for (const lock of cargoLocks) {
-    const report = runJson(["cargo", "audit", "--json", "--file", lock], [0, 1]) as CargoAuditReport;
+    const report = runJson(
+      ["cargo", "audit", "--json", "--file", lock],
+      [0, 1],
+    ) as CargoAuditReport;
     findings.push(...parseCargoAudit(report, lock));
     rustWarningCount += Object.values(report.warnings ?? {}).reduce(
       (count, warnings) => count + warnings.length,

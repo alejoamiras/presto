@@ -1,1 +1,1 @@
-- [presto-cleanup](presto-cleanup/plan.md) — implementing — retire the launch exception, refresh eligible dependencies, and enforce readable complexity limits
+- [presto-cleanup](presto-cleanup/plan.md) — completed — retired the launch exception, refreshed eligible dependencies, and enforced readable complexity limits in PRs #16–#18

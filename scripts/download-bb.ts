@@ -182,8 +182,9 @@ export function sha256File(path: string): string {
   const fd = openSync(path, "r");
   try {
     const buf = Buffer.allocUnsafe(64 * 1024);
-    let n: number;
-    while ((n = readSync(fd, buf, 0, buf.length, null)) > 0) {
+    for (;;) {
+      const n = readSync(fd, buf, 0, buf.length, null);
+      if (n === 0) break;
       hash.update(buf.subarray(0, n));
     }
   } finally {
@@ -208,7 +209,9 @@ export async function fetchAssetDigest(version: string, asset: string): Promise<
 
   const res = await fetch(apiUrl, { headers });
   if (!res.ok) {
-    throw new Error(`Cannot verify bb v${version}: release metadata HTTP ${res.status} ${res.statusText}`);
+    throw new Error(
+      `Cannot verify bb v${version}: release metadata HTTP ${res.status} ${res.statusText}`,
+    );
   }
   const release = (await res.json()) as {
     immutable?: boolean;
@@ -229,11 +232,15 @@ export async function fetchAssetDigest(version: string, asset: string): Promise<
   }
   const found = (release.assets ?? []).find((a) => a.name === asset);
   if (!found?.digest) {
-    throw new Error(`Cannot verify bb v${version}: no digest for asset ${asset} in release metadata`);
+    throw new Error(
+      `Cannot verify bb v${version}: no digest for asset ${asset} in release metadata`,
+    );
   }
   const hex = found.digest.startsWith("sha256:") ? found.digest.slice("sha256:".length) : "";
   if (!HEX64.test(hex)) {
-    throw new Error(`Cannot verify bb v${version}: malformed asset digest ${JSON.stringify(found.digest)}`);
+    throw new Error(
+      `Cannot verify bb v${version}: malformed asset digest ${JSON.stringify(found.digest)}`,
+    );
   }
   return hex;
 }
@@ -290,7 +297,9 @@ export async function downloadTarball(version: string): Promise<Uint8Array> {
   }
   const declared = Number(res.headers.get("content-length") ?? "0");
   if (declared > MAX_BB_TARBALL_BYTES) {
-    throw new Error(`bb v${version} download too large (advertised ${declared} bytes, max ${MAX_BB_TARBALL_BYTES})`);
+    throw new Error(
+      `bb v${version} download too large (advertised ${declared} bytes, max ${MAX_BB_TARBALL_BYTES})`,
+    );
   }
   if (!res.body) throw new Error(`bb v${version}: empty response body`);
 
@@ -322,35 +331,35 @@ export async function downloadTarball(version: string): Promise<Uint8Array> {
  * verification already ran before extraction, so this is defense-in-depth against a compromised-upstream
  * archive whose digest was also forged.)
  */
+function collectBbCandidates(directory: string, found: string[]): void {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const full = join(directory, entry.name);
+    const stat = lstatSync(full);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`Unsafe archive member (symlink): ${entry.name}`);
+    }
+    if (stat.isDirectory()) {
+      collectBbCandidates(full, found);
+      continue;
+    }
+    if (entry.name !== "bb") continue;
+    if (!stat.isFile()) throw new Error("Unsafe archive: bb entry is not a regular file");
+    // A tar hardlink shares an inode with another member; a legitimate standalone bb has one link.
+    if (stat.nlink > 1) throw new Error(`Unsafe archive: bb is a hardlink (nlink=${stat.nlink})`);
+    if (stat.size > MAX_BB_BINARY_BYTES) {
+      throw new Error(`bb entry too large: ${stat.size} bytes > ${MAX_BB_BINARY_BYTES}`);
+    }
+    found.push(full);
+  }
+}
+
 export function findSingleBb(root: string): string {
   const found: string[] = [];
-  const walk = (dir: string): void => {
-    for (const entry of readdirSync(dir, { withFileTypes: true })) {
-      const full = join(dir, entry.name);
-      const st = lstatSync(full);
-      if (st.isSymbolicLink()) {
-        throw new Error(`Unsafe archive member (symlink): ${entry.name}`);
-      }
-      if (st.isDirectory()) {
-        walk(full);
-        continue;
-      }
-      if (entry.name === "bb") {
-        if (!st.isFile()) throw new Error(`Unsafe archive: bb entry is not a regular file`);
-        // A tar hardlink extracts to an inode with nlink > 1 (linked to another extracted member); a
-        // lone legitimate bb has nlink 1. Reject to match the Rust path's regular-file-only guarantee.
-        if (st.nlink > 1) throw new Error(`Unsafe archive: bb is a hardlink (nlink=${st.nlink})`);
-        if (st.size > MAX_BB_BINARY_BYTES) {
-          throw new Error(`bb entry too large: ${st.size} bytes > ${MAX_BB_BINARY_BYTES}`);
-        }
-        found.push(full);
-      }
-    }
-  };
-  walk(root);
+  collectBbCandidates(root, found);
   const [bb, ...rest] = found;
   if (bb === undefined) throw new Error("bb binary not found in tarball");
-  if (rest.length > 0) throw new Error(`Unsafe archive: ${found.length} bb entries (expected exactly 1)`);
+  if (rest.length > 0)
+    throw new Error(`Unsafe archive: ${found.length} bb entries (expected exactly 1)`);
   return bb;
 }
 
@@ -462,7 +471,9 @@ export async function downloadBb(version: string, guard?: PublishGuard): Promise
       archive_sha256: archiveDigest,
       binary_sha256: binaryDigest,
     };
-    writeFileSync(join(stage, MARKER_NAME), `${JSON.stringify(marker, null, 2)}\n`, { mode: 0o600 });
+    writeFileSync(join(stage, MARKER_NAME), `${JSON.stringify(marker, null, 2)}\n`, {
+      mode: 0o600,
+    });
 
     // Drop the extract scratch + archive so the stage holds only { bb, bb.sha256.json }.
     rmSync(extract, { recursive: true, force: true });
@@ -566,7 +577,7 @@ export function cleanupOldVersions(protectedVersions: Set<string> = new Set()): 
 // CLI
 // ---------------------------------------------------------------------------
 
-async function main(): Promise<void> {
+function rejectWindows(): void {
   if (process.platform === "win32") {
     console.error(
       "download-bb.ts is not supported on Windows.\n" +
@@ -574,17 +585,12 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+}
 
-  const args = process.argv.slice(2);
-
-  const { forced, rest } = parseGuardFlags(args);
-
+async function assertCacheMutationIsSafe(forced: boolean, args: string[]): Promise<void> {
   // Read-only paths (--help, --list) are always fine; everything below can delete a live entry.
   const readOnly =
-    rest.length === 0 ||
-    rest.includes("--help") ||
-    rest.includes("-h") ||
-    rest.includes("--list");
+    args.length === 0 || args.includes("--help") || args.includes("-h") || args.includes("--list");
   if (!readOnly && !forced && usingSharedCache() && (await prestoIsRunning())) {
     console.error(
       "The Presto is running and shares this cache.\n" +
@@ -594,9 +600,10 @@ async function main(): Promise<void> {
     );
     process.exit(1);
   }
+}
 
-  if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
-    console.log(`Usage: bun scripts/download-bb.ts <version>[,<version>,...] [--list]
+function printUsage(): void {
+  console.log(`Usage: bun scripts/download-bb.ts <version>[,<version>,...] [--list]
 
 Downloads + verifies bb binaries for specific Aztec versions.
 
@@ -605,22 +612,21 @@ Options:
 
 Cache: ${versionsBaseDir()}
 Platform: ${currentPlatform()}`);
-    process.exit(0);
-  }
+}
 
-  if (rest.includes("--list")) {
-    const cached = listCachedVersions();
-    console.log(`Cache: ${versionsBaseDir()}`);
-    if (cached.length === 0) {
-      console.log("No cached versions.");
-    } else {
-      console.log(`\n${cached.length} cached version(s):`);
-      for (const v of cached) console.log(`  ${v} (${classifyVersion(v)})`);
-    }
-    process.exit(0);
+function printCachedVersions(): void {
+  const cached = listCachedVersions();
+  console.log(`Cache: ${versionsBaseDir()}`);
+  if (cached.length === 0) {
+    console.log("No cached versions.");
+    return;
   }
+  console.log(`\n${cached.length} cached version(s):`);
+  for (const version of cached) console.log(`  ${version} (${classifyVersion(version)})`);
+}
 
-  const versions = rest
+function parseVersions(args: string[]): string[] {
+  const versions = args
     .flatMap((a) => a.split(","))
     .map((v) => v.trim())
     .filter(Boolean);
@@ -629,7 +635,13 @@ Platform: ${currentPlatform()}`);
     console.error("Error: no versions specified");
     process.exit(1);
   }
+  return versions;
+}
 
+async function downloadVersions(
+  versions: string[],
+  forced: boolean,
+): Promise<{ downloaded: Set<string>; failed: boolean }> {
   console.log(`Downloading bb for ${versions.length} version(s) [${currentPlatform()}]`);
   console.log(`Cache: ${versionsBaseDir()}\n`);
 
@@ -648,9 +660,11 @@ Platform: ${currentPlatform()}`);
       failed = true;
     }
   }
-
   console.log("");
+  return { downloaded, failed };
+}
 
+async function cleanUpAfterDownload(downloaded: Set<string>, forced: boolean): Promise<void> {
   // Re-probe. The check above ran BEFORE downloads that can take minutes, so the app may have
   // started in the meantime — and retention eviction below deletes live entries. This narrows the
   // window to the gap between this line and the deletions; it does not eliminate it, which is why
@@ -663,10 +677,25 @@ Platform: ${currentPlatform()}`);
   } else {
     cleanupOldVersions(downloaded);
   }
+}
 
+async function main(): Promise<void> {
+  rejectWindows();
+  const { forced, rest } = parseGuardFlags(process.argv.slice(2));
+  await assertCacheMutationIsSafe(forced, rest);
+  if (rest.length === 0 || rest.includes("--help") || rest.includes("-h")) {
+    printUsage();
+    return;
+  }
+  if (rest.includes("--list")) {
+    printCachedVersions();
+    return;
+  }
+
+  const { downloaded, failed } = await downloadVersions(parseVersions(rest), forced);
+  await cleanUpAfterDownload(downloaded, forced);
   const cached = listCachedVersions();
   console.log(`\nCached versions: ${cached.join(", ") || "(none)"}`);
-
   if (failed) process.exit(1);
 }
 

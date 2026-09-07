@@ -30,8 +30,7 @@ async fn bind_with_retry_inner(
         match TcpListener::bind(addr).await {
             Ok(listener) => return Ok(listener),
             Err(e) if e.kind() == std::io::ErrorKind::AddrInUse => {
-                // Hard deadline: sleep only the time actually left, so we give up
-                // at ~max_wait rather than overshooting by a full `interval`.
+                // Sleep only the time actually left so the retry never overshoots its hard deadline.
                 let remaining = deadline.saturating_duration_since(std::time::Instant::now());
                 if remaining.is_zero() {
                     tracing::warn!(
@@ -42,7 +41,7 @@ async fn bind_with_retry_inner(
                 }
                 if !warned {
                     tracing::warn!(
-                        "port {} in use — retrying for up to {max_wait:?} (waiting out a prior instance, e.g. an in-place updater restart)",
+                        "port {} in use — retrying for up to {max_wait:?} (waiting out an updater restart)",
                         addr.port()
                     );
                     warned = true;

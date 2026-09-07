@@ -10,6 +10,7 @@ const offlineStatus: PrestoStatus = { available: false, reason: "offline" };
 /** The minimal body the real presto always serves (server.rs — both minimal + detailed). */
 const HEALTHY = { status: "ok", api_version: 1 };
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("PrestoTransport", () => {
   describe("baseUrl / protocol negotiation", () => {
     test("defaults to http://host:port before any protocol is negotiated", () => {
@@ -144,6 +145,7 @@ describe("PrestoTransport", () => {
   });
 
   // ── F-01: do not DOWNGRADE from a working HTTPS endpoint ────────────────────────────────────
+  // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
   describe("allowsHttpDowngrade", () => {
     const healthy = { pin: "set", protocol: "https" } as const;
 
@@ -457,6 +459,7 @@ describe("PrestoTransport", () => {
 
   // Phase 2 (audit R2 / H-2): HTTPS is preferred ONLY when it's healthy (2xx + parseable JSON),
   // with a bounded grace so the common no-HTTPS path adds no latency.
+  // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
   describe("probeHealth — prefer-HTTPS-when-healthy", () => {
     let originalFetch: typeof globalThis.fetch;
     beforeEach(() => {
@@ -799,6 +802,7 @@ describe("PrestoTransport", () => {
     });
   });
 
+  // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
   describe("witness-free HTTP diagnosis", () => {
     let originalFetch: typeof globalThis.fetch;
     beforeEach(() => {
@@ -1052,6 +1056,7 @@ describe("PrestoTransport", () => {
     });
   });
 
+  // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
   describe("Local Network Access", () => {
     let originalFetch: typeof globalThis.fetch;
     let targetAddressSpaceDescriptor: PropertyDescriptor | undefined;

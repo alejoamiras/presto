@@ -661,6 +661,10 @@ pub async fn enable_https(
 /// it). Generate certs → install browser trust → ensure the listener is LIVE → save config. Errors if
 /// trust lands in zero stores (R3) or the HTTPS listener can't bind, so the wizard renders HTTPS as
 /// failed-with-Retry. `async` because it AWAITS the real bind before persisting `https_enabled`.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "certificate, trust, listener, and config commits are an ordered HTTPS transaction"
+)]
 async fn enable_https_inner(
     config: &ConfigState,
     shared_state: &crate::server::AppState,
@@ -1027,6 +1031,10 @@ pub fn set_auto_update(
 /// Called from the update prompt.
 /// - action="update": install the DISPLAYED update (if still pending), best-effort save the preference
 /// - action="later": dismiss, auto_update stays None (prompt returns next launch)
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "the command keeps consent matching, preference persistence, and update handoff together"
+)]
 #[tauri::command]
 pub fn respond_update_prompt(
     window: tauri::WebviewWindow,

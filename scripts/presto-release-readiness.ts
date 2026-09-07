@@ -54,7 +54,9 @@ export function assertReleaseIdentity(
     throw new Error("A fresh updater key and verified 1Password recovery backup are required.");
   }
   if (!identity.releaseReady) {
-    throw new Error("Release readiness is not approved: finalize routes, credentials and required gates.");
+    throw new Error(
+      "Release readiness is not approved: finalize routes, credentials and required gates.",
+    );
   }
 }
 

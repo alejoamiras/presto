@@ -12,12 +12,17 @@ function run(args: string[]) {
   if (result.exitCode !== 0) throw new Error(result.stderr.toString());
   return result.stdout.toString();
 }
-const packed = parseNpmPackResult(JSON.parse(run([
-  "npm", "pack", "--ignore-scripts", "--json",
-  `${legacy.sdkPackage}@${legacy.sdkVersion}`,
-])), legacy.sdkPackage, legacy.sdkVersion);
+const packed = parseNpmPackResult(
+  JSON.parse(
+    run(["npm", "pack", "--ignore-scripts", "--json", `${legacy.sdkPackage}@${legacy.sdkVersion}`]),
+  ),
+  legacy.sdkPackage,
+  legacy.sdkVersion,
+);
 const tarball = join(directory, packed.filename);
-const integrity = `sha512-${createHash("sha512").update(await readFile(tarball)).digest("base64")}`;
+const integrity = `sha512-${createHash("sha512")
+  .update(await readFile(tarball))
+  .digest("base64")}`;
 if (integrity !== legacy.sdkIntegrity) throw new Error("Historical SDK tarball integrity mismatch");
 run(["tar", "-xzf", tarball]);
 const packageDir = join(directory, "package");
@@ -31,7 +36,7 @@ if (manifest.dependencies["@aztec/stdlib"] !== current.dependencies["@aztec/stdl
 }
 await symlink(join(root, "packages/sdk/node_modules"), join(packageDir, "node_modules"), "dir");
 const exports = manifest.exports?.["."] ?? manifest.exports;
-const entry = typeof exports === "string" ? exports : exports?.import ?? exports?.default;
+const entry = typeof exports === "string" ? exports : (exports?.import ?? exports?.default);
 if (typeof entry !== "string" || !entry.startsWith("./dist/") || entry.includes("..", 2)) {
   throw new Error("Historical SDK must expose its published dist entry");
 }

@@ -406,6 +406,10 @@ pub async fn cleanup_old_versions(bundled: &AztecVersion, in_use: Option<&AztecV
 ///
 /// Returns whether the caller should schedule a retry pass — true for anything skipped, whether by
 /// the activity window or by contention.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "the reservation must visibly span the filesystem deletion to prevent a check-then-act race"
+)]
 fn evict_if_unheld(version: &AztecVersion, dir: &std::path::Path, recently_active: bool) -> bool {
     if recently_active {
         tracing::debug!(version = %version, "Skipping eviction of a recently-active version");

@@ -8,7 +8,13 @@ import {
 } from "./sdk-release-verification.ts";
 
 function statement(
-  overrides: { path?: string; ref?: string; commit?: string; source?: string; digest?: string } = {},
+  overrides: {
+    path?: string;
+    ref?: string;
+    commit?: string;
+    source?: string;
+    digest?: string;
+  } = {},
 ) {
   return {
     subject: [
@@ -76,9 +82,9 @@ describe("SDK provenance verification", () => {
   });
 
   test("rejects a tag commit that differs from the published provenance", () => {
-    expect(() =>
-      verifyProvenanceStatement(statement(), "5.2.0-revision.1", "different"),
-    ).toThrow("does not match expected");
+    expect(() => verifyProvenanceStatement(statement(), "5.2.0-revision.1", "different")).toThrow(
+      "does not match expected",
+    );
   });
 
   test("binds the provenance to the exact source dependency and tarball digest", () => {

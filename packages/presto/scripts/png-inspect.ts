@@ -29,64 +29,79 @@ export function pngInfo(bytes: Uint8Array): PngInfo {
   };
 }
 
+function collectIdat(bytes: Uint8Array): Uint8Array {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const chunks: Uint8Array[] = [];
+  let offset = 8;
+  while (offset < bytes.length) {
+    const length = view.getUint32(offset);
+    const type = ascii(bytes, offset + 4, 4);
+    if (type === "IDAT") chunks.push(bytes.subarray(offset + 8, offset + 8 + length));
+    if (type === "IEND") break;
+    offset += 12 + length;
+  }
+  return concat(chunks);
+}
+
+function paeth(left: number, above: number, upperLeft: number): number {
+  const leftDistance = Math.abs(above - upperLeft);
+  const aboveDistance = Math.abs(left - upperLeft);
+  const upperLeftDistance = Math.abs(left + above - 2 * upperLeft);
+  if (leftDistance <= aboveDistance && leftDistance <= upperLeftDistance) return left;
+  return aboveDistance <= upperLeftDistance ? above : upperLeft;
+}
+
+function unfilterByte(
+  filter: number,
+  raw: number,
+  left: number,
+  above: number,
+  upperLeft: number,
+): number {
+  switch (filter) {
+    case 0:
+      return raw;
+    case 1:
+      return raw + left;
+    case 2:
+      return raw + above;
+    case 3:
+      return raw + ((left + above) >> 1);
+    case 4:
+      return raw + paeth(left, above, upperLeft);
+    default:
+      throw new Error(`bad filter ${filter}`);
+  }
+}
+
+function unfilterRgba(raw: Uint8Array, info: PngInfo): Uint8Array {
+  const bytesPerPixel = 4;
+  const stride = info.width * bytesPerPixel;
+  const rgba = new Uint8Array(info.height * stride);
+  let inputOffset = 0;
+  for (let rowIndex = 0; rowIndex < info.height; rowIndex++) {
+    const filter = raw[inputOffset++];
+    const row = rgba.subarray(rowIndex * stride, (rowIndex + 1) * stride);
+    const previous =
+      rowIndex > 0 ? rgba.subarray((rowIndex - 1) * stride, rowIndex * stride) : null;
+    for (let column = 0; column < stride; column++) {
+      const left = column >= bytesPerPixel ? row[column - bytesPerPixel] : 0;
+      const above = previous?.[column] ?? 0;
+      const upperLeft = column >= bytesPerPixel ? (previous?.[column - bytesPerPixel] ?? 0) : 0;
+      row[column] = unfilterByte(filter, raw[inputOffset++], left, above, upperLeft) & 0xff;
+    }
+  }
+  return rgba;
+}
+
 /** Decodes an 8-bit RGBA (colorType 6) PNG to raw un-filtered RGBA bytes. */
 export function pngRgba(bytes: Uint8Array): { info: PngInfo; rgba: Uint8Array } {
   const info = pngInfo(bytes);
   if (info.bitDepth !== 8 || info.colorType !== 6) {
     throw new Error(`unsupported PNG (bitDepth=${info.bitDepth} colorType=${info.colorType})`);
   }
-  const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const idat: Uint8Array[] = [];
-  let off = 8;
-  while (off < bytes.length) {
-    const len = dv.getUint32(off);
-    const type = ascii(bytes, off + 4, 4);
-    if (type === "IDAT") idat.push(bytes.subarray(off + 8, off + 8 + len));
-    if (type === "IEND") break;
-    off += 12 + len;
-  }
-  const raw = new Uint8Array(inflateSync(concat(idat)));
-  const bpp = 4;
-  const stride = info.width * bpp;
-  const rgba = new Uint8Array(info.height * stride);
-  let p = 0;
-  for (let y = 0; y < info.height; y++) {
-    const filter = raw[p++];
-    const row = rgba.subarray(y * stride, (y + 1) * stride);
-    const prev = y > 0 ? rgba.subarray((y - 1) * stride, y * stride) : null;
-    for (let x = 0; x < stride; x++) {
-      const rawByte = raw[p++];
-      const a = x >= bpp ? row[x - bpp] : 0;
-      const b = prev ? prev[x] : 0;
-      const c = x >= bpp && prev ? prev[x - bpp] : 0;
-      let val: number;
-      switch (filter) {
-        case 0:
-          val = rawByte;
-          break;
-        case 1:
-          val = rawByte + a;
-          break;
-        case 2:
-          val = rawByte + b;
-          break;
-        case 3:
-          val = rawByte + ((a + b) >> 1);
-          break;
-        case 4: {
-          const pa = Math.abs(b - c);
-          const pb = Math.abs(a - c);
-          const pc = Math.abs(a + b - 2 * c);
-          val = rawByte + (pa <= pb && pa <= pc ? a : pb <= pc ? b : c);
-          break;
-        }
-        default:
-          throw new Error(`bad filter ${filter}`);
-      }
-      row[x] = val & 0xff;
-    }
-  }
-  return { info, rgba };
+  const raw = new Uint8Array(inflateSync(collectIdat(bytes)));
+  return { info, rgba: unfilterRgba(raw, info) };
 }
 
 /** True iff every visible (alpha>0) pixel has pure-black RGB — macOS template purity. */

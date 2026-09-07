@@ -30,17 +30,26 @@ test("production routes keep all three workers.dev fallback endpoints enabled", 
 });
 
 test("public links, feed probes and recognized origins use the permanent domain", () => {
-  for (const [site, host] of [["landing", "presto.build"], ["playground", "playground.presto.build"]]) {
+  for (const [site, host] of [
+    ["landing", "presto.build"],
+    ["playground", "playground.presto.build"],
+  ]) {
     const html = text(`packages/${site}/index.html`);
     expect(html).toContain(`<link rel="canonical" href="https://${host}"`);
     expect(html).not.toContain("workers.dev");
   }
-  for (const file of ["packages/landing/src/feed.ts", ".github/workflows/update-feed-health.yml", ".github/workflows/release-presto.yml"]) {
+  for (const file of [
+    "packages/landing/src/feed.ts",
+    ".github/workflows/update-feed-health.yml",
+    ".github/workflows/release-presto.yml",
+  ]) {
     expect(text(file)).toContain("https://presto.build/releases/latest.json");
     expect(text(file)).not.toContain("alejo-amiras.workers.dev/releases/");
   }
   const sites = json("packages/presto/verified-sites.json");
-  const playground = sites.entries.find((entry: { displayName: string }) => entry.displayName === "Presto Playground");
+  const playground = sites.entries.find(
+    (entry: { displayName: string }) => entry.displayName === "Presto Playground",
+  );
   expect(playground.origins).toEqual([
     "https://playground.presto.build",
     "https://presto-playground.alejo-amiras.workers.dev",

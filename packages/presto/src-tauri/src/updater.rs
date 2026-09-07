@@ -92,6 +92,10 @@ pub(crate) fn acquire_updater_lock() -> Option<std::fs::File> {
 /// between that check and the install would let the installer write a version below the just-advanced
 /// floor. If the lock is held by another instance's transaction, defer the commit (the next launch
 /// retries) rather than commit unlocked.
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "every failed precondition must defer the monotonic floor commit without mutating state"
+)]
 pub fn commit_launch_floor() {
     let Some(path) = updater_state_path() else {
         tracing::warn!("cannot resolve updater-state path; skipping floor commit");
@@ -222,6 +226,10 @@ fn verify_and_gate(update: tauri_plugin_updater::Update) -> Option<VerifiedUpdat
 /// through the F-004 [`verify_and_gate`] FIRST — an unverified or rolled-back candidate never reaches
 /// the prompt or the auto-install path. Returns the [`VerifiedUpdate`] when one is available and the
 /// user hasn't opted into auto-update (so the caller can show a prompt or store it for later use).
+#[expect(
+    clippy::cognitive_complexity,
+    reason = "updater construction, availability, verification, and preference routing form one check"
+)]
 pub async fn check_for_update(
     app: &AppHandle,
     config_state: &ConfigState,
@@ -286,6 +294,11 @@ const MAX_UPDATE_BYTES: u64 = 500 * 1024 * 1024;
 
 /// Download, verify Ed25519 signature, install, and restart the app. Accepts ONLY a
 /// [`VerifiedUpdate`] — an artifact that has already cleared both F-004 layers.
+#[expect(
+    clippy::cognitive_complexity,
+    clippy::too_many_lines,
+    reason = "the security-critical install transaction is intentionally linear so lock, floor, process, marker, and recovery ordering stays reviewable"
+)]
 pub async fn perform_update(app: &AppHandle, verified: VerifiedUpdate) {
     let VerifiedUpdate {
         update,
