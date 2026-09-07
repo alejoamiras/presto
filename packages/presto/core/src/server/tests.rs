@@ -271,6 +271,8 @@ async fn health_includes_cors_headers() {
             .unwrap(),
         "*"
     );
+    // The Origin-tiered body must never be served cross-origin from a shared cache.
+    assert_eq!(response.headers().get("vary").unwrap(), "origin");
 }
 
 #[tokio::test]

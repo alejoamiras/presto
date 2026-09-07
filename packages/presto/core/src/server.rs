@@ -359,7 +359,10 @@ pub fn router_for_port(state: AppState, expected_port: u16) -> Router {
             http::header::CONTENT_TYPE,
             http::header::HeaderName::from_static("x-aztec-version"),
         ])
-        .expose_headers([http::header::HeaderName::from_static("x-prove-duration-ms")]);
+        .expose_headers([http::header::HeaderName::from_static("x-prove-duration-ms")])
+        // `/health` tiers its body by Origin (SEC-05); tower-http 0.7 emits no `Vary` for a
+        // static CORS config, so a shared cache could serve the detailed body cross-origin.
+        .vary([http::header::ORIGIN]);
 
     Router::new()
         .route("/health", get(health))
