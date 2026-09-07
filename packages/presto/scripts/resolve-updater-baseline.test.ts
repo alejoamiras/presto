@@ -102,7 +102,11 @@ describe("updater smoke baseline selection", () => {
     const result = selectUpdaterBaseline({
       version: "3.0.0",
       currentPubkey: NEW_KEY,
-      releases: [candidate("2.1.0", OLD_KEY), candidate("2.0.0", NEW_KEY)],
+      releases: [
+        candidate("2.1.0", OLD_KEY),
+        candidate("1.9.0", NEW_KEY),
+        candidate("2.0.0", NEW_KEY),
+      ],
     });
 
     expect(result).toEqual({ tag: "presto-v2.0.0", version: "2.0.0" });

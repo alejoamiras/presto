@@ -115,8 +115,8 @@ export async function loadUpdaterReleaseCandidates(
   const candidates: UpdaterReleaseCandidate[] = [];
   for (const release of releases) {
     if (typeof release.tag_name !== "string" || typeof release.draft !== "boolean") continue;
-    if (!release.tag_name.startsWith(TAG_PREFIX)) continue;
     const version = versionFromTag(release.tag_name);
+    if (!release.tag_name.startsWith(TAG_PREFIX)) continue;
 
     const assetNames = (release.assets ?? []).flatMap((asset) =>
       typeof asset.name === "string" ? [asset.name] : [],
