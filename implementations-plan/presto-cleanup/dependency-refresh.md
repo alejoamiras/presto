@@ -46,8 +46,10 @@ upstream provides timestamped stable release evidence; no commit-date substitute
   Aztec package-internal imports in development. Its deprecation warning is recorded; replacing it
   without an equivalent Rolldown resolver would break the dev server.
 - reqwest 0.13 replaces the OpenSSL/native-tls graph with rustls plus the platform verifier and
-  native certificate roots. Headless Linux CI therefore no longer installs `libssl-dev`; desktop
-  jobs retain it as part of the existing Tauri system-dependency bundle.
+  native certificate roots. Rustls's AWS-LC provider adds `aws-lc-sys` and a CMake build dependency.
+  Headless Linux CI therefore no longer installs `libssl-dev`; desktop jobs retain it as part of
+  the existing Tauri system-dependency bundle. Existing Windows/macOS CI compilation is the
+  prepared-platform validation for the native crypto backend.
 - The stable Wrangler release depends on an alpha-labelled Miniflare build. That transitive is an
   upstream exact compatibility choice, not a direct prerelease selection, and its publication age
   is still enforced.

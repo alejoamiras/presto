@@ -45,3 +45,12 @@ timestamps. It requested:
 6. Add narrow trust-boundary comments and Action/Cargo rejection tests — adopted.
 
 Session: `60045700-6f8d-449e-a1a2-55dc57a423ca`.
+
+## Arc 2 — round 2
+
+Verdict: approve.
+
+Claude verified all eight round-one findings were closed. It found no remaining policy, security,
+behavioral, metric-compression, or unnecessary-indirection problem. Two low-severity documentation
+corrections were adopted after approval: explicitly name the AWS-LC/CMake build dependency and fix
+the core crate's stale claim that all rustls code is excluded from the headless graph.

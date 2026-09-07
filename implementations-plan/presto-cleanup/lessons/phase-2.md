@@ -48,3 +48,10 @@ toolchain, requested explicit documentation of reqwest's TLS-backend change and 
 changes were adopted without relaxing the seven-day policy.
 
 Session: `60045700-6f8d-449e-a1a2-55dc57a423ca`.
+
+## Claude review — round 2
+
+Verdict: approve. Claude verified all eight round-one findings were closed and found no remaining
+policy, security, behavioral, compression, or indirection issue. Two low-severity documentation
+corrections were adopted: the AWS-LC/CMake native build dependency is now explicit, and the core
+crate comment distinguishes `tokio-rustls` serving code from reqwest's headless rustls client.

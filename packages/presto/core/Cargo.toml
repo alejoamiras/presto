@@ -14,7 +14,7 @@ rust-version = "1.93.1"
 # Standalone package — deliberately NOT a `[workspace]` member, same spirit as src-tauri's `autobins=false`.
 # Keeping `core` / `src-tauri` / `server` as independent build units (each with its own Cargo.lock) means the
 # headless `presto-server` resolves `presto-core` with only ITS features, so a GUI dependency can
-# never feature-unify Tauri / rustls / rcgen into the headless build. Do NOT add a `[workspace]` spanning these.
+# never feature-unify Tauri / tokio-rustls / rcgen into the headless build. Do NOT add a `[workspace]` spanning these.
 # See implementations-plan/core-extraction-2026-06-07/plan.md.
 #
 # Core is intentionally `build.rs`-free: the `AZTEC_VERSION` read, `verified-sites.json` check, and

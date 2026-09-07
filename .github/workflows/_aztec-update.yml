@@ -140,7 +140,8 @@ jobs:
         run: bun install
 
       # This workflow mutates the lockfile before it creates a commit, so event-based base SHAs
-      # cannot describe the generated diff. Compare the working tree directly with checked-out HEAD.
+      # cannot describe the generated diff. Before the commit step, compare the working tree directly
+      # with checked-out HEAD.
       - name: Verify generated dependency ages
         env:
           GITHUB_TOKEN: ${{ github.token }}
