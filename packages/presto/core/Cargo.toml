@@ -11,6 +11,11 @@ publish = false
 description = "GUI-agnostic core of the Presto: HTTP proving server, bb cache, version resolution, origin authorization."
 edition = "2021"
 rust-version = "1.93.1"
+
+[lints.clippy]
+cognitive_complexity = "deny"
+too_many_lines = "deny"
+
 # Standalone package — deliberately NOT a `[workspace]` member, same spirit as src-tauri's `autobins=false`.
 # Keeping `core` / `src-tauri` / `server` as independent build units (each with its own Cargo.lock) means the
 # headless `presto-server` resolves `presto-core` with only ITS features, so GUI and certificate-serving

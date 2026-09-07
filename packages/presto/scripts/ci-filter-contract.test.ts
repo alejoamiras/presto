@@ -16,6 +16,7 @@ const groupsFor = (...files: string[]) =>
     .map(([group]) => group)
     .sort();
 
+// biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("presto CI path routing", () => {
   const cases: Array<[string, string[], string[]]> = [
     ["release runbook", ["docs/RELEASE_RUNBOOK.md"], ["release_tooling"]],
@@ -56,7 +57,7 @@ describe("presto CI path routing", () => {
     [
       "headless server",
       ["packages/presto/server/src/main.rs"],
-      ["headless_server", "release_tooling", "sdk_integration"],
+      ["headless_server", "release_tooling", "rust_platform", "sdk_integration"],
     ],
     ["SDK source", ["packages/sdk/src/index.ts"], ["sdk_integration"]],
     [

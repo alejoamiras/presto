@@ -8,11 +8,17 @@
   "files": {
     "ignoreUnknown": true,
     "includes": [
-      "packages/**/*.ts",
-      "packages/**/*.js",
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.js",
+      "**/*.jsx",
+      "**/*.mjs",
       "*.json",
       "*.md",
       "!.claude",
+      "!**/dist",
+      "!packages/presto/src-tauri/frontend/assets",
+      "!packages/presto/src-tauri/gen",
       "!packages/release-feed/worker-configuration.d.ts"
     ]
   },
@@ -28,6 +34,26 @@
       "preset": "recommended",
       "correctness": {
         "noUnusedImports": "warn"
+      },
+      "complexity": {
+        "noBannedTypes": "warn",
+        "noExcessiveCognitiveComplexity": {
+          "level": "error",
+          "options": {
+            "maxAllowedComplexity": 15
+          }
+        },
+        "noExcessiveLinesPerFunction": {
+          "level": "error",
+          "options": {
+            "maxLines": 80,
+            "skipBlankLines": true,
+            "skipIifes": false
+          }
+        },
+        "noExcessiveNestedTestSuites": "error",
+        "noExtraBooleanCast": "off",
+        "noForEach": "off"
       },
       "suspicious": {
         "noExplicitAny": "off"

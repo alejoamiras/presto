@@ -15,6 +15,10 @@ default-run = "Presto"
 # sibling crate at `../server/` and is built separately.
 autobins = false
 
+[lints.clippy]
+cognitive_complexity = "deny"
+too_many_lines = "deny"
+
 [features]
 default = []
 webdriver = ["dep:tauri-plugin-webdriver"]
