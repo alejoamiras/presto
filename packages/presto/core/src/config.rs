@@ -341,10 +341,6 @@ pub fn load_with_cap_from(path: &std::path::Path) -> LoadedConfig {
     load_config_contents(path, &contents)
 }
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "tracing field expansion inflates a two-branch fail-closed version check"
-)]
 fn load_config_contents(path: &std::path::Path, contents: &str) -> LoadedConfig {
     // Stage 1: version probe. If the version can't be determined, FAIL CLOSED (no cap).
     let version = match probe_config_version(contents) {
@@ -363,10 +359,6 @@ fn load_config_contents(path: &std::path::Path, contents: &str) -> LoadedConfig 
     load_migrated_config(path, contents)
 }
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "tracing field expansion inflates the parse and deserialize error matches"
-)]
 fn load_migrated_config(path: &std::path::Path, contents: &str) -> LoadedConfig {
     // Stage 2: raw-Value parse + migration + deserialize (current-or-older schema). A malformed current
     // config FAILS CLOSED (read-only, no cap) rather than overwriting the user's file with defaults — a

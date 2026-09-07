@@ -20,13 +20,15 @@ exception must name the rule and explain why extraction would make the code hard
 
 The desktop, core, and headless-server crates remain independent Cargo projects. Each manifest enables
 `clippy::cognitive_complexity` and `clippy::too_many_lines`, while the shared `clippy.toml` sets their
-thresholds to 15 and 80. `bun run lint:clippy` checks every target of all three crates against its
+thresholds to 25 and 80. `bun run lint:clippy` checks every target of all three crates against its
 committed lockfile; `bun run lint:rust` checks formatting separately.
 
 The tools count different things. Biome skips blank lines by explicit configuration. Clippy describes
 its line rule only as the number of lines in a function or method, and its cognitive rule as an
-imperfect heuristic rather than a measurement of human comprehension. Clippy analyzes expanded Rust,
-so tracing and other macros can raise its reported score without adding visible branches.
+imperfect heuristic rather than a measurement of human comprehension. Clippy scores expanded Rust,
+and every `tracing` call expands to several branches, so a two-branch function with a few log lines
+can exceed 15 on log density alone. The cognitive threshold therefore stays at Clippy's default of
+25; the line rule, which macros do not inflate, carries the tighter limit.
 
 Pinned Clippy 1.98 also reports both rules in ordinary `#[test]` functions when `--all-targets` is used;
 the assumed cognitive-complexity exemption for tests does not apply to this configuration. Long or

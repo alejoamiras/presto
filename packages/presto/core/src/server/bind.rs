@@ -19,10 +19,6 @@ pub async fn bind_with_retry(addr: SocketAddr) -> std::io::Result<TcpListener> {
 
 /// Inner form with injectable timings so tests can exercise the wait-it-out,
 /// hard-deadline, and immediate-propagation paths without real-time sleeps.
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the hard-deadline and one-time-warning branches are the complete retry policy"
-)]
 async fn bind_with_retry_inner(
     addr: SocketAddr,
     interval: Duration,

@@ -435,10 +435,6 @@ fn enable_impl() -> Result<(), String> {
 /// Disable and remove the systemd user service.
 /// Call this after `manager.disable()`.
 #[cfg(target_os = "linux")]
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "disabling, deleting, reloading, and confirming absence are one Linux disarm operation"
-)]
 fn disable_impl() -> bool {
     let _ = std::process::Command::new("systemctl")
         .args(["--user", "disable", SYSTEMD_NAME])

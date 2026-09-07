@@ -47,7 +47,7 @@ describe("complexity policy", () => {
 
   test("every independent Rust crate opts into the shared limits", () => {
     expect(read("clippy.toml")).toBe(
-      "cognitive-complexity-threshold = 15\ntoo-many-lines-threshold = 80\n",
+      "cognitive-complexity-threshold = 25\ntoo-many-lines-threshold = 80\n",
     );
     for (const manifest of manifests) {
       const cargo = Bun.TOML.parse(read(manifest)) as {

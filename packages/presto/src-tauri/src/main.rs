@@ -248,10 +248,6 @@ fn reset_https_enabled(state: &AppState) {
 /// The shipped release desktop binary (release profile, no `webdriver`, no env
 /// overrides) returns `true` — auto-update behavior is unchanged.
 #[cfg(not(feature = "webdriver"))]
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the two environment gates are the complete update-poller policy"
-)]
 fn should_poll_for_updates() -> bool {
     if std::env::var("PRESTO_NO_UPDATE").is_ok() {
         tracing::warn!("PRESTO_NO_UPDATE set — background update checks suppressed");
@@ -507,10 +503,6 @@ fn build_desktop_state(
     AppState::desktop(core, on_status, on_versions_changed, show_auth_popup)
 }
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the callback has one development gate and one tray-menu rebuild result"
-)]
 fn versions_changed_callback(
     app: tauri::AppHandle,
     dev_mode: bool,
@@ -541,10 +533,6 @@ fn auth_popup_callback(
     })
 }
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "menu text, tooltip, and animation must observe the same server-status transition"
-)]
 fn status_callback(
     status_item: tauri::menu::MenuItem<tauri::Wry>,
     tray_icon: tauri::tray::TrayIcon,
@@ -677,13 +665,6 @@ fn initialize_logging() -> tracing_appender::non_blocking::WorkerGuard {
     guard
 }
 
-#[cfg_attr(
-    not(feature = "webdriver"),
-    expect(
-        clippy::cognitive_complexity,
-        reason = "marker reconciliation must precede both healing and intent-keyed recovery rearming"
-    )
-)]
 fn reconcile_startup_autostart(app: &tauri::AppHandle) {
     if !presto::autostart::startup_reconcile() {
         return;
@@ -833,13 +814,6 @@ fn setup_desktop(
     Ok(())
 }
 
-#[cfg_attr(
-    feature = "webdriver",
-    expect(
-        clippy::cognitive_complexity,
-        reason = "webdriver adds one compile-time plugin-registration branch to the startup sequence"
-    )
-)]
 fn main() {
     if handle_remove_ca_trust() || handle_prepare_uninstall() {
         return;

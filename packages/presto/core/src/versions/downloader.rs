@@ -18,10 +18,6 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the orchestration deliberately keeps verify-before-install ordering in one readable function"
-)]
 pub async fn download_bb(version: &AztecVersion) -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
     // The `&AztecVersion` parameter IS the #99 traversal guard: a value of this type can only have
     // been built by `AztecVersion::parse`, which ran `is_valid_version`. An unsafe version therefore

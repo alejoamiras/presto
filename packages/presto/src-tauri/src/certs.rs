@@ -348,10 +348,6 @@ pub fn migrate_legacy_ca_key() -> Result<(), Box<dyn std::error::Error + Send + 
 /// still exists after the removal attempt (retried once for a transient lock/AV scan). The caller
 /// MUST treat that as a security failure and NOT bring up Safari HTTPS — a live HTTPS server next to
 /// a readable mint-any-cert key + its still-trusted anchor is the exact exposure we're closing.
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the two-attempt deletion and final existence check form one fail-closed operation"
-)]
 fn migrate_legacy_ca_key_at(
     ca_key: &std::path::Path,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
@@ -476,10 +472,6 @@ const ROTATE_BEFORE_DAYS: i64 = 30;
 /// to `rotate()`, which is safe + non-silent. Used for the **silent** background rotation on Linux
 /// (user NSS needs no prompt); macOS/Windows instead surface a renewal consent window (see
 /// [`leaf_is_expiring`] + the `renew_cert` command).
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the explicit fresh, expiring, and unreadable cases make rotation policy auditable"
-)]
 pub fn regenerate_leaf_if_expiring() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     match leaf_cert_days_remaining() {
         Ok(days) if days > ROTATE_BEFORE_DAYS => {

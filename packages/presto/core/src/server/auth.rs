@@ -106,10 +106,6 @@ async fn request_authorization(
         .map_err(|_| ProveError::AuthorizationCancelled)
 }
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the metric expands tracing fields; this is a two-variant error mapping"
-)]
 fn map_request_error(origin: &CanonicalOrigin, error: RequestError) -> ProveError {
     match error {
         RequestError::Cooldown => {
@@ -123,10 +119,6 @@ fn map_request_error(origin: &CanonicalOrigin, error: RequestError) -> ProveErro
     }
 }
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the capability and duplicate-origin branches make durable authorization fail closed"
-)]
 fn persist_approved_origin(state: &AppState, origin: CanonicalOrigin) -> Result<(), ProveError> {
     tracing::info!(origin = %origin, "Origin authorized (persistent)");
     // Unconditional: there is no ephemeral Allow any more. The popup discloses that approving

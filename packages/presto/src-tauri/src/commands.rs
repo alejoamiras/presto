@@ -109,10 +109,6 @@ mod pending_update {
         /// prompt: the command returns `Ok`, so `wireButton` leaves the clicked control disabled — a
         /// silent early-return would strand the user with a permanently-disabled window that future 12h
         /// checks dedup against. A successful navigate reloads the page, re-enabling the controls itself.
-        #[expect(
-            clippy::cognitive_complexity,
-            reason = "every failed reprompt operation must visibly close the stale update window"
-        )]
         pub fn navigate(
             self,
             app: &tauri::AppHandle,
@@ -454,10 +450,6 @@ pub fn get_verified_info(
     }))
 }
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "request ownership, queue promotion, and window closure are one authorization decision"
-)]
 #[tauri::command]
 pub fn respond_auth(
     window: tauri::WebviewWindow,
@@ -807,10 +799,6 @@ pub async fn disable_https(
 
 /// Explicitly remove the local CA from every browser trust store (the "Remove certificate trust"
 /// Settings action — D5). Also flips HTTPS off so the app stops presenting a now-untrusted cert.
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "trust removal and disabling HTTPS must remain one serialized transaction"
-)]
 #[tauri::command]
 pub async fn remove_https_trust(
     window: tauri::WebviewWindow,
@@ -953,10 +941,6 @@ pub async fn complete_onboarding(
 /// with context, unlike a surprise background prompt). Records the prompt time for throttling.
 /// `async` (like `enable_https`/`complete_onboarding`) so the blocking subprocess + modal OS dialog
 /// don't freeze the webview event loop / the "Renewing…" spinner (post-impl review).
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the prove permit, certificate rotation, throttle write, and restart order is invariant"
-)]
 #[tauri::command]
 pub async fn renew_cert(
     window: tauri::WebviewWindow,

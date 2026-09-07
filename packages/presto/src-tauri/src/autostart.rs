@@ -2726,10 +2726,6 @@ mod tests {
     }
 
     #[test]
-    #[expect(
-        clippy::cognitive_complexity,
-        reason = "the table test keeps each platform-state assertion beside its fixture"
-    )]
     fn classify_state_table() {
         let dir = tempfile::tempdir().unwrap();
         let live = dir.path().join("live-exe");

@@ -44,10 +44,6 @@ fn updater_state_path() -> Option<std::path::PathBuf> {
 /// `pub(crate)`: the autostart heal takes this NON-BLOCKING to bow out while an update transaction
 /// is live (plan Fork B / D19 — the heal must never hold or wait on it; `autostart.lock` is the
 /// mutation lock, this is only the "is an update running?" probe).
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "path resolution, file creation, and nonblocking lock acquisition are one capability gate"
-)]
 pub(crate) fn acquire_updater_lock() -> Option<std::fs::File> {
     use fs2::FileExt as _;
     let parent = updater_state_path()?.parent()?.to_path_buf();
@@ -184,10 +180,6 @@ fn layer_b_gate(candidate: &Version, current: &Version) -> Result<(), String> {
 /// F-004 gate: verify the signed manifest (Layer A) and enforce the monotonic version floor
 /// (Layer B). Returns a proof-carrying [`VerifiedUpdate`] iff BOTH pass; on any failure it logs a
 /// `SECURITY:`-prefixed reason and returns `None` (fail closed — the app stays on its current build).
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "manifest authenticity and rollback protection are deliberately adjacent fail-closed gates"
-)]
 fn verify_and_gate(update: tauri_plugin_updater::Update) -> Option<VerifiedUpdate> {
     let current = match Version::parse(env!("CARGO_PKG_VERSION")) {
         Ok(v) => v,

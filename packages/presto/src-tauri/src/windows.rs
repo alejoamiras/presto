@@ -72,10 +72,6 @@ fn focus_window(window: &tauri::WebviewWindow) {
     let _ = window.set_focus();
 }
 
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the metric expands tracing fields; this helper has one state fallback and one eval result"
-)]
 fn reassert_theme(window: &tauri::WebviewWindow) {
     let theme = match window.app_handle().try_state::<commands::ConfigState>() {
         Some(state) => state.lock.read().theme,
