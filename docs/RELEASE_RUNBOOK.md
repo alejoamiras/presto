@@ -45,7 +45,8 @@ updater key, certificates, native identifier, or installation.
 Release sequence: SDK 5.2.0 to `testnet` with provenance; native `1.0.0-rc.1`; native
 `1.0.0` using RC1 as its actual same-key baseline; stable feed promotion; full-stack consent
 verification; then guarded SDK `latest` promotion. RCs must never enter the public feed.
-The baseline bootstrap is restricted to exactly RC1 with no earlier Presto release.
+That one-time first-release exception is retired. Every future native release requires a complete,
+published, lower same-key baseline and the full updater suite.
 
 ### Cloudflare deployment credentials
 
@@ -65,21 +66,11 @@ version ID before activation. This follows Cloudflare's separation of
 [versions, deployments and triggers](https://developers.cloudflare.com/workers/wrangler/commands/workers/).
 Uploading a version alone does not promote the stable manifest or change production traffic.
 
-### Recovering an interrupted first RC
+### First-release historical note
 
-An unpublished RC1 draft counts as an existing release and deliberately blocks the bootstrap
-exception. Do not weaken the resolver to ignore drafts. Before a retry, inspect the exact
-`presto-v1.0.0-rc.1` release in `alejoamiras/presto` and confirm all of the following:
-
-- The release is still a draft, has never been published, and no other Presto release exists.
-- `refs/tags/presto-v1.0.0-rc.1` does not exist on the remote repository.
-- No RC manifest was promoted; the new stable feed remains empty.
-
-Preserve the failed run logs and draft asset hashes for diagnosis. Only after those read-only checks
-and explicit operator approval may the exact unpublished draft be removed (without deleting any
-tag). Then re-dispatch RC1 from the reviewed commit using the same recovered signing identity.
-If a tag exists, publication status is uncertain, or any release was published, stop: do not delete
-or rewrite it. Resolve the baseline/publication state and fix forward under the normal release rules.
+The one-time `1.0.0-rc.1` baseline exception was used for the initial launch and is now retired.
+The dated launch status and checklist retain its evidence. Do not recreate, delete, or rewrite that
+release; resolve future failures under the ordinary append-only release rules.
 
 ### `npm-publish` GitHub environment and npm trusted publisher
 
@@ -137,10 +128,9 @@ gh workflow run release-presto.yml --ref main -f version=X.Y.Z-rc.N
 ```
 
 Every ordinary publish requires a complete, published, lower release using the current updater key.
-The resolver includes prereleases and selects the greatest compatible version. Only the first
-`1.0.0-rc.1` may bootstrap without a baseline, and only when no Presto release exists. Stable
-1.0.0 must run the complete RC1 → stable updater and tamper suite. Future key rotation requires
-a separately reviewed migration; there is no dispatch override.
+The resolver includes prereleases and selects the greatest compatible version. Missing baselines
+fail closed, including for `1.0.0-rc.1`. Future key rotation requires a separately reviewed migration;
+there is no dispatch override.
 
 The release path is:
 

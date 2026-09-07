@@ -8,7 +8,6 @@ export interface UpdaterReleaseCandidate {
 export interface UpdaterBaseline {
   tag: string;
   version: string;
-  bootstrap?: true;
 }
 
 interface SelectUpdaterBaselineOptions {
@@ -55,13 +54,6 @@ function hasCompleteInstallerSet(candidate: UpdaterReleaseCandidate, version: st
 }
 
 export function selectUpdaterBaseline(options: SelectUpdaterBaselineOptions): UpdaterBaseline {
-  if (
-    options.version === "1.0.0-rc.1" &&
-    options.currentPubkey.length > 0 &&
-    !options.releases.some((release) => release.tagName.startsWith(TAG_PREFIX))
-  ) {
-    return { tag: "", version: "", bootstrap: true };
-  }
   const eligible = options.releases
     .flatMap((release) => {
       const version = versionFromTag(release.tagName);
@@ -135,7 +127,7 @@ export async function loadUpdaterReleaseCandidates(
       assetNames,
       pubkey: "",
     };
-    // Retain incomplete/draft/invalid-tag releases: they must prevent a false first-release bypass.
+    // Keep every Presto-shaped release here; selection applies the eligibility rules uniformly.
     if (!version || release.draft || !hasCompleteInstallerSet(shapeOnly, version)) {
       candidates.push(shapeOnly);
       continue;
