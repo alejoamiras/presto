@@ -1,0 +1,272 @@
+<title>Presto Noir</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700&family=Figtree:wght@400;500;600&family=Fragment+Mono&display=swap">
+<style>
+  :root {
+    --ground: #f6f1e7;
+    --surface: #fdfaf4;
+    --ink: #191226;
+    --ink-2: #4a415e;
+    --muted: #7d7392;
+    --line: #d9d1c4;
+    --mint: #1f9a68;
+    --mint-soft: #dff3e8;
+    --peri: #4b5fd6;
+    --peri-soft: #e6e9fb;
+    --gold: #b8860b;
+    --gold-soft: #fff1cf;
+    --coral: #c93d31;
+    --coral-soft: #fbe3df;
+    --code-bg: #efe8dc;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #191226;
+      --surface: #221a35;
+      --ink: #f1ebe0;
+      --ink-2: #c9c0d6;
+      --muted: #9d93b0;
+      --line: #372c4e;
+      --mint: #3fce8c;
+      --mint-soft: #1c3a2e;
+      --peri: #a5b0ff;
+      --peri-soft: #2a2b52;
+      --gold: #ffd066;
+      --gold-soft: #3b3020;
+      --coral: #f0766b;
+      --coral-soft: #472028;
+      --code-bg: #120c1c;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #191226;
+    --surface: #221a35;
+    --ink: #f1ebe0;
+    --ink-2: #c9c0d6;
+    --muted: #9d93b0;
+    --line: #372c4e;
+    --mint: #3fce8c;
+    --mint-soft: #1c3a2e;
+    --peri: #a5b0ff;
+    --peri-soft: #2a2b52;
+    --gold: #ffd066;
+    --gold-soft: #3b3020;
+    --coral: #f0766b;
+    --coral-soft: #472028;
+    --code-bg: #120c1c;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Figtree", "Segoe UI", system-ui, sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+  }
+  main { max-width: 68ch; margin: 0 auto; padding: 3rem 1.25rem 5rem; }
+  h1, h2, h3 { font-family: "Bricolage Grotesque", "Figtree", system-ui, sans-serif; font-weight: 700; text-wrap: balance; line-height: 1.15; margin: 0; }
+  h1 { font-size: 2.6rem; letter-spacing: -0.01em; }
+  h2 { font-size: 1.45rem; margin-top: 3rem; }
+  h3 { font-size: 1.05rem; font-weight: 500; }
+  p { margin: 0.75rem 0 0; }
+  a { color: var(--peri); }
+  .eyebrow { font-size: 0.78rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .lede { font-size: 1.12rem; color: var(--ink-2); margin-top: 1rem; }
+  .strip { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.75rem; margin-top: 1.75rem; }
+  .strip div { border-top: 2px solid var(--line); padding-top: 0.5rem; }
+  .strip b { display: block; font-family: "Bricolage Grotesque", system-ui, sans-serif; font-size: 1.35rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .strip span { font-size: 0.85rem; color: var(--muted); }
+  .rubric { display: grid; grid-template-columns: 1fr auto; gap: 0.35rem 1.5rem; margin-top: 1rem; font-size: 0.95rem; }
+  .rubric span:nth-child(even) { text-align: right; font-weight: 600; }
+  .rubric .hi { color: var(--coral); }
+  .rubric .mod { color: var(--gold); }
+  .arc { margin-top: 2rem; }
+  .arc h3 { display: flex; align-items: baseline; gap: 0.75rem; font-family: "Bricolage Grotesque", system-ui, sans-serif; font-weight: 700; font-size: 1.15rem; }
+  .arc h3 .tag { font-family: "Fragment Mono", ui-monospace, monospace; font-size: 0.75rem; color: var(--peri); background: var(--peri-soft); padding: 0.1rem 0.45rem; border-radius: 3px; font-weight: 400; }
+  .arc .ship { font-size: 0.9rem; color: var(--muted); margin-top: 0.25rem; }
+  .phase { display: grid; grid-template-columns: 2.4rem 1fr; gap: 0 0.75rem; padding: 0.85rem 0; border-top: 1px solid var(--line); }
+  .phase:first-of-type { border-top: 0; }
+  .phase .n { font-family: "Fragment Mono", ui-monospace, monospace; font-size: 0.85rem; color: var(--muted); padding-top: 0.2rem; font-variant-numeric: tabular-nums; }
+  .phase .t { font-weight: 600; }
+  .phase .d { color: var(--ink-2); font-size: 0.97rem; margin-top: 0.2rem; }
+  .phase .g { margin-top: 0.45rem; font-size: 0.88rem; color: var(--mint); }
+  .phase .g::before { content: "proves itself by "; color: var(--muted); }
+  .phases { background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 0.25rem 1rem; margin-top: 0.75rem; }
+  ul { padding-left: 1.2rem; margin: 0.75rem 0 0; }
+  li { margin-top: 0.45rem; }
+  li b { font-weight: 600; }
+  .asks li { padding-left: 0.25rem; }
+  .asks .rec { color: var(--mint); font-weight: 600; }
+  .approval { background: var(--gold-soft); border-left: 4px solid var(--gold); padding: 1rem 1.25rem 1.25rem; margin-top: 3rem; border-radius: 0 6px 6px 0; }
+  .approval h2 { margin-top: 0; }
+  .risk { background: var(--coral-soft); border-left: 4px solid var(--coral); padding: 0.85rem 1.1rem; margin-top: 1rem; border-radius: 0 6px 6px 0; font-size: 0.97rem; }
+  .verdict { font-family: "Fragment Mono", ui-monospace, monospace; font-size: 0.9rem; background: var(--code-bg); padding: 0.75rem 1rem; border-radius: 4px; margin-top: 0.75rem; overflow-x: auto; }
+  pre { font-family: "Fragment Mono", ui-monospace, monospace; font-size: 0.82rem; line-height: 1.5; background: var(--code-bg); color: var(--ink); padding: 1rem 1.1rem; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; margin: 0.75rem 0 0; }
+  code { font-family: "Fragment Mono", ui-monospace, monospace; font-size: 0.9em; background: var(--code-bg); padding: 0.05rem 0.3rem; border-radius: 3px; }
+  .seed { margin-top: 1.5rem; }
+  .seed.rec { border: 1px solid var(--mint); border-radius: 6px; padding: 0.9rem 1rem 1rem; background: var(--mint-soft); }
+  .seed.rec h3 { color: var(--mint); }
+  .warn { color: var(--coral); font-weight: 600; margin-top: 1rem; }
+  table { border-collapse: collapse; width: 100%; margin-top: 0.75rem; font-size: 0.93rem; }
+  th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 0.78rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+  .tablewrap { overflow-x: auto; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  @media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto; } }
+</style>
+
+<main>
+  <div class="eyebrow">Blueprint · deep · approved 2026-09-07 · implementation pending</div>
+  <h1>Presto Noir</h1>
+  <p class="lede">Teach Presto to prove any Noir circuit natively, not only Aztec transactions — so the yacana web miner and Noir dApps get the same 5× speed-up the Aztec SDK already enjoys, through a drop-in replacement for the bb.js backend they use today.</p>
+
+  <div class="strip">
+    <div><b>5</b><span>arcs, one PR each</span></div>
+    <div><b>19</b><span>phases, each with a gate</span></div>
+    <div><b>3</b><span>npm packages after the split</span></div>
+    <div><b>7</b><span>decisions that are yours</span></div>
+  </div>
+
+  <h2>What this is, in plain words</h2>
+  <p>Presto today does one job: when an Aztec dApp needs a transaction proved, the browser hands the work to the Presto app on your machine, which runs the real Barretenberg prover instead of the slow browser version. That path is called "chonk" and it only understands Aztec transactions.</p>
+  <p>A Noir circuit is a different, simpler shape of proof ("UltraHonk"): one program, one set of inputs, one proof. The yacana miner proves the same small circuit over and over; each proof is a lottery ticket, and the native prover buys tickets five times faster. Today Presto can't help it at all.</p>
+  <p>The plan adds a second door to the app for exactly this kind of proof, moves the shared "talk to Presto" plumbing out of the Aztec-only package into its own small package, and ships a new package that Noir developers can swap in with two lines. Nothing about the existing Aztec path changes.</p>
+
+  <h2>Why <code>deep</code></h2>
+  <p>Six risk dimensions were scored; four came out high, which puts this above the default tier regardless of package count.</p>
+  <div class="rubric">
+    <span>Novelty</span><span class="mod">moderate</span>
+    <span>Blast radius (app + three packages + release pipeline)</span><span class="hi">high</span>
+    <span>Irreversibility (npm publishes, a desktop release)</span><span class="hi">high</span>
+    <span>Migration cost (splitting the SDK)</span><span class="mod">moderate</span>
+    <span>External coupling (bb's command line, bb.js's API)</span><span class="hi">high</span>
+    <span>Security sensitivity (a new input into the prover, publishing)</span><span class="hi">high</span>
+  </div>
+  <p class="muted">Three planners drafted independently (Claude main, GPT-6 via Codex, a fresh Claude), the merge was contradiction-checked by two reviewers, audited twice more, and then put through a fresh-context final pass that rejected once and approved conditionally on the second round. Seventy-odd findings were adopted; one was rejected on the record.</p>
+  <h3 style="margin-top:1.25rem">Final reviewer verdict</h3>
+  <div class="verdict">conditional approve — four conditions (approval/revocation ordering, one approval epoch, release preflight order, stale env-var wording), all incorporated in v7. No open conditions remain from the reviewer's side.</div>
+
+  <h2>What was checked before planning</h2>
+  <ul>
+    <li><b>The speed-up is real and the proofs are identical.</b> On this machine the native prover does the miner's circuit in 1.2 s versus 6.3 s in the browser engine, and the bytes match exactly — so switching provers never changes a mining ticket.</li>
+    <li><b>The prover needs the verification key up front.</b> Without one it refuses to run; the plan lets the client send it (fast) or asks the prover to compute it (a quarter second slower) and hands it back for next time.</li>
+    <li><b>Circuits with no public outputs produce an empty output file</b>, which the existing validator would have rejected. Caught by review, fixed in the design.</li>
+    <li><b>Only the "no-zk" proof flavours are reproducible.</b> The zero-knowledge flavours add randomness, so "byte-identical" claims are limited to the flavours where it's true. The miner uses a no-zk flavour.</li>
+    <li><b>Bad inputs fail cleanly.</b> Corrupted keys, random bytes, and a key from the wrong circuit all make the prover stop with an error or produce a proof that simply doesn't verify. No crashes, no hangs.</li>
+    <li><b>The trust boundary does not move.</b> An approved website already controls the bytes the prover parses. The new door sits behind the same approval popup, the same size caps, the same timeouts.</li>
+  </ul>
+
+  <h2>The work, arc by arc</h2>
+  <p>Each arc is one reviewable pull request that can ship on its own. Every phase names what proves it done.</p>
+
+  <div class="arc">
+    <h3><span class="tag">arc 1</span>The new door in the app</h3>
+    <div class="ship">Ships alone as the next Presto release. No npm package needed.</div>
+    <div class="phases">
+      <div class="phase"><div class="n">1</div><div><div class="t">Test circuits</div><div class="d">Two tiny Noir circuits (one with public outputs, one without) committed with their inputs, keys, and expected proofs, plus a script to regenerate them.</div><div class="g">a checksum manifest test and the lint suite</div></div></div>
+      <div class="phase"><div class="n">2</div><div><div class="t">The prover call</div><div class="d">Teach the app to run the prover in "UltraHonk" mode, reusing the existing sandboxing, timeouts, and clean-up.</div><div class="g">Rust unit tests with a stand-in prover, on Linux and cross-checked for Windows</div></div></div>
+      <div class="phase"><div class="n">3</div><div><div class="t">Split the gatekeeper</div><div class="d">The 150 lines that check approval, size, and queue position get split into two reusable steps so both doors share them. Aztec behaviour stays byte-for-byte the same.</div><div class="g">every existing test passing with zero edits</div></div></div>
+      <div class="phase"><div class="n">4</div><div><div class="t">The route itself</div><div class="d">Accept the request, validate it strictly, run the prover, return the proof. The health check now advertises what the app can do. One website can hold at most four jobs at a time, and removing a site in Settings now also stops its queued jobs.</div><div class="g">router tests for every success, failure, and race path</div></div></div>
+      <div class="phase"><div class="n">5</div><div><div class="t">Prove it with the real prover in CI</div><div class="d">A CI job runs the real Barretenberg binary through the new door, over real HTTP, checks the bytes against the committed proofs, and verifies them natively. Also lets test runs use their own port and their own data folder so parallel runs never collide.</div><div class="g">that CI job green, locally and on the branch</div></div></div>
+      <div class="phase"><div class="n">6</div><div><div class="t">Real desktop app, three operating systems</div><div class="d">Drive the packaged app from a browser: approve the popup, prove, compare bytes; deny and confirm nothing runs.</div><div class="g">the WebDriver suite on macOS, Linux, and Windows</div></div></div>
+      <div class="phase"><div class="n">7</div><div><div class="t">App docs</div><div class="d">Document the new door and the health-check fields where the app's protocol is already described.</div><div class="g">doc-sync tests and lint</div></div></div>
+    </div>
+  </div>
+
+  <div class="arc">
+    <h3><span class="tag">arc 2</span>Release tooling that knows three packages</h3>
+    <div class="ship">Behaviour-preserving; the existing SDK release keeps working unchanged. Must land before the split, or the split can't be published.</div>
+    <div class="phases">
+      <div class="phase"><div class="n">8</div><div><div class="t">Scripts</div><div class="d">The publish, verify, and promote scripts learn a package name instead of assuming one. A closed list says which packages exist and how each is versioned.</div><div class="g">script unit tests, typecheck, shellcheck</div></div></div>
+      <div class="phase"><div class="n">9</div><div><div class="t">Workflow</div><div class="d">One reusable publish workflow; the release workflow gains a "which packages" switch, publishes them in dependency order, reuses already-published dependencies instead of failing, and documents fix-forward recovery.</div><div class="g">workflow lint and the release contract tests; the dry run is yours to trigger from main after merge</div></div></div>
+    </div>
+  </div>
+
+  <div class="arc">
+    <h3><span class="tag">arc 3</span>Split the shared plumbing into <code>presto-core</code></h3>
+    <div class="ship">The Aztec package keeps its public surface; it just depends on the new core underneath.</div>
+    <div class="phases">
+      <div class="phase"><div class="n">10</div><div><div class="t">Scaffold</div><div class="d">Empty package wired into the workspace, test chains, and package list.</div><div class="g">the full repo test command</div></div></div>
+      <div class="phase"><div class="n">11</div><div><div class="t">Move and re-base</div><div class="d">Move the transport, error, and type files with their history; lift the "is Presto there, should I use it, what to do on each error" policy into one shared client; rebuild the Aztec prover on top of it. One phase, because the two halves can't pass tests apart.</div><div class="g">core, SDK, and playground suites green, including the real Presto lane in CI</div></div></div>
+      <div class="phase"><div class="n">12</div><div><div class="t">CI for the new package</div><div class="d">A per-package gate, reachable before any PR exists through the already-registered SDK workflow.</div><div class="g">that workflow dispatched on the branch for both packages</div></div></div>
+    </div>
+  </div>
+
+  <div class="arc">
+    <h3><span class="tag">arc 4</span>The Noir package, <code>presto-noir</code></h3>
+    <div class="ship">Works everywhere immediately: on machines without the new app it silently uses the browser prover.</div>
+    <div class="phases">
+      <div class="phase"><div class="n">14</div><div><div class="t">The drop-in backend</div><div class="d"><code>new PrestoUltraHonkBackend(bytecode, api)</code> replaces bb.js's class with the same three methods. Native when Presto is there, browser engine otherwise, or a clear error if the app asked for "native only".</div><div class="g">unit tests covering every row of the fallback table</div></div></div>
+      <div class="phase"><div class="n">15</div><div><div class="t">Byte identity, both ways</div><div class="d">The browser engine re-proves the test circuits and must match the committed proofs; a live test against a running headless Presto must go native and match too.</div><div class="g">both jobs green in CI; the live one cannot pass on a fallback</div></div></div>
+      <div class="phase"><div class="n">16</div><div><div class="t">Package the way a user installs it</div><div class="d">Install the packed tarball into a fresh project, check exactly one bb.js copy resolves, add the package to the release order with its own production gates.</div><div class="g">the consumer job and release contract tests</div></div></div>
+    </div>
+  </div>
+
+  <div class="arc">
+    <h3><span class="tag">arc 5</span>Playground demo and docs</h3>
+    <div class="ship">Human-visible proof that it works, plus the docs a Noir developer needs.</div>
+    <div class="phases">
+      <div class="phase"><div class="n">17</div><div><div class="t">A Noir panel in the playground</div><div class="d">Prove the test circuit in the browser engine and through Presto side by side, with timings and an "identical" check.</div><div class="g">playground typecheck, unit tests, and build</div></div></div>
+      <div class="phase"><div class="n">18</div><div><div class="t">Browser tests</div><div class="d">A mocked test with Presto faked, an offline case that asserts the fallback without downloading anything, and one real-browser proof in the smoke suite.</div><div class="g">the mocked project green, the smoke project green locally</div></div></div>
+      <div class="phase"><div class="n">19</div><div><div class="t">Docs</div><div class="d">READMEs for the two new packages, a "For Noir circuits" section in the main README, the compatibility table, the release runbook, and how a site gets its verified badge.</div><div class="g">doc-sync tests and lint</div></div></div>
+    </div>
+  </div>
+  <p class="muted">Phase 13 was merged into 11–12 during review; the number is kept so references stay stable.</p>
+
+  <h2>Things worth knowing before you decide</h2>
+  <ul>
+    <li><b>The "which bb version" question turned out to be an identity.</b> The Aztec version, the bb.js package version, and the native prover's release tag are the same string by construction. The health check will still expose a mapping table, but today every row reads "5.2.0 → 5.2.0". Question 7 below lets you drop it.</li>
+    <li><b>bb.js already goes native in Node.</b> Presto's value for Noir is the browser (and Windows, where bb.js ships no native binary). That's where the miner lives.</li>
+    <li><b>Mining runs your machine at full tilt for hours.</b> This plan keeps the cheap guards (one prover at a time, per-site queue cap, revocation applies to queued work, thread cap from the speed setting). The tray meter and one-click revoke are a separate follow-up plan, as you asked.</li>
+    <li><b>Old apps degrade gracefully.</b> The Noir package sees an app without the new door and quietly uses the browser engine. The Aztec SDK is untouched in both directions. No protocol version bump.</li>
+    <li><b>First time this repo declares a peer dependency.</b> The Noir package rides on the bb.js the developer already has, rather than bringing its own copy. The Aztec SDK deliberately chose the opposite earlier; the plan explains why this case differs.</li>
+  </ul>
+
+  <h2>Decisions taken at the gate</h2>
+  <ul class="asks">
+    <li><b>1. Native verification and key computation:</b> <span class="rec">later.</span> v1 keeps them in the browser engine; "native only" applies to proving.</li>
+    <li><b>2. bb.js pin:</b> <span class="rec">exact 5.2.0.</span> Both new packages start at 1.0.0 with ordinary semver.</li>
+    <li><b>3. Presto version carrying the new door:</b> <span class="rec">1.1.0.</span></li>
+    <li><b>4. Per-site queue cap:</b> <span class="rec">four</span> (half the total).</li>
+    <li><b>5. Security hardening pass:</b> <span class="rec">yes</span>, before the first stable publish of the Noir package.</li>
+    <li><b>6. yacana origin for the verified badge:</b> <span class="rec">https://yacana.network</span> (apex only; preview deployments never get the badge). A recognition badge, not pre-approval.</li>
+    <li><b>7. Health-check mapping table:</b> <span class="rec">keep it.</span></li>
+  </ul>
+
+  <div class="approval">
+    <h2>Verdict: approved</h2>
+    <p>Scope, tier <code>deep</code>, the validation layers, and the five-arc delivery as written. Merging, publishing, and trusted-publisher registration stay owner actions.</p>
+    <p class="muted">The plan's own audit trail (both reviewer families, every finding and its disposition) lives in the plan file and the two audit files next to it.</p>
+  </div>
+
+  <div class="risk">Not an agent action, ever: merging, publishing to npm, dispatching a release, or registering the two new package names as trusted publishers. Those are listed as your follow-ups after merge.</div>
+
+  <h2>Implementation seeds (final)</h2>
+  <p>Two ways to run the implementation session autonomously. Start the session inside the plan's worktree (<code>agent-worktree resume presto-noir</code>) in the permission mode you intend. <code>/goal</code> survives a resume and stops when its condition holds; <code>/loop</code> fires on a fixed interval for up to seven days.</p>
+  <p class="warn">Use exactly one per session. They don't compose — setting one replaces the other.</p>
+
+  <div class="seed rec">
+    <h3>Recommended for this plan: /goal</h3>
+    <p class="muted">Completion is fully transcript-observable (phase ticks, gate output, the PR stack), which is what the goal evaluator needs.</p>
+<pre>/goal All 19 phases marked ✓ in implementations-plan/presto-noir/plan.md (the per-phase headers in the file — not the chat, not the task list; phase 13 is merged into 11–12 and counts as ✓ with them), each ✓ backed by its phase's validation gate (as defined in plan.md) reported passing in the transcript; for each phase the agent has printed `LESSONS_FILE=implementations-plan/presto-noir/lessons/phase-N.md` in the transcript; `/code-review` was NOT run (code_review: off); the codex fix loop converged for EVERY reviewed diff — each of the 5 arcs at its boundary plus the final cross-arc pass — each convergence evidenced by a resumed codex pass reporting no new material findings, quoted in the transcript; the Delivery section's 5-PR stack exists on GitHub, created only AFTER all loops converged (`gh stack view` output in the transcript); `bun run test` and `bun run lint:actions` both report exit 0 in the transcript; no npm publish, release dispatch, or merge was performed.</pre>
+  </div>
+
+  <div class="seed">
+    <h3>Alternative: /loop 15m</h3>
+<pre>/loop 15m Drive implementations-plan/presto-noir forward. Never idle waiting for my input. Each firing:
+1. **Reality check**: read implementations-plan/presto-noir/plan.md and lessons/ (authoritative state — not the chat); native task list empty (fresh session)? rebuild it from plan.md, one task per remaining step; run `git status` and `git log --oneline -5`. If a PR exists, `gh pr view --json statusCheckRollup` (no --watch; `gh stack view` for the whole stack). Without a PR but with CI configured, `gh run list --branch $(git branch --show-current) --limit 1 --json status,databaseId`.
+2. **Waiting on CI is fine** — confirm it's actually progressing (`gh run watch &lt;run-id&gt;` up to 10 minutes; queued or stuck past that → inspect logs, log it as blocked in lessons). Use the wait productively: review the diff, prep the next phase, strengthen tests. Don't start work that would conflict with the in-flight change.
+3. **No task in hand?** Pick the next pending step from plan.md and start it. After each meaningful edit, run the fast validation layers (`bun run lint` + the touched package's unit tests; `cargo fmt --check &amp;&amp; cargo clippy -- -D warnings &amp;&amp; cargo test` for Rust) — catch mistakes in-step, not phases later. Then commit → push (`gh stack push`; `gh stack sync` if main or a lower arc moved).
+4. **Stuck, or facing a decision you'd normally bring to me?** Don't wait. Call `/codex high` with full context and go back and forth until you two reach a defensible decision, then act on it. Log every consult + verdict in lessons/phase-N.md. Exception — hard limits stay hard: never merge to main or release branches, never publish or deploy, never register trusted publishers or touch credentials, never expand scope beyond plan.md; if the decision requires crossing one, surface it and hold.
+5. **Same step failed 5 times?** Stop retrying; reassess the approach with codex, then continue down the agreed path.
+6. **Phase green?** "Green" means THE PHASE'S VALIDATION GATE as written in plan.md passes (commands + pass criteria — not generic vibes). Run the full gate, paste the result, mark ✓ in plan.md, file the lessons entry, print `LESSONS_FILE=implementations-plan/presto-noir/lessons/phase-N.md` in the transcript, advance to the next phase. Arc boundary crossed (per plan.md's Delivery section)? Run the arc's codex loop FIRST (`/code-review` is OFF for this plan — do not run it): codex with the arc map and the plan's no-over-engineering + comment-quality rules until a round yields nothing material — THEN `gh stack add &lt;next-arc-branch&gt;` before the next arc's work.
+7. **All phases ✓ in plan.md?** Close out per plan.md's Post-implementation section: every arc already looped at its boundary — run only the final cross-arc integration pass: FRESH codex session over the net diff + cross-arc ask (seams between arcs, duplication across arcs, plan drift) + the no-over-engineering + comment-quality rules, same loop-until-clean. Then Delivery per plan.md — the FIRST time any PR is opened: `gh stack sync` then `gh stack submit --auto` + `gh pr edit` bodies, then `gh pr checks --watch`. Then write the wrap-up report: what shipped, every contentious decision codex and I debated — each with ELI5 context (what the question was, the options, why we picked ours) — and open items. Surface and stop.
+
+Keep the native task list current (`TaskUpdate` as steps start/finish; plan.md stays the source of truth).</pre>
+  </div>
+
+  <p class="muted" style="margin-top:3rem">Full technical plan, decision ledger, and audit trail: <code>implementations-plan/presto-noir/plan.md</code> in the <code>presto-noir</code> worktree (with <code>recon.md</code>, <code>audit-codex.md</code>, <code>audit-fable.md</code>).</p>
+</main>
