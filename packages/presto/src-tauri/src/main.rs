@@ -730,9 +730,16 @@ fn report_missing_bb(
     let _ = tray_icon.set_tooltip(Some("Warning: bb not found"));
 }
 
-fn show_startup_windows(app: &tauri::AppHandle, _config_state: &ConfigState) {
+#[cfg_attr(
+    feature = "webdriver",
+    expect(
+        unused_variables,
+        reason = "webdriver opens settings directly and does not inspect onboarding state"
+    )
+)]
+fn show_startup_windows(app: &tauri::AppHandle, config_state: &ConfigState) {
     #[cfg(not(feature = "webdriver"))]
-    if _config_state.read().onboarding_version < config::ONBOARDING_VERSION {
+    if config_state.read().onboarding_version < config::ONBOARDING_VERSION {
         windows::show_onboarding_window(app);
     }
     #[cfg(all(
