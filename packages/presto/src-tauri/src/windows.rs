@@ -80,6 +80,7 @@ fn reassert_theme(window: &tauri::WebviewWindow) {
     let theme = match window.app_handle().try_state::<commands::ConfigState>() {
         Some(state) => state.lock.read().theme,
         None => {
+            // ConfigState is managed before any window is built, so absence is a wiring regression.
             tracing::warn!("No ConfigState while re-asserting the theme; using the default");
             config::Theme::default()
         }

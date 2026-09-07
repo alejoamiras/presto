@@ -75,4 +75,26 @@ describe("complexity policy", () => {
       expect(workflow).toContain(`cargo test --locked --manifest-path ${manifest}`);
     }
   });
+
+  test("every explicit CI compiler pin matches the repository toolchain", () => {
+    const toolchain = Bun.TOML.parse(read("rust-toolchain.toml")) as {
+      toolchain: { channel: string };
+    };
+    const pinnedToolchainFiles = [
+      ".github/actions/setup-presto/action.yml",
+      ".github/workflows/_e2e.yml",
+      ".github/workflows/dependency-audit.yml",
+    ];
+
+    for (const file of pinnedToolchainFiles) {
+      const pins = [...read(file).matchAll(/^\s*toolchain:\s*([^\s#]+)\s*$/gm)].map(
+        ([, pin]) => pin,
+      );
+      expect(pins, `${file} must contain an explicit compiler pin`).not.toBeEmpty();
+      expect(
+        pins.every((pin) => pin === toolchain.toolchain.channel),
+        file,
+      ).toBeTrue();
+    }
+  });
 });
