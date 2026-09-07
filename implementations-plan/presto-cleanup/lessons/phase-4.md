@@ -29,6 +29,10 @@ Session: `0420e2a8-f1e5-4ec9-8db2-ec902ea93258`.
   the GUI and certificate-serving bans, with a focused workflow-contract test. After cascading the
   fix, the full test suite, all three Clippy gates, actionlint, dependency audit, and the cumulative
   dependency-age check passed locally.
+- A later #17 production smoke caught Vite 8 miscompiling the playground's Aztec sqlite-opfs path.
+  Reverting msgpackr alone reproduced the failure; withholding playground Vite 8 while keeping the
+  other upgrades made the same browser smoke pass. Vite 8 remains on the independently passing
+  landing site, and the dependency evidence records the compatibility constraint.
 - The regenerated Tauri Linux schema restores upstream `set-accelerator` command names; it is not a
   Presto brand regression.
 - Dependency-age composites intentionally no-op on dispatch-only workflows without a comparison
