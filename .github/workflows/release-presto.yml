@@ -101,8 +101,8 @@ jobs:
     uses: ./.github/workflows/dependency-audit.yml
 
   # Resolve the greatest real, published, complete release below N that uses the current updater key.
-  # Prereleases are eligible so RC2 can exercise RC1 and GA can exercise the latest RC. No compatible
-  # baseline fails closed except for exactly RC1 when no Presto release exists.
+  # Prereleases are eligible so RC2 can exercise RC1 and GA can exercise the latest RC. Every release
+  # fails closed when no compatible baseline exists.
   resolve-updater-baseline:
     name: Resolve updater smoke baseline
     needs: validate
@@ -114,7 +114,6 @@ jobs:
     outputs:
       tag: ${{ steps.resolve.outputs.tag }}
       version: ${{ steps.resolve.outputs.version }}
-      bootstrap: ${{ steps.resolve.outputs.bootstrap }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -136,7 +135,6 @@ jobs:
           {
             echo "tag=$(echo "$RESULT" | jq -r .tag)"
             echo "version=$(echo "$RESULT" | jq -r .version)"
-            echo "bootstrap=$(echo "$RESULT" | jq -r '.bootstrap // false')"
           } >> "$GITHUB_OUTPUT"
 
   # Explicit credentials probe only. Publishing deliberately has no Cloudflare credential and never
@@ -670,7 +668,7 @@ jobs:
     needs: [validate, resolve-updater-baseline, sign-updater-artifacts, e2e-webdriver]
     # The isolated signer requires all four build legs, then each matrix leg downloads only its
     # own production-signed updater artifact.
-    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.resolve-updater-baseline.outputs.bootstrap != 'true' && needs.sign-updater-artifacts.result == 'success' && needs.e2e-webdriver.result == 'success' }}
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.sign-updater-artifacts.result == 'success' && needs.e2e-webdriver.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -715,7 +713,7 @@ jobs:
   update-smoke-linux:
     name: Updater Smoke (linux-x86_64 / ${{ matrix.mode }})
     needs: [validate, resolve-updater-baseline, sign-updater-artifacts, e2e-webdriver]
-    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.resolve-updater-baseline.outputs.bootstrap != 'true' && needs.sign-updater-artifacts.result == 'success' && needs.e2e-webdriver.result == 'success' }}
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.sign-updater-artifacts.result == 'success' && needs.e2e-webdriver.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
@@ -735,7 +733,7 @@ jobs:
   update-smoke-windows:
     name: Updater Smoke (windows-x86_64 / positive)
     needs: [validate, resolve-updater-baseline, sign-updater-artifacts]
-    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.resolve-updater-baseline.outputs.bootstrap != 'true' && needs.sign-updater-artifacts.result == 'success' }}
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.sign-updater-artifacts.result == 'success' }}
     uses: ./.github/workflows/_e2e-updater-windows.yml
     with:
       n-version: ${{ needs.validate.outputs.version }}
@@ -744,7 +742,7 @@ jobs:
   update-smoke-windows-negative:
     name: Updater Smoke (windows-x86_64 / negative)
     needs: [validate, resolve-updater-baseline, sign-updater-artifacts]
-    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.resolve-updater-baseline.outputs.bootstrap != 'true' && needs.sign-updater-artifacts.result == 'success' }}
+    if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.sign-updater-artifacts.result == 'success' }}
     uses: ./.github/workflows/_e2e-updater-windows.yml
     with:
       n-version: ${{ needs.validate.outputs.version }}
@@ -829,10 +827,10 @@ jobs:
       && needs.sign-updater-artifacts.result == 'success'
       && needs.smoke.result == 'success'
       && needs.smoke-intel.result == 'success'
-      && (needs.update-smoke.result == 'success' || (needs.update-smoke.result == 'skipped' && needs.resolve-updater-baseline.outputs.bootstrap == 'true' && needs.validate.outputs.version == '1.0.0-rc.1'))
-      && (needs.update-smoke-linux.result == 'success' || (needs.update-smoke-linux.result == 'skipped' && needs.resolve-updater-baseline.outputs.bootstrap == 'true' && needs.validate.outputs.version == '1.0.0-rc.1'))
-      && (needs.update-smoke-windows.result == 'success' || (needs.update-smoke-windows.result == 'skipped' && needs.resolve-updater-baseline.outputs.bootstrap == 'true' && needs.validate.outputs.version == '1.0.0-rc.1'))
-      && (needs.update-smoke-windows-negative.result == 'success' || (needs.update-smoke-windows-negative.result == 'skipped' && needs.resolve-updater-baseline.outputs.bootstrap == 'true' && needs.validate.outputs.version == '1.0.0-rc.1'))
+      && needs.update-smoke.result == 'success'
+      && needs.update-smoke-linux.result == 'success'
+      && needs.update-smoke-windows.result == 'success'
+      && needs.update-smoke-windows-negative.result == 'success'
       && needs.e2e-webdriver.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5

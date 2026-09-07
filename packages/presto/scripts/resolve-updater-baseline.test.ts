@@ -28,14 +28,11 @@ function candidate(
 }
 
 describe("updater smoke baseline selection", () => {
-  test("only the first exact RC1 can bootstrap without a release", () => {
-    expect(
-      selectUpdaterBaseline({ version: "1.0.0-rc.1", currentPubkey: NEW_KEY, releases: [] }),
-    ).toEqual({ tag: "", version: "", bootstrap: true });
-    for (const version of ["1.0.0", "1.0.0-rc.2", "0.9.0-rc.1", "2.0.0-rc.1"]) {
+  test("rejects a missing baseline, including the former first-RC exception", () => {
+    for (const version of ["1.0.0-rc.1", "1.0.0", "1.0.0-rc.2", "0.9.0-rc.1", "2.0.0-rc.1"]) {
       expect(() =>
         selectUpdaterBaseline({ version, currentPubkey: NEW_KEY, releases: [] }),
-      ).toThrow();
+      ).toThrow("no complete published lower presto release uses the current updater key");
     }
     for (const release of [
       candidate("0.9.0", OLD_KEY),
@@ -48,11 +45,11 @@ describe("updater smoke baseline selection", () => {
           currentPubkey: NEW_KEY,
           releases: [release],
         }),
-      ).toThrow();
+      ).toThrow("no complete published lower presto release uses the current updater key");
     }
   });
 
-  test("GA uses RC1 as a real baseline, not a bootstrap", () => {
+  test("GA uses RC1 as a real baseline", () => {
     expect(
       selectUpdaterBaseline({
         version: "1.0.0",
@@ -62,7 +59,7 @@ describe("updater smoke baseline selection", () => {
     ).toEqual({ tag: "presto-v1.0.0-rc.1", version: "1.0.0-rc.1" });
   });
 
-  test("pagination retains incomplete older releases that block bootstrap", async () => {
+  test("pagination retains incomplete older releases while selection fails closed", async () => {
     let calls = 0;
     const releases = await loadUpdaterReleaseCandidates(
       "alejoamiras/presto",
@@ -81,8 +78,9 @@ describe("updater smoke baseline selection", () => {
     expect(releases).toHaveLength(1);
     expect(() =>
       selectUpdaterBaseline({ version: "1.0.0-rc.1", currentPubkey: NEW_KEY, releases }),
-    ).toThrow();
+    ).toThrow("no complete published lower presto release uses the current updater key");
   });
+
   test("prefers the greatest lower same-key release, including a prerelease", () => {
     const result = selectUpdaterBaseline({
       version: "3.0.0",
@@ -98,6 +96,20 @@ describe("updater smoke baseline selection", () => {
       tag: "presto-v3.0.0-rc.1",
       version: "3.0.0-rc.1",
     });
+  });
+
+  test("falls back past a newer wrong-key release to the greatest same-key release", () => {
+    const result = selectUpdaterBaseline({
+      version: "3.0.0",
+      currentPubkey: NEW_KEY,
+      releases: [
+        candidate("2.1.0", OLD_KEY),
+        candidate("1.9.0", NEW_KEY),
+        candidate("2.0.0", NEW_KEY),
+      ],
+    });
+
+    expect(result).toEqual({ tag: "presto-v2.0.0", version: "2.0.0" });
   });
 
   test("fails closed when no complete lower release uses the current key", () => {

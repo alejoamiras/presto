@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Presto cleanup</title>
+    <style>
+      body { max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #222; font: 16px/1.6 system-ui, sans-serif; }
+      h1, h2 { line-height: 1.2; }
+      section { margin: 2rem 0; padding: 1rem 1.25rem; border-left: 3px solid #bbb; background: #fafafa; }
+      pre { overflow-x: auto; padding: 1rem; background: #f3f3f3; white-space: pre-wrap; }
+      .recommended { border-color: #b7791f; background: #fffaf0; }
+      a { color: #0756a3; }
+    </style>
+  </head>
+  <body>
+    <h1>Presto cleanup</h1>
+    <p>Three small, stacked reviews: close the launch-only release loophole, update dependencies only
+      after a seven-day observation window, then make long or tangled code fail lint and clean up the
+      existing offenders without sacrificing readability.</p>
+
+    <section><h2>1. Close the launch exception</h2><p>Every release must prove it can update from a real,
+      older release signed by the same key. The launch history stays intact.</p></section>
+    <section><h2>2. Refresh dependencies safely</h2><p>Update JavaScript, Rust, Actions, and CI tools, but
+      reject anything too new or unverifiable. One checker guards resolved dependencies and Actions.</p></section>
+    <section><h2>3. Enforce readable limits</h2><p>Functions over 80 nonblank lines or complexity 15 must
+      be reorganized into coherent responsibilities. Passing by squeezing code together is a failure.</p></section>
+
+    <section class="recommended"><h2>Recommended implementation seed</h2><pre><code>/goal Complete implementations-plan/presto-cleanup/plan.md: all four Status items marked complete, each validation gate reported passing, every per-arc and final Claude review loop converged, and the three stacked PRs exist with required checks green. Never merge, publish, deploy, rotate keys, or expand scope.</code></pre></section>
+
+    <p><a href="plan.md">Full plan</a> · <a href="./lessons/">Lessons</a></p>
+  </body>
+</html>

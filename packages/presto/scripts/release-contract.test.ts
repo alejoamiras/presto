@@ -177,6 +177,7 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     expect(WF).toContain("resolve-updater-baseline.ts");
     expect(WF).not.toContain("updater_key_rotation_bootstrap");
     expect(WF).not.toContain("outputs.rotation");
+    expect(WF).not.toContain("outputs.bootstrap");
     expect(WF).not.toContain("update-smoke-key-rotation");
     expect(WF).not.toContain("mode: key-rotation");
     expect(UPDATER).toContain("ordinary updater smoke requires a same-key N-1 baseline");
