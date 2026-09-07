@@ -53,4 +53,3 @@ Rounds 2 and 3 approved with no remaining correctness, security, behavior, compr
 or comment-quality findings. Arc 3 converged.
 
 Session: `da27e146-3076-49c1-b56d-a9d6c1ad4bd0`.
-

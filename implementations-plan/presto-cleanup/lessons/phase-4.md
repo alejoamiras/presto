@@ -1,0 +1,29 @@
+# Phase 4 — cumulative review and delivery
+
+## Cross-arc review
+
+Claude reviewed the completed cumulative human-authored diff after all three arc-specific loops.
+Verdict: approve, with no material correctness, security, fail-open, behavioral, compression, or
+indirection finding. Claude confirmed the stack was ready to open as three reviewable PRs.
+
+Five low-severity improvements were accepted: correct the updater-candidate comment, tie every
+explicit CI compiler pin to `rust-toolchain.toml`, restore the `ConfigState` startup-order invariant,
+document the Aztec check's fail-closed exit, and remove a one-line dependency-predicate shim. Focused
+tests, script typechecking, formatting, and all three Clippy gates passed. The resumed review approved
+every fix without regression.
+
+The two version-lease helpers remain separate because they return different error types and only the
+request-serving path emits the operational warning. Combining them would obscure those contracts.
+The accepted changes were distributed to their owning arcs; the cumulative reviewed tree remained
+byte-for-byte identical after the stack was rebased.
+
+Session: `0420e2a8-f1e5-4ec9-8db2-ec902ea93258`.
+
+## Delivery notes
+
+- The regenerated Tauri Linux schema restores upstream `set-accelerator` command names; it is not a
+  Presto brand regression.
+- Dependency-age composites intentionally no-op on dispatch-only workflows without a comparison
+  base. Those workflows execute reviewed `main`; pull-request installs are fail-closed gates.
+- Windows/macOS compilation of the reqwest 0.13 rustls graph and opt-in live registry verification
+  remain prepared CI evidence rather than claims based on local Linux execution.
