@@ -6,6 +6,7 @@
  *   bun scripts/check-aztec-update.ts nightly
  *   bun scripts/check-aztec-update.ts devnet
  * Output: JSON with { current, latest, needsUpdate }
+ * An ineligible latest release exits non-zero instead of suppressing the update.
  */
 
 import { assertAztecReleaseEligible, readManagedAztecPackages } from "./aztec-release";

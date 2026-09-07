@@ -15,10 +15,6 @@ import {
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly\.\d{8}|rc\.\d+|aztecnr-rc\.\d+))?$/;
 const AZTEC_VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly|spartan|devnet|aztecnr-rc|rc)[\w.-]*)?$/;
 
-export function isAztecManagedDep(key: string): boolean {
-  return isAztecManagedDependency(key);
-}
-
 export function validateVersion(version: string): boolean {
   return VERSION_PATTERN.test(version);
 }
@@ -30,7 +26,11 @@ export function updatePackageJson(content: string, newVersion: string): string {
     const deps = pkg[section];
     if (!deps) continue;
     for (const [key, value] of Object.entries(deps)) {
-      if (isAztecManagedDep(key) && typeof value === "string" && AZTEC_VERSION_PATTERN.test(value)) {
+      if (
+        isAztecManagedDependency(key) &&
+        typeof value === "string" &&
+        AZTEC_VERSION_PATTERN.test(value)
+      ) {
         deps[key] = newVersion;
       }
     }
