@@ -22,7 +22,12 @@ function stepBlock(lines: string[], start: number, stepIndent: number): string[]
   return lines.slice(start + 1, end === -1 ? undefined : end);
 }
 
-function mappingEntry(line: string): { indent: number; key: string } | undefined {
+interface MappingEntry {
+  indent: number;
+  key: string;
+}
+
+function mappingEntry(line: string): MappingEntry | undefined {
   const match = line.match(/^(\s*)([A-Za-z_-]+)\s*:\s*$/);
   return match ? { indent: match[1]?.length ?? 0, key: match[2] ?? "" } : undefined;
 }
@@ -36,7 +41,7 @@ function hasBunVersionFile(lines: string[], start: number, stepIndent: number): 
   const block = stepBlock(lines, start, stepIndent);
   const mappings = block
     .map(mappingEntry)
-    .filter((entry) => entry !== undefined && entry.indent > stepIndent);
+    .filter((entry): entry is MappingEntry => entry !== undefined && entry.indent > stepIndent);
   const childIndent = Math.min(...mappings.map((entry) => entry.indent));
   const withIndex = block.findIndex((line) => {
     const entry = mappingEntry(line);
