@@ -632,7 +632,7 @@ pub(crate) fn startup_approved_blob_enabled(bytes: Option<&[u8]>) -> bool {
         // Empty blob carries no flag ⇒ enabled. Any other length: byte 0 IS the flag, so apply
         // parity — an earlier `len < 8 ⇒ enabled` guard defeated the whole rule, reading a bare
         // `[0x03]` (disabled) as enabled.
-        Some(b) => b.first().map_or(true, |flag| flag % 2 == 0),
+        Some(b) => b.first().is_none_or(|flag| flag % 2 == 0),
     }
 }
 

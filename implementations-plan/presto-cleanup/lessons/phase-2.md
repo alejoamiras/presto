@@ -45,6 +45,9 @@
   Rolldown bundle reached `Cannot read properties of undefined (reading 'utf8Write')` during browser
   initialization. Reverting only msgpackr did not help; retaining msgpackr 2.1.0 while withholding
   playground Vite 8 passed the same smoke locally.
+- The pinned Rust 1.98 Clippy added `unnecessary_map_or` and `manual_is_multiple_of`. Its equivalent
+  standard-library forms keep the startup and proof-length behavior while restoring the
+  warnings-as-errors gate.
 
 ## Claude review — round 1
 
