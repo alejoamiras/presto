@@ -11,29 +11,56 @@ import {
 import { assertCorePin, CORE_NAME, expectedCoreVersion } from "./tarball-consumer/assert-core-pin";
 import { verifySdkPackageSignatures } from "./verify-sdk-package-signatures";
 
+interface PublishedManifest {
+  name: string;
+  version: string;
+  dependencies: Record<string, string>;
+}
+
 /**
- * The published SDK must be the requested candidate and carry the playground's exact dependency
+ * A published package must be the requested candidate and carry the playground's exact dependency
  * graph. A `workspace:` range in the workspace manifest resolves to that sibling's current version,
  * which the published pin must equal.
  */
-export function assertPublishedSdkManifest(
-  manifest: { name: string; version: string; dependencies: Record<string, string> },
+export function assertPublishedManifest(
+  manifest: PublishedManifest,
+  name: string,
   version: string,
   workspaceDependencies: Record<string, string>,
   workspaceVersions: Record<string, string> = {},
 ) {
-  if (manifest.name !== SDK_PACKAGE || manifest.version !== version) {
-    throw new Error("Published SDK identity does not match the requested candidate");
+  if (manifest.name !== name || manifest.version !== version) {
+    throw new Error(`Published ${name} identity does not match the requested candidate`);
   }
-  for (const [name, pin] of Object.entries(manifest.dependencies)) {
-    const range = workspaceDependencies[name];
-    const expected = range?.startsWith("workspace:") ? workspaceVersions[name] : range;
+  for (const [dep, pin] of Object.entries(manifest.dependencies)) {
+    const range = workspaceDependencies[dep];
+    const expected = range?.startsWith("workspace:") ? workspaceVersions[dep] : range;
     if (expected !== pin) {
       throw new Error(
-        `Published SDK dependency ${name}@${pin} does not match the playground graph`,
+        `Published ${name} dependency ${dep}@${pin} does not match the playground graph`,
       );
     }
   }
+}
+
+export function assertPublishedSdkManifest(
+  manifest: PublishedManifest,
+  version: string,
+  workspaceDependencies: Record<string, string>,
+  workspaceVersions: Record<string, string> = {},
+) {
+  assertPublishedManifest(manifest, SDK_PACKAGE, version, workspaceDependencies, workspaceVersions);
+}
+
+/** Every adapter the playground runs must pin the one core it installs. */
+export function sharedCorePin(manifests: PublishedManifest[]): string {
+  const pins = new Set(manifests.map((m) => expectedCoreVersion(m.dependencies[CORE_NAME])));
+  if (pins.size !== 1 || pins.has(undefined)) {
+    throw new Error(
+      `Published adapters pin different ${CORE_NAME} versions: ${[...pins].join(", ")}`,
+    );
+  }
+  return [...pins][0] as string;
 }
 
 if (import.meta.main) {
@@ -44,8 +71,9 @@ if (import.meta.main) {
     if (result.exitCode !== 0) throw new Error(result.stderr.toString());
     return result.stdout.toString().trim();
   };
+  const readJson = (rel: string) => Bun.file(join(root, rel)).json();
   /** Provenance, signatures, and an integrity-matched tarball of one published version. */
-  const fetchVerified = async (pkg: NpmPackage, version: string): Promise<string> => {
+  const fetchVerified = async (pkg: NpmPackage, version: string) => {
     await fetchAndVerifySdkProvenance(version, undefined, undefined, pkg);
     await verifySdkPackageSignatures(version, pkg);
     const spec = `${pkg.name}@${version}`;
@@ -57,34 +85,70 @@ if (import.meta.main) {
     if (packed.integrity !== run(["npm", "view", spec, "dist.integrity"])) {
       throw new Error(`Published tarball integrity mismatch for ${spec}`);
     }
-    return join(directory, packed.filename);
+    const tarball = join(directory, packed.filename);
+    const manifest: PublishedManifest = JSON.parse(
+      run(["tar", "-xzOf", tarball, "package/package.json"]),
+    );
+    return { tarball, manifest };
   };
 
   const version = process.argv[2] || run(["npm", "view", `${SDK_PACKAGE}@testnet`, "version"]);
   if (!SDK_VERSION_PATTERN.test(version)) throw new Error("Invalid published SDK candidate");
-  const tarball = await fetchVerified(NPM_PACKAGES.presto, version);
-  const manifest = JSON.parse(run(["tar", "-xzOf", tarball, "package/package.json"]));
-  const workspace = await Bun.file(join(root, "packages/sdk/package.json")).json();
-  const core = await Bun.file(join(root, "packages/sdk-core/package.json")).json();
-  const workspaceVersions = { [CORE_NAME]: core.version };
-  assertPublishedSdkManifest(manifest, version, workspace.dependencies, workspaceVersions);
-  // The playground must run the SDK on the exact published core it pins — never a local rebuild.
-  const corePin = expectedCoreVersion(manifest.dependencies[CORE_NAME]);
-  if (!corePin) throw new Error("Published SDK must pin an exact core version");
-  const coreTarball = await fetchVerified(NPM_PACKAGES["presto-core"], corePin);
+  const playground = await readJson("packages/playground/package.json");
+  const workspaceVersions = {
+    [CORE_NAME]: (await readJson("packages/sdk-core/package.json")).version,
+  };
+  const sdk = await fetchVerified(NPM_PACKAGES.presto, version);
+  assertPublishedManifest(
+    sdk.manifest,
+    SDK_PACKAGE,
+    version,
+    (await readJson("packages/sdk/package.json")).dependencies,
+    workspaceVersions,
+  );
+  const adapters = [sdk];
+  // The Noir adapter, when the playground depends on it, at the workspace version of this commit.
+  const noirPackage = NPM_PACKAGES["presto-noir"];
+  if (playground.dependencies?.[noirPackage.name]) {
+    const noirVersion = (await readJson(`${noirPackage.dir}/package.json`)).version;
+    const noir = await fetchVerified(noirPackage, noirVersion);
+    assertPublishedManifest(
+      noir.manifest,
+      noirPackage.name,
+      noirVersion,
+      (await readJson(`${noirPackage.dir}/package.json`)).dependencies,
+      workspaceVersions,
+    );
+    adapters.push(noir);
+  }
+  // The playground must run every adapter on the exact published core they pin — never a rebuild.
+  const corePin = sharedCorePin(adapters.map((a) => a.manifest));
+  const core = await fetchVerified(NPM_PACKAGES["presto-core"], corePin);
   const swap = Bun.spawnSync(
-    ["bash", ".github/scripts/packaged-e2e-swap-sdk.sh", tarball, coreTarball],
+    [
+      "bash",
+      ".github/scripts/packaged-e2e-swap-sdk.sh",
+      sdk.tarball,
+      core.tarball,
+      ...(adapters[1] ? [adapters[1].tarball] : []),
+    ],
     { cwd: root, stdout: "inherit", stderr: "inherit" },
   );
   if (swap.exitCode !== 0) throw new Error("Could not install the published SDK into playground");
   const installedDir = join(root, "packages/playground/node_modules/@alejoamiras/presto");
   const installed = await Bun.file(join(installedDir, "package.json")).json();
-  assertPublishedSdkManifest(installed, version, workspace.dependencies, workspaceVersions);
+  assertPublishedSdkManifest(
+    installed,
+    version,
+    (await readJson("packages/sdk/package.json")).dependencies,
+    workspaceVersions,
+  );
   const installedCore = await Bun.file(
     join(installedDir, "node_modules/@alejoamiras/presto-core/package.json"),
   ).json();
   assertCorePin(installed, installedCore);
   console.log(
-    `Playground uses verified published ${SDK_PACKAGE}@${version} on ${CORE_NAME}@${installedCore.version}`,
+    `Playground uses verified published ${SDK_PACKAGE}@${version} on ${CORE_NAME}@${installedCore.version}` +
+      (adapters[1] ? ` with ${noirPackage.name}@${adapters[1].manifest.version}` : ""),
   );
 }

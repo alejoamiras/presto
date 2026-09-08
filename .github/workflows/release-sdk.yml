@@ -149,9 +149,25 @@ jobs:
       version: ${{ needs.plan.outputs.version_presto_core }}
       dependency_versions: ${{ needs.plan.outputs.deps_presto_core }}
 
+  # The Noir adapter's production gates at the release SHA: bb.js WASM must reproduce the committed
+  # fixtures, and the adapter must prove natively against a headless presto built from this commit.
+  # The chonk SDK keeps the sandbox e2e above as its gate.
+  noir-gates:
+    needs: [assert-main, plan]
+    if: ${{ !inputs.dry_run && inputs.mode != 'playground-only' && needs.plan.outputs.publish_presto_noir == 'true' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/_ts-package-ci.yml
+    with:
+      package: presto-noir
+      identity: true
+      live: true
+
+  # Adapters publish after core; presto publishes after noir so the playground deployment that
+  # follows sees both adapters on the registry.
   publish-presto:
-    needs: [assert-main, plan, e2e, dependency-audit, publish-core]
-    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') }}
+    needs: [assert-main, plan, e2e, dependency-audit, publish-core, publish-noir]
+    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') && (needs.publish-noir.result == 'success' || needs.publish-noir.result == 'skipped') }}
     permissions:
       id-token: write
       contents: write
@@ -163,8 +179,8 @@ jobs:
       dependency_versions: ${{ needs.plan.outputs.deps_presto }}
 
   publish-noir:
-    needs: [assert-main, plan, e2e, dependency-audit, publish-core]
-    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto_noir == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') }}
+    needs: [assert-main, plan, e2e, dependency-audit, publish-core, noir-gates]
+    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.noir-gates.result == 'success' && needs.plan.outputs.publish_presto_noir == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') }}
     permissions:
       id-token: write
       contents: write

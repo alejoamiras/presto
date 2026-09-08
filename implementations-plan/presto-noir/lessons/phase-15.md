@@ -35,4 +35,5 @@ Date: 2026-09-08. Branch `presto-noir/sdk-noir` (arc 4).
 
 `bun run --cwd packages/sdk-noir test:identity` 3 ✓ (local) · live suite 4 ✓ against a local
 headless presto · `bun run test` exit 0 · `bun run lint:actions` ✓ · `sdk.yml package=presto-noir`
-with the identity and live jobs: run id below once dispatched.
+on bd3d027: run 34192102345 green — Lint, Typecheck, Unit Tests, Tarball Consumer, **WASM
+Identity**, **Live Presto** (headless build of the ref with the real bb).

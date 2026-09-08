@@ -82,6 +82,11 @@ make_host "$EXACT" "$AZTEC_PIN"
 for pair in "${WITH[@]}"; do
   bun "$REPO_ROOT/scripts/tarball-consumer/assert-local-dependency.ts" "$EXACT" "${pair%%=*}" "${pair#*=}"
 done
+# The peers a profile makes the host install must be singletons: a second copy under the candidate
+# is the split-runtime hazard a peer dependency exists to prevent.
+if [ -n "$EXTRAS" ]; then
+  bun "$REPO_ROOT/scripts/tarball-consumer/assert-singletons.ts" "$EXACT" "$EXTRAS"
+fi
 
 echo "--- typecheck the consumer against the PACKED dist (resolves the 'types' condition) ---"
 # `--package=` is required: `typescript` ships both `tsc` and `tsserver`, so `npx typescript` cannot pick a binary.

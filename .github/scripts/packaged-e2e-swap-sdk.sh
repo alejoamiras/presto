@@ -5,11 +5,12 @@
 # tarball's packaging (files set, entry points, dep resolution) is ALSO gated by
 # scripts/sdk-tarball-consumer.sh; this leg additionally proves it PROVES.
 #
-#   packaged-e2e-swap-sdk.sh [sdk-tarball] [core-tarball]
+#   packaged-e2e-swap-sdk.sh [sdk-tarball] [core-tarball] [noir-tarball]
 #
-# Without arguments both packages are built and packed from the workspace. A release deployment
-# supplies its provenance/integrity-verified published SDK tarball; the core tarball defaults to the
-# workspace pack, and the SDK's exact core pin must match whatever core is installed.
+# Without arguments every package is built and packed from the workspace. A release deployment
+# supplies its provenance/integrity-verified published tarballs; a tarball not supplied defaults to
+# the workspace pack, and each adapter's exact core pin must match the one core that is installed.
+# The Noir adapter is swapped only when the playground depends on it.
 set -euo pipefail
 
 pack() {
@@ -33,14 +34,23 @@ else
   echo "Building the core..."
   CORE_ABS="$(pack packages/sdk-core)"
 fi
-for tarball in "${ABS}" "${CORE_ABS}"; do
+WANTS_NOIR="$(bun -e 'const p = await Bun.file("packages/playground/package.json").json(); console.log(p.dependencies?.["@alejoamiras/presto-noir"] ? "yes" : "no")')"
+NOIR_ABS=""
+if [ "${WANTS_NOIR}" = "yes" ]; then
+  if [ -n "${3:-}" ]; then
+    NOIR_ABS="$3"
+  else
+    echo "Building the Noir adapter..."
+    NOIR_ABS="$(pack packages/sdk-noir)"
+  fi
+fi
+for tarball in "${ABS}" "${CORE_ABS}" ${NOIR_ABS:+"${NOIR_ABS}"}; do
   if [ ! -f "${tarball}" ]; then
     echo "::error::packed tarball not found at ${tarball}"
     exit 1
   fi
+  echo "Packed ${tarball}"
 done
-echo "Packed ${ABS}"
-echo "Packed ${CORE_ABS}"
 
 # Swap the packed tarball in for the workspace SDK. `bun add --cwd packages/playground "${ABS}"` LOOPS here:
 # bun re-resolves the workspace and the tarball collides with the same-named workspace member
@@ -115,6 +125,45 @@ case "${CORE_RESOLVED}" in
     ;;
 esac
 
+# The Noir adapter, when the playground uses it: its own extracted copy, its workspace dependency
+# graph linked in, and the SAME packed core (one core in the playground, pinned by both adapters).
+if [ -n "${NOIR_ABS}" ]; then
+  NOIR_DEST="packages/playground/node_modules/@alejoamiras/presto-noir"
+  rm -rf "${NOIR_DEST}"
+  mkdir -p "${NOIR_DEST}"
+  tar -xzf "${NOIR_ABS}" -C "${NOIR_DEST}" --strip-components=1
+  test -f "${NOIR_DEST}/package.json" || {
+    echo "::error::noir tarball extraction produced no ${NOIR_DEST}/package.json"
+    exit 1
+  }
+  NOIR_NM="${NOIR_DEST}/node_modules"
+  mkdir -p "${NOIR_NM}/@alejoamiras"
+  for entry in "${REPO_ROOT}"/packages/sdk-noir/node_modules/*; do
+    name="$(basename "${entry}")"
+    [ "${name}" = "@alejoamiras" ] && continue
+    ln -s "${entry}" "${NOIR_NM}/${name}"
+  done
+  ln -s "${REPO_ROOT}/${CORE_DEST}" "${NOIR_NM}/@alejoamiras/presto-core"
+  bun "${REPO_ROOT}/scripts/tarball-consumer/assert-core-pin.ts" "${NOIR_DEST}/package.json" "${CORE_DEST}/package.json"
+  NOIR_RESOLVED="$(bun -e "console.log(Bun.resolveSync('@alejoamiras/presto-noir', '${REPO_ROOT}/packages/playground'))")"
+  case "${NOIR_RESOLVED}" in
+    "${REPO_ROOT}/${NOIR_DEST}"/*)
+      echo "Noir swap verified from the consumer: ${NOIR_RESOLVED}"
+      ;;
+    *)
+      echo "::error::packed-noir swap ineffective — playground resolves ${NOIR_RESOLVED} (expected inside ${NOIR_DEST})"
+      exit 1
+      ;;
+  esac
+  for dep in @aztec/bb.js @alejoamiras/presto-core; do
+    bun -e "Bun.resolveSync('${dep}', '${REPO_ROOT}/${NOIR_DEST}')" || {
+      echo "::error::packed Noir adapter cannot resolve its dependency '${dep}' from ${NOIR_DEST}"
+      exit 1
+    }
+  done
+fi
+
 echo "Playground @alejoamiras/presto now resolves to the packed tarball (versions below):"
 grep -m1 '"version"' "${DEST}/package.json" || true
 grep -m1 '"version"' "${CORE_DEST}/package.json" || true
+[ -n "${NOIR_ABS}" ] && grep -m1 '"version"' "${NOIR_DEST}/package.json" || true

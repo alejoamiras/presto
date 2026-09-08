@@ -17,7 +17,7 @@ import type {
 import { PrestoUnavailableError } from "./errors.js";
 import { logger } from "./logger.js";
 import { decodeUltraHonkResponse, toProofData, type UltraHonkResponse } from "./proof-data.js";
-import { resolveBbVersion } from "./tested-versions.js";
+import { resolveBbVersion, TESTED_BB_VERSION } from "./tested-versions.js";
 import { resolveVerifierTarget } from "./verifier-target.js";
 
 type OnPhase = (phase: PrestoPhase, data?: PrestoPhaseData) => void;
@@ -240,10 +240,31 @@ export class PrestoUltraHonkBackend implements UltraHonkSurface {
   #wasmBackend(): Promise<UltraHonkBackend> {
     if (!this.#wasm) {
       this.#wasm = this.#resolveApi().then(async (api) => {
-        const bbJs = await import("@aztec/bb.js");
-        return new bbJs.UltraHonkBackend(this.#bytecode, api);
+        const Backend = await loadUltraHonkBackend();
+        return new Backend(this.#bytecode, api);
       });
     }
     return this.#wasm;
   }
+}
+
+/**
+ * The peer is only reached here, so a missing or unexpected `@aztec/bb.js` surfaces as one actionable
+ * error at the first WASM use instead of a bare module-resolution failure deep in a fallback.
+ */
+async function loadUltraHonkBackend(): Promise<typeof UltraHonkBackend> {
+  const missing = (cause?: unknown) =>
+    new Error(
+      `@alejoamiras/presto-noir needs its peer dependency @aztec/bb.js@${TESTED_BB_VERSION} for WASM ` +
+        "proving and verification: install it beside this package.",
+      cause === undefined ? undefined : { cause },
+    );
+  let bbJs: { UltraHonkBackend?: unknown };
+  try {
+    bbJs = await import("@aztec/bb.js");
+  } catch (error) {
+    throw missing(error);
+  }
+  if (typeof bbJs.UltraHonkBackend !== "function") throw missing();
+  return bbJs.UltraHonkBackend as typeof UltraHonkBackend;
 }
