@@ -49,6 +49,24 @@ describe("TypeScript package CI contract", () => {
     }
   });
 
+  test("the Noir adapter's production gates run pre-merge: WASM identity and a live presto from this ref", () => {
+    for (const job of ["identity:", "live:"]) expect(reusable).toContain(`\n  ${job}\n`);
+    expect(reusable).toContain("test:identity");
+    expect(reusable).toContain("test:e2e");
+    expect(reusable).toContain("uses: ./.github/actions/start-headless-presto");
+    expect(reusable).toContain(
+      "cargo build --locked --manifest-path packages/presto/server/Cargo.toml",
+    );
+    expect(sdkNoir).toContain("identity: true");
+    expect(sdkNoir).toContain("live: true");
+    for (const path of ["'packages/presto/core/**'", "'packages/presto/server/**'"]) {
+      expect(sdkNoir).toContain(path);
+    }
+    expect(sdk).toMatch(/identity: \$\{\{ inputs\.package == 'presto-noir' \}\}/);
+    expect(sdk).toMatch(/live: \$\{\{ inputs\.package == 'presto-noir' \}\}/);
+    expect(sdkCore).not.toMatch(/identity|live:/);
+  });
+
   test.each([
     ["sdk-core.yml", sdkCore, "presto-core", ["'packages/sdk-core/**'"]],
     [

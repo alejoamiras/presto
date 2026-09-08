@@ -50,5 +50,5 @@ Date: 2026-09-08. Branch `presto-noir/sdk-noir` (arc 4, stacked on `presto-noir/
 
 `bun run --cwd packages/sdk-noir test:unit` 35 ✓ · `test:lint` ✓ · `build` ✓ · `bun run test` exit 0
 · `bun run lint:actions` ✓ · consumer profiles locally: `presto-noir` (bootstrap, packed core, peer
-bb.js), `presto`, `presto-core` all OK. `sdk.yml package=presto-noir`: dispatched after the commit
-(run id in `arc-4-review.md`).
+bb.js), `presto`, `presto-core` all OK. `sdk.yml package=presto-noir` on 49de251: run
+34191753272 green (Lint, Typecheck, Unit Tests, Tarball Consumer).

@@ -17,7 +17,9 @@
   "scripts": {
     "build": "rm -rf dist && tsc",
     "prepublishOnly": "bun run test:lint && bun run build",
-    "test:lint": "tsc --noEmit --emitDeclarationOnly false",
+    "test:e2e": "bun test --preload ./e2e/e2e-setup.ts e2e/native.test.ts",
+    "test:identity": "bun test --preload ./e2e/e2e-setup.ts e2e/wasm-identity.test.ts",
+    "test:lint": "tsc --noEmit --emitDeclarationOnly false && tsc --noEmit -p tsconfig.e2e.json",
     "test:unit": "bun test --parallel src/"
   },
   "dependencies": {

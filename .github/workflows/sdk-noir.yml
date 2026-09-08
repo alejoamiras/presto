@@ -31,6 +31,12 @@ jobs:
               # The adapter depends on core.
               - 'packages/sdk-core/**'
               - 'fixtures/noir/**'
+              # The live job builds the headless presto from this ref.
+              - 'packages/presto/core/**'
+              - 'packages/presto/server/**'
+              - 'rust-toolchain.toml'
+              - '.github/actions/setup-presto/**'
+              - '.github/actions/start-headless-presto/**'
               - 'scripts/**'
               - 'tsconfig.json'
               - 'tsconfig.scripts.json'
@@ -53,6 +59,8 @@ jobs:
     uses: ./.github/workflows/_ts-package-ci.yml
     with:
       package: presto-noir
+      identity: true
+      live: true
 
   sdk-noir-status:
     name: SDK Noir Status

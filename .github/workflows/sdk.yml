@@ -71,6 +71,8 @@ jobs:
     with:
       package: ${{ inputs.package || 'presto' }}
       e2e_presto: ${{ (inputs.package || 'presto') == 'presto' }}
+      identity: ${{ inputs.package == 'presto-noir' }}
+      live: ${{ inputs.package == 'presto-noir' }}
 
   sdk-status:
     name: SDK Status
