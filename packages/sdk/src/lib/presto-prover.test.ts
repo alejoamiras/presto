@@ -170,19 +170,24 @@ describe("PrestoProver", () => {
   });
 
   test.each([
-    ["not JSON", () => new Response("not json at all", { status: 200 })],
-    ["no string proof", () => Response.json({ proof: 12345 })],
-    ["invalid base64", () => Response.json({ proof: "@@@" })],
-  ])("a 200 with a body that cannot be decoded (%s) degrades to WASM", async (_name, prove) => {
-    mockFetch({ "/health": healthOk, "/prove": prove });
-    const { prover: p, phases } = prover();
-    await expect(p.createChonkProof([fakeStep])).rejects.toThrow(
-      "local prover not available in test",
-    );
-    expect(phases).toContain("proved");
-    expect(phases).toContain("fallback");
-    expect(wasmSpy).toHaveBeenCalled();
-  });
+    // The client rejects an unreadable body before `receive`; a readable body of the wrong shape is
+    // received and then rejected by the adapter's decode.
+    ["not JSON", () => new Response("not json at all", { status: 200 }), false],
+    ["no string proof", () => Response.json({ proof: 12345 }), true],
+    ["invalid base64", () => Response.json({ proof: "@@@" }), true],
+  ])(
+    "a 200 with a body that cannot be decoded (%s) degrades to WASM",
+    async (_n, prove, received) => {
+      mockFetch({ "/health": healthOk, "/prove": prove });
+      const { prover: p, phases } = prover();
+      await expect(p.createChonkProof([fakeStep])).rejects.toThrow(
+        "local prover not available in test",
+      );
+      const native = ["detect", "serialize", "transmit", "proving", "proved"];
+      expect(phases).toEqual([...native, ...(received ? ["receive"] : []), "fallback", "proving"]);
+      expect(wasmSpy).toHaveBeenCalled();
+    },
+  );
 
   test("a typed misconfiguration error propagates and is never masked as WASM", async () => {
     mockFetch({

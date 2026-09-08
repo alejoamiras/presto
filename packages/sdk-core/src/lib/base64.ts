@@ -18,8 +18,9 @@ export function toBase64(bytes: Uint8Array): string {
 }
 
 /**
- * Decode standard base64. Throws on characters outside the alphabet or bad padding — a malformed
- * server body must fail closed rather than decode to a silently truncated proof.
+ * Decode standard base64. Throws on characters outside the alphabet or bad padding (not on
+ * non-canonical trailing bits), so a malformed server body fails closed instead of decoding to a
+ * silently truncated proof.
  */
 export function fromBase64(text: string): Uint8Array {
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(text) || text.length % 4 !== 0) {

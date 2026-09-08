@@ -245,6 +245,19 @@ describe("PrestoClient", () => {
       expect(fetchedUrls.some((url) => url.includes("/prove"))).toBe(false);
     });
 
+    test("a route that is not a plain absolute path is refused before any request", async () => {
+      // `1/prove` after `https://127.0.0.1:3000` would POST the witness to port 30001 — an endpoint
+      // the probe never validated and the generation guard cannot see.
+      const { fetchedUrls } = mockFetch({ "/health": healthOk, "/prove": () => Response.json({}) });
+      const { client: c, phases } = client({ presto: { httpsPort: 3000 } });
+      for (const path of ["1/prove", "prove", "/prove?x=1", "/prove#f", "/a@b", "/a b", ""]) {
+        await expect(c.prove({ ...PROVE, path })).rejects.toThrow("Invalid presto route");
+      }
+      expect(fetchedUrls).toEqual([]);
+      expect(phases).toEqual([]);
+      expect((await c.prove({ ...PROVE, path: "/prove/ultra-honk" })).kind).toBe("native");
+    });
+
     test("a presto that predates `schemes` serves chonk only", async () => {
       mockFetch({ "/health": healthOk, "/prove": () => Response.json({}) });
       const { client: c } = client();

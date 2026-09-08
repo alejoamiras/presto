@@ -77,6 +77,11 @@ echo "=== exact host (${AZTEC_PIN:-no @aztec/stdlib pin}): tarball resolution ==
 EXACT="$WORK/exact-host"
 make_host "$EXACT" "$AZTEC_PIN"
 ( cd "$EXACT" && npm install --no-audit --no-fund --loglevel=error )
+# A supplied dependency must be THE copy the candidate resolves: npm would otherwise keep the root
+# `file:` copy and nest a registry copy under the candidate when the pin and the tarball disagree.
+for pair in "${WITH[@]}"; do
+  bun "$REPO_ROOT/scripts/tarball-consumer/assert-local-dependency.ts" "$EXACT" "${pair%%=*}" "${pair#*=}"
+done
 
 echo "--- typecheck the consumer against the PACKED dist (resolves the 'types' condition) ---"
 # `--package=` is required: `typescript` ships both `tsc` and `tsserver`, so `npx typescript` cannot pick a binary.

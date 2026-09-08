@@ -2,12 +2,13 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseNpmPackResult } from "./npm-pack-result";
+import { NPM_PACKAGES, type NpmPackage } from "./npm-packages";
 import {
   fetchAndVerifySdkProvenance,
   SDK_PACKAGE,
   SDK_VERSION_PATTERN,
 } from "./sdk-release-verification";
-import { assertCorePin, CORE_NAME } from "./tarball-consumer/assert-core-pin";
+import { assertCorePin, CORE_NAME, expectedCoreVersion } from "./tarball-consumer/assert-core-pin";
 import { verifySdkPackageSignatures } from "./verify-sdk-package-signatures";
 
 /**
@@ -43,29 +44,38 @@ if (import.meta.main) {
     if (result.exitCode !== 0) throw new Error(result.stderr.toString());
     return result.stdout.toString().trim();
   };
+  /** Provenance, signatures, and an integrity-matched tarball of one published version. */
+  const fetchVerified = async (pkg: NpmPackage, version: string): Promise<string> => {
+    await fetchAndVerifySdkProvenance(version, undefined, undefined, pkg);
+    await verifySdkPackageSignatures(version, pkg);
+    const spec = `${pkg.name}@${version}`;
+    const packed = parseNpmPackResult(
+      JSON.parse(run(["npm", "pack", "--ignore-scripts", "--json", spec])),
+      pkg.name,
+      version,
+    );
+    if (packed.integrity !== run(["npm", "view", spec, "dist.integrity"])) {
+      throw new Error(`Published tarball integrity mismatch for ${spec}`);
+    }
+    return join(directory, packed.filename);
+  };
+
   const version = process.argv[2] || run(["npm", "view", `${SDK_PACKAGE}@testnet`, "version"]);
   if (!SDK_VERSION_PATTERN.test(version)) throw new Error("Invalid published SDK candidate");
-  await fetchAndVerifySdkProvenance(version);
-  await verifySdkPackageSignatures(version);
-  const packed = parseNpmPackResult(
-    JSON.parse(run(["npm", "pack", "--ignore-scripts", "--json", `${SDK_PACKAGE}@${version}`])),
-    SDK_PACKAGE,
-    version,
-  );
-  const expectedIntegrity = run(["npm", "view", `${SDK_PACKAGE}@${version}`, "dist.integrity"]);
-  if (packed.integrity !== expectedIntegrity)
-    throw new Error("Published tarball integrity mismatch");
-  const tarball = join(directory, packed.filename);
+  const tarball = await fetchVerified(NPM_PACKAGES.presto, version);
   const manifest = JSON.parse(run(["tar", "-xzOf", tarball, "package/package.json"]));
   const workspace = await Bun.file(join(root, "packages/sdk/package.json")).json();
   const core = await Bun.file(join(root, "packages/sdk-core/package.json")).json();
   const workspaceVersions = { [CORE_NAME]: core.version };
   assertPublishedSdkManifest(manifest, version, workspace.dependencies, workspaceVersions);
-  const swap = Bun.spawnSync(["bash", ".github/scripts/packaged-e2e-swap-sdk.sh", tarball], {
-    cwd: root,
-    stdout: "inherit",
-    stderr: "inherit",
-  });
+  // The playground must run the SDK on the exact published core it pins — never a local rebuild.
+  const corePin = expectedCoreVersion(manifest.dependencies[CORE_NAME]);
+  if (!corePin) throw new Error("Published SDK must pin an exact core version");
+  const coreTarball = await fetchVerified(NPM_PACKAGES["presto-core"], corePin);
+  const swap = Bun.spawnSync(
+    ["bash", ".github/scripts/packaged-e2e-swap-sdk.sh", tarball, coreTarball],
+    { cwd: root, stdout: "inherit", stderr: "inherit" },
+  );
   if (swap.exitCode !== 0) throw new Error("Could not install the published SDK into playground");
   const installedDir = join(root, "packages/playground/node_modules/@alejoamiras/presto");
   const installed = await Bun.file(join(installedDir, "package.json")).json();

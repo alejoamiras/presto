@@ -118,11 +118,10 @@ function packOne(
 
 if (import.meta.main) {
   const root = resolve(import.meta.dir, "..");
-  const {
-    key,
-    version,
-    out = mkdtempSync(join(tmpdir(), "presto-candidate-")),
-  } = parseArgs(process.argv.slice(2));
+  const parsed = parseArgs(process.argv.slice(2));
+  const { key, version } = parsed;
+  // Absolute: `npm pack` runs inside each package directory, so a relative `--out` would land there.
+  const out = resolve(parsed.out ?? mkdtempSync(join(tmpdir(), "presto-candidate-")));
   mkdirSync(out, { recursive: true });
   const packed: Record<string, Packed> = {};
   let candidate: Packed | undefined;

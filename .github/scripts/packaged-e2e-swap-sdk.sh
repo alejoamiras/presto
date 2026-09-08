@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # B4 packaged-E2E: point the playground at the PACKED SDK tarball instead of the workspace source, so the
 # composed proof exercises the exact artifact that would publish (not the workspace tree).
-# Shared by the Linux + macOS legs of `_e2e-packaged.yml` (codex harness review: workspace SDK is not a
-# release gate). The tarball's packaging (files set, entry points, dep resolution) is ALSO gated by
+# Shared by the Linux + macOS legs of `_e2e-packaged.yml`: the workspace SDK is not a release gate. The
+# tarball's packaging (files set, entry points, dep resolution) is ALSO gated by
 # scripts/sdk-tarball-consumer.sh; this leg additionally proves it PROVES.
 #
 #   packaged-e2e-swap-sdk.sh [sdk-tarball] [core-tarball]

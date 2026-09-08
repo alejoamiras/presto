@@ -36,6 +36,8 @@ describe("TypeScript package CI contract", () => {
     for (const key of Object.keys(NPM_PACKAGES)) expect(choices).toContain(`- ${key}`);
     expect(sdk).toContain("uses: ./.github/workflows/_ts-package-ci.yml");
     expect(sdk).toMatch(/package: \$\{\{ inputs\.package \|\| 'presto' \}\}/);
+    // Two packages dispatched on one ref must not cancel each other.
+    expect(sdk).toMatch(/group: .*-\$\{\{ inputs\.package \|\| 'presto' \}\}/);
     expect(sdk).toMatch(/e2e_presto: \$\{\{ \(inputs\.package \|\| 'presto'\) == 'presto' \}\}/);
     for (const path of [
       "'packages/sdk/**'",

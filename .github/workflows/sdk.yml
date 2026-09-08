@@ -16,9 +16,10 @@ on:
 permissions:
   contents: read
 
-# Cancel a superseded in-flight run when a new commit is pushed to the same PR.
+# Cancel a superseded in-flight run when a new commit is pushed to the same PR. The package is part
+# of the key so dispatching two packages on one ref runs both instead of cancelling the first.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.package || 'presto' }}
   cancel-in-progress: true
 
 jobs:

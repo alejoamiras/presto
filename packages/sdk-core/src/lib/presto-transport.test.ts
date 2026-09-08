@@ -51,7 +51,7 @@ describe("PrestoTransport", () => {
     });
   });
 
-  // ── F-01 regression (audit 2026-07-31) ──────────────────────────────────────────────────────
+  // ── Host validation ──────────────────────────────────────────────────────────────────────────
   // `host` was interpolated raw into six URL templates, one of which POSTs the private witness.
   describe("host validation", () => {
     test("a host that re-points the URL template is rejected", () => {
@@ -88,7 +88,7 @@ describe("PrestoTransport", () => {
     });
   });
 
-  // ── F-01 round 2 (codex pass over the fix) ──────────────────────────────────────────────────
+  // ── Port validation ──────────────────────────────────────────────────────────────────────────
   // Validating `host` closed only HALF the authority. `port`/`httpsPort` are typed `number`, but
   // types are erased at runtime, so a JS caller — or a config from JSON, a URL param, an env var —
   // passes a string straight into the template.
@@ -116,11 +116,11 @@ describe("PrestoTransport", () => {
     });
   });
 
-  // ── F-01 round 4: the policy flags are erased at runtime too ────────────────────────────────
+  // ── Policy flags are erased at runtime too ───────────────────────────────────────────────────
   describe("policy flag validation", () => {
     test("a non-boolean flag is rejected rather than coerced", () => {
-      // codex round 4: I applied the runtime-erasure argument to the NUMBERS and not to the two
-      // booleans that ARE the transport's security policy. `"false"` is truthy, so the documented
+      // The runtime-erasure argument applies to the two
+      // booleans that ARE the transport's security policy: `"false"` is truthy, so the documented
       // opt-out switched ON via a value that reads as OFF.
       for (const bad of ["false", "true", 0, 1, null]) {
         expect(
@@ -151,7 +151,7 @@ describe("PrestoTransport", () => {
     });
   });
 
-  // ── F-01: do not DOWNGRADE from a working HTTPS endpoint ────────────────────────────────────
+  // ── Never DOWNGRADE from a working HTTPS endpoint ────────────────────────────────────────────
   // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
   describe("allowsHttpDowngrade", () => {
     const healthy = { pin: "set", protocol: "https" } as const;
@@ -186,8 +186,8 @@ describe("PrestoTransport", () => {
     });
 
     test("but flipping a policy flag does NOT", () => {
-      // codex: any `setPrestoConfig` used to clear the history, so a dApp that toggles an
-      // unrelated flag handed back the plaintext downgrade for an endpoint it is still talking to.
+      // Clearing the history on ANY configure would let a dApp that toggles an
+      // unrelated flag hand back the plaintext downgrade for an endpoint it is still talking to.
       const t = new PrestoTransport("127.0.0.1", 59833, 59834);
       t.commitStatus({ available: true, needsDownload: false }, healthy);
       t.configure({ httpsOnly: false });
@@ -198,12 +198,11 @@ describe("PrestoTransport", () => {
     });
 
     test("a canonical re-spelling of the SAME host is not a move", () => {
-      // codex round 2: `movedEndpoint` compared the RAW input against the NORMALISED stored host, so
+      // If `movedEndpoint` compared the RAW input against the NORMALISED stored host,
       // `configure({host: "127.1"})` after healthy HTTPS looked like a move, wiped the history, and
       // handed the plaintext downgrade back for an endpoint that had not moved at all.
       // NOT "LOCALHOST": that normalises to "localhost", a genuinely different authority from
-      // "127.0.0.1" (it can resolve to ::1), so treating it as a move is correct — codex listed it as
-      // an equivalent trigger, but it is not one.
+      // "127.0.0.1" (it can resolve to ::1), so treating it as a move is correct.
       for (const spelling of ["127.1", "0x7f.0.0.1", "2130706433", "127.000.000.001"]) {
         const t = new PrestoTransport("127.0.0.1", 59833, 59834);
         t.commitStatus({ available: true, needsDownload: false }, healthy);
@@ -219,7 +218,7 @@ describe("PrestoTransport", () => {
       expect(six.allowsHttpDowngrade).toBe(false);
 
       // The hostname form re-spelled is the SAME authority — DNS names are case-insensitive, and
-      // `URL` lower-cases them. Untested until codex round 4 pointed out the omission.
+      // `URL` lower-cases them.
       const named = new PrestoTransport("localhost", 59833, 59834);
       named.commitStatus({ available: true, needsDownload: false }, healthy);
       named.configure({ host: "LOCALHOST" });
@@ -241,8 +240,8 @@ describe("PrestoTransport", () => {
     });
 
     test("a REJECTED configure() changes nothing at all", () => {
-      // codex round 2: fields were assigned as validation proceeded, so a call that threw on `host`
-      // had already moved the port — and the throw skipped the cache/protocol/generation resets, so
+      // Fields assigned as validation proceeded would let a call that throws on `host`
+      // move the port first — and the throw would skip the cache/protocol/generation resets, so
       // a stale "healthy" status stayed valid for an endpoint that had silently moved.
       // Observe the HTTP baseUrl — it is the only thing that exposes `#port`, which is the field the
       // old code moved before throwing. (The HTTPS branch reads `#httpsPort`, so asserting on it
@@ -260,8 +259,8 @@ describe("PrestoTransport", () => {
       expect(plain.baseUrl).toBe("http://127.0.0.1:59833");
 
       // `httpsPort` needs its own observable — the HTTP baseUrl above reads `#port`, so a mutant
-      // that committed a VALID new httpsPort before rejecting the host would have passed (codex
-      // round 4). Pin the protocol to read the HTTPS side.
+      // that committed a VALID new httpsPort before rejecting the host would pass.
+      // Pin the protocol to read the HTTPS side.
       const https = new PrestoTransport("127.0.0.1", 59833, 59834);
       https.setProtocol("https");
       expect(() => https.configure({ httpsPort: 44444, host: "evil.com" })).toThrow(
@@ -302,10 +301,10 @@ describe("PrestoTransport", () => {
     });
 
     test("a later probe cannot re-pin plaintext once HTTPS has worked", async () => {
-      // codex CRITICAL: `allowsHttpDowngrade` was consulted only when an HTTPS `/prove` FAILED, so
-      // the plaintext path was reachable by going AROUND it — let the status cache expire, take the
-      // HTTP port while HTTPS is unavailable, and the next dual probe just pins HTTP. The fix is to
-      // stop constructing an http:// URL at PROBE time, so this now reports offline (→ WASM).
+      // If `allowsHttpDowngrade` were consulted only when an HTTPS prove FAILED,
+      // the plaintext path would be reachable by going AROUND it — let the status cache expire, take the
+      // HTTP port while HTTPS is unavailable, and the next dual probe just pins HTTP. So we
+      // never construct an http:// URL at PROBE time; this reports offline (→ WASM).
       const t = new PrestoTransport("127.0.0.1", 59833, 59834);
       t.commitStatus({ available: true, needsDownload: false }, healthy);
 
@@ -361,8 +360,8 @@ describe("PrestoTransport", () => {
     });
   });
 
-  // q7e3-F-06: pin the three-way set/clear/keep transition so a refactor can't flatten it. The
-  // audit's concern: a "derive pin from the status discriminant" rewrite would unify the two
+  // Pin the three-way set/clear/keep transition so a refactor cannot flatten it: a
+  // "derive pin from the status discriminant" rewrite would unify the two
   // error exits — but `!response.ok` must KEEP an existing pin while malformed-JSON must CLEAR it.
   describe("commitStatus protocol-pin transitions", () => {
     const okStatus: PrestoStatus = {
@@ -464,7 +463,7 @@ describe("PrestoTransport", () => {
     });
   });
 
-  // Phase 2 (audit R2 / H-2): HTTPS is preferred ONLY when it's healthy (2xx + parseable JSON),
+  // HTTPS is preferred ONLY when it is healthy (2xx + parseable JSON),
   // with a bounded grace so the common no-HTTPS path adds no latency.
   // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
   describe("probeHealth — prefer-HTTPS-when-healthy", () => {
@@ -724,7 +723,7 @@ describe("PrestoTransport", () => {
     });
 
     test("a body that streams COMPLETE valid JSON but never closes is NOT accepted as healthy", async () => {
-      // codex Medium: the deadline cancels the reader, read() reports `done` with the fully-buffered
+      // The deadline cancels the reader, read() reports `done` with the fully-buffered
       // (but stream-never-closed) bytes; parsing those as EOF would accept a timed-out body as healthy.
       // The `timedOut` flag must force `undefined`. httpsOnly so this HTTPS body is the deciding probe.
       globalThis.fetch = mock(async () => {
@@ -745,7 +744,7 @@ describe("PrestoTransport", () => {
     }, 10_000);
 
     test("a stream of endless ZERO-LENGTH chunks cannot starve the deadline", async () => {
-      // codex Low (round 2): zero-length chunks resolve every read() immediately, starving the
+      // Zero-length chunks resolve every read() immediately, starving the
       // setTimeout so neither the deadline nor the byte cap ever fires. The in-loop wall-clock check
       // must still bail. httpsOnly so this is the deciding probe.
       globalThis.fetch = mock(async () => {
@@ -766,10 +765,10 @@ describe("PrestoTransport", () => {
     }, 15_000);
 
     test("empty chunks past the deadline followed by close are NOT accepted as healthy", async () => {
-      // codex Medium (round 3): the `done` branch was evaluated BEFORE the in-loop clock check, so a
+      // A `done` branch evaluated BEFORE the in-loop clock check would let a
       // stream that emitted valid JSON, spammed empty chunks past the deadline, and only THEN closed
-      // reached `done` first, cleared the still-unfired timer, and parsed as healthy. (Their repro
-      // also accumulated ~936MB by retaining the empty chunks — now they are never pushed.)
+      // reach `done` first, clear the still-unfired timer, and parse as healthy. (Retaining the
+      // empty chunks would also accumulate ~936MB — they are never pushed.)
       globalThis.fetch = mock(async () => {
         let emitted = 0;
         const stream = new ReadableStream<Uint8Array>({
@@ -920,10 +919,10 @@ describe("PrestoTransport", () => {
   });
 
   /**
-   * F-11 (audit 2026-07-31-9c4cb0c). The `/prove` body used to be read with a bare `res.json()`.
-   * ky's `timeout` bounds time-to-HEADERS only, so a responder that answered `200` and then streamed
-   * forever buffered without limit and never settled — the dApp's WASM fallback could not run,
-   * because the promise it would have caught never rejected.
+   * A prove body read with a bare `res.json()` has no bound at all:
+   * the request timeout bounds time-to-HEADERS only, so a responder that answers `200` and then streams
+   * forever buffers without limit and never settles — the dApp's WASM fallback cannot run,
+   * because the promise it would catch never rejects.
    */
   describe("readJsonBody (cap + deadline on a prove-route body)", () => {
     const transport = () => new PrestoTransport("127.0.0.1", 59833, 59834);
@@ -978,7 +977,7 @@ describe("PrestoTransport", () => {
     test("a peer that dribbles one-byte chunks does not blow up allocation", async () => {
       // The byte cap bounds BYTES, not allocation. Retaining one Uint8Array object per chunk let a
       // peer stay under the cap while consuming orders of magnitude more memory in per-object
-      // overhead (post-impl codex round 7). 200k single-byte chunks is well under any cap and would
+      // overhead. 200k single-byte chunks is well under any cap and would
       // previously have retained 200k objects; now it copies into one contiguous buffer.
       const oneByteChunks = Array.from({ length: 200_000 }, () => new Uint8Array([0x20]));
       const body = new ReadableStream<Uint8Array>({

@@ -43,6 +43,18 @@ interface Attempt {
   startedAt: number;
 }
 
+/**
+ * The route is appended to a validated loopback authority; anything that is not a plain absolute
+ * path would extend it (`1/prove` after `:3000` targets port 30001, `?`/`#`/`@` rewrite the URL).
+ */
+export function assertRoutePath(path: string): void {
+  if (typeof path !== "string" || !/^\/[A-Za-z0-9._~/-]*$/.test(path)) {
+    throw new Error(
+      `Invalid presto route ${JSON.stringify(path)}: expected a plain absolute path.`,
+    );
+  }
+}
+
 const fallback = (
   reason: Extract<ProveOutcome, { kind: "fallback" }>["reason"],
   phase?: Extract<ProveOutcome, { kind: "fallback" }>["phase"],
@@ -82,8 +94,6 @@ export class PrestoClient {
 
   /** Configure the local endpoint or transport policy. Resets cached protocol + status. */
   configure(config: PrestoConfig): void {
-    // The transport resets BOTH the cached protocol and the status cache (each is keyed to the old
-    // endpoint, so a stale hit would report the wrong host/port for up to the TTL).
     this.#transport.configure(config);
   }
 
@@ -289,6 +299,7 @@ export class PrestoClient {
    * fallback outcome; see {@link ProveOutcome}.
    */
   async prove(request: ProveRequest): Promise<ProveOutcome> {
+    assertRoutePath(request.path);
     // Capture the endpoint generation immediately BEFORE probing — but AFTER the "detect" callback,
     // so a handler that synchronously reconfigures there is honoured (the probe then targets the NEW
     // endpoint). A probe that started against A and completes after `configure(B)` has its pin/cache
