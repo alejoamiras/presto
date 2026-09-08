@@ -84,3 +84,9 @@ CI: `sdk.yml package=presto-core` dispatch 34198820547 on 0ff2319 green. Deliver
   scope; worth a timeout bump in a follow-up.
 - Follow-up PR agreed with the owner: release admission guards only after the killed bb is reaped
   (shared `/prove` runner), outside this stack.
+- #24's first rebased run failed the (non-required) `sdk-noir.yml` live lane: the headless presto
+  was started without `AZTEC_BB_VERSION`, so a request for 5.2.0 downloaded bb and verified it
+  through the GitHub API, which rate-limited the runner (403 → `download_failed` → `transient`).
+  Earlier green runs had API luck. Fix on the arc-4 branch (1a88077): the lane advertises the
+  sidecar's version (`packages/presto/src-tauri/AZTEC_VERSION`, written by the prebuild) like every
+  other headless leg; contract test pins it.
