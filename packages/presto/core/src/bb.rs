@@ -1682,7 +1682,12 @@ mod tests {
             "bb and its descendant must both be in the job before the cancel"
         );
         signal.notify_one();
-        let err = run.await.unwrap().expect_err("a cancelled run must fail");
+        // Far shorter than the pings' lifetime, so only the kill can end the run.
+        let err = tokio::time::timeout(Duration::from_secs(10), run)
+            .await
+            .expect("cancel must end the run, not the pings' natural exit")
+            .unwrap()
+            .expect_err("a cancelled run must fail");
         assert!(err.to_string().contains("cancelled"), "got: {err}");
         // TerminateJobObject is asynchronous for the descendant; the direct child is already reaped.
         let mut active = None;
@@ -1712,8 +1717,10 @@ mod tests {
             tokio::spawn(async move { prove_cancellable(b"witness", None, None, cancel).await });
         let pid = wait_for_pid(&pidfile).await;
         signal.notify_one();
-        let err = run
+        // Far shorter than the fake bb's own lifetime, so only the kill can end the run.
+        let err = tokio::time::timeout(Duration::from_secs(10), run)
             .await
+            .expect("cancel must end the run, not the child's natural exit")
             .unwrap()
             .expect_err("a cancelled bb must not yield a proof");
         assert!(err.to_string().contains("cancelled"), "got: {err}");
