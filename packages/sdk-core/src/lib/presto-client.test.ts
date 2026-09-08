@@ -1014,7 +1014,10 @@ describe("PrestoClient", () => {
     test("a concurrent proof never inherits another proof's HTTP demotion", async () => {
       // Proof A fails over HTTPS and demotes the pin while it validates HTTP; proof B, already past
       // its own HTTPS check, must not read the demoted pin and post plaintext to a port nobody
-      // validated. The window is one microtask wide, so every alignment is tried.
+      // validated. B's continuation has no hook, so B is started after `depth` microtasks from A's
+      // failure and the sweep must include the alignment where B chooses its URL after A's demotion
+      // — observable as B's HTTPS POST landing after A's HTTP health check.
+      let coveredTheWindow = false;
       for (let depth = 0; depth < 8; depth++) {
         const { client: c } = client({ presto: { allowInsecureDowngrade: true } });
         let second: Promise<ProveOutcome> | null = null;
@@ -1035,7 +1038,50 @@ describe("PrestoClient", () => {
         expect(await c.prove(PROVE)).toEqual({ kind: "fallback", reason: "network" });
         expect(await second).toEqual({ kind: "fallback", reason: "network" });
         expect(fetchedUrls).not.toContain("http://127.0.0.1:59833/prove");
+        const httpHealth = fetchedUrls.indexOf("http://127.0.0.1:59833/health");
+        const secondPost = fetchedUrls.lastIndexOf("https://127.0.0.1:59834/prove");
+        if (httpHealth >= 0 && secondPost > httpHealth) coveredTheWindow = true;
       }
+      expect(coveredTheWindow).toBe(true);
+    });
+
+    test("a caller cannot redirect its own witness by mutating the status it was handed", async () => {
+      const { fetchedUrls } = mockFetch({
+        "https://127.0.0.1:59834/health": healthOk,
+        "https://127.0.0.1:59834/prove": () => Response.json({ proof: "" }),
+        "http://127.0.0.1:59833/prove": () => Response.json({ proof: "" }),
+      });
+      const { client: c } = client({ presto: { httpsOnly: true } });
+      const status = await c.checkStatus();
+      expect(Object.isFrozen(status)).toBe(true);
+      if (status.available) {
+        expect(() => {
+          (status as { protocol: string }).protocol = "http";
+        }).toThrow();
+      }
+      expect(await c.prove(PROVE)).toMatchObject({ kind: "native" });
+      expect(fetchedUrls).not.toContain("http://127.0.0.1:59833/prove");
+    });
+
+    test("a payload whose iteration reconfigures the client is not sent anywhere", async () => {
+      const { client: c } = client();
+      const { fetchedUrls } = mockFetch({
+        "127.0.0.1:59833/health": healthOk,
+        "127.0.0.1:59833/prove": () => Response.json({ proof: "" }),
+      });
+      // `Uint8Array.from` iterates whatever `body()` returns; this iterable runs caller code then.
+      const body = () =>
+        ({
+          *[Symbol.iterator]() {
+            c.configure({ port: 51337, httpsPort: 51338 });
+            yield* [1, 2, 3];
+          },
+        }) as unknown as Uint8Array;
+      expect(await c.prove({ ...PROVE, body })).toEqual({
+        kind: "fallback",
+        reason: "endpoint-changed",
+      });
+      expect(fetchedUrls.some((u) => u.includes("/prove"))).toBe(false);
     });
 
     test("two concurrent proofs failing over the pinned HTTPS BOTH degrade (neither left with the raw error)", async () => {
