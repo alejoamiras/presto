@@ -45,4 +45,5 @@ Commit 3498895.
 > **Approve arc 2 at `3498895`. Confidence: high.** No material findings remain. … The review loop
 > can close; the newly dispatched CI run remains pending verification.
 
-Three rounds. `sdk.yml` run 34186590063 on 3498895 is the arc's final CI evidence.
+Three rounds. `sdk.yml` run 34186590063 on 3498895 is the arc's final CI evidence: green (Lint,
+Typecheck, Unit Tests, Tarball Consumer, SDK E2E).

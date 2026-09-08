@@ -8,14 +8,9 @@ import {
   workflowOutputs,
 } from "./release-plan.ts";
 
-// The DAG is exercised with sibling packages that arrive in later arcs; until they are registered
-// the descriptor has only `presto`, so the tests inject the extra entries.
-const core = {
-  name: "@alejoamiras/presto-core",
-  dir: "packages/sdk-core",
-  versionMode: "manifest",
-  consumerProfile: "presto-core",
-} as const;
+// The DAG is exercised with the `presto-noir` adapter, which is registered in a later arc; until
+// then the tests inject its entry.
+const core = NPM_PACKAGES["presto-core"];
 const noir = {
   name: "@alejoamiras/presto-noir",
   dir: "packages/sdk-noir",
@@ -25,12 +20,10 @@ const noir = {
 const registry = NPM_PACKAGES as unknown as Record<string, unknown>;
 const keys = (list: string[]) => list as unknown as PackageKey[];
 const withSiblings = <T>(fn: () => T): T => {
-  registry["presto-core"] = core;
   registry["presto-noir"] = noir;
   try {
     return fn();
   } finally {
-    delete registry["presto-core"];
     delete registry["presto-noir"];
   }
 };

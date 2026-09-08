@@ -33,6 +33,12 @@ export const NPM_PACKAGES = {
     versionMode: "aztec-derived",
     consumerProfile: "presto",
   },
+  "presto-core": {
+    name: "@alejoamiras/presto-core",
+    dir: "packages/sdk-core",
+    versionMode: "manifest",
+    consumerProfile: "presto-core",
+  },
 } as const satisfies Record<string, NpmPackage>;
 
 export type PackageKey = keyof typeof NPM_PACKAGES;

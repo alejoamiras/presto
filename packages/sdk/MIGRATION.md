@@ -1,5 +1,14 @@
 # Migration guide
 
+## `@alejoamiras/presto-core` is a dependency
+
+The transport, status, and fallback policy now live in `@alejoamiras/presto-core`, which this
+package depends on at an exact version and re-exports from. There is no API change: `PrestoProver`,
+`PrestoHttpError`, `PRESTO_API_VERSION`, and every type keep their names and shapes, and an available
+`PrestoStatus` additionally carries `schemes` and `versions` when the presto reports them. A dApp that
+only imports from `@alejoamiras/presto` needs no code change; a lockfile will now list the core
+package alongside it.
+
 ## Aztec Accelerator → Presto
 
 Presto is a separate installation and npm package. Install Presto manually, quit Aztec

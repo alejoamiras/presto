@@ -11,12 +11,34 @@
 # host-dependencies.json. The tarball under test is always the host's own copy of the package; a
 # profile extra cannot replace it with a registry version.
 #
-#   scripts/sdk-tarball-consumer.sh <absolute-path-to-tarball> [package-key]
+#   scripts/sdk-tarball-consumer.sh <absolute-path-to-tarball> [package-key] [--with name=tarball ...]
+#
+# `--with` installs a workspace dependency from a local tarball beside the candidate (bootstrap mode:
+# the PR gate validates a package against the packed candidate of its dependency before either is on
+# npm). Without it the dependency resolves from the registry — what a release rerun must prove.
 set -euo pipefail
 
-TARBALL="${1:?usage: sdk-tarball-consumer.sh <tarball> [package-key]}"
-PACKAGE_KEY="${2:-presto}"
+POSITIONAL=()
+WITH=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --with)
+      [ -n "${2:-}" ] || { echo "--with needs name=tarball" >&2; exit 2; }
+      WITH+=("$2")
+      shift 2
+      ;;
+    *)
+      POSITIONAL+=("$1")
+      shift
+      ;;
+  esac
+done
+TARBALL="${POSITIONAL[0]:?usage: sdk-tarball-consumer.sh <tarball> [package-key] [--with name=tarball ...]}"
+PACKAGE_KEY="${POSITIONAL[1]:-presto}"
 [ -f "$TARBALL" ] || { echo "tarball not found: $TARBALL" >&2; exit 2; }
+for pair in "${WITH[@]}"; do
+  [ -f "${pair#*=}" ] || { echo "--with tarball not found: ${pair#*=}" >&2; exit 2; }
+done
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
@@ -42,7 +64,7 @@ make_host() {
   # make_host <dir> [aztec-version]
   local dir="$1" aztec="${2:-}"
   mkdir -p "$dir"
-  bun "$REPO_ROOT/scripts/tarball-consumer/host-manifest.ts" "$dir" "$TARBALL" "$PACKAGE_NAME" "$aztec" "$EXTRAS"
+  bun "$REPO_ROOT/scripts/tarball-consumer/host-manifest.ts" "$dir" "$TARBALL" "$PACKAGE_NAME" "$aztec" "$EXTRAS" "${WITH[@]}"
   cp "$PROFILE_DIR/tsconfig.json" "$PROFILE_DIR/index.ts" "$PROFILE_DIR/runtime-check.mjs" "$dir/"
 }
 
@@ -55,6 +77,11 @@ echo "=== exact host (${AZTEC_PIN:-no @aztec/stdlib pin}): tarball resolution ==
 EXACT="$WORK/exact-host"
 make_host "$EXACT" "$AZTEC_PIN"
 ( cd "$EXACT" && npm install --no-audit --no-fund --loglevel=error )
+# A supplied dependency must be THE copy the candidate resolves: npm would otherwise keep the root
+# `file:` copy and nest a registry copy under the candidate when the pin and the tarball disagree.
+for pair in "${WITH[@]}"; do
+  bun "$REPO_ROOT/scripts/tarball-consumer/assert-local-dependency.ts" "$EXACT" "${pair%%=*}" "${pair#*=}"
+done
 
 echo "--- typecheck the consumer against the PACKED dist (resolves the 'types' condition) ---"
 # `--package=` is required: `typescript` ships both `tsc` and `tsserver`, so `npx typescript` cannot pick a binary.

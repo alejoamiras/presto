@@ -1,6 +1,5 @@
 import ms from "ms";
 import type { PrestoProtocol, PrestoStatus, SecureConnectionDiagnosis } from "./types.js";
-// q7e3-F-02: import shared types from the neutral module, not back from the prover (kills the 2-way edge).
 import { PRESTO_API_VERSION } from "./types.js";
 
 /** How long a probed {@link PrestoStatus} stays fresh before a re-probe. */
@@ -20,20 +19,20 @@ const HTTPS_GRACE_MS = 250;
 /**
  * Deadline + byte cap for reading a `/health` BODY. The request timeout only bounds time-to-headers
  * — a responder that returns `200` and then stalls (or streams forever) would otherwise hang the
- * probe indefinitely and buffer unbounded bytes (post-impl codex High). The real body is <2 KB.
+ * probe indefinitely and buffer unbounded bytes. The real body is <2 KB.
  */
 const HEALTH_BODY_TIMEOUT_MS = 2_000;
 const HEALTH_BODY_MAX_BYTES = 64 * 1024;
-/** /prove is long-running (native bb proof) — generous timeout. */
+/** Prove routes are long-running (native bb proof) — generous timeout. */
 const PROVE_TIMEOUT_MS = ms("10 min");
 
 /**
- * Deadline + byte cap for reading a `/prove` BODY (F-11, audit 2026-07-31-9c4cb0c). `PROVE_TIMEOUT_MS`
- * above bounds time-to-headers — so before this, an endpoint could
- * answer `200` and then stream forever into an unbounded buffer.
+ * Deadline + byte cap for reading a prove-route success BODY. `PROVE_TIMEOUT_MS` above bounds
+ * time-to-headers — so before this, an endpoint could answer `200` and then stream forever into an
+ * unbounded buffer. Routes with a different response shape pass their own cap.
  *
- * **The cap is derived, not sampled.** A single observed proof is a lower bound, not a protocol
- * maximum, so it is computed from the protocol's own declared sizes:
+ * **The default cap is derived, not sampled.** A single observed proof is a lower bound, not a
+ * protocol maximum, so it is computed from the chonk protocol's own declared sizes:
  *
  * - `@aztec/stdlib`'s `chonk_proof.ts` documents the proof data itself as **≈52 KB** uncompressed
  *   ("always >= 40KB") and ≈35 KB compressed.
@@ -51,7 +50,7 @@ const PROVE_BODY_TIMEOUT_MS = ms("60 sec");
 const PROVE_BODY_MAX_BYTES = 8 * 1024 * 1024;
 
 /**
- * Validate a configured `host` and return it, or throw (F-01, audit 2026-07-31).
+ * Validate a configured `host` and return it, or throw.
  *
  * `host` was interpolated raw into six URL templates (`https://${host}:${port}/prove` and friends).
  * A value like `evil.com/#` or `evil.com:1/` re-points every one of them: the private witness is
@@ -70,7 +69,7 @@ export function assertPort(port: number, field: string): number {
   // or an env var — can pass a string. `{host: "127.0.0.1", port: "80@evil.com"}` builds
   // `http://127.0.0.1:80@evil.com/prove`, whose real authority is `evil.com`: `127.0.0.1` becomes
   // the username and `80` the password. The witness goes to a remote host that never had to defeat
-  // the host check at all. (Found by the codex pass over the F-01 fix; verified by construction.)
+  // the host check at all.
   if (typeof port !== "number" || !Number.isInteger(port) || port < 1 || port > 65535) {
     throw new Error(
       `Invalid presto ${field} ${JSON.stringify(port)}: expected an integer from 1 to 65535.`,
@@ -80,12 +79,10 @@ export function assertPort(port: number, field: string): number {
 }
 
 export function assertFlag(value: boolean, field: string): boolean {
-  // The SAME runtime-erasure argument that justifies `assertPort` — and I applied it to the numbers
-  // and not to the booleans, which is worse, because these two ARE the transport's security policy
-  // (codex round 4). `configure({allowInsecureDowngrade: "false"})` assigned the string `"false"`,
-  // which is truthy, so the documented opt-out switched ON via a value that reads as OFF. Coercion
-  // would repeat the mistake in a quieter form; a non-boolean here means the caller's config is not
-  // what they think it is, and they should hear about it.
+  // The same runtime-erasure argument as `assertPort`, and these two flags ARE the transport's
+  // security policy: `configure({allowInsecureDowngrade: "false"})` would assign a truthy string and
+  // switch the opt-out ON via a value that reads as OFF. Coercion would repeat the mistake quietly;
+  // a non-boolean means the caller's config is not what they think it is.
   if (typeof value !== "boolean") {
     throw new Error(`Invalid presto ${field} ${JSON.stringify(value)}: expected true or false.`);
   }
@@ -199,7 +196,7 @@ async function isLoopbackPermissionExplicitlyDenied(): Promise<boolean> {
   }
 }
 
-/** q7e3-F-06: the three protocol-pin transitions {@link PrestoTransport.commitStatus} can apply. */
+/** The three protocol-pin transitions {@link PrestoTransport.commitStatus} can apply. */
 export type ProtocolTransition =
   | { pin: "set"; protocol: PrestoProtocol }
   | { pin: "clear" }
@@ -210,7 +207,7 @@ export type ProtocolTransition =
  * on both the minimal and detailed `/health`). Mirrors the app's OWN redundant-instance classifier
  * (`core/src/server/probe.rs::is_healthy_aztec_response`) — anything weaker let a foreign 200-JSON
  * responder on the fixed HTTPS port win the protocol pin by merely *having* a recognizable field
- * (post-impl codex High: pin poisoning → witness exfiltration). Field-presence is NOT identity;
+ * (pin poisoning → witness exfiltration). Field-presence is NOT identity;
  * this shape check is collision resistance, not authentication — see the `httpsOnly` docs.
  */
 /**
@@ -268,10 +265,13 @@ export function isRecognizedHealthBody(body: unknown): boolean {
   return b.status === "ok" && b.api_version === PRESTO_API_VERSION;
 }
 
+// `schemes` is deliberately absent: it rides on the MINIMAL body too, so its presence says nothing
+// about whether the responder served the detailed tier.
 const DETAILED_HEALTH_KEYS = [
   "version",
   "aztec_version",
   "available_versions",
+  "versions",
   "bb_available",
   "https_port",
 ] as const;
@@ -280,8 +280,27 @@ function hasAnyDetailedHealthField(body: Record<string, unknown>): boolean {
   return DETAILED_HEALTH_KEYS.some((key) => key in body);
 }
 
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === "string");
+
+/** `/health.versions`: `[{ aztec_version, bb_version }]`, both strings. */
+export function isVersionPairArray(
+  value: unknown,
+): value is Array<{ aztec_version: string; bb_version: string }> {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (pair) =>
+        typeof pair === "object" &&
+        pair !== null &&
+        typeof (pair as Record<string, unknown>).aztec_version === "string" &&
+        typeof (pair as Record<string, unknown>).bb_version === "string",
+    )
+  );
+}
+
 /**
- * Validate every optional field the SDK consumes. The two-field public liveness response remains
+ * Validate every optional field the client consumes. The two-field public liveness response remains
  * valid, but a response that starts presenting detailed data must not smuggle invalid runtime types
  * into the public status or throw from version classification.
  */
@@ -291,9 +310,9 @@ export function isValidHealthBody(body: unknown): body is Record<string, unknown
   return (
     (!("version" in b) || typeof b.version === "string") &&
     (!("aztec_version" in b) || typeof b.aztec_version === "string") &&
-    (!("available_versions" in b) ||
-      (Array.isArray(b.available_versions) &&
-        b.available_versions.every((version) => typeof version === "string"))) &&
+    (!("available_versions" in b) || isStringArray(b.available_versions)) &&
+    (!("schemes" in b) || isStringArray(b.schemes)) &&
+    (!("versions" in b) || isVersionPairArray(b.versions)) &&
     (!("bb_available" in b) || typeof b.bb_available === "boolean") &&
     (!("https_port" in b) ||
       (typeof b.https_port === "number" &&
@@ -325,11 +344,9 @@ function isDetailedHealthBody(body: unknown): body is Record<string, unknown> {
  * `clone()` — a clone tees the stream and can buffer an unbounded pending branch). Returns
  * `undefined` on any failure: non-JSON, over-cap, deadline, or stream error.
  *
- * The cap and deadline are PARAMETERS, defaulting to the `/health` policy (F-11, audit
- * 2026-07-31-9c4cb0c). `/prove` returns JSON too — `{"proof": "<base64>"}` — so it reuses this exact
- * reader rather than getting a second one: the empty-chunk, partial-body and never-settling-cancel
- * defences below were each found by adversarial review, and a parallel implementation would have to
- * re-earn all of them. Only the POLICY differs per endpoint; the mechanics must not.
+ * The cap and deadline are PARAMETERS, defaulting to the `/health` policy. Prove routes return JSON
+ * too and reuse this one reader: the empty-chunk, partial-body, and never-settling-cancel defences
+ * below exist once. Only the POLICY differs per endpoint; the mechanics must not.
  */
 async function readJsonBounded(
   response: Response,
@@ -458,16 +475,14 @@ async function readTextBounded(
 }
 
 /**
- * Owns all network I/O to the local presto: endpoint/URL construction, the
- * `/health` probing + protocol negotiation, the diagnostic HTTP health check, the short-lived status
- * cache, and the `/prove` POST. Plain `fetch` for both endpoints; a non-2xx
- * `/prove` answer throws {@link TransportHttpError}, so the thrown-error surface
- * is uniform.
+ * Owns all network I/O to the local presto: endpoint/URL construction, the `/health` probing +
+ * protocol negotiation, the diagnostic HTTP health check, the short-lived status cache, and the
+ * prove-route POST. Plain `fetch` for every endpoint; a non-2xx prove answer throws
+ * {@link TransportHttpError}, so the thrown-error surface is uniform.
  *
- * The {@link PrestoProver} keeps the *domain* logic: parsing a `/health`
- * response into the {@link PrestoStatus} discriminated union, and reading a
- * `403` as an origin denial. This class is internal — it is **not** exported from
- * the package barrel.
+ * The {@link PrestoClient} keeps the *policy*: parsing a `/health` response into the
+ * {@link PrestoStatus} discriminated union, and classifying a prove-route error. This class is
+ * internal — it is **not** exported from the package barrel.
  */
 export class PrestoTransport {
   #host: string;
@@ -483,7 +498,7 @@ export class PrestoTransport {
    * Endpoint-configuration generation. Bumped by {@link configure} so a probe that was in flight
    * against the OLD endpoint cannot commit its result (pin + cache) against the NEW one — a stale
    * commit would route `/prove` (and the witness in it) to an endpoint that was never probed
-   * (post-impl codex High).
+   * to it.
    */
   #generation = 0;
 
@@ -491,7 +506,7 @@ export class PrestoTransport {
    * Has a healthy HTTPS presto ever answered at the CURRENT endpoint? Set by
    * {@link commitStatus} when a probe pins `https`, cleared by {@link configure}.
    *
-   * F-01 (audit 2026-07-31): this is what turns "prefer HTTPS" into "do not DOWNGRADE from HTTPS".
+   * This is what turns "prefer HTTPS" into "do not DOWNGRADE from HTTPS".
    * Preference alone was defeated by a single network-layer `/prove` failure, after which the SDK
    * retried the same private witness over plaintext HTTP.
    */
@@ -528,7 +543,7 @@ export class PrestoTransport {
     // Read every property ONCE, up front. `config` is caller-supplied, so a property can be a getter
     // with side effects or one that throws — reading the policy flags only after the addresses were
     // already committed left `{port: X, get httpsOnly() { throw } }` with a moved port and none of
-    // the resets below (codex round 4). Reading first also means each property is observed exactly
+    // the resets below. Reading first also means each property is observed exactly
     // once, so a getter cannot return one value to the validator and another to the assignment.
     const raw = {
       port: config.port,
@@ -541,14 +556,14 @@ export class PrestoTransport {
     // Then validate EVERYTHING into locals before touching a single field. The first version assigned
     // as it went, so `configure({port: attackerPort, host: "evil.com"})` left the port pointing
     // somewhere new while the host check threw — and because the throw skipped the resets below, the
-    // stale "healthy" status cache stayed valid for an endpoint that had moved (codex round 2). A
+    // stale "healthy" status cache stayed valid for an endpoint that had moved. A
     // rejected call must change nothing at all.
     const port = raw.port === undefined ? this.#port : assertPort(raw.port, "port");
     const httpsPort =
       raw.httpsPort === undefined ? this.#httpsPort : assertPort(raw.httpsPort, "httpsPort");
     // NORMALISED before comparing: `#host` holds the canonical spelling, so comparing the raw input
     // against it made `configure({host: "127.1"})` — or a bare "::1" against the stored "[::1]" —
-    // read as a move and wipe the HTTPS history for an endpoint that never moved (codex round 2).
+    // read as a move and wipe the HTTPS history for an endpoint that never moved.
     // Losing that history is what re-opens the plaintext downgrade.
     const host = raw.host === undefined ? this.#host : assertLoopbackHost(raw.host);
     const httpsOnly =
@@ -571,7 +586,7 @@ export class PrestoTransport {
     // A different ENDPOINT has its own HTTPS history — carrying the old one over would either block a
     // legitimate HTTP-only endpoint or, worse, vouch for a new one we have never reached over TLS.
     // Only an address change resets it: flipping a policy flag must not erase what we learned about
-    // the endpoint we are still talking to (codex: any `setPrestoConfig` used to clear it).
+    // the endpoint we are still talking to.
     if (movedEndpoint) this.#httpsWasHealthy = false;
     this.#generation++;
   }
@@ -580,7 +595,7 @@ export class PrestoTransport {
    * Should this transport behave as HTTPS-only right now? True in explicit strict mode, and ALSO
    * once a healthy HTTPS presto has answered at this endpoint (unless the integrator opted out).
    *
-   * The second half is the fix for a hole the first version of F-01 left open: `allowsHttpDowngrade`
+   * The second half closes a bypass: if `allowsHttpDowngrade`
    * was consulted only when an HTTPS `/prove` FAILED, so the plaintext path was still reachable by
    * going around it — let the 10s status cache expire, take the HTTP port while HTTPS is
    * unavailable, and the next dual probe simply pins HTTP with no downgrade check in sight. Refusing
@@ -607,7 +622,7 @@ export class PrestoTransport {
   }
 
   /**
-   * May a failed HTTPS `/prove` be retried over plaintext HTTP right now? (F-01.)
+   * May a failed HTTPS prove request be retried over plaintext HTTP right now?
    *
    * False once a healthy HTTPS presto has answered at this endpoint, unless the integrator opted
    * in. The pre-fix code validated the HTTP endpoint before downgrading, but that check is the
@@ -638,7 +653,7 @@ export class PrestoTransport {
   }
 
   /**
-   * q7e3-F-06: single owner of the protocol-pin transition that the prover's probe previously
+   * Single owner of the protocol-pin transition that the client's probe previously
    * scattered across three sites. Caches the parsed status AND applies the pin in one place, with the
    * three transitions made explicit so a refactor can't silently flatten them:
    * - `"set"`   — a parseable OK `/health` → pin the winning protocol (drives subsequent `/prove`).
@@ -658,7 +673,7 @@ export class PrestoTransport {
     if (generation !== undefined && generation !== this.#generation) return status;
     if (transition.pin === "set") {
       this.#protocol = transition.protocol;
-      // F-01: remember that TLS worked here. Only a "set" counts — it is the transition that follows
+      // Remember that TLS worked here. Only a "set" counts — it is the transition that follows
       // a 2xx `/health` matching the presto's body contract.
       if (transition.protocol === "https") this.#httpsWasHealthy = true;
     } else if (transition.pin === "clear") this.#protocol = null;
@@ -698,7 +713,7 @@ export class PrestoTransport {
    * Probe `/health`, **preferring HTTPS only when it's healthy**. One retry after
    * {@link PROBE_RETRY_DELAY_MS} if both fail the first time.
    *
-   * Selection (plan §4 / audit R2, hardened post-impl): HTTPS wins iff it fulfills with
+   * Selection: HTTPS wins iff it fulfills with
    * `response.ok` AND a body matching the presto's own health contract
    * ({@link isRecognizedHealthBody}: `status:"ok"`, `api_version:1`) — a fulfilled-but-non-OK,
    * 200-but-malformed, or 200-but-foreign-JSON HTTPS (possible via a server squatting the fixed
@@ -727,7 +742,7 @@ export class PrestoTransport {
         {
           // A 307/308 is a downgrade vector: fetch preserves the method AND body across those,
           // so an https->http redirect would carry the request off the endpoint we validated —
-          // and in strict mode, off HTTPS entirely (post-impl codex High). Never follow.
+          // and in strict mode, off HTTPS entirely. Never follow.
           redirect: "error",
         },
         // Bounds time-to-headers only; a non-2xx still RESOLVES (the caller maps it to `reason:
@@ -859,8 +874,8 @@ export class PrestoTransport {
 
     const httpRes = first.r;
     // Only a HEALTHY HTTP (recognized contract) gets to win via the short grace — a foreign 2xx that
-    // merely settled first must NOT beat a healthy-but-slightly-slower HTTPS (codex Medium: the old
-    // check was just `response.ok`). An unhealthy/foreign HTTP falls through to await HTTPS fully.
+    // merely settled first must NOT beat a healthy-but-slightly-slower HTTPS. An unhealthy/foreign
+    // HTTP falls through to await HTTPS fully.
     if (httpRes && this.#isHealthy(httpRes)) {
       // Prefer HTTPS only if it becomes healthy within the grace window; a HTTPS that already settled
       // (refused/unhealthy → null) short-circuits the wait.
@@ -890,12 +905,12 @@ export class PrestoTransport {
    * This exists for the `/prove` downgrade path, which must NEVER hand the witness to an endpoint it
    * has not itself validated. A healthy HTTPS probe says nothing about who is listening on the HTTP
    * port — a foreign responder there would otherwise receive the serialized witness the moment HTTPS
-   * failed (post-impl codex Critical). Bounded exactly like the dual probe: abort signal for headers,
+   * failed. Bounded exactly like the dual probe: abort signal for headers,
    * {@link readJsonBounded} for the body.
    */
   async isProtocolHealthy(protocol: PrestoProtocol): Promise<boolean> {
     // Strict mode never speaks plaintext, so it must not even probe it — and neither does an
-    // endpoint that already answered over HTTPS (codex: this is the validate-before-downgrade call,
+    // endpoint that already answered over HTTPS (this is the validate-before-downgrade call:
     // so letting it run was the last way to reach the plaintext POST).
     if (protocol === "http" && this.#effectiveHttpsOnly) return false;
     const url =
@@ -915,38 +930,40 @@ export class PrestoTransport {
     }
   }
 
-  /** The `/prove` URL for an EXPLICIT protocol, independent of the current pin — used by the demotion
+  /** The URL of `path` for an EXPLICIT protocol, independent of the current pin — used by the demotion
    * retry so a mid-proof `configure()` (generation change) can't redirect the retried witness. */
-  proveUrlFor(protocol: PrestoProtocol): string {
+  urlFor(protocol: PrestoProtocol, path: string): string {
     return protocol === "https"
-      ? `https://${this.#host}:${this.#httpsPort}/prove`
-      : `http://${this.#host}:${this.#port}/prove`;
+      ? `https://${this.#host}:${this.#httpsPort}${path}`
+      : `http://${this.#host}:${this.#port}${path}`;
   }
 
   /**
-   * POST serialized execution steps to `/prove` on the negotiated endpoint (`baseUrl`), or — when
-   * `url` is given — to that EXACT url (the demotion retry passes an explicit `http://` url so it
-   * targets the endpoint THIS attempt was made against, not a since-reconfigured pin). Throws
-   * {@link TransportHttpError} on a non-2xx response (the caller maps `403` → origin denial),
-   * with the error body pre-read under the `/health` bounds — the status is preserved even when
-   * that body stalls, overflows, or is malformed, so a hostile error body can never re-route the
+   * POST a prove request to `path` on the negotiated endpoint (`baseUrl`), or — when `url` is given
+   * — to that EXACT url (the demotion retry passes an explicit `http://` url so it targets the
+   * endpoint THIS attempt was made against, not a since-reconfigured pin). Throws
+   * {@link TransportHttpError} on a non-2xx response (the caller maps `403` → origin denial), with
+   * the error body pre-read under the `/health` bounds — the status is preserved even when that body
+   * stalls, overflows, or is malformed, so a hostile error body can never re-route the
    * classification to the network-failure path.
    */
-  async postProve(
+  async post(
+    path: string,
     body: Uint8Array<ArrayBuffer>,
-    aztecVersion: string | undefined,
+    contentType: string,
+    aztecVersion?: string,
     url?: string,
   ): Promise<Response> {
     const response = await fetchHeaderBounded(
-      url ?? `${this.baseUrl}/prove`,
+      url ?? `${this.baseUrl}${path}`,
       {
         method: "POST",
         body,
         // Never follow a redirect with the witness in the body: 307/308 preserve method + body, so a
-        // redirect here would forward it to an endpoint we never validated (post-impl codex High).
+        // redirect here would forward it to an endpoint we never validated.
         redirect: "error",
         headers: {
-          "content-type": "application/octet-stream",
+          "content-type": contentType,
           ...(aztecVersion ? { "x-aztec-version": aztecVersion } : {}),
         },
       },
@@ -978,33 +995,26 @@ export class PrestoTransport {
   }
 
   /**
-   * Read a `/prove` success body under a byte cap and a body deadline, returning the base64 proof
-   * string — or `undefined` if the body is over-cap, stalls, is not JSON, or lacks a string `proof`
-   * (F-11, audit 2026-07-31-9c4cb0c).
+   * Read a prove-route success body under a byte cap and a body deadline, returning the parsed JSON
+   * — or `undefined` if the body is over-cap, stalls, or is not JSON. The shape of the JSON is the
+   * caller's to check.
    *
-   * Before this, the caller read the body with a bare `res.json()`: `PROVE_TIMEOUT_MS` bounds
-   * time-to-headers, so an endpoint answering `200` and then streaming forever
-   * had no bound at all. The witness has already left the machine by this point, so the exposure here
-   * is availability — but it is the dApp's tab that dies, and the fallback path never runs because
-   * the promise simply never settles.
+   * `PROVE_TIMEOUT_MS` bounds time-to-headers only, so without this an endpoint answering `200` and
+   * then streaming forever had no bound at all. The witness has already left the machine by this
+   * point, so the exposure is availability — but it is the dApp's tab that dies, and the fallback
+   * path never runs because the promise simply never settles.
    *
    * Deliberately the SAME reader as `/health`, with a different policy — see {@link readJsonBounded}.
    */
-  async readProveBody(
+  async readJsonBody(
     response: Response,
+    maxBytes: number = PROVE_BODY_MAX_BYTES,
     // Overridable ONLY so the deadline path can be tested in milliseconds; a test that proves
     // settlement by actually waiting out the 60 s production deadline costs a minute of CI per run.
-    maxBytes: number = PROVE_BODY_MAX_BYTES,
     timeoutMs: number = PROVE_BODY_TIMEOUT_MS,
-  ): Promise<string | undefined> {
-    const body = await readJsonBounded(response, maxBytes, timeoutMs);
-    if (typeof body !== "object" || body === null) return undefined;
-    const proof = (body as { proof?: unknown }).proof;
-    if (typeof proof !== "string") return undefined;
-    // No separate decode cap: the base64 string is a substring of a body already bounded by
-    // `maxBytes`, so it cannot exceed it, and `Buffer.from` allocates ~0.75x of that. A second
-    // constant at the same value only looked like defence in depth (post-impl codex flagged it as
-    // dead policy) — the real bound is the body cap above.
-    return proof;
+  ): Promise<unknown> {
+    // No separate decode cap for base64 fields: a field is a substring of a body already bounded by
+    // `maxBytes`, so it cannot exceed it, and decoding allocates ~0.75x of that.
+    return readJsonBounded(response, maxBytes, timeoutMs);
   }
 }

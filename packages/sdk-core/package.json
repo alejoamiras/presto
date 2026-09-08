@@ -1,0 +1,33 @@
+{
+  "name": "@alejoamiras/presto-core",
+  "version": "1.0.0",
+  "description": "Transport, endpoint policy, and status client for the Presto native prover, shared by every Presto SDK adapter.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alejoamiras/presto",
+    "directory": "packages/sdk-core"
+  },
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "files": [
+    "src",
+    "dist"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc",
+    "prepublishOnly": "bun run test:lint && bun run build",
+    "test:lint": "tsc --noEmit --emitDeclarationOnly false",
+    "test:unit": "bun test --parallel src/"
+  },
+  "dependencies": {
+    "@logtape/logtape": "^2.3.2",
+    "ms": "^2.1.3"
+  },
+  "devDependencies": {
+    "@types/ms": "^2.1.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

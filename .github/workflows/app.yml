@@ -27,6 +27,7 @@ jobs:
             relevant:
               - 'packages/playground/**'
               - 'packages/sdk/**'
+              - 'packages/sdk-core/**'
               - 'tsconfig.json'
               - 'biome.json'
               - 'package.json'
@@ -44,6 +45,7 @@ jobs:
             # expensive Aztec node/proving matrix below.
             lna_relevant:
               - 'packages/sdk/**'
+              - 'packages/sdk-core/**'
               - 'packages/playground/**'
               - 'packages/landing/**'
               - 'tsconfig*.json'

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { hostManifest } from "./host-manifest.ts";
+import { hostManifest, parseLocalTarballs } from "./host-manifest.ts";
 
 describe("consumer host manifest", () => {
   test("the tarball under test is the last word on its own package", () => {
@@ -18,9 +18,31 @@ describe("consumer host manifest", () => {
     expect(hostManifest("@alejoamiras/presto", "/tmp/p.tgz").name).toBe("host-default");
   });
 
-  test("a profile extra naming the tested package is rejected", () => {
+  test("local workspace tarballs install as file: dependencies beside the candidate", () => {
+    const manifest = hostManifest("@alejoamiras/presto", "/tmp/p.tgz", {}, undefined, {
+      "@alejoamiras/presto-core": "/tmp/core.tgz",
+    });
+    expect(manifest.dependencies).toEqual({
+      "@alejoamiras/presto-core": "file:/tmp/core.tgz",
+      "@alejoamiras/presto": "file:/tmp/p.tgz",
+    });
+    expect(parseLocalTarballs(["@alejoamiras/presto-core=/tmp/core.tgz"])).toEqual({
+      "@alejoamiras/presto-core": "/tmp/core.tgz",
+    });
+    expect(() => parseLocalTarballs(["nope"])).toThrow("expected name=tarball");
+    expect(() => parseLocalTarballs(["name="])).toThrow("expected name=tarball");
+    // The last pair would otherwise win silently, and the post-install check would confirm it.
+    expect(() => parseLocalTarballs(["a=/x.tgz", "a=/y/x.tgz"])).toThrow("supplied twice");
+  });
+
+  test("an extra or local tarball naming the tested package is rejected", () => {
     expect(() =>
       hostManifest("@alejoamiras/presto", "/tmp/p.tgz", { "@alejoamiras/presto": "testnet" }),
+    ).toThrow("must not name the package under test");
+    expect(() =>
+      hostManifest("@alejoamiras/presto", "/tmp/p.tgz", {}, undefined, {
+        "@alejoamiras/presto": "/tmp/other.tgz",
+      }),
     ).toThrow("must not name the package under test");
   });
 });
