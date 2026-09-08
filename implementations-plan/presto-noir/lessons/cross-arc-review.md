@@ -63,3 +63,7 @@ Commit 0ff2319.
 Codex re-ran its reproduction against the real `bun.lock` (the native compiler entry is in the
 slice; an integrity change moves it) and accepted the exact-expression contract test for the
 deployment. Three rounds.
+
+CI: `sdk.yml package=presto-core` dispatch 34198820547 on 0ff2319 green. Delivery: `gh stack submit
+--auto` → PRs #21 (noir-route), #22 (npm-tooling), #23 (sdk-core), #24 (sdk-noir), #25
+(playground-docs), stack #26.
