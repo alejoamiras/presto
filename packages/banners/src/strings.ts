@@ -73,7 +73,7 @@ export const VARIANT_COPY = {
   billboard: {
     title: "Fast proofs. Like magic",
     support:
-      "Install once. This app, and every Aztec app you open, proves at native speed instead of in your browser.",
+      "Install once. This app, and every Aztec or Noir app you open, proves at native speed instead of in your browser.",
     cta: CTA,
   },
   dock: {
@@ -87,13 +87,13 @@ export const VARIANT_COPY = {
     eyebrow: "Faster proofs",
     title: "Prove at native speed",
     support:
-      "Install Presto once and this app, and every Aztec app you open, gets faster. No setup, no accounts.",
+      "Install Presto once and this app, and every Aztec or Noir app you open, gets faster. No setup, no accounts.",
     cta: CTA,
     note: "Free · open source · macOS, Linux, Windows",
   },
   tile: {
     title: "Fast proofs.<br>Like magic.",
-    support: "Install once. Every Aztec app you open proves at native speed.",
+    support: "Install once. Every Aztec or Noir app you open proves at native speed.",
     cta: CTA,
     link: "How it works →",
   },
