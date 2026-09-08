@@ -7,6 +7,9 @@ mod ultra_honk;
 pub use ultra_honk::{
     prove_ultra_honk, UltraHonkJob, UltraHonkOutput, UnknownVerifierTarget, VerifierTarget,
 };
+pub(crate) use ultra_honk::{
+    read_outputs as read_ultra_honk_outputs, run_ultra_honk, UltraHonkWorkspace,
+};
 
 type BbError = Box<dyn std::error::Error + Send + Sync>;
 

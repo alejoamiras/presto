@@ -20,7 +20,7 @@ use serde::de::{self, IgnoredAny, MapAccess, Visitor};
 use serde_json::json;
 
 use crate::authorization::CanonicalOrigin;
-use crate::bb::{self, UltraHonkJob, VerifierTarget};
+use crate::bb::{self, UltraHonkJob, UltraHonkWorkspace, VerifierTarget};
 
 use super::auth::Approval;
 use super::prove::{acquire_prover, admit, set_duration_header, Admitted, Prover};
@@ -281,21 +281,30 @@ struct Held {
     prover: Prover,
 }
 
-/// Generic over what is held so the ownership rule can be tested without a whole server state.
-async fn decode_on_worker<H: Send + 'static>(
+/// Run `work` on a blocking worker that owns `held` until it returns; `work` may poll the cancel
+/// flag. Generic over what is held so the ownership rule is testable without a whole server state.
+async fn on_worker<H, T>(
     held: H,
-    raw: RawRequest,
-) -> Result<(H, DecodedJob), ProveError> {
+    work: impl FnOnce(&AtomicBool) -> Result<T, ProveError> + Send + 'static,
+) -> Result<(H, T), ProveError>
+where
+    H: Send + 'static,
+    T: Send + 'static,
+{
     let cancel = Arc::new(AtomicBool::new(false));
     let _cancel_on_drop = CancelOnDrop(cancel.clone());
     let worker = tokio::task::spawn_blocking(move || {
-        let decoded = decode_and_check(&raw, &cancel);
-        (held, decoded)
+        let out = work(&cancel);
+        (held, out)
     });
-    let (held, decoded) = worker
+    let (held, out) = worker
         .await
-        .map_err(|_| ProveError::ProveFailed("validation worker failed".into()))?;
-    Ok((held, decoded?))
+        .map_err(|_| ProveError::ProveFailed("blocking worker failed".into()))?;
+    Ok((held, out?))
+}
+
+fn prove_failed(e: impl std::fmt::Display) -> ProveError {
+    ProveError::ProveFailed(e.to_string())
 }
 
 /// A Settings removal that happened after this request's grant means the user withdrew consent
@@ -324,26 +333,37 @@ pub(crate) async fn prove_ultra_honk(
     let prover = acquire_prover(&state, &admitted.requested_version).await?;
     ensure_not_revoked(&state, &admitted.approval)?;
     let held = Held { admitted, prover };
-    let (held, decoded) = decode_on_worker(held, parsed.raw).await?;
+    let target = parsed.target;
+    let raw = parsed.raw;
+    let (held, decoded) = on_worker(held, move |cancel| decode_and_check(&raw, cancel)).await?;
     ensure_not_revoked(&state, &held.admitted.approval)?;
 
     let job = UltraHonkJob {
         bytecode: decoded.bytecode,
         witness: decoded.witness,
         vk: decoded.vk,
-        target: parsed.target,
+        target,
     };
+    let (held, workspace) = on_worker(held, move |_| {
+        UltraHonkWorkspace::create(&job).map_err(prove_failed)
+    })
+    .await?;
     let start = Instant::now();
-    let result = bb::prove_ultra_honk(job, held.prover.version.as_ref(), held.prover.threads).await;
+    let run = bb::run_ultra_honk(
+        &workspace,
+        target,
+        held.prover.version.as_ref(),
+        held.prover.threads,
+    )
+    .await;
     let elapsed = start.elapsed();
-    log_outcome(
-        &held.admitted.approval,
-        parsed.target,
-        result.is_ok(),
-        elapsed,
-    );
+    log_outcome(&held.admitted.approval, target, run.is_ok(), elapsed);
+    run.map_err(prove_failed)?;
 
-    let out = result.map_err(|e| ProveError::ProveFailed(e.to_string()))?;
+    let (_held, out) = on_worker(held, move |_| {
+        bb::read_ultra_honk_outputs(&workspace).map_err(prove_failed)
+    })
+    .await?;
     let mut response = axum::Json(render(&out)).into_response();
     set_duration_header(&mut response, elapsed);
     Ok(response)
@@ -540,39 +560,40 @@ mod tests {
     async fn a_dropped_request_releases_its_guards_only_after_the_worker_returns() {
         let permit_owner = Arc::new(tokio::sync::Semaphore::new(1));
         let permit = permit_owner.clone().acquire_owned().await.unwrap();
-        // 64 MiB of zeros is a few KiB on the wire but takes the worker well past the drop below.
-        let big = BASE64.encode(gz(&vec![0u8; 64 * 1024 * 1024]));
-        let raw = RawRequest {
-            bytecode: big.clone(),
-            witness: big,
-            vk: None,
-            verifier_target: "evm".into(),
-        };
+        let (entered_tx, entered_rx) = std::sync::mpsc::channel::<()>();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let (seen_tx, seen_rx) = std::sync::mpsc::channel::<bool>();
         {
-            let request = decode_on_worker(permit, raw);
+            let request = on_worker(permit, move |cancel| {
+                entered_tx.send(()).unwrap();
+                release_rx.recv().unwrap();
+                seen_tx.send(cancel.load(Ordering::Relaxed)).unwrap();
+                Ok(())
+            });
             tokio::pin!(request);
-            // Like a client disconnecting mid-validation: the request future is dropped at the end
-            // of this block while the worker is still inflating.
-            assert!(
-                tokio::time::timeout(Duration::from_millis(20), &mut request)
-                    .await
-                    .is_err()
-            );
+            // One poll spawns the worker, which then parks on `release_rx`; the request future is
+            // dropped at the end of this block, like a client disconnecting mid-validation.
+            assert!(tokio::time::timeout(Duration::from_millis(1), &mut request)
+                .await
+                .is_err());
+            entered_rx.recv().unwrap();
         }
         assert!(
             permit_owner.try_acquire().is_err(),
-            "still held by the detached worker"
+            "held by the parked worker after the request is gone"
         );
-        let released = tokio::time::timeout(Duration::from_secs(10), async {
+        release_tx.send(()).unwrap();
+        assert!(
+            seen_rx.recv().unwrap(),
+            "the worker observes the cancellation"
+        );
+        let released = tokio::time::timeout(Duration::from_secs(5), async {
             while permit_owner.try_acquire().is_err() {
-                tokio::time::sleep(Duration::from_millis(10)).await;
+                tokio::time::sleep(Duration::from_millis(5)).await;
             }
         })
         .await;
-        assert!(
-            released.is_ok(),
-            "the cancel flag stops the worker within a chunk and the permit follows"
-        );
+        assert!(released.is_ok(), "released once the worker returned");
     }
 
     #[test]

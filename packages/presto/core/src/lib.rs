@@ -43,12 +43,42 @@ pub fn presto_home() -> Option<PathBuf> {
 pub fn isolated_presto_home() -> Option<PathBuf> {
     let home = presto_home()?;
     let default = dirs::home_dir()?.join(".presto");
-    (!same_directory(&home, &default)).then_some(home)
+    let cwd = std::env::current_dir().ok()?;
+    (resolve_directory(&home, &cwd) != resolve_directory(&default, &cwd)).then_some(home)
 }
 
-fn same_directory(a: &std::path::Path, b: &std::path::Path) -> bool {
-    let resolve = |p: &std::path::Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
-    resolve(a) == resolve(b)
+/// The path a directory would occupy once created: absolute against `cwd`, with the longest existing
+/// prefix canonicalized so symlinked or not-yet-created aliases of one location compare equal.
+fn resolve_directory(path: &std::path::Path, cwd: &std::path::Path) -> PathBuf {
+    use std::path::Component;
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        cwd.join(path)
+    };
+    let components: Vec<Component> = absolute.components().collect();
+    let mut existing = components.len();
+    let mut resolved = loop {
+        let prefix: PathBuf = components[..existing].iter().collect();
+        if let Ok(canonical) = prefix.canonicalize() {
+            break canonical;
+        }
+        if existing == 0 {
+            return absolute;
+        }
+        existing -= 1;
+    };
+    // The remainder does not exist yet, so fold it the way `create_dir_all` would lay it out.
+    for component in &components[existing..] {
+        match component {
+            Component::ParentDir => {
+                resolved.pop();
+            }
+            Component::CurDir => {}
+            other => resolved.push(other.as_os_str()),
+        }
+    }
+    resolved
 }
 
 pub(crate) fn runtime_data_dir() -> Option<PathBuf> {
@@ -97,27 +127,30 @@ mod presto_home_tests {
     }
 
     #[test]
-    fn the_default_state_directory_is_not_an_isolated_home_even_through_a_symlink() {
+    fn aliases_of_the_default_state_directory_resolve_to_it_even_before_it_exists() {
         let root = tempfile::tempdir().unwrap();
-        let default = root.path().join(".presto");
+        let cwd = root.path().canonicalize().unwrap();
+        let default = cwd.join(".presto");
+        let resolve = |p: &std::path::Path| super::resolve_directory(p, &cwd);
+        // Not created yet: a relative spelling from the home directory is still the same place.
+        assert_eq!(resolve(std::path::Path::new(".presto")), default);
+        assert_eq!(resolve(&default), default);
+        assert_ne!(resolve(std::path::Path::new("other")), default);
         std::fs::create_dir(&default).unwrap();
-        assert!(super::same_directory(
-            &default,
-            &root.path().join(".presto")
-        ));
-        assert!(!super::same_directory(&default, &root.path().join("other")));
-        assert!(
-            !super::same_directory(
-                &root.path().join("missing-a"),
-                &root.path().join("missing-b")
-            ),
-            "unresolvable paths compare by name"
+        assert_eq!(
+            resolve(&cwd.join("sub").join("..").join(".presto")),
+            default
         );
         #[cfg(unix)]
         {
-            let alias = root.path().join("alias");
+            let alias = cwd.join("alias");
             std::os::unix::fs::symlink(&default, &alias).unwrap();
-            assert!(super::same_directory(&alias, &default));
+            assert_eq!(resolve(&alias), default);
+            assert_eq!(
+                resolve(&alias.join("later")),
+                default.join("later"),
+                "a missing leaf under a symlinked parent"
+            );
         }
     }
 }

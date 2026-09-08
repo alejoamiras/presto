@@ -145,6 +145,8 @@ async fn terminate_bb_on_shutdown_signal() {
         let _ = tokio::signal::ctrl_c().await;
     }
     tracing::info!("Shutdown signal received; terminating any in-flight bb");
+    // Quiesce first so a queued request cannot spawn a new bb after the registered one is killed.
+    let _quiesce = presto_core::bb::begin_quiesce();
     if let Err(e) = presto_core::bb::terminate_and_confirm(std::time::Duration::from_secs(5)).await
     {
         tracing::warn!(error = %e, "bb did not confirm exit before shutdown");

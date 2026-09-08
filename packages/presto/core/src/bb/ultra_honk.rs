@@ -119,6 +119,9 @@ pub struct UltraHonkOutput {
     pub vk: Option<Vec<u8>>,
 }
 
+/// The three stages of one proof — write the workspace, run bb, read the outputs — as a single call.
+/// The two file stages run on blocking workers; a caller that must keep admission guards alive
+/// across them (the HTTP handler) drives the stages itself so the guards travel with the work.
 pub async fn prove_ultra_honk(
     job: UltraHonkJob,
     version: Option<&versions::AztecVersion>,
@@ -134,26 +137,42 @@ pub(super) async fn prove_ultra_honk_with_timeout(
     threads: Option<usize>,
     timeout: Duration,
 ) -> Result<UltraHonkOutput, BbError> {
+    let target = job.target;
+    let workspace = blocking(move || UltraHonkWorkspace::create(&job)).await?;
+    run_ultra_honk_with_timeout(&workspace, target, version, threads, timeout).await?;
+    blocking(move || read_outputs(&workspace)).await
+}
+
+/// Run bb over a prepared workspace. No file I/O beyond bb's own; the caller owns the workspace.
+pub(crate) async fn run_ultra_honk(
+    workspace: &UltraHonkWorkspace,
+    target: VerifierTarget,
+    version: Option<&versions::AztecVersion>,
+    threads: Option<usize>,
+) -> Result<(), BbError> {
+    run_ultra_honk_with_timeout(workspace, target, version, threads, PROVE_TIMEOUT).await
+}
+
+async fn run_ultra_honk_with_timeout(
+    workspace: &UltraHonkWorkspace,
+    target: VerifierTarget,
+    version: Option<&versions::AztecVersion>,
+    threads: Option<usize>,
+    timeout: Duration,
+) -> Result<(), BbError> {
     // Same lease discipline as the chonk path: held across the whole run so an eviction cannot
     // unlink the binary between resolution and execution.
     let _lease = acquire_version_lease(version)?;
     let bb_path = find_bb(version).map_err(|e| -> BbError { e.into() })?;
-    let target = job.target;
-    let client_vk = job.vk.is_some();
-    // Tens of MiB may be written here; keep it off the async runtime like the inflate dry-run.
-    let workspace = blocking(move || UltraHonkWorkspace::create(&job)).await?;
-
     tracing::info!(
         version = version.map_or("bundled", |v| v.as_str()),
         ?threads,
         %target,
-        client_vk,
+        client_vk = workspace.vk_path.is_some(),
         "Starting bb prove (ultra_honk)"
     );
-
-    let mut cmd = build_ultra_honk_command(&bb_path, &workspace, target, threads)?;
-    run_bb(&mut cmd, timeout).await?;
-    blocking(move || read_outputs(&workspace)).await
+    let mut cmd = build_ultra_honk_command(&bb_path, workspace, target, threads)?;
+    run_bb(&mut cmd, timeout).await
 }
 
 async fn blocking<T: Send + 'static, E: Into<BbError> + Send + 'static>(
@@ -165,17 +184,26 @@ async fn blocking<T: Send + 'static, E: Into<BbError> + Send + 'static>(
     }
 }
 
-/// Private 0700 tempdir holding the three input files (0600) and bb's output directory.
-struct UltraHonkWorkspace {
+/// Private 0700 tempdir holding the three input files (0600) and bb's output directory. Writing it
+/// is tens of MiB of I/O, so it is created on a blocking worker.
+pub(crate) struct UltraHonkWorkspace {
     _dir: tempfile::TempDir,
     bytecode_path: PathBuf,
     witness_path: PathBuf,
+    /// The client's key on disk, when bb is given one.
     vk_path: Option<PathBuf>,
+    /// Whether the job carried a key: the response never echoes one, computed or not.
+    client_key: bool,
     output_dir: PathBuf,
 }
 
+/// bb.exe 5.2.0 reads the `-k` file in text mode: it stops at the first 0x1A byte (a 3680-byte key
+/// came back as 983) and would fold CRLF. Bytecode and witness are read in binary mode. So on Windows
+/// a client key is set aside and bb recomputes it; the result is the same proof.
+const BB_READS_KEY_IN_TEXT_MODE: bool = cfg!(windows);
+
 impl UltraHonkWorkspace {
-    fn create(job: &UltraHonkJob) -> std::io::Result<Self> {
+    pub(crate) fn create(job: &UltraHonkJob) -> std::io::Result<Self> {
         let dir = create_prove_tempdir()?;
         let bytecode_path = dir.path().join("bytecode.gz");
         let witness_path = dir.path().join("witness.gz");
@@ -184,6 +212,10 @@ impl UltraHonkWorkspace {
         write_witness(&bytecode_path, &job.bytecode)?;
         write_witness(&witness_path, &job.witness)?;
         let vk_path = match &job.vk {
+            Some(_) if BB_READS_KEY_IN_TEXT_MODE => {
+                tracing::info!("Client key set aside: this bb reads key files in text mode");
+                None
+            }
             Some(vk) => {
                 let path = dir.path().join("vk");
                 write_witness(&path, vk)?;
@@ -196,6 +228,7 @@ impl UltraHonkWorkspace {
             bytecode_path,
             witness_path,
             vk_path,
+            client_key: job.vk.is_some(),
             output_dir,
         })
     }
@@ -274,18 +307,18 @@ fn read_output(workspace: &UltraHonkWorkspace, name: &str, cap: u64) -> Result<V
         .map_err(|e| format!("bb output {name}: {e}").into())
 }
 
-fn read_outputs(workspace: &UltraHonkWorkspace) -> Result<UltraHonkOutput, BbError> {
+/// Read and validate bb's output files; blocking, so callers run it on a worker.
+pub(crate) fn read_outputs(workspace: &UltraHonkWorkspace) -> Result<UltraHonkOutput, BbError> {
     let proof = read_output(workspace, "proof", MAX_PROOF_BYTES)?;
     validate_proof_len(proof.len() as u64)?;
     let public_inputs = read_output(workspace, "public_inputs", MAX_PUBLIC_INPUT_BYTES)?;
     validate_public_inputs_len(public_inputs.len() as u64)?;
-    let vk = match workspace.vk_path {
-        Some(_) => None,
-        None => {
-            let vk = read_output(workspace, "vk", MAX_VK_BYTES)?;
-            validate_vk_len(vk.len() as u64)?;
-            Some(vk)
-        }
+    let vk = if workspace.client_key {
+        None
+    } else {
+        let vk = read_output(workspace, "vk", MAX_VK_BYTES)?;
+        validate_vk_len(vk.len() as u64)?;
+        Some(vk)
     };
     tracing::debug!(
         proof_bytes = proof.len(),
@@ -355,12 +388,21 @@ mod tests {
         assert_eq!(&args[..3], ["prove", "--scheme", "ultra_honk"]);
         assert_eq!(args[7], "-t");
         assert_eq!(args[8], "evm");
-        assert_eq!(args[11], "-k");
-        assert_eq!(
-            Path::new(&args[12]).file_name(),
-            Some(std::ffi::OsStr::new("vk"))
-        );
-        assert!(!args.iter().any(|a| a == "--write_vk"));
+        assert!(with_key.client_key);
+        if BB_READS_KEY_IN_TEXT_MODE {
+            assert!(
+                with_key.vk_path.is_none(),
+                "the key is set aside, not written"
+            );
+            assert_eq!(args.last().map(String::as_str), Some("--write_vk"));
+        } else {
+            assert_eq!(args[11], "-k");
+            assert_eq!(
+                Path::new(&args[12]).file_name(),
+                Some(std::ffi::OsStr::new("vk"))
+            );
+            assert!(!args.iter().any(|a| a == "--write_vk"));
+        }
 
         let without = UltraHonkWorkspace::create(&job(None)).unwrap();
         let cmd =
