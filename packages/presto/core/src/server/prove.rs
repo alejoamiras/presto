@@ -22,8 +22,9 @@ use super::auth::{authorize_origin, Approval};
 use super::ultra_honk::{OriginSlot, OriginSlots};
 use super::{AppState, ProveError, ServerStatus, StatusCallback};
 
-/// Drop guard that resets tray status to Idle when the prove handler exits for any reason
-/// (success, error, client disconnect, panic).
+/// Drop guard that resets tray status to Idle when the request's seats are released: with the handler
+/// on success or error, after the killed bb is reaped for an abandoned or timed-out request
+/// (see [`on_task`]), on unwind for a panic.
 struct StatusGuard {
     cb: Option<StatusCallback>,
 }
@@ -314,7 +315,6 @@ pub(super) struct Held {
     pub(super) prover: Prover,
 }
 
-/// Notifies the run's cancel signal when the awaiting future is dropped.
 struct CancelOnDrop(bb::Cancel);
 
 impl Drop for CancelOnDrop {
@@ -325,7 +325,8 @@ impl Drop for CancelOnDrop {
 
 /// Run `work` on its own task, which owns `held` until `work` returns. Dropping this future (client
 /// disconnect) does not stop the task; it fires `cancel`, on which bb kills its tree and waits for the
-/// reap before returning — so `held` is released only after bb is gone. Testable seam.
+/// reap before returning, so `held` is released only after bb is gone. A panic inside the task
+/// unwinds `held` without that wait.
 pub(super) async fn on_task<H, T, F>(
     held: H,
     work: impl FnOnce(H, bb::Cancel) -> F,
