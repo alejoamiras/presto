@@ -112,7 +112,7 @@ describe("publish job isolation", () => {
       expect(a).toBeGreaterThan(0);
       expect(b).toBeGreaterThan(a);
     };
-    // The digest travels as a job output, recorded before any registry code could run.
+    // The digest travels as a job output, recorded before the consumer job runs.
     before(pack, "sha256sum", "upload-artifact");
     expect(pack).not.toContain("sdk-tarball-consumer.sh");
     expect(pack).toMatch(/sha256: \$\{\{ steps\.pack\.outputs\.sha256 \}\}/);
@@ -138,6 +138,25 @@ describe("publish job isolation", () => {
       expect(install).toContain("--ignore-scripts");
     }
     expect(consumer).toMatch(/--package=typescript@\d+\.\d+\.\d+ /);
+  });
+
+  test("every caller checks the SIGNED statement's commit and workflow, not only the unsigned one", () => {
+    const source = (rel: string) => readFileSync(resolve(repository, rel), "utf8");
+    // Publication: the signed statement must name the dispatched commit.
+    expect(job(publish, "publish")).toContain(
+      'bun scripts/verify-sdk-package-signatures.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"',
+    );
+    // Reuse planning: the signed statement must name the tag's commit.
+    expect(source("scripts/release-plan.ts")).toContain(
+      "verifySdkPackageSignatures(version, pkg, tagCommit)",
+    );
+    // Promotion: the tag is compared against the signed commit, and a rollback's legacy-workflow
+    // allowance reaches the signed verification too.
+    const promote = source("scripts/promote-sdk-latest.ts");
+    expect(promote).toContain(
+      "const provenance = await verifySdkPackageSignatures(version, pkg, undefined, allowedWorkflows)",
+    );
+    expect(promote).toContain("tagCommit !== provenance.commit");
   });
 });
 

@@ -76,6 +76,7 @@ export async function verifySdkPackageSignatures(
   version: string,
   pkg: NpmPackage = NPM_PACKAGES.presto,
   expectedCommit?: string,
+  allowedWorkflows?: readonly string[],
 ): Promise<VerifiedProvenance> {
   if (!isValidVersion(pkg, version)) throw new Error(`invalid ${pkg.name} version ${version}`);
   const directory = await mkdtemp(join(tmpdir(), "presto-sdk-signature-audit-"));
@@ -100,7 +101,7 @@ export async function verifySdkPackageSignatures(
       verifiedProvenanceStatement(report, version, pkg),
       version,
       expectedCommit,
-      undefined,
+      allowedWorkflows,
       undefined,
       pkg,
     );
@@ -112,13 +113,14 @@ export async function verifySdkPackageSignatures(
 if (import.meta.main) {
   const { pkg, rest } = packageFromArgs(process.argv.slice(2));
   const version = rest[0];
+  const expectedCommit = rest[1];
   if (!version) {
     console.error(
-      "usage: bun scripts/verify-sdk-package-signatures.ts [--package <key>] <version>",
+      "usage: bun scripts/verify-sdk-package-signatures.ts [--package <key>] <version> [expected-commit]",
     );
     process.exit(1);
   }
-  const verified = await verifySdkPackageSignatures(version, pkg);
+  const verified = await verifySdkPackageSignatures(version, pkg, expectedCommit);
   console.log(
     `verified registry signatures and SLSA provenance for ${pkg.name}@${version} (${verified.commit}, ${verified.integrity})`,
   );

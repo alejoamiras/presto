@@ -249,9 +249,9 @@ jobs:
           }
           echo "npm $npm_version"
 
-      # Nothing is installed here: the verification scripts below import only repository modules
-      # and runtime built-ins, and even a locked dependency's lifecycle script (the root `prepare`)
-      # must not run beside the OIDC identity.
+      # No dependency lifecycle script runs in this job: the verification scripts below import only
+      # repository modules and runtime built-ins, so there is no lockfile install here — even a locked
+      # dependency's `prepare` must not run beside the OIDC identity.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
@@ -297,7 +297,7 @@ jobs:
           exit 1
 
       - name: Cryptographically verify registry signatures and provenance
-        run: bun scripts/verify-sdk-package-signatures.ts --package "$PACKAGE" "$VERSION"
+        run: bun scripts/verify-sdk-package-signatures.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"
 
       - name: Create git tag and GitHub release
         env:

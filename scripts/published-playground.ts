@@ -115,7 +115,6 @@ if (import.meta.main) {
     return result.stdout.toString().trim();
   };
   const readJson = (rel: string) => Bun.file(join(root, rel)).json();
-  /** Signed provenance plus a tarball whose bytes carry the digest it names. */
   const fetchVerified = async (pkg: NpmPackage, version: string) => {
     const spec = `${pkg.name}@${version}`;
     const provenance = await verifySdkPackageSignatures(version, pkg);
