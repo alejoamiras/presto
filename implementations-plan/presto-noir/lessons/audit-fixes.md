@@ -151,3 +151,45 @@ the private `PRESTO_HOME` — both serialized, the former on its own private hom
 deferred-cleanup loop corrected: the passes bound retry duration, not residency.
 
 **Round 3** — "no new material findings." Converged after 3 rounds.
+**Round 3** — "no new material findings." Converged after 3 rounds.
+
+## Step 4 — npm re-release
+
+Dry run 34280070511 (`packages=all`, after #32 and #33 merged) planned: core 1.0.1 publish,
+noir 1.0.1 publish, presto 5.2.0-revision.2 publish, each adapter's provenance and consumer rerun
+deferred to after core. Real run 34280233253 dispatched next — the first end-to-end exercise of the
+split `_publish-npm.yml`.
+Run 34280233253: `npm publish` of core 1.0.1 succeeded (commit eaa6288), but the verification
+step got HTTP 404 for the attestation for its whole 60 s window and the job failed before the tag
+and GitHub release. The attestation appeared minutes later; both verifiers pass locally. The
+auto-mode classifier blocked my tag push, so the record repair (tag + release) is the owner's;
+PR #35 widens the wait to ten minutes. Redispatch after both.
+
+## Step 5 — Presto 1.1.1
+
+Dispatched run 34281717754 (`version=1.1.1`) from main at 0a8960b (carries #28, #34).
+Run 34281717754 succeeded: `presto-v1.1.1` tagged at 0a8960b, published non-draft non-prerelease
+with 17 assets; `latest.json` names 1.1.1, four platforms, non-empty signatures, exact release
+URLs; macOS notarization and every updater smoke (positive and negative) green.
+Promote-only dry run 34283994541 green; promotion 34284199732 flipped the KV feed, verified the
+live feed, marked `presto-v1.1.1` GitHub Latest, and opened bump PR #36 (1.1.2-rc.1); its
+`gh pr merge --auto` failed as before ("Auto merge is not allowed"), so #36 is merged by hand once
+green.
+
+## Steps 6–8 — promotion, close-out, wrap-up
+
+Promotion to `latest` is the owner's (OTP): `bun run sdk:promote -- --package presto-core 1.0.1`,
+`bun run sdk:promote -- --package presto-noir 1.0.1`, `bun run sdk:promote -- 5.2.0-revision.2`,
+each with `--dry-run` first, after noir 1.0.1 and presto 5.2.0-revision.2 are on `testnet`.
+
+Open at close-out: the core 1.0.1 tag/release repair and the redispatch of `release-sdk.yml
+packages=all` (owner), PR #35 (attestation wait), bump PR #36 (red on three npm advisories
+published after the last green audit: extract-zip, js-yaml, sharp — accept or bump). The worktree
+`presto-noir` can be removed with `agent-worktree done presto-noir` once those merge.
+
+Contentious decisions, with the call: no demotion generation bump in `PrestoClient` (it would
+invalidate the demoting attempt's own legitimate retry; binding the URL to the attempt's own check
+closes the race — codex concurred); no injectable seam in `verifyPromotionCandidate` for a mocked
+unsigned-vs-signed test (source-contract test instead — codex concurred); activity mark only after a
+completed proof rather than at resolve or execution start (codex's round-1 finding, accepted);
+bounded twelve-pass cleanup retry rather than a perpetual loop (codex accepted the bound).

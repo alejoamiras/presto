@@ -1,5 +1,5 @@
 {
-  "reviewed": "2026-09-07",
+  "reviewed": "2026-09-08",
   "exceptions": [
     {
       "ecosystem": "npm",
@@ -56,6 +56,30 @@
       "expires": "2026-11-30",
       "reason": "Mocha 10 pins serialize-javascript 6. It is used only by the desktop test runner with repository-controlled values.",
       "upgrade": "Remove after the WebdriverIO Mocha adapter accepts serialize-javascript 7.1.1 or newer."
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-7pqw-9j4j-h8q3",
+      "package": "extract-zip",
+      "expires": "2026-11-30",
+      "reason": "No patched extract-zip release exists; it is only used by WebdriverIO browser tooling against trusted downloads.",
+      "upgrade": "Remove when extract-zip publishes a patched release and WebdriverIO resolves it."
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-2883-xcg3-v3hh",
+      "package": "js-yaml",
+      "expires": "2026-11-30",
+      "reason": "Reached only through commitlint's config loader, which parses this repository's own files. js-yaml 4.3.2 fixes it but is newer than the install release-age gate allows.",
+      "upgrade": "Remove once js-yaml 4.3.2 clears the release-age gate and the lockfile is refreshed."
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-rgj7-g3m4-5g8c",
+      "package": "sharp",
+      "expires": "2026-11-30",
+      "reason": "Pinned exactly by miniflare (wrangler's local dev runtime); only wrangler's local tooling loads it, never a shipped bundle. sharp 0.35.4 fixes it.",
+      "upgrade": "Remove when wrangler's miniflare moves to sharp 0.35.4 or newer."
     }
   ]
 }
