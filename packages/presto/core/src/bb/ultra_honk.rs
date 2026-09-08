@@ -142,18 +142,28 @@ pub(super) async fn prove_ultra_honk_with_timeout(
 ) -> Result<UltraHonkOutput, BbError> {
     let target = job.target;
     let workspace = blocking(move || UltraHonkWorkspace::create(&job)).await?;
-    run_ultra_honk_with_timeout(&workspace, target, version, threads, timeout).await?;
+    run_ultra_honk_with_timeout(&workspace, target, version, threads, timeout, None).await?;
     blocking(move || read_outputs(&workspace)).await
 }
 
-/// Run bb over a prepared workspace. No file I/O beyond bb's own; the caller owns the workspace.
+/// Run bb over a prepared workspace; notifying `cancel` kills the tree and the call returns once the
+/// child is reaped (see [`super::prove_cancellable`]). The caller owns the workspace.
 pub(crate) async fn run_ultra_honk(
     workspace: &UltraHonkWorkspace,
     target: VerifierTarget,
     version: Option<&versions::AztecVersion>,
     threads: Option<usize>,
+    cancel: super::Cancel,
 ) -> Result<(), BbError> {
-    run_ultra_honk_with_timeout(workspace, target, version, threads, PROVE_TIMEOUT).await
+    run_ultra_honk_with_timeout(
+        workspace,
+        target,
+        version,
+        threads,
+        PROVE_TIMEOUT,
+        Some(cancel),
+    )
+    .await
 }
 
 async fn run_ultra_honk_with_timeout(
@@ -162,6 +172,7 @@ async fn run_ultra_honk_with_timeout(
     version: Option<&versions::AztecVersion>,
     threads: Option<usize>,
     timeout: Duration,
+    cancel: Option<super::Cancel>,
 ) -> Result<(), BbError> {
     // Same lease discipline as the chonk path: held across the whole run so an eviction cannot
     // unlink the binary between resolution and execution.
@@ -175,7 +186,7 @@ async fn run_ultra_honk_with_timeout(
         "Starting bb prove (ultra_honk)"
     );
     let mut cmd = build_ultra_honk_command(&bb_path, workspace, target, threads)?;
-    run_bb(&mut cmd, timeout).await
+    run_bb(&mut cmd, timeout, cancel).await
 }
 
 async fn blocking<T: Send + 'static, E: Into<BbError> + Send + 'static>(

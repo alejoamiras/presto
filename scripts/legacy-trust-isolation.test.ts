@@ -113,4 +113,6 @@ test.skipIf(!certutil || !openssl)(
       rmSync(directory, { recursive: true, force: true });
     }
   },
+  // NSS setup and verification can exceed bun's 5 s default on a loaded CI runner.
+  30_000,
 );

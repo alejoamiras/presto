@@ -23,7 +23,7 @@ use crate::authorization::CanonicalOrigin;
 use crate::bb::{self, UltraHonkJob, UltraHonkWorkspace, VerifierTarget};
 
 use super::auth::Approval;
-use super::prove::{acquire_prover, admit, set_duration_header, Admitted, Prover};
+use super::prove::{acquire_prover, admit, on_task, set_duration_header, Held};
 use super::{AppState, ProveError, MAX_INFLIGHT_PROVE};
 
 /// Half the global inflight cap: a multi-tab dApp still queues on the prove permit like chonk, while
@@ -273,16 +273,10 @@ impl Drop for CancelOnDrop {
     }
 }
 
-/// Everything the request holds while the worker runs. Moved INTO the blocking closure and handed
-/// back on completion: tokio cannot cancel a blocking task, so if the request future is dropped these
-/// guards must die with the worker, not before it.
-struct Held {
-    admitted: Admitted,
-    prover: Prover,
-}
-
 /// Run `work` on a blocking worker that owns `held` until it returns; `work` may poll the cancel
-/// flag. Generic over what is held so the ownership rule is testable without a whole server state.
+/// flag. tokio cannot cancel a blocking task, so if the request future is dropped the guards must die
+/// with the worker, not before it. Generic over what is held so the rule is testable without a whole
+/// server state.
 async fn on_worker<H, T>(
     held: H,
     work: impl FnOnce(&AtomicBool) -> Result<T, ProveError> + Send + 'static,
@@ -351,13 +345,19 @@ pub(crate) async fn prove_ultra_honk(
     // Last check before bb starts: the workspace write is another window for a Settings removal.
     ensure_not_revoked(&state, &held.admitted.approval)?;
     let start = Instant::now();
-    let run = bb::run_ultra_honk(
-        &workspace,
-        target,
-        held.prover.version.as_ref(),
-        held.prover.threads,
-    )
-    .await;
+    let ((held, workspace), run) =
+        on_task((held, workspace), |(held, workspace), cancel| async move {
+            let run = bb::run_ultra_honk(
+                &workspace,
+                target,
+                held.prover.version.as_ref(),
+                held.prover.threads,
+                cancel,
+            )
+            .await;
+            ((held, workspace), run)
+        })
+        .await?;
     let elapsed = start.elapsed();
     log_outcome(&held.admitted.approval, target, run.is_ok(), elapsed);
     run.map_err(prove_failed)?;
