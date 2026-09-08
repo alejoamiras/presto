@@ -31,8 +31,8 @@ the same on every site. Six surfaces, one state model, keyed to the SDK's `Prest
 <presto-banner variant="ribbon"></presto-banner>
 ```
 
-The banner renders **nothing until `state` is set**, so an installed user never sees a flash of the
-install pitch. Set it from the status check, not on page load.
+The banner renders **nothing until `state` is set** (the static Tile is the one exception), so an
+installed user never sees a flash of the install pitch. Set it from the status check, not on page load.
 
 ### Attributes
 
@@ -47,7 +47,10 @@ install pitch. Set it from the status check, not on page load.
 | `fonts`        | `google` (links Bricolage Grotesque + Figtree once) or `none` | `google`        |
 | `os`           | `macOS` `Windows` `Linux`, forces the Sheet's CTA label   | detected from the user agent |
 
-Properties mirror the attributes; `banner.status = prestoStatus` runs `stateFromStatus` for you.
+Set attributes with `setAttribute()`. Two properties exist on top: `banner.state` (read/write,
+reflects the attribute) and `banner.status = prestoStatus` (write-only, runs `stateFromStatus`).
+`variant`, `href`, `platform`, `dismissDays` and `persistKey` are read-only getters. Changing `href`
+or `os` patches the CTA in place; the Sheet's checkbox and focus survive.
 
 ### States
 
@@ -55,6 +58,10 @@ Properties mirror the attributes; `banner.status = prestoStatus` runs `stateFrom
 crossfade to "Presto connected ✦", 1600ms hold, 350ms collapse) and hides; otherwise it stays
 hidden. `permission-blocked`, `secure-connection-unavailable`, `version-mismatch` and `error` render
 a gold "fix it" strip with a Retry button (Ribbon only); `downloading` shows a breathing dot.
+
+`stateFromStatus` knows one SDK subtlety: under the browser's HTTPS-only default an *uninstalled*
+Presto reports `secure-connection-unavailable` with diagnosis `unconfirmed`, not `offline`. That pair
+maps to `offline` (the install pitch); the other diagnoses mean Presto is there and HTTPS needs fixing.
 
 ### Events
 
@@ -71,7 +78,8 @@ All bubble and are `composed`; `detail` carries `{ variant, state, href }`.
 - Dock only after a proof actually starts in the browser. Sheet once before the first proof.
 - Dismissals persist per variant **and state**, so dismissing the pitch never silences a later
   "browser blocked local access".
-- Every surface has a dismiss; the Sheet's decline is "Continue in browser". Nothing blocks.
+- Every status-driven surface has a dismiss; the Sheet is a native modal `<dialog>` whose decline
+  is "Continue in browser" and whose Escape dismisses. The static Tile has no dismiss. Nothing blocks.
 
 ### Theming
 
@@ -92,3 +100,7 @@ bun run typecheck
 bun run dev                    # demo page for manual review
 bun run build                  # tsc → dist (publish artifact)
 ```
+
+`exports` point at TypeScript source for workspace consumers, like the SDK. Publishing to npm needs
+the same dist rewrite the SDK's `scripts/prepare-sdk-publish.ts` does (both entries), plus a trusted
+publisher for this package name; neither is wired yet.

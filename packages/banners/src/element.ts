@@ -1,9 +1,9 @@
 import { ensureFonts } from "./fonts.js";
 import { dismiss, isDismissed } from "./persistence.js";
 import { detectPlatform } from "./platform.js";
-import { render } from "./render.js";
+import { detectedContent, render } from "./render.js";
 import { stateFromStatus } from "./status.js";
-import { VARIANT_STATES } from "./strings.js";
+import { VARIANT_COPY, VARIANT_STATES } from "./strings.js";
 import { STYLES } from "./styles.js";
 import {
   BANNER_EVENTS,
@@ -19,26 +19,38 @@ import {
 export const DEFAULT_HREF = "https://presto.build";
 export const DEFAULT_PERSIST_KEY = "presto:banner";
 const PLATFORMS: readonly BannerPlatform[] = ["macOS", "Windows", "Linux"];
+/** Attributes that only touch the CTA; patched in place so a re-render can't reset the Sheet. */
+const CTA_ATTRIBUTES = new Set(["href", "os"]);
 
 // Importing this module must be safe where there is no DOM (SSR, Node scripts): the class is only
 // ever constructed by `customElements`, which those runtimes don't have either.
 const Base = (typeof HTMLElement === "undefined" ? class {} : HTMLElement) as typeof HTMLElement;
 
+/** Only http(s) install links; anything else (javascript:, data:, garbage) falls back to the default. */
+function safeHref(raw: string | null, base: string | undefined): string {
+  if (!raw) return DEFAULT_HREF;
+  try {
+    const url = new URL(raw, base);
+    return url.protocol === "https:" || url.protocol === "http:" ? url.href : DEFAULT_HREF;
+  } catch {
+    return DEFAULT_HREF;
+  }
+}
+
 /**
  * `<presto-banner variant state theme href persist-key fonts os dismiss-days>`.
  *
- * Renders nothing until `state` is set, so an installed user never sees a flash of the install
- * pitch. `available` never paints: if the banner was showing, it plays the detected morph
- * (crossfade → hold → collapse) and hides; otherwise it stays hidden. Dismissals persist per
- * variant and state under `persist-key` for `dismiss-days` (default 7), or forever from the Sheet's
- * checkbox.
+ * Renders nothing until `state` is set (Tile excepted: it is static placement), so an installed user
+ * never sees a flash of the install pitch. `available` never paints: if the banner was showing, it
+ * plays the detected morph (crossfade → hold → collapse) and hides; otherwise it stays hidden.
+ * Dismissals persist per variant and state under `persist-key` for `dismiss-days` (default 7), or
+ * forever from the Sheet's checkbox.
  */
 export class PrestoBanner extends Base {
   static readonly tagName = "presto-banner";
   static readonly observedAttributes = [
     "variant",
     "state",
-    "theme",
     "href",
     "persist-key",
     "fonts",
@@ -50,10 +62,13 @@ export class PrestoBanner extends Base {
 
   readonly #shadow: ShadowRoot;
   #timers: ReturnType<typeof setTimeout>[] = [];
+  /** Set by `connectedCallback`; upgrades of already-connected markup queue attribute callbacks first. */
+  #connected = false;
   /** Currently painted. Drives the entrance animation and whether `available` morphs or just hides. */
   #shown = false;
   /** Hid itself after a morph; a later non-`available` state re-arms it. */
   #collapsed = false;
+  #morphing = false;
 
   constructor() {
     super();
@@ -83,7 +98,7 @@ export class PrestoBanner extends Base {
   }
 
   get href(): string {
-    return this.getAttribute("href") || DEFAULT_HREF;
+    return safeHref(this.getAttribute("href"), this.ownerDocument?.baseURI);
   }
 
   get platform(): BannerPlatform | null {
@@ -104,18 +119,22 @@ export class PrestoBanner extends Base {
   }
 
   connectedCallback(): void {
+    this.#connected = true;
     ensureFonts(this.getAttribute("fonts"));
     this.#update();
   }
 
   disconnectedCallback(): void {
+    this.#connected = false;
     this.#clearTimers();
+    this.#morphing = false;
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
-    if (!this.isConnected || oldValue === newValue) return;
+    if (!this.#connected || oldValue === newValue) return;
     if (name === "fonts") ensureFonts(newValue);
-    if (name !== "theme") this.#update();
+    else if (CTA_ATTRIBUTES.has(name) && this.#shown) this.#patchCta();
+    else this.#update();
   }
 
   #update(): void {
@@ -140,33 +159,68 @@ export class PrestoBanner extends Base {
 
   #paint(variant: BannerVariant, state: BannerState): void {
     this.#clearTimers();
+    this.#morphing = false;
     const enter = !this.#shown;
     const { href, platform } = this;
     this.#shadow.innerHTML = `<style>${STYLES}</style>${render({ variant, state, href, platform, enter })}`;
     this.hidden = false;
     this.#shown = true;
-    if (variant === "sheet") {
-      this.classList.toggle("is-enter", enter);
-      this.#shadow.querySelector<HTMLElement>('[data-action="cta"]')?.focus();
-    }
+    if (variant === "sheet") this.#openSheet(enter);
+  }
+
+  /**
+   * Native modal: focus containment, inert background, focus restore on close. `cancel` (Escape) and
+   * `close` don't bubble, so they are wired on the dialog itself; the dialog is recreated per paint.
+   */
+  #openSheet(enter: boolean): void {
+    const dialog = this.#shadow.querySelector<HTMLDialogElement>("dialog");
+    if (!dialog || dialog.open) return;
+    dialog.addEventListener("cancel", (event) => {
+      event.preventDefault();
+      if (this.#shown) this.#dismiss();
+    });
+    // Anything else that closes it (a form method=dialog, devtools) is a dismissal too.
+    dialog.addEventListener("close", () => {
+      if (this.#shown) this.#dismiss();
+    });
+    if (typeof dialog.showModal === "function") dialog.showModal();
+    else dialog.setAttribute("open", "");
+    if (enter) this.#shadow.querySelector<HTMLElement>('[data-action="cta"]')?.focus();
+  }
+
+  #patchCta(): void {
+    const cta = this.#shadow.querySelector<HTMLAnchorElement>('[data-action="cta"]');
+    if (!cta) return;
+    cta.setAttribute("href", this.href);
+    if (this.variant !== "sheet") return;
+    const { cta: plain, ctaFor } = VARIANT_COPY.sheet;
+    const { platform } = this;
+    cta.textContent = platform ? `${ctaFor} ${platform}` : plain;
   }
 
   #hide(): void {
     this.#clearTimers();
-    this.hidden = true;
+    this.#morphing = false;
+    // Flags first: the dialog's `close` listener treats a close while shown as a user dismissal.
     this.#shown = false;
-    this.classList.remove("is-enter");
+    this.hidden = true;
+    const dialog = this.#shadow.querySelector<HTMLDialogElement>("dialog");
+    if (dialog?.open) dialog.close();
     this.#shadow.innerHTML = "";
   }
 
   #morph(): void {
-    this.#clearTimers();
+    if (this.#morphing) return;
     const root = this.#shadow.querySelector(".root");
-    if (!root) {
+    const overlay = root?.querySelector(".detected");
+    if (!root || !overlay) {
       this.#hide();
       return;
     }
+    this.#morphing = true;
     const { morph, hold, collapse } = PrestoBanner.timings;
+    overlay.innerHTML = detectedContent();
+    root.firstElementChild?.setAttribute("inert", "");
     root.setAttribute("data-phase", "detected");
     this.#after(morph + hold, () => root.setAttribute("data-phase", "gone"));
     this.#after(morph + hold + collapse, () => {
@@ -205,12 +259,13 @@ export class PrestoBanner extends Base {
     if (event.key === "Escape" && this.variant === "sheet" && this.#shown) this.#dismiss();
   }
 
+  /** Hide before emitting: a listener that sets a new state must not be undone by the teardown. */
   #dismiss(): void {
     const never = this.#shadow.querySelector<HTMLInputElement>('[data-role="never"]');
     const forever = never?.checked === true;
     dismiss(this.persistKey, { days: this.dismissDays, forever });
-    this.#emit(BANNER_EVENTS.dismiss, { forever });
     this.#hide();
+    this.#emit(BANNER_EVENTS.dismiss, { forever });
   }
 
   /** Dispatch a bubbling, composed event; returns `false` when a listener called `preventDefault()`. */

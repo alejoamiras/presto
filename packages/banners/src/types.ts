@@ -28,6 +28,8 @@ export type BannerPlatform = "macOS" | "Windows" | "Linux";
 export interface PrestoStatusLike {
   readonly available: boolean;
   readonly reason?: string;
+  /** SDK's `SecureConnectionDiagnosis`; `unconfirmed` means Presto may simply not be installed. */
+  readonly diagnosis?: string;
   readonly needsDownload?: boolean;
 }
 

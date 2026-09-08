@@ -39,8 +39,14 @@ function closeButton(): string {
   return `<button type="button" class="x" data-action="dismiss" aria-label="${DISMISS}">${CLOSE}</button>`;
 }
 
+/** Empty until the morph fills it, so assistive tech never reads "connected" while offline. */
 function detectedOverlay(): string {
-  return `<div class="detected" aria-live="polite">${CHECK}<span>${CONNECTED_TITLE} ${SPARK_GLYPH} ${CONNECTED_SUPPORT}</span></div>`;
+  return `<div class="detected" aria-live="polite"></div>`;
+}
+
+/** Markup the element writes into the overlay when a showing banner flips to `available`. */
+export function detectedContent(): string {
+  return `${CHECK}<span>${CONNECTED_TITLE} ${SPARK_GLYPH} ${CONNECTED_SUPPORT}</span>`;
 }
 
 function wordmark(): string {
@@ -119,7 +125,7 @@ function tile(ctx: RenderContext, enter: string): string {
 function sheet(ctx: RenderContext, enter: string): string {
   const c = VARIANT_COPY.sheet;
   const cta = ctx.platform ? `${c.ctaFor} ${ctx.platform}` : c.cta;
-  return `<div class="sheet${enter}" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+  return `<dialog class="sheet${enter}" aria-labelledby="sheet-title">
     <div class="brand">${BOLT}${wordmark()}</div>
     <h2 class="title" id="sheet-title">${c.title}</h2>
     <p class="support">${c.support}</p>
@@ -131,7 +137,8 @@ function sheet(ctx: RenderContext, enter: string): string {
       <label><input type="checkbox" data-role="never"> ${c.never}</label>
       <span>${c.foot} <a href="${RELEASES}" target="_blank" rel="noopener">${c.otherPlatforms}</a></span>
     </div>
-  </div>${detectedOverlay()}`;
+    ${detectedOverlay()}
+  </dialog>`;
 }
 
 const TEMPLATES: Record<BannerVariant, (ctx: RenderContext, enter: string) => string> = {

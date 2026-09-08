@@ -11,7 +11,6 @@ const LIGHT = `
   --pb-gold: #ffc53d; --pb-gold-text: #7a5a00; --pb-go: #189e62; --pb-go-text: #147a4c;
   --pb-shadow: 0 10px 30px -14px rgba(36,27,51,.18); --pb-shadow-big: 0 24px 60px -28px rgba(36,27,51,.32);
   --pb-solid: #3b4fe0; --pb-solid-deep: #2f40c4;
-  --pb-backdrop: rgba(36,27,51,.42);
 `;
 
 const DARK = `
@@ -21,7 +20,6 @@ const DARK = `
   --pb-gold: #ffd066; --pb-gold-text: #ffd87e; --pb-go: #3fce8c; --pb-go-text: #3fce8c;
   --pb-shadow: 0 10px 30px -14px rgba(0,0,0,.5); --pb-shadow-big: 0 24px 60px -28px rgba(0,0,0,.65);
   --pb-solid: #3446cf; --pb-solid-deep: #2b3ab0;
-  --pb-backdrop: rgba(0,0,0,.58);
 `;
 
 export const STYLES = `
@@ -37,8 +35,7 @@ export const STYLES = `
 :host([hidden]) { display: none !important; }
 :host([variant="card"]), :host([variant="tile"]) { display: inline-block; width: 300px; max-width: 100%; }
 :host([variant="dock"]) { position: fixed; right: 16px; bottom: 16px; z-index: var(--pb-z); width: min(440px, calc(100vw - 32px)); }
-:host([variant="sheet"]) { position: fixed; inset: 0; z-index: var(--pb-z); display: flex; align-items: center; justify-content: center; padding: 20px; background: var(--pb-backdrop); }
-:host([variant="sheet"].is-enter) { animation: backdrop .25s ease both; }
+:host([variant="sheet"]) { display: block; }
 *, *::before, *::after { box-sizing: border-box; }
 p, h2 { margin: 0; }
 a { color: inherit; }
@@ -151,9 +148,14 @@ a { color: inherit; }
 .tile .link:hover { text-decoration: underline; }
 
 /* Sheet */
-.root-sheet { width: min(460px, 100%); }
-.sheet { width: 100%; background: var(--pb-surface); border: 1px solid var(--pb-border); border-radius: 24px; box-shadow: var(--pb-shadow-big); padding: 24px 26px 22px; }
+/* Native modal in the top layer: the wrapper's morph opacity can't reach it, so the dialog fades itself. */
+dialog.sheet { position: relative; width: min(460px, calc(100vw - 40px)); max-width: none; margin: auto; color: var(--pb-text); background: var(--pb-surface); border: 1px solid var(--pb-border); border-radius: 24px; box-shadow: var(--pb-shadow-big); padding: 24px 26px 22px; font-family: var(--pb-font-body); transition: opacity .35s ease, transform .35s ease; }
+dialog.sheet::backdrop { background: rgba(36,27,51,.42); }
+@media (prefers-color-scheme: dark) { :host(:not([theme="light"])) dialog.sheet::backdrop { background: rgba(0,0,0,.58); } }
+:host([theme="dark"]) dialog.sheet::backdrop { background: rgba(0,0,0,.58); }
+.root[data-phase="gone"] dialog.sheet { opacity: 0; transform: translateY(-6px) scale(.985); }
 .sheet.is-enter { animation: pop .35s cubic-bezier(.22,.61,.36,1) both; }
+.sheet.is-enter::backdrop { animation: backdrop .25s ease both; }
 .sheet .brand { display: flex; align-items: center; gap: 7px; font-size: 15px; }
 .sheet .brand .ico-bolt { width: 20px; height: 20px; color: var(--pb-accent); }
 .sheet .title { font-size: 25px; margin: 14px 0 8px; }
@@ -178,7 +180,7 @@ a { color: inherit; }
 @media (prefers-reduced-motion: reduce) {
   .tw, .dot, .badge, .illo, .big-bolt, .race-slow { animation: none !important; }
   .race-slow { width: 60%; }
-  .is-enter, :host([variant="sheet"].is-enter) { animation: backdrop .15s ease both !important; }
+  .is-enter, .is-enter::backdrop { animation: backdrop .15s ease both !important; }
   .btn { transition: none; }
 }
 `;

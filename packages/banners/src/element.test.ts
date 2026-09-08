@@ -103,18 +103,36 @@ describe("<presto-banner> lifecycle", () => {
     expect(mount({ variant: "ribbon", state: "offline" }).hidden).toBe(false);
   });
 
-  test("sheet: names the platform, Escape dismisses, the checkbox dismisses forever", () => {
+  test("sheet: a native modal that names the platform; cancel/Escape dismiss; checkbox is forever", () => {
     const el = mount({ variant: "sheet", state: "offline", os: "Windows" });
+    const dialog = query<HTMLDialogElement>(el, "dialog");
+    expect(dialog?.open).toBe(true);
     expect(query(el, '[data-action="cta"]')?.textContent).toBe("Get Presto for Windows");
-    expect(query(el, '[role="dialog"]')?.getAttribute("aria-modal")).toBe("true");
+    // href/os changes patch the CTA in place: the checkbox and focus survive.
     const never = query<HTMLInputElement>(el, '[data-role="never"]');
     if (!never) throw new Error("checkbox missing");
     never.checked = true;
-    el.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    el.setAttribute("os", "Linux");
+    expect(query(el, '[data-action="cta"]')?.textContent).toBe("Get Presto for Linux");
+    expect(query<HTMLInputElement>(el, '[data-role="never"]')?.checked).toBe(true);
+    dialog?.dispatchEvent(new Event("cancel", { bubbles: true, cancelable: true }));
     expect(el.hidden).toBe(true);
     setSystemTime(new Date("2099-01-01T00:00:00Z"));
     expect(mount({ variant: "sheet", state: "offline" }).hidden).toBe(true);
-    expect(mount({ variant: "sheet", state: "offline", os: "nope" }).hidden).toBe(true);
+    localStorage.clear();
+    const again = mount({ variant: "sheet", state: "offline", os: "nope" });
+    again.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }));
+    expect(again.hidden).toBe(true);
+  });
+
+  test("a dismiss listener that sets a new state is not undone by the teardown", () => {
+    const el = mount({ variant: "ribbon", state: "offline" });
+    el.addEventListener(BANNER_EVENTS.dismiss, () => {
+      el.state = "permission-blocked";
+    });
+    click(el, '[data-action="dismiss"]');
+    expect(el.hidden).toBe(false);
+    expect(query(el, ".ribbon")?.getAttribute("data-tone")).toBe("warn");
   });
 
   test("available morphs only a showing banner, collapses, and re-arms on a later offline", async () => {
@@ -123,9 +141,17 @@ describe("<presto-banner> lifecycle", () => {
     expect(shadow(fresh).innerHTML).toBe("");
 
     const el = mount({ variant: "billboard", state: "offline" });
+    // The live region stays empty until the morph fills it.
+    expect(query(el, ".detected")?.textContent).toBe("");
     const collapsed = nextEvent(el, BANNER_EVENTS.collapsed);
     el.status = { available: true, needsDownload: false };
     expect(el.getAttribute("state")).toBe("available");
+    expect(query(el, ".root")?.getAttribute("data-phase")).toBe("detected");
+    expect(query(el, ".detected")?.textContent).toContain("Presto connected");
+    expect(query(el, ".billboard")?.hasAttribute("inert")).toBe(true);
+    // Attribute churn mid-morph must not restart the timers.
+    el.setAttribute("href", "https://example.com/x");
+    el.setAttribute("dismiss-days", "3");
     expect(query(el, ".root")?.getAttribute("data-phase")).toBe("detected");
     await collapsed;
     expect(el.hidden).toBe(true);
@@ -143,11 +169,18 @@ describe("<presto-banner> lifecycle", () => {
     expect(document.querySelectorAll("#presto-banner-fonts")).toHaveLength(1);
   });
 
-  test("href is escaped into the anchor and unknown variants fall back to ribbon", () => {
+  test("href is escaped, http(s)-only, and unknown variants fall back to ribbon", () => {
     const href = 'https://example.com/?a=1&b="2"';
     const el = mount({ variant: "nope" as BannerVariant, state: "offline", href });
     expect(el.variant).toBe("ribbon");
-    expect(query(el, '[data-action="cta"]')?.getAttribute("href")).toBe(href);
+    expect(query(el, '[data-action="cta"]')?.getAttribute("href")).toBe(
+      "https://example.com/?a=1&b=%222%22",
+    );
     expect(shadow(el).innerHTML).not.toContain('b="2"');
+    for (const bad of ["javascript:alert(1)", "java\nscript:alert(1)", "data:text/html,x", "%%"]) {
+      el.setAttribute("href", bad);
+      expect(el.href).toBe("https://presto.build");
+      expect(query(el, '[data-action="cta"]')?.getAttribute("href")).toBe("https://presto.build");
+    }
   });
 });

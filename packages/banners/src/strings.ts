@@ -19,14 +19,6 @@ export const DISMISS = "Dismiss";
 export const CONNECTED_TITLE = "Presto connected";
 export const CONNECTED_SUPPORT = "proving natively";
 
-const NEEDS_UPDATE: StateStrings = {
-  tone: "warn",
-  title: "Presto needs an update for this app",
-  support: "Open Presto from your menu bar and let it update",
-  primary: "retry",
-  primaryLabel: RETRY,
-};
-
 /** Copy for every state, as rendered by the Ribbon (the only surface that carries them all). */
 export const STRINGS: Readonly<Record<BannerState, StateStrings>> = {
   offline: {
@@ -45,19 +37,31 @@ export const STRINGS: Readonly<Record<BannerState, StateStrings>> = {
   },
   "secure-connection-unavailable": {
     tone: "warn",
-    title: "Presto is installed, but its encrypted connection is off",
-    support: "Open Presto → Settings → Encrypted Connection",
+    title: "Presto is installed, but its encrypted connection isn't working",
+    support: "Open Presto → Settings → Encrypted Connection, or run the certificate setup again",
     primary: "retry",
     primaryLabel: RETRY,
   },
-  "version-mismatch": NEEDS_UPDATE,
-  error: NEEDS_UPDATE,
+  "version-mismatch": {
+    tone: "warn",
+    title: "Presto needs an update for this app",
+    support: "Open Presto from your menu bar and let it update",
+    primary: "retry",
+    primaryLabel: RETRY,
+  },
+  error: {
+    tone: "warn",
+    title: "Presto answered, but something went wrong",
+    support: "Open Presto from your menu bar, check it is running properly, then retry",
+    primary: "retry",
+    primaryLabel: RETRY,
+  },
   downloading: {
     tone: "accent",
-    title: "Presto is fetching the prover for this app",
-    support: "One-time download, then every proof is native",
+    title: "Presto needs a one-time download for this app",
+    support: "It runs on your first proof, then every proof is native",
     primary: "status",
-    primaryLabel: "Downloading",
+    primaryLabel: "Preparing",
   },
   available: {
     tone: "go",

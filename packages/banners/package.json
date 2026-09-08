@@ -15,6 +15,8 @@
   },
   "files": [
     "src",
+    "!src/**/*.test.ts",
+    "!src/test-setup.ts",
     "dist"
   ],
   "scripts": {
