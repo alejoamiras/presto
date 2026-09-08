@@ -44,3 +44,5 @@ it now runs for every non-bundled version; two unannotated tests (`resolve_versi
 _for_download`, `version_bb_path_format`) read the cache root without `#[serial]` and could race
 the private `PRESTO_HOME` — both serialized, the former on its own private home. Comment on the
 deferred-cleanup loop corrected: the passes bound retry duration, not residency.
+
+**Round 3** — "no new material findings." Converged after 3 rounds.
