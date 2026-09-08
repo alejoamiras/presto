@@ -33,10 +33,8 @@ function fireProveRequest(): Promise<Response> {
 }
 
 /**
- * Click a decision button until the blocked /prove request settles. The popup ignores a click that
- * lands inside its 700 ms click-steal guard, and any native focus event re-arms that guard — on Windows,
- * WebDriver's elementClick itself activates the window first, so the decision can be dropped by design.
- * A retry after the guard has elapsed is the same thing a user does.
+ * Click a decision button until the blocked /prove request settles: a late focus or activation can
+ * leave the click inside the popup's 700 ms click-steal guard (silently ignored), so retry after it.
  */
 async function decide(selector: string, pending: Promise<Response>): Promise<Response> {
   for (let attempt = 1; attempt <= 4; attempt++) {
