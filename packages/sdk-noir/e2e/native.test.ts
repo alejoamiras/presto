@@ -63,6 +63,10 @@ describe.skipIf(!endpoint)("PrestoUltraHonkBackend against a live presto", () =>
       const fixture = loadFixture(fixtureDir(name));
       const { backend, data, options } = await proveNatively(fixture, api);
       expect(await backend.verifyProof(data, options)).toBe(true);
+      // The presto returned the key on the first proof; the second sends it back and must still be
+      // the reference bytes (the cached-key request path).
+      const again = await backend.generateProof(fixture.witness, options);
+      expect(again).toEqual(data);
       // A tampered proof must not verify: the WASM verifier is circuit-bound, not a rubber stamp.
       // bb.js answers `false` or throws (a flipped byte can leave a curve point invalid).
       const tampered = new Uint8Array(data.proof);
@@ -83,14 +87,41 @@ describe.skipIf(!endpoint)("PrestoUltraHonkBackend against a live presto", () =>
       witness: toBase64(fixture.witness),
       verifier_target: fixture.verifierTarget,
     };
-    const post = (body: Record<string, string>) =>
-      fetch(new URL("/prove/ultra-honk", PRESTO_URL), {
+    const post = async (body: Record<string, string>) => {
+      const response = await fetch(new URL("/prove/ultra-honk", PRESTO_URL), {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(body),
-      }).then((r) => r.json() as Promise<{ vk?: string }>);
+      });
+      expect(response.status).toBe(200);
+      const answer = (await response.json()) as {
+        proof: string;
+        public_inputs: string;
+        vk?: string;
+      };
+      expect(answer.proof).toBe(toBase64(fixture.proof));
+      expect(answer.public_inputs).toBe(toBase64(fixture.publicInputs));
+      return answer;
+    };
     expect((await post(job)).vk).toBe(toBase64(fixture.vk));
     expect((await post({ ...job, vk: toBase64(fixture.vk) })).vk).toBeUndefined();
+  }, 600_000);
+
+  test("the default (ZK) target proves natively and verifies in WASM", async () => {
+    // ZK proofs are randomised, so no byte comparison: WASM verification is the interoperability
+    // evidence for the target every consumer gets without options.
+    const fixture = loadFixture(fixtureDir("square"));
+    const phases: string[] = [];
+    const backend = new PrestoUltraHonkBackend(fixture.bytecode, api, {
+      presto,
+      fallback: "none",
+      onPhase: (phase) => phases.push(phase),
+    });
+    const data = await backend.generateProof(fixture.witness);
+    expect(phases).toContain("transmit");
+    expect(phases).not.toContain("fallback");
+    expect(data.publicInputs).toEqual(deflattenFields(fixture.publicInputs));
+    expect(await backend.verifyProof(data)).toBe(true);
   }, 600_000);
 });
 

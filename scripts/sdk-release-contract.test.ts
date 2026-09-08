@@ -75,8 +75,9 @@ describe("npm release workflow contract", () => {
     expect(noir).toContain("needs.noir-gates.result == 'success'");
     const presto = job(release, "publish-presto");
     expect(presto).toContain("publish-noir]");
+    // A selected noir whose gates failed skips its publication; that skip must not release presto.
     expect(presto).toContain(
-      "(needs.publish-noir.result == 'success' || needs.publish-noir.result == 'skipped')",
+      "(needs.publish-noir.result == 'success' || (needs.publish-noir.result == 'skipped' && needs.plan.outputs.publish_presto_noir != 'true'))",
     );
     const plan = job(release, "plan");
     expect(plan).toContain("bun scripts/release-plan.ts");

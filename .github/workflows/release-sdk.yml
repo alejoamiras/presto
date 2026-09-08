@@ -164,10 +164,11 @@ jobs:
       live: true
 
   # Adapters publish after core; presto publishes after noir so the playground deployment that
-  # follows sees both adapters on the registry.
+  # follows sees both adapters on the registry. A skipped noir publication is acceptable only when
+  # noir was not selected — a selected noir whose gates failed also skips, and must block presto.
   publish-presto:
     needs: [assert-main, plan, e2e, dependency-audit, publish-core, publish-noir]
-    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') && (needs.publish-noir.result == 'success' || needs.publish-noir.result == 'skipped') }}
+    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') && (needs.publish-noir.result == 'success' || (needs.publish-noir.result == 'skipped' && needs.plan.outputs.publish_presto_noir != 'true')) }}
     permissions:
       id-token: write
       contents: write

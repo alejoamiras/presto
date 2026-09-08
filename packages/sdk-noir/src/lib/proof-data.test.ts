@@ -47,8 +47,25 @@ describe("proof data", () => {
       "not whole 32-byte fields",
     );
     expect(() => decodeUltraHonkResponse({ proof: "@@", public_inputs: "" })).toThrow(SyntaxError);
-    expect(decodeUltraHonkResponse({ proof: "", public_inputs: "" })).toEqual({
-      proof: new Uint8Array(),
+  });
+
+  test("a proof or key that bb could not have written is malformed, not returned or cached", () => {
+    const field = toBase64(new Uint8Array(32));
+    expect(() => decodeUltraHonkResponse({ proof: "", public_inputs: "" })).toThrow(
+      "proof is 0 bytes",
+    );
+    expect(() => decodeUltraHonkResponse({ proof: "AA==", public_inputs: "" })).toThrow(
+      "proof is 1 bytes",
+    );
+    expect(() => decodeUltraHonkResponse({ proof: field, public_inputs: "", vk: "" })).toThrow(
+      "vk is 0 bytes",
+    );
+    const oversized = toBase64(new Uint8Array(64 * 1024 + 1));
+    expect(() =>
+      decodeUltraHonkResponse({ proof: field, public_inputs: "", vk: oversized }),
+    ).toThrow("vk is 65537 bytes");
+    expect(decodeUltraHonkResponse({ proof: field, public_inputs: "" })).toEqual({
+      proof: new Uint8Array(32),
       publicInputs: new Uint8Array(),
       vk: undefined,
     });

@@ -13,11 +13,9 @@ export const VERIFIER_TARGETS: readonly VerifierTarget[] = [
 ];
 
 /**
- * The target bb.js's `UltraHonkBackend` would prove for `options` — the same resolution its
- * `getProofSettingsFromOptions` applies, so native and WASM proofs of one call agree: an explicit
- * `verifierTarget` (which may not be combined with the deprecated flags), else the deprecated flags
- * with keccak taking precedence over starknet and the ZK variants of each keeping ZK, else the
- * poseidon2 + ZK default (`noir-recursive`).
+ * bb.js's `getProofSettingsFromOptions` as a target, so native and WASM proofs of one call agree:
+ * an explicit `verifierTarget` (never combined with the deprecated flags), else keccak flags before
+ * starknet flags with ZK disabled iff `keccak` or `starknet` is set, else `noir-recursive`.
  */
 export function resolveVerifierTarget(options?: UltraHonkBackendOptions): VerifierTarget {
   if (options?.verifierTarget) {

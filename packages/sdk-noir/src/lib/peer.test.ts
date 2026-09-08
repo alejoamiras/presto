@@ -20,5 +20,7 @@ test("a missing or unexpected @aztec/bb.js is one clear error at the first WASM 
   await expect(backend.verifyProof({ proof: new Uint8Array(), publicInputs: [] })).rejects.toThrow(
     "needs its peer dependency",
   );
-  expect(factory).toHaveBeenCalledTimes(1);
+  // The peer is checked before the caller's factory runs, so a factory that itself imports bb.js
+  // cannot pre-empt this message with a bare module-resolution error.
+  expect(factory).not.toHaveBeenCalled();
 });

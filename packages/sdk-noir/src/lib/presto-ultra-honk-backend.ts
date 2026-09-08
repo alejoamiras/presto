@@ -56,7 +56,10 @@ export interface PrestoUltraHonkBackendOptions {
   onPhase?: OnPhase;
 }
 
-/** The public methods of bb.js's `UltraHonkBackend`: this class is a compile-checked drop-in. */
+/**
+ * The public methods of bb.js's `UltraHonkBackend`, checked at compile time. bb.js's class also has
+ * private fields, so a consumer typed to the class itself must type against these methods instead.
+ */
 type UltraHonkSurface = Pick<
   UltraHonkBackend,
   | "generateProof"
@@ -236,13 +239,16 @@ export class PrestoUltraHonkBackend implements UltraHonkSurface {
     return this.#api;
   }
 
-  /** bb.js is loaded on first use so a native-only path never pulls the WASM module in. */
+  /**
+   * bb.js is loaded on first use so a native-only path never pulls the WASM module in; it is loaded
+   * BEFORE the caller's factory runs, so a missing peer is reported by this package rather than by
+   * whatever the factory imports first.
+   */
   #wasmBackend(): Promise<UltraHonkBackend> {
     if (!this.#wasm) {
-      this.#wasm = this.#resolveApi().then(async (api) => {
-        const Backend = await loadUltraHonkBackend();
-        return new Backend(this.#bytecode, api);
-      });
+      this.#wasm = loadUltraHonkBackend().then(
+        async (Backend) => new Backend(this.#bytecode, await this.#resolveApi()),
+      );
     }
     return this.#wasm;
   }

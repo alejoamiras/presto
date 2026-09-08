@@ -2,8 +2,10 @@
 
 Native UltraHonk proving for **any Noir circuit** through the local [Presto](../presto/README.md)
 app. `PrestoUltraHonkBackend` is a drop-in for `@aztec/bb.js`'s `UltraHonkBackend`: same
-constructor shape, same methods, same `ProofData`. `generateProof` runs on the machine's native `bb`
-when Presto is installed and approved, and on the WASM backend otherwise.
+constructor shape, the same public methods, same `ProofData`. `generateProof` runs on the machine's
+native `bb` when Presto is installed and approved, and on the WASM backend otherwise. (bb.js's class
+has private fields, so code typed to the class itself should type against its methods — e.g.
+`Pick<UltraHonkBackend, "generateProof" | "verifyProof">` — to accept either.)
 
 ```ts
 import { Barretenberg } from "@aztec/bb.js";

@@ -1,9 +1,7 @@
 /**
- * Every dependency the consumer host installs beside the candidate (its `host-dependencies.json`:
- * the peers a real consumer must bring) must resolve to ONE copy in the host's tree. A second copy
- * means the packed candidate's own resolution disagrees with the host's — for a peer like
- * `@aztec/bb.js` that is two WASM runtimes and two `Barretenberg` types, the exact hazard a peer
- * dependency exists to prevent.
+ * Every peer the consumer host installs beside the candidate (`host-dependencies.json`) must be ONE
+ * copy in the host's tree: a nested second `@aztec/bb.js` is two WASM runtimes and two
+ * `Barretenberg` types.
  *
  *   bun scripts/tarball-consumer/assert-singletons.ts <host-dir> <host-dependencies.json>
  */

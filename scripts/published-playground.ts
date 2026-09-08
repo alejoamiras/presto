@@ -52,6 +52,23 @@ export function assertPublishedSdkManifest(
   assertPublishedManifest(manifest, SDK_PACKAGE, version, workspaceDependencies, workspaceVersions);
 }
 
+/**
+ * A published adapter's exact peer pin must be the peer version the playground graph actually
+ * gives it: provenance proves the artifact's origin, not that it matches this installed peer.
+ */
+export function assertPeerPin(
+  manifest: { name: string; peerDependencies?: Record<string, string> },
+  peer: string,
+  installedVersion: string,
+) {
+  const pin = manifest.peerDependencies?.[peer];
+  if (pin !== installedVersion) {
+    throw new Error(
+      `Published ${manifest.name} pins peer ${peer}@${pin ?? "(none)"} but the playground installs ${installedVersion}`,
+    );
+  }
+}
+
 /** Every adapter the playground runs must pin the one core it installs. */
 export function sharedCorePin(manifests: PublishedManifest[]): string {
   const pins = new Set(manifests.map((m) => expectedCoreVersion(m.dependencies[CORE_NAME])));
@@ -147,6 +164,13 @@ if (import.meta.main) {
     join(installedDir, "node_modules/@alejoamiras/presto-core/package.json"),
   ).json();
   assertCorePin(installed, installedCore);
+  if (adapters[1]) {
+    const noirDir = join(root, "packages/playground/node_modules/@alejoamiras/presto-noir");
+    const installedNoir = await Bun.file(join(noirDir, "package.json")).json();
+    const bbJs = await Bun.file(join(noirDir, "node_modules/@aztec/bb.js/package.json")).json();
+    assertPeerPin(installedNoir, "@aztec/bb.js", bbJs.version);
+    assertCorePin(installedNoir, installedCore);
+  }
   console.log(
     `Playground uses verified published ${SDK_PACKAGE}@${version} on ${CORE_NAME}@${installedCore.version}` +
       (adapters[1] ? ` with ${noirPackage.name}@${adapters[1].manifest.version}` : ""),
