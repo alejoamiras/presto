@@ -2,12 +2,23 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isValidVersion, NPM_PACKAGES, type NpmPackage, packageFromArgs } from "./npm-packages.ts";
+import {
+  type ProvenanceStatement,
+  type VerifiedProvenance,
+  verifyProvenanceStatement,
+} from "./sdk-release-verification.ts";
+
+const PROVENANCE_PREDICATE = "https://slsa.dev/provenance/v1";
 
 interface SignatureAudit {
   verified?: Array<{
     name?: string;
     version?: string;
     attestations?: { provenance?: { predicateType?: string } };
+    attestationBundles?: Array<{
+      predicateType?: string;
+      bundle?: { dsseEnvelope?: { payload?: string } };
+    }>;
   }>;
 }
 
@@ -31,38 +42,41 @@ export function hasVerifiedSdkProvenance(
       (item) =>
         item.name === pkg.name &&
         item.version === version &&
-        item.attestations?.provenance?.predicateType === "https://slsa.dev/provenance/v1",
+        item.attestations?.provenance?.predicateType === PROVENANCE_PREDICATE,
     ),
   );
 }
 
-interface PackageLock {
-  packages?: Record<string, { version?: string; integrity?: string }>;
-}
-
 /**
- * The integrity npm signed for the installed copy: `npm audit signatures` verifies the registry
- * signature over `name@version:integrity` using the lockfile's record, so this digest — not the
- * registry's current `dist.integrity` — is the one the audit vouched for.
+ * The provenance statement npm verified: `npm audit signatures --include-attestations` lists a
+ * package only after sigstore accepted its bundles and their subject digest matched the manifest
+ * npm fetched, so this statement — unlike the registry's attestation endpoint or a lockfile — is
+ * the one whose digest may vouch for bytes.
  */
-export function auditedIntegrity(lock: PackageLock, version: string, pkg: NpmPackage): string {
-  const entry = lock.packages?.[`node_modules/${pkg.name}`];
-  if (entry?.version !== version) {
-    throw new Error(
-      `lockfile records ${pkg.name}@${entry?.version ?? "(none)"}, expected ${version}`,
-    );
+export function verifiedProvenanceStatement(
+  report: SignatureAudit,
+  version: string,
+  pkg: NpmPackage = NPM_PACKAGES.presto,
+): ProvenanceStatement {
+  const entry = report.verified?.find((item) => item.name === pkg.name && item.version === version);
+  if (entry?.attestations?.provenance?.predicateType !== PROVENANCE_PREDICATE) {
+    throw new Error(`npm did not cryptographically verify provenance for ${pkg.name}@${version}`);
   }
-  if (!entry.integrity || !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(entry.integrity)) {
-    throw new Error(`lockfile has no SHA-512 integrity for ${pkg.name}@${version}`);
+  const payload = entry.attestationBundles?.find(
+    (bundle) => bundle.predicateType === PROVENANCE_PREDICATE,
+  )?.bundle?.dsseEnvelope?.payload;
+  if (!payload) {
+    throw new Error(`npm reported no verified provenance bundle for ${pkg.name}@${version}`);
   }
-  return entry.integrity;
+  return JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
 }
 
-/** Cryptographically verified signatures and provenance; returns the integrity the audit covered. */
+/** Registry signatures and provenance verified by npm; the returned digest is the signed one. */
 export async function verifySdkPackageSignatures(
   version: string,
   pkg: NpmPackage = NPM_PACKAGES.presto,
-): Promise<{ integrity: string }> {
+  expectedCommit?: string,
+): Promise<VerifiedProvenance> {
   if (!isValidVersion(pkg, version)) throw new Error(`invalid ${pkg.name} version ${version}`);
   const directory = await mkdtemp(join(tmpdir(), "presto-sdk-signature-audit-"));
   try {
@@ -82,11 +96,14 @@ export async function verifySdkPackageSignatures(
     const report = JSON.parse(
       run(["npm", "audit", "signatures", "--json", "--include-attestations"], directory),
     ) as SignatureAudit;
-    if (!hasVerifiedSdkProvenance(report, version, pkg)) {
-      throw new Error(`npm did not cryptographically verify provenance for ${pkg.name}@${version}`);
-    }
-    const lock = (await Bun.file(join(directory, "package-lock.json")).json()) as PackageLock;
-    return { integrity: auditedIntegrity(lock, version, pkg) };
+    return verifyProvenanceStatement(
+      verifiedProvenanceStatement(report, version, pkg),
+      version,
+      expectedCommit,
+      undefined,
+      undefined,
+      pkg,
+    );
   } finally {
     await rm(directory, { recursive: true, force: true });
   }
@@ -101,6 +118,8 @@ if (import.meta.main) {
     );
     process.exit(1);
   }
-  await verifySdkPackageSignatures(version, pkg);
-  console.log(`verified registry signatures and SLSA provenance for ${pkg.name}@${version}`);
+  const verified = await verifySdkPackageSignatures(version, pkg);
+  console.log(
+    `verified registry signatures and SLSA provenance for ${pkg.name}@${version} (${verified.commit}, ${verified.integrity})`,
+  );
 }

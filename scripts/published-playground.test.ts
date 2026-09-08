@@ -81,15 +81,14 @@ test("packageRoot finds the copy the playground resolves, not a nested one", asy
   expect(() => packageRoot("@alejoamiras/no-such-package", playground)).toThrow();
 });
 
-test("the deployed tarball must hash to the integrity the audit and the attestation both vouch for", () => {
+test("the deployed tarball must hash to the digest the signed provenance names", () => {
   const bytes = new TextEncoder().encode("tarball bytes");
   const integrity = `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
   expect(tarballIntegrity(bytes)).toBe(integrity);
   const spec = "@alejoamiras/presto@5.2.0";
-  expect(() => assertVerifiedTarball(bytes, integrity, integrity, spec)).not.toThrow();
+  expect(() => assertVerifiedTarball(bytes, integrity, spec)).not.toThrow();
   const other = tarballIntegrity(new TextEncoder().encode("other bytes"));
-  expect(() => assertVerifiedTarball(bytes, integrity, other, spec)).toThrow("disagree");
-  expect(() => assertVerifiedTarball(bytes, other, other, spec)).toThrow(
-    "does not match its verified integrity",
+  expect(() => assertVerifiedTarball(bytes, other, spec)).toThrow(
+    "does not match its signed provenance digest",
   );
 });

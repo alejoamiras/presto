@@ -106,8 +106,14 @@ describe("publish job isolation", () => {
       expect(unprivileged).not.toContain("id-token");
       expect(unprivileged).not.toContain("environment:");
     }
+    const before = (text: string, first: string, second: string) => {
+      const a = text.indexOf(first);
+      const b = text.indexOf(second);
+      expect(a).toBeGreaterThan(0);
+      expect(b).toBeGreaterThan(a);
+    };
     // The digest travels as a job output, recorded before any registry code could run.
-    expect(pack.indexOf("sha256sum")).toBeLessThan(pack.indexOf("upload-artifact"));
+    before(pack, "sha256sum", "upload-artifact");
     expect(pack).not.toContain("sdk-tarball-consumer.sh");
     expect(pack).toMatch(/sha256: \$\{\{ steps\.pack\.outputs\.sha256 \}\}/);
     expect(consumer).toContain("needs: pack");
@@ -115,12 +121,11 @@ describe("publish job isolation", () => {
     expect(consumer).toContain("bash scripts/sdk-tarball-consumer.sh");
     expect(publishJob).toContain("needs: [pack, consumer-test]");
     expect(publishJob).toContain("id-token: write");
-    expect(publishJob).not.toContain("sdk-tarball-consumer.sh");
-    expect(publishJob).not.toContain("npx");
-    expect(publishJob.indexOf('echo "$SHA256  $TARBALL" | sha256sum -c -')).toBeLessThan(
-      publishJob.indexOf("npm publish"),
-    );
-    expect(publishJob.match(/npm install/g)).toBeNull();
+    before(publishJob, 'echo "$SHA256  $TARBALL" | sha256sum -c -', "npm publish");
+    // Nothing installs in the credentialed job: not the consumer host, not even the lockfile.
+    for (const install of ["sdk-tarball-consumer.sh", "npx", "npm install", "bun install"]) {
+      expect(publishJob).not.toContain(install);
+    }
     expect(verify).toContain("needs: [pack, publish]");
     expect(verify).toContain("npm install --ignore-scripts");
   });

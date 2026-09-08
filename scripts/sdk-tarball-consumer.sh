@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 # Consume a PUBLISHED tarball the way a real dApp does — default `npm install` resolution on a fresh
-# Node, with lifecycle scripts off so nothing fetched from the registry runs — and prove two things
-# nothing else in the repo checks:
+# Node, with dependency lifecycle scripts off — and prove two things nothing else in the repo checks:
 #   1. the packed `dist` exports/types RESOLVE, typecheck, and load (workspace consumers use the source
 #      `exports`, so a broken publish rewrite or missing dist would otherwise ship undetected);
 #   2. for a package that pins `@aztec/stdlib`: default npm resolves an EXACT-version host to a SINGLETON

@@ -4,10 +4,11 @@ name: _Publish npm package (reusable)
 # `.github/workflows/release-sdk.yml` workflow in the `npm-publish` environment; this workflow
 # declares the OIDC permission and the calling job in release-sdk.yml delegates it.
 #
-# Three jobs, so no code resolved from the registry ever runs beside the publish credentials:
-# `pack` builds the candidate and records its digest, `consumer-test` exercises that artifact with
-# read-only permissions, and `publish` re-asserts the digest before `npm publish`. A job output is
-# the only channel for the digest: an artifact can be replaced within a run, a recorded output cannot.
+# The job holding the publish credentials installs nothing and runs only repository code: `pack`
+# builds the candidate and records its digest, `consumer-test` runs the registry-resolved consumer
+# host with read-only permissions, `publish` re-asserts the digest before `npm publish`, and
+# `verify` does the post-publish registry install. The digest travels as a job output because an
+# artifact can be replaced within a run and a recorded output cannot.
 on:
   workflow_call:
     inputs:
@@ -248,17 +249,12 @@ jobs:
           }
           echo "npm $npm_version"
 
+      # Nothing is installed here: the verification scripts below import only repository modules
+      # and runtime built-ins, and even a locked dependency's lifecycle script (the root `prepare`)
+      # must not run beside the OIDC identity.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-          restore-keys: ${{ runner.os }}-bun-
-
-      - run: bun install --frozen-lockfile
 
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
