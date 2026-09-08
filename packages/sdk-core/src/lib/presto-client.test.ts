@@ -1011,6 +1011,33 @@ describe("PrestoClient", () => {
       expect(fetchedUrls.some((u) => u.includes("/prove"))).toBe(false);
     });
 
+    test("a concurrent proof never inherits another proof's HTTP demotion", async () => {
+      // Proof A fails over HTTPS and demotes the pin while it validates HTTP; proof B, already past
+      // its own HTTPS check, must not read the demoted pin and post plaintext to a port nobody
+      // validated. The window is one microtask wide, so every alignment is tried.
+      for (let depth = 0; depth < 8; depth++) {
+        const { client: c } = client({ presto: { allowInsecureDowngrade: true } });
+        let second: Promise<ProveOutcome> | null = null;
+        const startSecond = (hops: number) => {
+          if (hops === 0) second = c.prove(PROVE);
+          else queueMicrotask(() => startSecond(hops - 1));
+        };
+        const { fetchedUrls } = mockFetch({
+          "http://127.0.0.1:59833/health": () => Response.json({ hello: "not the presto" }),
+          "https://127.0.0.1:59834/health": healthOk,
+          "https://127.0.0.1:59834/prove": () => {
+            if (!second) startSecond(depth);
+            throw new TypeError("TLS handshake failed");
+          },
+          // If this is ever reached, a witness went to the foreign responder.
+          "http://127.0.0.1:59833/prove": () => Response.json({ proof: "" }),
+        });
+        expect(await c.prove(PROVE)).toEqual({ kind: "fallback", reason: "network" });
+        expect(await second).toEqual({ kind: "fallback", reason: "network" });
+        expect(fetchedUrls).not.toContain("http://127.0.0.1:59833/prove");
+      }
+    });
+
     test("two concurrent proofs failing over the pinned HTTPS BOTH degrade (neither left with the raw error)", async () => {
       const { client: c } = client({ presto: { allowInsecureDowngrade: true } });
       mockFetch({
