@@ -282,7 +282,8 @@ pub(crate) async fn prove(
 ) -> Result<impl IntoResponse, ProveError> {
     tracing::info!("Received /prove request");
     let admitted = admit(&state, request, None).await?;
-    let prover = acquire_prover(&state, &admitted.requested_version).await?;
+    let origin = admitted.approval.origin.as_ref().map(|o| o.as_str());
+    let prover = acquire_prover(&state, &admitted.requested_version, origin).await?;
     let held = Held { admitted, prover };
 
     let start = std::time::Instant::now();
@@ -421,11 +422,12 @@ pub(super) struct Prover {
 pub(super) async fn acquire_prover(
     state: &AppState,
     requested_version: &Option<String>,
+    origin: Option<&str>,
 ) -> Result<Prover, ProveError> {
     // Version resolution itself remains side-effect free; download_if_needed owns the temporary
     // Downloading→Proving transition.
     let resolved = resolve_version(state, requested_version)?;
-    download_if_needed(state, &resolved).await?;
+    download_if_needed(state, &resolved, origin).await?;
     let threads = compute_threads(state);
 
     // Lease the version BEFORE waiting for the prove permit: this request may sit in the permit queue
@@ -497,6 +499,7 @@ fn requested_version(headers: &axum::http::HeaderMap) -> Option<String> {
 async fn download_if_needed(
     state: &AppState,
     resolved: &ResolvedVersion,
+    origin: Option<&str>,
 ) -> Result<(), ProveError> {
     let Some(version) = resolved
         .version
@@ -505,6 +508,16 @@ async fn download_if_needed(
     else {
         return Ok(());
     };
+    // One download at a time; a request that waited here for the same version finds it cached and
+    // spends no budget. Only a request that goes on to download spends a token — success or not.
+    let _serial = state.download_budget.serial.lock().await;
+    if versions::verify_cached_bb(version).is_ok() {
+        return Ok(());
+    }
+    state.download_budget.take(origin).map_err(|_| {
+        tracing::warn!(version = %version, origin = origin.unwrap_or("-"), "Refusing bb download: budget exhausted");
+        ProveError::DownloadBudgetExhausted
+    })?;
     if let Some(callback) = state.on_status.as_ref() {
         callback(ServerStatus::Downloading);
     }

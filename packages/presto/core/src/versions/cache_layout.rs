@@ -229,6 +229,7 @@ pub(super) fn verify_bb_entry(
 /// Fail-closed integrity check for a cached bb: the binary must be a present regular file whose streamed
 /// SHA-256 matches its valid marker's `binary_sha256`. Returns the verified path on success. This is the
 /// SINGLE authority the runtime trusts before executing a cached bb over the witness (F-007).
+/// Side-effect free: a request can ask about any version before it proves it is a real job.
 pub fn verify_cached_bb(version: &AztecVersion) -> Result<PathBuf, String> {
     // codex #4: resolve the trusted cache root first — a `None` home fails closed here rather than
     // silently trusting a CWD-rooted (attacker-preseedable) path.
@@ -238,13 +239,17 @@ pub fn verify_cached_bb(version: &AztecVersion) -> Result<PathBuf, String> {
         .ok_or_else(|| format!("bb {version}: {NO_TRUSTED_CACHE_ROOT}"))?;
     verify_bb_entry(&bb_path, &marker_path, version.as_str(), current_platform())
         .map_err(|e| format!("bb {version}: {e}"))?;
-    // This is the moment a proof COMMITS to a cached version, so it is the moment to mark the entry
-    // active. Round 2 (codex pass over F-06): the size cap can now evict a Mainnet version, which the
-    // count policy never could, and `cleanup_old_versions` only exempts the ONE version its own
-    // request downloaded. Sequence: proof A resolves an old cached 5.0.0 and queues on the prove
-    // semaphore; proof B downloads 5.0.1; B's detached cleanup is over the cap, sees 5.0.0 as old, and
-    // deletes the binary A is about to execute. Refreshing the mtime here puts A's version inside the
-    // active window for as long as it keeps being used.
+    Ok(bb_path)
+}
+
+/// [`verify_cached_bb`] for a proof that is about to execute the binary: also marks the entry
+/// active. Only execution refreshes the activity window — a request that never reaches bb (rejected
+/// body, refused admission) must not keep a version exempt from the size cap.
+///
+/// The lease is the real eviction guard; the mark covers the one gap it cannot: a version downloaded
+/// but not yet held by any proof (see `versions::leases`).
+pub fn take_cached_bb(version: &AztecVersion) -> Result<PathBuf, String> {
+    let bb_path = verify_cached_bb(version)?;
     if let Some(dir) = bb_path.parent() {
         mark_in_use(dir);
     }
@@ -334,6 +339,37 @@ mod tests {
         // archive digest is arbitrary provenance for the test (a valid 64-hex).
         write_bb_marker(&dir, version, &"a".repeat(64), &bin).unwrap();
         dir
+    }
+
+    /// Only a proof that executes the binary refreshes the activity mark; asking is free of effects.
+    #[test]
+    #[serial_test::serial]
+    fn verifying_a_cached_bb_leaves_no_activity_mark_but_taking_it_does() {
+        struct Home;
+        impl Drop for Home {
+            fn drop(&mut self) {
+                std::env::remove_var("PRESTO_HOME");
+            }
+        }
+        let tmp = tempfile::tempdir().unwrap();
+        std::env::set_var("PRESTO_HOME", tmp.path());
+        let _home = Home;
+        let version = AztecVersion::parse("5.0.0-rc.2").unwrap();
+        let dir = write_entry(
+            &versions_base_dir().unwrap(),
+            version.as_str(),
+            b"the-bb-bytes",
+        );
+        assert!(verify_cached_bb(&version).is_ok());
+        assert!(
+            !dir.join(IN_USE_MARKER).exists(),
+            "verification must not mark the entry active"
+        );
+        assert!(take_cached_bb(&version).is_ok());
+        assert!(
+            dir.join(IN_USE_MARKER).exists(),
+            "execution marks the entry active"
+        );
     }
 
     #[test]

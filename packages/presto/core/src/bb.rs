@@ -56,7 +56,7 @@ pub fn find_bb(version: Option<&versions::AztecVersion>) -> Result<PathBuf, Stri
     // 1. Version cache — a requested non-bundled version MUST resolve to a marker-verified entry, with
     //    NO fall-through to a different bb (F-007).
     if let Some(v) = version {
-        return versions::verify_cached_bb(v)
+        return versions::take_cached_bb(v)
             .map_err(|e| format!("cached bb for {v} failed integrity verification: {e}"));
     }
 

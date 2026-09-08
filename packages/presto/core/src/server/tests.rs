@@ -1,4 +1,4 @@
-use super::prove::{compute_threads, resolve_version};
+use super::prove::{acquire_prover, compute_threads, resolve_version};
 use super::*;
 
 // ── F-03 sink B (audit 2026-07-31-9c4cb0c) ──
@@ -1198,6 +1198,35 @@ fn resolve_version_returns_none_without_header() {
     let resolved = resolve_version(&state, &None).expect("no header resolves");
     assert_eq!(resolved.version, None);
     assert!(!resolved.needs_download);
+}
+
+#[tokio::test]
+async fn an_exhausted_download_budget_refuses_an_uncached_version_before_any_download() {
+    let core = HeadlessState::headless("1.0.0", Some("5.0.0-rc.1".to_string()), None, None);
+    let state = AppState::headless(core);
+    let origin = "https://dapp.example";
+    for _ in 0..versions::PER_ORIGIN_DOWNLOADS {
+        state
+            .download_budget
+            .take(Some(origin))
+            .expect("within budget");
+    }
+    // Uncached, so this would download; the exhausted budget must answer first (no network here).
+    let Err(err) = acquire_prover(&state, &Some("5.0.0-rc.2".to_string()), Some(origin)).await
+    else {
+        panic!("the fourth uncached download in the window must be refused");
+    };
+    assert!(
+        matches!(err, ProveError::DownloadBudgetExhausted),
+        "{err:?}"
+    );
+    assert_eq!(err.into_response().status(), StatusCode::TOO_MANY_REQUESTS);
+    // The bundled version never downloads, so it is never budgeted.
+    let Ok(bundled) = acquire_prover(&state, &Some("5.0.0-rc.1".to_string()), Some(origin)).await
+    else {
+        panic!("the bundled version must resolve without a download");
+    };
+    assert!(bundled.version.is_none());
 }
 
 // ── Failure-path tests ──

@@ -6,14 +6,17 @@
 //! lesson: same module-tree position, zero external churn).
 
 mod cache_layout;
+mod download_budget;
 mod downloader;
 mod leases;
 mod release_metadata;
 mod version_policy;
 
 pub use cache_layout::{
-    bb_binary_name, list_cached_versions, verify_cached_bb, version_bb_path, versions_base_dir,
+    bb_binary_name, list_cached_versions, take_cached_bb, verify_cached_bb, version_bb_path,
+    versions_base_dir,
 };
+pub use download_budget::{BudgetExhausted, DownloadBudget, PER_ORIGIN_DOWNLOADS};
 pub use downloader::download_bb;
 pub use leases::{acquire as acquire_lease, Contended, Lease};
 pub use release_metadata::{current_platform, download_url};
