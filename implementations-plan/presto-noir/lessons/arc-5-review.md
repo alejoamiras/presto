@@ -40,3 +40,12 @@ One new material finding, verified.
 | 2 | Nit | Two JSDoc lines on the new mocked-spec helpers narrated their bodies | Removed |
 
 Gates: playground typecheck ✓, mocked 18/18 ✓, `bun run test` exit 0.
+
+Commit 2222acc.
+
+## Round 3 — 2026-09-08 (`response-2.md`) — converged
+
+> **Verified — high confidence. No remaining findings.** […] **Verdict: arc 5 converged at `2222acc`.**
+
+Codex accepted omitting the entry-module unit test ("no existing entry-module harness that makes
+this inexpensive, and introducing one is disproportionate"). Three rounds.
