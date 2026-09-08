@@ -231,8 +231,7 @@ pub(super) fn verify_bb_entry(
 /// SINGLE authority the runtime trusts before executing a cached bb over the witness (F-007).
 /// Side-effect free: a request can ask about any version before it proves it is a real job.
 pub fn verify_cached_bb(version: &AztecVersion) -> Result<PathBuf, String> {
-    // codex #4: resolve the trusted cache root first — a `None` home fails closed here rather than
-    // silently trusting a CWD-rooted (attacker-preseedable) path.
+    // A `None` cache root fails closed here rather than trusting a CWD-rooted, preseedable path.
     let bb_path =
         version_bb_path(version).ok_or_else(|| format!("bb {version}: {NO_TRUSTED_CACHE_ROOT}"))?;
     let marker_path = version_bb_marker_path(version)
@@ -242,18 +241,13 @@ pub fn verify_cached_bb(version: &AztecVersion) -> Result<PathBuf, String> {
     Ok(bb_path)
 }
 
-/// [`verify_cached_bb`] for a proof that is about to execute the binary: also marks the entry
-/// active. Only execution refreshes the activity window — a request that never reaches bb (rejected
-/// body, refused admission) must not keep a version exempt from the size cap.
-///
-/// The lease is the real eviction guard; the mark covers the one gap it cannot: a version downloaded
-/// but not yet held by any proof (see `versions::leases`).
-pub fn take_cached_bb(version: &AztecVersion) -> Result<PathBuf, String> {
-    let bb_path = verify_cached_bb(version)?;
-    if let Some(dir) = bb_path.parent() {
-        mark_in_use(dir);
+/// Refresh a cached version's activity mark. Call only after bb completed a proof with it, while
+/// holding the version lease: a request that never produced a proof (rejected body, refused
+/// admission, bb error) must not keep a version exempt from the size cap.
+pub fn mark_cached_bb_active(version: &AztecVersion) {
+    if let Some(dir) = version_bb_path(version).and_then(|p| p.parent().map(Path::to_path_buf)) {
+        mark_in_use(&dir);
     }
-    Ok(bb_path)
 }
 
 /// Refresh a cached version directory's mtime, which is what [`super::downloader::recently_active`]
@@ -341,19 +335,10 @@ mod tests {
         dir
     }
 
-    /// Only a proof that executes the binary refreshes the activity mark; asking is free of effects.
     #[test]
     #[serial_test::serial]
-    fn verifying_a_cached_bb_leaves_no_activity_mark_but_taking_it_does() {
-        struct Home;
-        impl Drop for Home {
-            fn drop(&mut self) {
-                std::env::remove_var("PRESTO_HOME");
-            }
-        }
-        let tmp = tempfile::tempdir().unwrap();
-        std::env::set_var("PRESTO_HOME", tmp.path());
-        let _home = Home;
+    fn verifying_a_cached_bb_leaves_no_activity_mark_but_a_completed_proof_does() {
+        let _home = crate::ScopedPrestoHome::new();
         let version = AztecVersion::parse("5.0.0-rc.2").unwrap();
         let dir = write_entry(
             &versions_base_dir().unwrap(),
@@ -365,11 +350,8 @@ mod tests {
             !dir.join(IN_USE_MARKER).exists(),
             "verification must not mark the entry active"
         );
-        assert!(take_cached_bb(&version).is_ok());
-        assert!(
-            dir.join(IN_USE_MARKER).exists(),
-            "execution marks the entry active"
-        );
+        mark_cached_bb_active(&version);
+        assert!(dir.join(IN_USE_MARKER).exists());
     }
 
     #[test]

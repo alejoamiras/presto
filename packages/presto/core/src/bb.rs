@@ -56,7 +56,7 @@ pub fn find_bb(version: Option<&versions::AztecVersion>) -> Result<PathBuf, Stri
     // 1. Version cache — a requested non-bundled version MUST resolve to a marker-verified entry, with
     //    NO fall-through to a different bb (F-007).
     if let Some(v) = version {
-        return versions::take_cached_bb(v)
+        return versions::verify_cached_bb(v)
             .map_err(|e| format!("cached bb for {v} failed integrity verification: {e}"));
     }
 
@@ -341,6 +341,9 @@ async fn prove_with_timeout(
 
     let mut cmd = build_prove_command(&bb_path, &workspace, threads)?;
     run_bb(&mut cmd, timeout, cancel).await?;
+    if let Some(v) = version {
+        versions::mark_cached_bb_active(v);
+    }
 
     // Exit success is insufficient: read once through a cap, then reject empty, oversized, or
     // non-field-aligned proof bytes without a metadata/read race.

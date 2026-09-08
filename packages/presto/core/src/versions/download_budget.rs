@@ -13,9 +13,9 @@ pub(crate) const GLOBAL_DOWNLOADS: usize = 6;
 pub(crate) const DOWNLOAD_WINDOW: Duration = Duration::from_secs(10 * 60);
 
 /// Sliding-window attempt counters plus the lock that serializes downloads. A request that needs a
-/// version takes `serial` first and re-checks the cache under it, so concurrent requests for one new
-/// version cost one download; a request that then downloads spends a token whether or not the
-/// download succeeds.
+/// version takes `serial` first and re-checks the cache under it, so requests queued behind a
+/// download that installs the same version spend nothing; every request that goes on to download
+/// spends a token, whether or not its download succeeds.
 #[derive(Default)]
 pub struct DownloadBudget {
     pub(crate) serial: tokio::sync::Mutex<()>,

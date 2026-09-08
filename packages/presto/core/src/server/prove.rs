@@ -438,6 +438,16 @@ pub(super) async fn acquire_prover(
     // `None` means a cleanup is deleting this version right now; report unavailable rather than race
     // it. The next request re-downloads.
     let version_lease = acquire_version_lease(resolved.version.as_ref())?;
+    // The lease stops evictions from here on; one may have completed between resolution and now.
+    if let Some(version) = resolved
+        .version
+        .as_ref()
+        .filter(|_| !resolved.needs_download)
+    {
+        if !versions::version_bb_path(version).is_some_and(|p| p.exists()) {
+            return Err(ProveError::VersionEvicting);
+        }
+    }
 
     // A1: acquire the single prove permit ONLY now — around the CPU-bound proof — not across the body
     // read + version download above (which ran concurrently under the inflight cap). bb saturates all

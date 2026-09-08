@@ -186,7 +186,11 @@ async fn run_ultra_honk_with_timeout(
         "Starting bb prove (ultra_honk)"
     );
     let mut cmd = build_ultra_honk_command(&bb_path, workspace, target, threads)?;
-    run_bb(&mut cmd, timeout, cancel).await
+    run_bb(&mut cmd, timeout, cancel).await?;
+    if let Some(v) = version {
+        versions::mark_cached_bb_active(v);
+    }
+    Ok(())
 }
 
 async fn blocking<T: Send + 'static, E: Into<BbError> + Send + 'static>(
