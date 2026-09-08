@@ -27,3 +27,20 @@ tarball resolved its dependencies through a symlink to the SDK's `node_modules`,
 longer depends on `ms`. `install-legacy-sdk.ts` now builds a real `node_modules` merging the SDK's
 and core's entries (scopes merged one level down); verified locally (`ms`, `@logtape/logtape`,
 `@aztec/bb-prover` resolve from the extracted package).
+
+Commit 8647117. `sdk.yml` on it: `package=presto` run 34190048536 green (SDK E2E included),
+`package=presto-core` run 34190050406 green — both ran concurrently, so the concurrency fix holds.
+
+## Round 2 — 2026-09-08 (`response-1.md`)
+
+"Not ready to approve": two of the round-1 fixes were bypassable. Both verified and fixed.
+
+| # | Severity | Finding | Fix |
+|---|---|---|---|
+| 1 | High | `prove` validated `request.path` and then re-read the caller's property after the async probe and the `onPhase` callbacks; a handler mutating the object (or a getter) redirected the witness to port 30001 after the validation passed | The request is copied into a frozen snapshot at the top of `prove` (path, content type, body, scheme, cap) and every later read is from the snapshot; regression with a mutating `onPhase` handler and with a getter that changes its answer |
+| 2 | Medium | `assert-local-dependency` compared basenames, and `--with` accepted the same name twice (the last one silently won), so a same-named tarball elsewhere passed the check | Content identity instead of paths: the hidden lockfile (`node_modules/.package-lock.json`) records the SHA-512 of the archive each copy was installed from, so the check is "exactly one `node_modules/<name>` entry at any depth, with the supplied tarball's integrity" (`npm ls --json` could not be used: it redacts ID-looking path segments as `***`); `parseLocalTarballs` rejects a duplicate name; tests for both |
+| 3 | Nit | One review-history sentence left in `readJsonBounded`'s doc | Rewritten to the invariant |
+
+The legacy installer passed its adversarial look (archive hashed against the committed SHA-512
+before extraction, identity + Aztec-version checks, `dist` entry only, dependencies confined to the
+two workspace graphs).

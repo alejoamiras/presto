@@ -258,6 +258,34 @@ describe("PrestoClient", () => {
       expect((await c.prove({ ...PROVE, path: "/prove/ultra-honk" })).kind).toBe("native");
     });
 
+    test("the route is read once: a callback or a getter cannot redirect the witness mid-flight", async () => {
+      const { fetchedUrls } = mockFetch({ "/health": healthOk, "/prove": () => Response.json({}) });
+      const mutated = { ...PROVE };
+      const c = new PrestoClient({
+        aztecVersion: AZTEC,
+        presto: { httpsPort: 3000 },
+        onPhase: (phase) => {
+          if (phase === "detect") mutated.path = "1/prove";
+        },
+      });
+      expect((await c.prove(mutated)).kind).toBe("native");
+
+      let reads = 0;
+      const getter = {
+        contentType: PROVE.contentType,
+        body: PROVE.body,
+        get path() {
+          return reads++ === 0 ? "/prove" : "1/prove";
+        },
+      };
+      expect((await c.prove(getter)).kind).toBe("native");
+
+      const proves = fetchedUrls.filter((u) => u.includes("/prove"));
+      expect(proves).toHaveLength(2);
+      for (const url of proves)
+        expect(url).toMatch(/^https?:\/\/127\.0\.0\.1:(59833|3000)\/prove$/);
+    });
+
     test("a presto that predates `schemes` serves chonk only", async () => {
       mockFetch({ "/health": healthOk, "/prove": () => Response.json({}) });
       const { client: c } = client();

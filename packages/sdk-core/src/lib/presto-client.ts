@@ -32,9 +32,15 @@ interface HealthData {
   api_version?: unknown;
 }
 
+/**
+ * The caller's request read ONCE, at the top of `prove`: a getter, or an `onPhase` handler that
+ * mutates the object, could otherwise change the route after it was validated.
+ */
+type Snapshot = Readonly<ProveRequest>;
+
 /** Everything one prove attempt needs, snapshotted before any `onPhase` callback can reconfigure. */
 interface Attempt {
-  request: ProveRequest;
+  request: Snapshot;
   generation: number;
   url: string;
   wasHttps: boolean;
@@ -298,7 +304,14 @@ export class PrestoClient {
    * success body under the request's cap. Every condition the presto itself signals comes back as a
    * fallback outcome; see {@link ProveOutcome}.
    */
-  async prove(request: ProveRequest): Promise<ProveOutcome> {
+  async prove(caller: ProveRequest): Promise<ProveOutcome> {
+    const request: Snapshot = Object.freeze({
+      path: caller.path,
+      contentType: caller.contentType,
+      body: caller.body,
+      scheme: caller.scheme,
+      responseCap: caller.responseCap,
+    });
     assertRoutePath(request.path);
     // Capture the endpoint generation immediately BEFORE probing — but AFTER the "detect" callback,
     // so a handler that synchronously reconfigures there is honoured (the probe then targets the NEW
@@ -344,7 +357,7 @@ export class PrestoClient {
    * permitted; otherwise it degrades and the witness never goes plaintext. Recognized HTTP-level
    * failures also degrade, while misconfiguration/unexpected responses become the typed error.
    */
-  async #proveRemote(request: ProveRequest, attemptGen: number): Promise<ProveOutcome> {
+  async #proveRemote(request: Snapshot, attemptGen: number): Promise<ProveOutcome> {
     // IMMUTABLE snapshot of the endpoint this attempt targets, taken BEFORE any `onPhase` callback
     // runs: a dApp's handler can call `configure(B)` between here and the POST, and the old code then
     // sent the witness to the unprobed B. Every POST below uses these snapshots.

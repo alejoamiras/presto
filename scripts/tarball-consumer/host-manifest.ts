@@ -34,13 +34,15 @@ export function hostManifest(
   };
 }
 
-/** `name=path` pairs (the `--with` arguments of the consumer script). */
+/** `name=path` pairs (the `--with` arguments of the consumer script); a name may appear once. */
 export function parseLocalTarballs(pairs: string[]): Record<string, string> {
   const local: Record<string, string> = {};
   for (const pair of pairs) {
     const at = pair.indexOf("=");
     if (at <= 0 || at === pair.length - 1) throw new Error(`expected name=tarball, got ${pair}`);
-    local[pair.slice(0, at)] = pair.slice(at + 1);
+    const name = pair.slice(0, at);
+    if (Object.hasOwn(local, name)) throw new Error(`${name} is supplied twice`);
+    local[name] = pair.slice(at + 1);
   }
   return local;
 }

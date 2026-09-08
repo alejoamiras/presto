@@ -344,11 +344,9 @@ function isDetailedHealthBody(body: unknown): body is Record<string, unknown> {
  * `clone()` — a clone tees the stream and can buffer an unbounded pending branch). Returns
  * `undefined` on any failure: non-JSON, over-cap, deadline, or stream error.
  *
- * The cap and deadline are PARAMETERS, defaulting to the `/health` policy. Prove routes
- * return JSON too, so they reuse this exact
- * reader rather than getting a second one: the empty-chunk, partial-body and never-settling-cancel
- * defences below were each found by adversarial review, and a parallel implementation would have to
- * re-earn all of them. Only the POLICY differs per endpoint; the mechanics must not.
+ * The cap and deadline are PARAMETERS, defaulting to the `/health` policy. Prove routes return JSON
+ * too and reuse this one reader: the empty-chunk, partial-body, and never-settling-cancel defences
+ * below exist once. Only the POLICY differs per endpoint; the mechanics must not.
  */
 async function readJsonBounded(
   response: Response,

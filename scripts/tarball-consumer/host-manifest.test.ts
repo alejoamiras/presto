@@ -31,6 +31,8 @@ describe("consumer host manifest", () => {
     });
     expect(() => parseLocalTarballs(["nope"])).toThrow("expected name=tarball");
     expect(() => parseLocalTarballs(["name="])).toThrow("expected name=tarball");
+    // The last pair would otherwise win silently, and the post-install check would confirm it.
+    expect(() => parseLocalTarballs(["a=/x.tgz", "a=/y/x.tgz"])).toThrow("supplied twice");
   });
 
   test("an extra or local tarball naming the tested package is rejected", () => {
