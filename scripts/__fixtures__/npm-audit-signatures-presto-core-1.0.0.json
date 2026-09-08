@@ -1,0 +1,34 @@
+{
+  "verified": [
+    {
+      "name": "@alejoamiras/presto-core",
+      "version": "1.0.0",
+      "attestations": {
+        "url": "https://registry.npmjs.org/-/npm/v1/attestations/@alejoamiras%2fpresto-core@1.0.0",
+        "provenance": {
+          "predicateType": "https://slsa.dev/provenance/v1"
+        }
+      },
+      "attestationBundles": [
+        {
+          "predicateType": "https://github.com/npm/attestation/tree/main/specs/publish/v0.1",
+          "bundle": {
+            "dsseEnvelope": {
+              "payloadType": "application/vnd.in-toto+json",
+              "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjAuMSIsInN1YmplY3QiOlt7Im5hbWUiOiJwa2c6bnBtLyU0MGFsZWpvYW1pcmFzL3ByZXN0by1jb3JlQDEuMC4wIiwiZGlnZXN0Ijp7InNoYTUxMiI6ImQwN2IxYjMzZTU3MjlkNGM0YTQ2MGFlMmEwNThhMzY2OWUwZTU5MjM2MjlhOTU0ZDMwMjE3MTc0NzMwMDY5YTBkMTk0YjEyNmNlMGYwOTk5M2UzZTE3YzRiZTY4ZDk2OTYyMjRiNWRmMDFlMjAzNjJmZTg0NjM3Yzk5OGJjMjllIn19XSwicHJlZGljYXRlVHlwZSI6Imh0dHBzOi8vZ2l0aHViLmNvbS9ucG0vYXR0ZXN0YXRpb24vdHJlZS9tYWluL3NwZWNzL3B1Ymxpc2gvdjAuMSIsInByZWRpY2F0ZSI6eyJuYW1lIjoiQGFsZWpvYW1pcmFzL3ByZXN0by1jb3JlIiwidmVyc2lvbiI6IjEuMC4wIiwicmVnaXN0cnkiOiJodHRwczovL3JlZ2lzdHJ5Lm5wbWpzLm9yZyJ9fQ=="
+            }
+          }
+        },
+        {
+          "predicateType": "https://slsa.dev/provenance/v1",
+          "bundle": {
+            "dsseEnvelope": {
+              "payloadType": "application/vnd.in-toto+json",
+              "payload": "eyJfdHlwZSI6Imh0dHBzOi8vaW4tdG90by5pby9TdGF0ZW1lbnQvdjEiLCJzdWJqZWN0IjpbeyJuYW1lIjoicGtnOm5wbS8lNDBhbGVqb2FtaXJhcy9wcmVzdG8tY29yZUAxLjAuMCIsImRpZ2VzdCI6eyJzaGE1MTIiOiJkMDdiMWIzM2U1NzI5ZDRjNGE0NjBhZTJhMDU4YTM2NjllMGU1OTIzNjI5YTk1NGQzMDIxNzE3NDczMDA2OWEwZDE5NGIxMjZjZTBmMDk5OTNlM2UxN2M0YmU2OGQ5Njk2MjI0YjVkZjAxZTIwMzYyZmU4NDYzN2M5OThiYzI5ZSJ9fV0sInByZWRpY2F0ZVR5cGUiOiJodHRwczovL3Nsc2EuZGV2L3Byb3ZlbmFuY2UvdjEiLCJwcmVkaWNhdGUiOnsiYnVpbGREZWZpbml0aW9uIjp7ImJ1aWxkVHlwZSI6Imh0dHBzOi8vc2xzYS1mcmFtZXdvcmsuZ2l0aHViLmlvL2dpdGh1Yi1hY3Rpb25zLWJ1aWxkdHlwZXMvd29ya2Zsb3cvdjEiLCJleHRlcm5hbFBhcmFtZXRlcnMiOnsid29ya2Zsb3ciOnsicmVmIjoicmVmcy9oZWFkcy9tYWluIiwicmVwb3NpdG9yeSI6Imh0dHBzOi8vZ2l0aHViLmNvbS9hbGVqb2FtaXJhcy9wcmVzdG8iLCJwYXRoIjoiLmdpdGh1Yi93b3JrZmxvd3MvcmVsZWFzZS1zZGsueW1sIn19LCJpbnRlcm5hbFBhcmFtZXRlcnMiOnsiZ2l0aHViIjp7ImV2ZW50X25hbWUiOiJ3b3JrZmxvd19kaXNwYXRjaCIsInJlcG9zaXRvcnlfaWQiOiIxMzU3NDI4NjEzIiwicmVwb3NpdG9yeV9vd25lcl9pZCI6IjI5ODI5OTEifX0sInJlc29sdmVkRGVwZW5kZW5jaWVzIjpbeyJ1cmkiOiJnaXQraHR0cHM6Ly9naXRodWIuY29tL2FsZWpvYW1pcmFzL3ByZXN0b0ByZWZzL2hlYWRzL21haW4iLCJkaWdlc3QiOnsiZ2l0Q29tbWl0IjoiZjMzMWE3ODc3YTM2ZDQ3MDQ0MzYwMjNkY2UyMDRlZTkyNzg2YTMxOSJ9fV19LCJydW5EZXRhaWxzIjp7ImJ1aWxkZXIiOnsiaWQiOiJodHRwczovL2dpdGh1Yi5jb20vYWN0aW9ucy9ydW5uZXIvZ2l0aHViLWhvc3RlZCJ9LCJtZXRhZGF0YSI6eyJpbnZvY2F0aW9uSWQiOiJodHRwczovL2dpdGh1Yi5jb20vYWxlam9hbWlyYXMvcHJlc3RvL2FjdGlvbnMvcnVucy8zNDI2NDA3Mjg4NS9hdHRlbXB0cy8xIn19fX0="
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -146,13 +146,12 @@ async function verifyPromotionCandidate(
     }
   }
 
-  const provenance = await fetchAndVerifySdkProvenance(
-    version,
-    undefined,
-    rollback ? [SDK_RELEASE_WORKFLOW, LEGACY_SDK_RELEASE_WORKFLOW] : undefined,
-    pkg,
-  );
-  await verifySdkPackageSignatures(version, pkg);
+  const allowedWorkflows = rollback
+    ? [SDK_RELEASE_WORKFLOW, LEGACY_SDK_RELEASE_WORKFLOW]
+    : undefined;
+  await fetchAndVerifySdkProvenance(version, undefined, allowedWorkflows, pkg);
+  // The signed statement's commit is the one the tag must match.
+  const provenance = await verifySdkPackageSignatures(version, pkg, undefined, allowedWorkflows);
   const gitTag = releaseTag(pkg, version);
   const remoteRefs = run([
     "git",
