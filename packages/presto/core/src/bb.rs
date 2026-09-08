@@ -1655,12 +1655,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let ready = dir.path().join("ready");
         let mut cmd = tokio::process::Command::new("cmd.exe");
+        // The marker is a relative name in the temp dir: an absolute path would need quotes inside the
+        // `/C` argument, which std escapes as `\"` — a sequence cmd.exe does not understand.
+        cmd.current_dir(dir.path());
         cmd.args([
             "/C",
-            &format!(
-                "start /B ping -n 30 127.0.0.1 & echo ok > \"{}\" & ping -n 30 127.0.0.1",
-                ready.display()
-            ),
+            "start /B ping -n 30 127.0.0.1 & echo ok > ready & ping -n 30 127.0.0.1",
         ]);
         cmd.stdout(std::process::Stdio::null());
         finish_command(&mut cmd, None);
