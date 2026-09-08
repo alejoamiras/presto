@@ -18,3 +18,22 @@ test("playground requires the exact published SDK identity and matching Aztec de
     assertPublishedSdkManifest(manifest, "5.2.0", { ...dependencies, ms: "^3.0.0" }),
   ).toThrow();
 });
+
+test("a workspace range resolves to the sibling's version, which the published pin must equal", () => {
+  const core = "@alejoamiras/presto-core";
+  const workspace = { "@aztec/stdlib": "5.2.0", [core]: "workspace:*" };
+  const published = {
+    name: "@alejoamiras/presto",
+    version: "5.2.0",
+    dependencies: { "@aztec/stdlib": "5.2.0", [core]: "1.0.0" },
+  };
+  expect(() =>
+    assertPublishedSdkManifest(published, "5.2.0", workspace, { [core]: "1.0.0" }),
+  ).not.toThrow();
+  // The workspace core moved ahead of what the published SDK pins: not the playground graph.
+  expect(() =>
+    assertPublishedSdkManifest(published, "5.2.0", workspace, { [core]: "1.1.0" }),
+  ).toThrow("@alejoamiras/presto-core@1.0.0 does not match");
+  // No sibling version supplied: a workspace range can never be satisfied by a published pin.
+  expect(() => assertPublishedSdkManifest(published, "5.2.0", workspace)).toThrow();
+});

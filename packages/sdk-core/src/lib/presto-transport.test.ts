@@ -12,6 +12,13 @@ const HEALTHY = { status: "ok", api_version: 1 };
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("PrestoTransport", () => {
+  // Several suites below install a fetch mock without restoring it; a sibling test file in the same
+  // process (a non-parallel `bun test`) must still see the real fetch.
+  const realFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = realFetch;
+  });
+
   describe("baseUrl / protocol negotiation", () => {
     test("defaults to http://host:port before any protocol is negotiated", () => {
       const t = new PrestoTransport("127.0.0.1", 59833, 59834);
@@ -918,7 +925,7 @@ describe("PrestoTransport", () => {
    * forever buffered without limit and never settled — the dApp's WASM fallback could not run,
    * because the promise it would have caught never rejected.
    */
-  describe("readProveBody (F-11: cap + deadline on the /prove body)", () => {
+  describe("readJsonBody (cap + deadline on a prove-route body)", () => {
     const transport = () => new PrestoTransport("127.0.0.1", 59833, 59834);
 
     /** A stream that emits `chunks` and then never closes — the "200 then stall" shape. */
@@ -932,21 +939,21 @@ describe("PrestoTransport", () => {
       return new Response(body, { headers: { "content-type": "application/json" } });
     }
 
-    test("a normal proof body is returned unchanged", async () => {
+    test("a normal proof body is returned parsed", async () => {
       const proof = Buffer.from("a realistic-enough proof").toString("base64");
-      expect(await transport().readProveBody(Response.json({ proof }))).toBe(proof);
+      expect(await transport().readJsonBody(Response.json({ proof }))).toEqual({ proof });
     });
 
     test("an over-cap body is rejected rather than buffered", async () => {
       // 9 MiB of base64 — past the 8 MiB transfer cap, and ~65x any proof the protocol can emit.
       const huge = "A".repeat(9 * 1024 * 1024);
-      expect(await transport().readProveBody(Response.json({ proof: huge }))).toBeUndefined();
+      expect(await transport().readJsonBody(Response.json({ proof: huge }))).toBeUndefined();
     });
 
     test("a body that stalls after 200 hits the deadline instead of hanging forever", async () => {
       // Deadline overridden to 200ms: asserting this against the real 60s production value would
       // cost a minute of CI per run to prove exactly the same thing.
-      const result = await transport().readProveBody(
+      const result = await transport().readJsonBody(
         stalling([new TextEncoder().encode('{"proof":"AAAA"')]),
         8 * 1024 * 1024,
         200,
@@ -959,7 +966,7 @@ describe("PrestoTransport", () => {
       // first. A 10s deadline that is never approached is what proves the cap did the work.
       const mib = new Uint8Array(1024 * 1024);
       const started = performance.now();
-      const result = await transport().readProveBody(
+      const result = await transport().readJsonBody(
         stalling(Array.from({ length: 12 }, () => mib)),
         8 * 1024 * 1024,
         10_000,
@@ -985,23 +992,26 @@ describe("PrestoTransport", () => {
       // Leading whitespace is valid JSON padding, so this parses — the assertion is that it
       // completes at all, and quickly, rather than thrashing.
       const started = performance.now();
-      expect(await transport().readProveBody(res, 8 * 1024 * 1024, 10_000)).toBe("AAAA");
+      expect(await transport().readJsonBody(res, 8 * 1024 * 1024, 10_000)).toEqual({
+        proof: "AAAA",
+      });
       expect(performance.now() - started).toBeLessThan(5_000);
     });
 
-    test("a body that is not JSON, or lacks a string proof, is rejected", async () => {
+    test("a body that is not JSON is rejected; the JSON shape is the caller's to check", async () => {
       const t = transport();
-      expect(await t.readProveBody(new Response("not json"))).toBeUndefined();
-      expect(await t.readProveBody(Response.json({ nope: 1 }))).toBeUndefined();
-      expect(await t.readProveBody(Response.json({ proof: 12345 }))).toBeUndefined();
-      expect(await t.readProveBody(Response.json(null))).toBeUndefined();
+      expect(await t.readJsonBody(new Response("not json"))).toBeUndefined();
+      expect(await t.readJsonBody(Response.json({ proof: 12345 }))).toEqual({ proof: 12345 });
+      expect(await t.readJsonBody(Response.json(null))).toBeNull();
     });
 
     test("the /health cap stays at its own smaller value — policy is per-endpoint", async () => {
       // 128 KiB is fine for /prove (8 MiB cap) but must be over-cap for /health (64 KiB), which is
       // what proves the two endpoints did not get collapsed onto one shared constant.
       const medium = "A".repeat(128 * 1024);
-      expect(await transport().readProveBody(Response.json({ proof: medium }))).toBe(medium);
+      expect(await transport().readJsonBody(Response.json({ proof: medium }))).toEqual({
+        proof: medium,
+      });
 
       globalThis.fetch = mock(async () =>
         Response.json({ status: "ok", api_version: 1, pad: medium }),
@@ -1023,34 +1033,34 @@ describe("PrestoTransport", () => {
     });
 
     const errorBody = JSON.stringify({ error: "some_code" });
-    const postProveAgainst = async (contentType: string): Promise<unknown> => {
+    const postAgainst = async (contentType: string): Promise<unknown> => {
       globalThis.fetch = mock(
         async () =>
           new Response(errorBody, { status: 500, headers: { "content-type": contentType } }),
       ) as unknown as typeof globalThis.fetch;
       const t = new PrestoTransport("127.0.0.1", 59833, 59834);
       try {
-        await t.postProve(new Uint8Array([1]), undefined);
-        throw new Error("postProve unexpectedly succeeded");
+        await t.post("/prove", new Uint8Array([1]), "application/octet-stream");
+        throw new Error("post unexpectedly succeeded");
       } catch (e) {
         return (e as { data: unknown }).data;
       }
     };
 
     test("text/plain keeps the raw STRING (the server's production shape)", async () => {
-      expect(typeof (await postProveAgainst("text/plain"))).toBe("string");
+      expect(typeof (await postAgainst("text/plain"))).toBe("string");
     });
 
     test("a parameterized non-JSON type mentioning json stays a STRING", async () => {
-      expect(typeof (await postProveAgainst("Text/Plain; note=application/json"))).toBe("string");
+      expect(typeof (await postAgainst("Text/Plain; note=application/json"))).toBe("string");
     });
 
     test("application/json parses to an OBJECT", async () => {
-      expect(await postProveAgainst("application/json")).toEqual({ error: "some_code" });
+      expect(await postAgainst("application/json")).toEqual({ error: "some_code" });
     });
 
     test("a +json suffix type parses to an OBJECT", async () => {
-      expect(await postProveAgainst("application/problem+json; charset=utf-8")).toEqual({
+      expect(await postAgainst("application/problem+json; charset=utf-8")).toEqual({
         error: "some_code",
       });
     });

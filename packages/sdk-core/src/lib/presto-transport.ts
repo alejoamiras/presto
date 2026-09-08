@@ -1,6 +1,5 @@
 import ms from "ms";
 import type { PrestoProtocol, PrestoStatus, SecureConnectionDiagnosis } from "./types.js";
-// q7e3-F-02: import shared types from the neutral module, not back from the prover (kills the 2-way edge).
 import { PRESTO_API_VERSION } from "./types.js";
 
 /** How long a probed {@link PrestoStatus} stays fresh before a re-probe. */
@@ -24,16 +23,16 @@ const HTTPS_GRACE_MS = 250;
  */
 const HEALTH_BODY_TIMEOUT_MS = 2_000;
 const HEALTH_BODY_MAX_BYTES = 64 * 1024;
-/** /prove is long-running (native bb proof) — generous timeout. */
+/** Prove routes are long-running (native bb proof) — generous timeout. */
 const PROVE_TIMEOUT_MS = ms("10 min");
 
 /**
- * Deadline + byte cap for reading a `/prove` BODY (F-11, audit 2026-07-31-9c4cb0c). `PROVE_TIMEOUT_MS`
- * above bounds time-to-headers — so before this, an endpoint could
- * answer `200` and then stream forever into an unbounded buffer.
+ * Deadline + byte cap for reading a prove-route success BODY. `PROVE_TIMEOUT_MS` above bounds
+ * time-to-headers — so before this, an endpoint could answer `200` and then stream forever into an
+ * unbounded buffer. Routes with a different response shape pass their own cap.
  *
- * **The cap is derived, not sampled.** A single observed proof is a lower bound, not a protocol
- * maximum, so it is computed from the protocol's own declared sizes:
+ * **The default cap is derived, not sampled.** A single observed proof is a lower bound, not a
+ * protocol maximum, so it is computed from the chonk protocol's own declared sizes:
  *
  * - `@aztec/stdlib`'s `chonk_proof.ts` documents the proof data itself as **≈52 KB** uncompressed
  *   ("always >= 40KB") and ≈35 KB compressed.
@@ -268,10 +267,13 @@ export function isRecognizedHealthBody(body: unknown): boolean {
   return b.status === "ok" && b.api_version === PRESTO_API_VERSION;
 }
 
+// `schemes` is deliberately absent: it rides on the MINIMAL body too, so its presence says nothing
+// about whether the responder served the detailed tier.
 const DETAILED_HEALTH_KEYS = [
   "version",
   "aztec_version",
   "available_versions",
+  "versions",
   "bb_available",
   "https_port",
 ] as const;
@@ -280,8 +282,27 @@ function hasAnyDetailedHealthField(body: Record<string, unknown>): boolean {
   return DETAILED_HEALTH_KEYS.some((key) => key in body);
 }
 
+const isStringArray = (value: unknown): value is string[] =>
+  Array.isArray(value) && value.every((item) => typeof item === "string");
+
+/** `/health.versions`: `[{ aztec_version, bb_version }]`, both strings. */
+export function isVersionPairArray(
+  value: unknown,
+): value is Array<{ aztec_version: string; bb_version: string }> {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (pair) =>
+        typeof pair === "object" &&
+        pair !== null &&
+        typeof (pair as Record<string, unknown>).aztec_version === "string" &&
+        typeof (pair as Record<string, unknown>).bb_version === "string",
+    )
+  );
+}
+
 /**
- * Validate every optional field the SDK consumes. The two-field public liveness response remains
+ * Validate every optional field the client consumes. The two-field public liveness response remains
  * valid, but a response that starts presenting detailed data must not smuggle invalid runtime types
  * into the public status or throw from version classification.
  */
@@ -291,9 +312,9 @@ export function isValidHealthBody(body: unknown): body is Record<string, unknown
   return (
     (!("version" in b) || typeof b.version === "string") &&
     (!("aztec_version" in b) || typeof b.aztec_version === "string") &&
-    (!("available_versions" in b) ||
-      (Array.isArray(b.available_versions) &&
-        b.available_versions.every((version) => typeof version === "string"))) &&
+    (!("available_versions" in b) || isStringArray(b.available_versions)) &&
+    (!("schemes" in b) || isStringArray(b.schemes)) &&
+    (!("versions" in b) || isVersionPairArray(b.versions)) &&
     (!("bb_available" in b) || typeof b.bb_available === "boolean") &&
     (!("https_port" in b) ||
       (typeof b.https_port === "number" &&
@@ -458,16 +479,14 @@ async function readTextBounded(
 }
 
 /**
- * Owns all network I/O to the local presto: endpoint/URL construction, the
- * `/health` probing + protocol negotiation, the diagnostic HTTP health check, the short-lived status
- * cache, and the `/prove` POST. Plain `fetch` for both endpoints; a non-2xx
- * `/prove` answer throws {@link TransportHttpError}, so the thrown-error surface
- * is uniform.
+ * Owns all network I/O to the local presto: endpoint/URL construction, the `/health` probing +
+ * protocol negotiation, the diagnostic HTTP health check, the short-lived status cache, and the
+ * prove-route POST. Plain `fetch` for every endpoint; a non-2xx prove answer throws
+ * {@link TransportHttpError}, so the thrown-error surface is uniform.
  *
- * The {@link PrestoProver} keeps the *domain* logic: parsing a `/health`
- * response into the {@link PrestoStatus} discriminated union, and reading a
- * `403` as an origin denial. This class is internal — it is **not** exported from
- * the package barrel.
+ * The {@link PrestoClient} keeps the *policy*: parsing a `/health` response into the
+ * {@link PrestoStatus} discriminated union, and classifying a prove-route error. This class is
+ * internal — it is **not** exported from the package barrel.
  */
 export class PrestoTransport {
   #host: string;
@@ -915,38 +934,40 @@ export class PrestoTransport {
     }
   }
 
-  /** The `/prove` URL for an EXPLICIT protocol, independent of the current pin — used by the demotion
+  /** The URL of `path` for an EXPLICIT protocol, independent of the current pin — used by the demotion
    * retry so a mid-proof `configure()` (generation change) can't redirect the retried witness. */
-  proveUrlFor(protocol: PrestoProtocol): string {
+  urlFor(protocol: PrestoProtocol, path: string): string {
     return protocol === "https"
-      ? `https://${this.#host}:${this.#httpsPort}/prove`
-      : `http://${this.#host}:${this.#port}/prove`;
+      ? `https://${this.#host}:${this.#httpsPort}${path}`
+      : `http://${this.#host}:${this.#port}${path}`;
   }
 
   /**
-   * POST serialized execution steps to `/prove` on the negotiated endpoint (`baseUrl`), or — when
-   * `url` is given — to that EXACT url (the demotion retry passes an explicit `http://` url so it
-   * targets the endpoint THIS attempt was made against, not a since-reconfigured pin). Throws
-   * {@link TransportHttpError} on a non-2xx response (the caller maps `403` → origin denial),
-   * with the error body pre-read under the `/health` bounds — the status is preserved even when
-   * that body stalls, overflows, or is malformed, so a hostile error body can never re-route the
+   * POST a prove request to `path` on the negotiated endpoint (`baseUrl`), or — when `url` is given
+   * — to that EXACT url (the demotion retry passes an explicit `http://` url so it targets the
+   * endpoint THIS attempt was made against, not a since-reconfigured pin). Throws
+   * {@link TransportHttpError} on a non-2xx response (the caller maps `403` → origin denial), with
+   * the error body pre-read under the `/health` bounds — the status is preserved even when that body
+   * stalls, overflows, or is malformed, so a hostile error body can never re-route the
    * classification to the network-failure path.
    */
-  async postProve(
+  async post(
+    path: string,
     body: Uint8Array<ArrayBuffer>,
-    aztecVersion: string | undefined,
+    contentType: string,
+    aztecVersion?: string,
     url?: string,
   ): Promise<Response> {
     const response = await fetchHeaderBounded(
-      url ?? `${this.baseUrl}/prove`,
+      url ?? `${this.baseUrl}${path}`,
       {
         method: "POST",
         body,
         // Never follow a redirect with the witness in the body: 307/308 preserve method + body, so a
-        // redirect here would forward it to an endpoint we never validated (post-impl codex High).
+        // redirect here would forward it to an endpoint we never validated.
         redirect: "error",
         headers: {
-          "content-type": "application/octet-stream",
+          "content-type": contentType,
           ...(aztecVersion ? { "x-aztec-version": aztecVersion } : {}),
         },
       },
@@ -978,33 +999,26 @@ export class PrestoTransport {
   }
 
   /**
-   * Read a `/prove` success body under a byte cap and a body deadline, returning the base64 proof
-   * string — or `undefined` if the body is over-cap, stalls, is not JSON, or lacks a string `proof`
-   * (F-11, audit 2026-07-31-9c4cb0c).
+   * Read a prove-route success body under a byte cap and a body deadline, returning the parsed JSON
+   * — or `undefined` if the body is over-cap, stalls, or is not JSON. The shape of the JSON is the
+   * caller's to check.
    *
-   * Before this, the caller read the body with a bare `res.json()`: `PROVE_TIMEOUT_MS` bounds
-   * time-to-headers, so an endpoint answering `200` and then streaming forever
-   * had no bound at all. The witness has already left the machine by this point, so the exposure here
-   * is availability — but it is the dApp's tab that dies, and the fallback path never runs because
-   * the promise simply never settles.
+   * `PROVE_TIMEOUT_MS` bounds time-to-headers only, so without this an endpoint answering `200` and
+   * then streaming forever had no bound at all. The witness has already left the machine by this
+   * point, so the exposure is availability — but it is the dApp's tab that dies, and the fallback
+   * path never runs because the promise simply never settles.
    *
    * Deliberately the SAME reader as `/health`, with a different policy — see {@link readJsonBounded}.
    */
-  async readProveBody(
+  async readJsonBody(
     response: Response,
+    maxBytes: number = PROVE_BODY_MAX_BYTES,
     // Overridable ONLY so the deadline path can be tested in milliseconds; a test that proves
     // settlement by actually waiting out the 60 s production deadline costs a minute of CI per run.
-    maxBytes: number = PROVE_BODY_MAX_BYTES,
     timeoutMs: number = PROVE_BODY_TIMEOUT_MS,
-  ): Promise<string | undefined> {
-    const body = await readJsonBounded(response, maxBytes, timeoutMs);
-    if (typeof body !== "object" || body === null) return undefined;
-    const proof = (body as { proof?: unknown }).proof;
-    if (typeof proof !== "string") return undefined;
-    // No separate decode cap: the base64 string is a substring of a body already bounded by
-    // `maxBytes`, so it cannot exceed it, and `Buffer.from` allocates ~0.75x of that. A second
-    // constant at the same value only looked like defence in depth (post-impl codex flagged it as
-    // dead policy) — the real bound is the body cap above.
-    return proof;
+  ): Promise<unknown> {
+    // No separate decode cap for base64 fields: a field is a substring of a body already bounded by
+    // `maxBytes`, so it cannot exceed it, and decoding allocates ~0.75x of that.
+    return readJsonBounded(response, maxBytes, timeoutMs);
   }
 }

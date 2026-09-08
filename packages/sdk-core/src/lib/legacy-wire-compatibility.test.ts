@@ -40,8 +40,8 @@ test.each([legacy.minimalHealth, legacy.detailedHealth])(
       ).toBe(true);
       transport.setProtocol(probe.protocol);
       const witness = new Uint8Array([31, 139, 0, 1, 2, 255]);
-      const response = await transport.postProve(witness, "5.2.0");
-      expect(await transport.readProveBody(response)).toBe(legacy.proveResponse.proof);
+      const response = await transport.post("/prove", witness, "application/octet-stream", "5.2.0");
+      expect(await transport.readJsonBody(response)).toEqual(legacy.proveResponse);
       expect(requests.filter((request) => request.path === "/prove")).toEqual([
         {
           path: "/prove",

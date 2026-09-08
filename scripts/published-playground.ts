@@ -7,18 +7,27 @@ import {
   SDK_PACKAGE,
   SDK_VERSION_PATTERN,
 } from "./sdk-release-verification";
+import { assertCorePin, CORE_NAME } from "./tarball-consumer/assert-core-pin";
 import { verifySdkPackageSignatures } from "./verify-sdk-package-signatures";
 
+/**
+ * The published SDK must be the requested candidate and carry the playground's exact dependency
+ * graph. A `workspace:` range in the workspace manifest resolves to that sibling's current version,
+ * which the published pin must equal.
+ */
 export function assertPublishedSdkManifest(
   manifest: { name: string; version: string; dependencies: Record<string, string> },
   version: string,
   workspaceDependencies: Record<string, string>,
+  workspaceVersions: Record<string, string> = {},
 ) {
   if (manifest.name !== SDK_PACKAGE || manifest.version !== version) {
     throw new Error("Published SDK identity does not match the requested candidate");
   }
   for (const [name, pin] of Object.entries(manifest.dependencies)) {
-    if (workspaceDependencies[name] !== pin) {
+    const range = workspaceDependencies[name];
+    const expected = range?.startsWith("workspace:") ? workspaceVersions[name] : range;
+    if (expected !== pin) {
       throw new Error(
         `Published SDK dependency ${name}@${pin} does not match the playground graph`,
       );
@@ -49,16 +58,23 @@ if (import.meta.main) {
   const tarball = join(directory, packed.filename);
   const manifest = JSON.parse(run(["tar", "-xzOf", tarball, "package/package.json"]));
   const workspace = await Bun.file(join(root, "packages/sdk/package.json")).json();
-  assertPublishedSdkManifest(manifest, version, workspace.dependencies);
+  const core = await Bun.file(join(root, "packages/sdk-core/package.json")).json();
+  const workspaceVersions = { [CORE_NAME]: core.version };
+  assertPublishedSdkManifest(manifest, version, workspace.dependencies, workspaceVersions);
   const swap = Bun.spawnSync(["bash", ".github/scripts/packaged-e2e-swap-sdk.sh", tarball], {
     cwd: root,
     stdout: "inherit",
     stderr: "inherit",
   });
   if (swap.exitCode !== 0) throw new Error("Could not install the published SDK into playground");
-  const installed = await Bun.file(
-    join(root, "packages/playground/node_modules/@alejoamiras/presto/package.json"),
+  const installedDir = join(root, "packages/playground/node_modules/@alejoamiras/presto");
+  const installed = await Bun.file(join(installedDir, "package.json")).json();
+  assertPublishedSdkManifest(installed, version, workspace.dependencies, workspaceVersions);
+  const installedCore = await Bun.file(
+    join(installedDir, "node_modules/@alejoamiras/presto-core/package.json"),
   ).json();
-  assertPublishedSdkManifest(installed, version, workspace.dependencies);
-  console.log(`Playground uses verified published ${SDK_PACKAGE}@${version}`);
+  assertCorePin(installed, installedCore);
+  console.log(
+    `Playground uses verified published ${SDK_PACKAGE}@${version} on ${CORE_NAME}@${installedCore.version}`,
+  );
 }
