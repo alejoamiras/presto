@@ -22,7 +22,7 @@ interface AttestationResponse {
   }>;
 }
 
-interface ProvenanceStatement {
+export interface ProvenanceStatement {
   subject?: Array<{ name?: string; digest?: { sha512?: string } }>;
   predicate?: {
     buildDefinition?: {
@@ -39,6 +39,8 @@ export interface VerifiedProvenance {
   ref: string;
   repository: string;
   workflow: string;
+  /** The subject digest in npm's integrity form (`sha512-<base64>`). */
+  integrity: string;
 }
 
 function npmView(spec: string, field: string): string {
@@ -54,6 +56,26 @@ function npmView(spec: string, field: string): string {
   return value;
 }
 
+/** The SHA-512 hex digest of the subject named `expectedSubject`. */
+function subjectDigest(
+  statement: ProvenanceStatement,
+  expectedSubject: string,
+  expectedSha512?: string,
+): string {
+  const subject = statement.subject?.find((subject) => subject.name === expectedSubject);
+  if (!subject) {
+    throw new Error(`provenance subject does not contain ${expectedSubject}`);
+  }
+  const sha512 = subject.digest?.sha512;
+  if (!sha512 || !/^[0-9a-f]{128}$/.test(sha512)) {
+    throw new Error("provenance subject has no SHA-512 digest");
+  }
+  if (expectedSha512 && sha512 !== expectedSha512) {
+    throw new Error("provenance subject digest does not match the npm tarball integrity");
+  }
+  return sha512;
+}
+
 /** The provenance must name exactly `pkg@version`: a statement for a sibling package is rejected. */
 export function verifyProvenanceStatement(
   statement: ProvenanceStatement,
@@ -63,14 +85,7 @@ export function verifyProvenanceStatement(
   expectedSha512?: string,
   pkg: NpmPackage = NPM_PACKAGES.presto,
 ): VerifiedProvenance {
-  const expectedSubject = provenanceSubject(pkg, version);
-  const subject = statement.subject?.find((subject) => subject.name === expectedSubject);
-  if (!subject) {
-    throw new Error(`provenance subject does not contain ${expectedSubject}`);
-  }
-  if (expectedSha512 && subject.digest?.sha512 !== expectedSha512) {
-    throw new Error("provenance subject digest does not match the npm tarball integrity");
-  }
+  const sha512 = subjectDigest(statement, provenanceSubject(pkg, version), expectedSha512);
 
   const definition = statement.predicate?.buildDefinition;
   const workflow = definition?.externalParameters?.workflow;
@@ -99,9 +114,15 @@ export function verifyProvenanceStatement(
     ref: workflow.ref,
     repository: workflow.repository,
     workflow: workflow.path,
+    integrity: `sha512-${Buffer.from(sha512, "hex").toString("base64")}`,
   };
 }
 
+/**
+ * The registry's attestation payload checked against the registry's own `dist.integrity`: two
+ * unauthenticated responses, consistent with each other. The signed statement is what
+ * `verifySdkPackageSignatures` yields; only its digest may bind bytes that get deployed.
+ */
 export async function fetchAndVerifySdkProvenance(
   version: string,
   expectedCommit?: string,

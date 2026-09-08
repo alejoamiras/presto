@@ -92,11 +92,75 @@ describe("npm release workflow contract", () => {
     const records = publish.indexOf("Create git tag and GitHub release");
     expect(verification).toBeGreaterThan(0);
     expect(records).toBeGreaterThan(verification);
-    expect(publish.indexOf("bash scripts/sdk-tarball-consumer.sh")).toBeLessThan(
-      publish.indexOf("npm publish"),
-    );
+  });
+});
+
+describe("publish job isolation", () => {
+  test("nothing resolved from the registry runs in the job that holds the publish credentials", () => {
+    const pack = job(publish, "pack");
+    const consumer = job(publish, "consumer-test");
+    const publishJob = job(publish, "publish");
+    const verify = job(publish, "verify");
+    for (const unprivileged of [pack, consumer, verify]) {
+      expect(unprivileged).toContain("contents: read");
+      expect(unprivileged).not.toContain("id-token");
+      expect(unprivileged).not.toContain("environment:");
+    }
+    const before = (text: string, first: string, second: string) => {
+      const a = text.indexOf(first);
+      const b = text.indexOf(second);
+      expect(a).toBeGreaterThan(0);
+      expect(b).toBeGreaterThan(a);
+    };
+    // The digest travels as a job output, recorded before the consumer job runs.
+    before(pack, "sha256sum", "upload-artifact");
+    expect(pack).not.toContain("sdk-tarball-consumer.sh");
+    expect(pack).toMatch(/sha256: \$\{\{ steps\.pack\.outputs\.sha256 \}\}/);
+    expect(consumer).toContain("needs: pack");
+    expect(consumer).toContain('echo "$SHA256  $TARBALL" | sha256sum -c -');
+    expect(consumer).toContain("bash scripts/sdk-tarball-consumer.sh");
+    expect(publishJob).toContain("needs: [pack, consumer-test]");
+    expect(publishJob).toContain("id-token: write");
+    before(publishJob, 'echo "$SHA256  $TARBALL" | sha256sum -c -', "npm publish");
+    // Nothing installs in the credentialed job: not the consumer host, not even the lockfile.
+    for (const install of ["sdk-tarball-consumer.sh", "npx", "npm install", "bun install"]) {
+      expect(publishJob).not.toContain(install);
+    }
+    expect(verify).toContain("needs: [pack, publish]");
+    expect(verify).toContain("npm install --ignore-scripts");
   });
 
+  test("the consumer host never runs registry lifecycle scripts and pins its compiler exactly", () => {
+    const consumer = readFileSync(resolve(repository, "scripts/sdk-tarball-consumer.sh"), "utf8");
+    const installs = consumer.match(/npm install [^\n]*/g) ?? [];
+    expect(installs.length).toBeGreaterThan(0);
+    for (const install of installs) {
+      expect(install).toContain("--ignore-scripts");
+    }
+    expect(consumer).toMatch(/--package=typescript@\d+\.\d+\.\d+ /);
+  });
+
+  test("every caller checks the SIGNED statement's commit and workflow, not only the unsigned one", () => {
+    const source = (rel: string) => readFileSync(resolve(repository, rel), "utf8");
+    // Publication: the signed statement must name the dispatched commit.
+    expect(job(publish, "publish")).toContain(
+      'bun scripts/verify-sdk-package-signatures.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"',
+    );
+    // Reuse planning: the signed statement must name the tag's commit.
+    expect(source("scripts/release-plan.ts")).toContain(
+      "verifySdkPackageSignatures(version, pkg, tagCommit)",
+    );
+    // Promotion: the tag is compared against the signed commit, and a rollback's legacy-workflow
+    // allowance reaches the signed verification too.
+    const promote = source("scripts/promote-sdk-latest.ts");
+    expect(promote).toContain(
+      "const provenance = await verifySdkPackageSignatures(version, pkg, undefined, allowedWorkflows)",
+    );
+    expect(promote).toContain("tagCommit !== provenance.commit");
+  });
+});
+
+describe("playground deployment", () => {
   test("playground verification uses the publish job's Node/npm toolchain", () => {
     const deploy = release.slice(release.indexOf("  deploy-app:"));
     const setup = deploy.indexOf(
@@ -106,9 +170,6 @@ describe("npm release workflow contract", () => {
     expect(deploy.slice(setup)).toContain("node-version: 24");
     expect(setup).toBeLessThan(deploy.indexOf("bun scripts/published-playground.ts"));
   });
-});
-
-describe("playground deployment", () => {
   test("waits for every selected publication and tolerates unselected ones", () => {
     const deploy = job(release, "deploy-app");
     expect(deploy).toContain(

@@ -3,11 +3,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseNpmPackResult } from "./npm-pack-result";
 import { NPM_PACKAGES, type NpmPackage } from "./npm-packages";
-import {
-  fetchAndVerifySdkProvenance,
-  SDK_PACKAGE,
-  SDK_VERSION_PATTERN,
-} from "./sdk-release-verification";
+import { SDK_PACKAGE, SDK_VERSION_PATTERN } from "./sdk-release-verification";
 import { assertCorePin, CORE_NAME, expectedCoreVersion } from "./tarball-consumer/assert-core-pin";
 import { verifySdkPackageSignatures } from "./verify-sdk-package-signatures";
 
@@ -69,6 +65,27 @@ export function assertPeerPin(
   }
 }
 
+/** npm's integrity form (`sha512-<base64>`) of a tarball's bytes. */
+export function tarballIntegrity(bytes: ArrayBuffer | Uint8Array): string {
+  const hasher = new Bun.CryptoHasher("sha512");
+  hasher.update(bytes);
+  return `sha512-${hasher.digest("base64")}`;
+}
+
+/**
+ * The bytes deployed must be the bytes the signed provenance names: `npm pack` is a separate
+ * registry conversation from the signature audit, and a registry can answer each differently.
+ */
+export function assertVerifiedTarball(
+  bytes: ArrayBuffer | Uint8Array,
+  signed: string,
+  spec: string,
+) {
+  if (tarballIntegrity(bytes) !== signed) {
+    throw new Error(`Downloaded ${spec} tarball does not match its signed provenance digest`);
+  }
+}
+
 /** The directory `name` resolves to from `from`: the copy a bundler resolving there bundles. */
 export function packageRoot(name: string, from: string): string {
   const entry = Bun.resolveSync(name, from);
@@ -98,20 +115,16 @@ if (import.meta.main) {
     return result.stdout.toString().trim();
   };
   const readJson = (rel: string) => Bun.file(join(root, rel)).json();
-  /** Provenance, signatures, and an integrity-matched tarball of one published version. */
   const fetchVerified = async (pkg: NpmPackage, version: string) => {
-    await fetchAndVerifySdkProvenance(version, undefined, undefined, pkg);
-    await verifySdkPackageSignatures(version, pkg);
     const spec = `${pkg.name}@${version}`;
+    const provenance = await verifySdkPackageSignatures(version, pkg);
     const packed = parseNpmPackResult(
       JSON.parse(run(["npm", "pack", "--ignore-scripts", "--json", spec])),
       pkg.name,
       version,
     );
-    if (packed.integrity !== run(["npm", "view", spec, "dist.integrity"])) {
-      throw new Error(`Published tarball integrity mismatch for ${spec}`);
-    }
     const tarball = join(directory, packed.filename);
+    assertVerifiedTarball(await Bun.file(tarball).arrayBuffer(), provenance.integrity, spec);
     const manifest: PublishedManifest = JSON.parse(
       run(["tar", "-xzOf", tarball, "package/package.json"]),
     );
