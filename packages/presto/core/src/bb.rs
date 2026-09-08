@@ -477,10 +477,10 @@ fn finish_command(command: &mut tokio::process::Command, threads: Option<usize>)
     containment::configure(command);
 }
 
-/// Wait for a killed child to be reaped. SIGKILL / `TerminateJobObject` cannot be refused, so this
-/// only outlasts the interval while the kernel holds the process (uninterruptible I/O); it warns each
-/// interval rather than giving up, because returning early would free the caller's seats under a
-/// still-resident bb. A wait error means the OS no longer counts it as our child: nothing left to wait.
+/// Wait for a killed child to be reaped, without giving up: returning early would free the caller's
+/// seats under a still-resident bb. Warns per interval while the kernel still holds the process, and
+/// retries a failed wait (on Windows tokio's wait registration itself can fail while the process is
+/// terminating); only ECHILD — the OS no longer counts it as our child — ends the wait.
 async fn confirm_reaped(child: &mut tokio::process::Child) {
     const WARN_EVERY: Duration = Duration::from_secs(5);
     let started = std::time::Instant::now();
@@ -488,8 +488,13 @@ async fn confirm_reaped(child: &mut tokio::process::Child) {
         match tokio::time::timeout(WARN_EVERY, child.wait()).await {
             Ok(Ok(_)) => return,
             Ok(Err(e)) => {
-                tracing::error!("waiting for the killed bb failed: {e}");
-                return;
+                #[cfg(unix)]
+                if e.raw_os_error() == Some(libc::ECHILD) {
+                    tracing::warn!("the killed bb was already reaped elsewhere: {e}");
+                    return;
+                }
+                tracing::error!("waiting for the killed bb failed: {e}; retrying");
+                tokio::time::sleep(Duration::from_millis(100)).await;
             }
             Err(_) => tracing::warn!(
                 waited_secs = started.elapsed().as_secs(),
@@ -942,6 +947,12 @@ mod containment {
     #[cfg(test)]
     pub(super) fn job_handle_for_test() -> HANDLE {
         job_handle()
+    }
+
+    /// Test-only: processes currently in the job, read without terminating anything.
+    #[cfg(test)]
+    pub(super) fn active_processes_for_test() -> Option<u32> {
+        active_processes(job_handle())
     }
 
     /// Spawn bb and assign it to the job ATOMICALLY under `GATE` (codex r3 H2a — see [`GATE`]). Holding the
@@ -1620,8 +1631,10 @@ mod tests {
             dir.path(),
             &format!("echo $$ > \"{}\"\nexec sleep 300", pidfile.display()),
         );
+        // The timeout clock starts inside `prove_with_timeout`, so the fake bb has these seconds to write
+        // its pid; a machine slow enough to miss them fails `wait_for_pid` loudly rather than passing.
         let run = tokio::spawn(async {
-            prove_with_timeout(b"witness", None, None, Duration::from_secs(1), None).await
+            prove_with_timeout(b"witness", None, None, Duration::from_secs(3), None).await
         });
         let pid = wait_for_pid(&pidfile).await;
         let err = run.await.unwrap().expect_err("a hung bb must time out");
@@ -1634,11 +1647,21 @@ mod tests {
 
     #[cfg(windows)]
     #[tokio::test]
+    #[serial]
     async fn cancel_terminates_the_job_tree_and_returns_after_the_reap() {
-        // bb.exe plus a descendant in the same job; cancelling must end BOTH (TerminateJobObject, not
-        // just the direct child) and only then return, leaving the job empty for the next prove.
+        // bb.exe plus a descendant in the same job; cancelling must end BOTH through the job (not just
+        // the direct child) and return only after the direct child is reaped. The job is observed, never
+        // killed again, so the count reaching zero is the cancel's own doing.
+        let dir = tempfile::tempdir().unwrap();
+        let ready = dir.path().join("ready");
         let mut cmd = tokio::process::Command::new("cmd.exe");
-        cmd.args(["/C", "start /B ping -n 30 127.0.0.1 & ping -n 30 127.0.0.1"]);
+        cmd.args([
+            "/C",
+            &format!(
+                "start /B ping -n 30 127.0.0.1 & echo ok > \"{}\" & ping -n 30 127.0.0.1",
+                ready.display()
+            ),
+        ]);
         cmd.stdout(std::process::Stdio::null());
         finish_command(&mut cmd, None);
         let cancel: Cancel = std::sync::Arc::new(tokio::sync::Notify::new());
@@ -1647,14 +1670,30 @@ mod tests {
             tokio::spawn(
                 async move { run_bb(&mut cmd, Duration::from_secs(60), Some(cancel)).await },
             );
-        tokio::time::sleep(Duration::from_millis(500)).await;
+        for _ in 0..250 {
+            if ready.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(ready.exists(), "the descendant never started");
+        assert!(
+            super::containment::active_processes_for_test().unwrap_or(0) >= 2,
+            "bb and its descendant must both be in the job before the cancel"
+        );
         signal.notify_one();
         let err = run.await.unwrap().expect_err("a cancelled run must fail");
         assert!(err.to_string().contains("cancelled"), "got: {err}");
-        assert!(
-            terminate_and_confirm(Duration::from_secs(2)).await.is_ok(),
-            "the job must be empty once the cancelled run returns"
-        );
+        // TerminateJobObject is asynchronous for the descendant; the direct child is already reaped.
+        let mut active = None;
+        for _ in 0..100 {
+            active = super::containment::active_processes_for_test();
+            if active == Some(0) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(active, Some(0), "the cancel alone must empty the job");
     }
 
     #[cfg(unix)]
@@ -1884,6 +1923,7 @@ mod tests {
 
     #[cfg(windows)]
     #[tokio::test]
+    #[serial]
     async fn contain_spawn_failure_confirms_the_direct_child_is_dead() {
         // The Windows spawn-failure cleanup (codex r4/r5): `TerminateProcess` + `WaitForSingleObject` must
         // actually kill AND confirm the direct child dead — a `false` return is what poisons installs.
