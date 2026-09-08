@@ -55,6 +55,28 @@ Codex endorsed the Windows key workaround (optimisation-only key contract; respo
 Its remaining unverified concern — that `bb verify -k` on Windows shares the text-mode read — is
 answered by the Windows WebDriver lane, which verifies with the sidecar bb.exe.
 
+## Round 4 — 2026-09-08 (`response-3.md`) — converged
+
+> **Verdict: no material findings remain in the reviewed changes. Confidence: high.** The revocation
+> check now follows workspace preparation, the reproduced symlink bypass is fixed, and the comment is
+> accurate. The expanded path regression test passed. The review loop can close.
+
+Four rounds, one over the plan's three-round guide: round 3's only material finding (the missing
+re-check after the workspace stage) was a one-line consequence of round 2's restructuring, not new
+scope. Commits: 8552c5a (round 1), 09a62a8 (round 2 + Windows key workaround), 2862e68 (round 3).
+
+### After round 4: Windows again (F-26, second half)
+
+Run 34182690584 with the key set aside: bb.exe proved (`ok=true`, 880 ms) but the proof file was
+13,173 bytes for a 13,120-byte proof — one extra byte per 0x0A, 53 of them. bb.exe writes its
+outputs in text mode too. `bb prove --output_format json` writes `proof.json` / `public_inputs.json`
+/ `vk.json` as arrays of `0x`-hex 32-byte fields; on Linux those convert to exactly the fixture
+bytes (410 / 2 / 115 fields). Text mode cannot damage hex text, so the route now requests JSON on
+every platform and converts — one code path, exercised by the Linux byte-identity tests and the
+Windows lane alike. `-k` accepts only the binary key (JSON is refused as `wrong size`), so the
+Windows key set-aside stays. Whether the chonk `/prove` path on Windows suffers the same text-mode
+write has never been exercised in CI; surfaced to the owner.
+
 ### Resolved: Windows desktop returned 500 on the UltraHonk prove (F-26)
 
 Run 34174258877 failed without a log; run 34181934669 (with the `$RUNNER_TEMP` upload) shows bb's

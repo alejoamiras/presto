@@ -1,9 +1,10 @@
-//! `bb prove --scheme ultra_honk`: one Noir circuit, one witness, raw `proof` + `public_inputs`.
+//! `bb prove --scheme ultra_honk`: one Noir circuit, one witness, `proof` + `public_inputs` bytes.
 //!
 //! Shares everything with the chonk path except the inputs (gzipped ACIR, gzipped witness, optional
-//! verification key) and the outputs (no field-count header; `public_inputs` may be empty; a `vk`
-//! comes back only when bb computed it). bb 5.2.0 refuses to prove without a key file, so the key-less
-//! form is `--write_vk`, never `--vk_policy recompute`.
+//! verification key) and the outputs (read from bb's JSON field arrays into their exact byte forms;
+//! no field-count header; `public_inputs` may be empty; a `vk` comes back only when bb computed it).
+//! bb 5.2.0 refuses to prove without a key file, so the key-less form is `--write_vk`, never
+//! `--vk_policy recompute`.
 
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -250,6 +251,8 @@ fn build_ultra_honk_command(
         "prove",
         "--scheme",
         "ultra_honk",
+        "--output_format",
+        "json",
         "-b",
         utf8(&workspace.bytecode_path)?,
         "-w",
@@ -300,23 +303,46 @@ fn validate_vk_len(len: u64) -> Result<(), BbError> {
     Ok(())
 }
 
-/// One capped read of a bb output file, naming the file on failure (a missing `public_inputs` is
-/// otherwise an anonymous "No such file").
-fn read_output(workspace: &UltraHonkWorkspace, name: &str, cap: u64) -> Result<Vec<u8>, BbError> {
-    read_capped(&workspace.output_dir.join(name), cap)
-        .map_err(|e| format!("bb output {name}: {e}").into())
+/// One bb output as bytes, from its JSON form `{"<name>": ["0x<64 hex>", …], …}` — the fields are
+/// the exact bytes of the binary form. JSON is requested on every platform because bb.exe 5.2.0
+/// writes files in text mode, which corrupts binary output and leaves hex text intact. The file is
+/// named on failure (a missing `public_inputs.json` is otherwise an anonymous "No such file").
+fn read_fields(workspace: &UltraHonkWorkspace, name: &str, cap: u64) -> Result<Vec<u8>, BbError> {
+    // Each 32-byte field is 69 JSON bytes; the file cap follows the byte cap plus metadata headroom.
+    let text = read_capped(
+        &workspace.output_dir.join(format!("{name}.json")),
+        cap * 3 + 1024,
+    )
+    .map_err(|e| format!("bb output {name}.json: {e}"))?;
+    let doc: serde_json::Value =
+        serde_json::from_slice(&text).map_err(|e| format!("bb output {name}.json: {e}"))?;
+    let fields = doc
+        .get(name)
+        .and_then(serde_json::Value::as_array)
+        .ok_or_else(|| format!("bb output {name}.json has no {name:?} array"))?;
+    let mut bytes = Vec::with_capacity(fields.len() * 32);
+    for (i, field) in fields.iter().enumerate() {
+        let hex = field
+            .as_str()
+            .and_then(|s| s.strip_prefix("0x"))
+            .filter(|h| h.len() == 64)
+            .and_then(|h| hex::decode(h).ok())
+            .ok_or_else(|| format!("bb output {name}.json field {i} is not a 32-byte hex field"))?;
+        bytes.extend_from_slice(&hex);
+    }
+    Ok(bytes)
 }
 
 /// Read and validate bb's output files; blocking, so callers run it on a worker.
 pub(crate) fn read_outputs(workspace: &UltraHonkWorkspace) -> Result<UltraHonkOutput, BbError> {
-    let proof = read_output(workspace, "proof", MAX_PROOF_BYTES)?;
+    let proof = read_fields(workspace, "proof", MAX_PROOF_BYTES)?;
     validate_proof_len(proof.len() as u64)?;
-    let public_inputs = read_output(workspace, "public_inputs", MAX_PUBLIC_INPUT_BYTES)?;
+    let public_inputs = read_fields(workspace, "public_inputs", MAX_PUBLIC_INPUT_BYTES)?;
     validate_public_inputs_len(public_inputs.len() as u64)?;
     let vk = if workspace.client_key {
         None
     } else {
-        let vk = read_output(workspace, "vk", MAX_VK_BYTES)?;
+        let vk = read_fields(workspace, "vk", MAX_VK_BYTES)?;
         validate_vk_len(vk.len() as u64)?;
         Some(vk)
     };
@@ -385,9 +411,12 @@ mod tests {
         let with_key = UltraHonkWorkspace::create(&job(Some(b"vk"))).unwrap();
         let args =
             argv(&build_ultra_honk_command(bb, &with_key, VerifierTarget::Evm, Some(4)).unwrap());
-        assert_eq!(&args[..3], ["prove", "--scheme", "ultra_honk"]);
-        assert_eq!(args[7], "-t");
-        assert_eq!(args[8], "evm");
+        assert_eq!(
+            &args[..5],
+            ["prove", "--scheme", "ultra_honk", "--output_format", "json"]
+        );
+        assert_eq!(args[9], "-t");
+        assert_eq!(args[10], "evm");
         assert!(with_key.client_key);
         if BB_READS_KEY_IN_TEXT_MODE {
             assert!(
@@ -396,9 +425,9 @@ mod tests {
             );
             assert_eq!(args.last().map(String::as_str), Some("--write_vk"));
         } else {
-            assert_eq!(args[11], "-k");
+            assert_eq!(args[13], "-k");
             assert_eq!(
-                Path::new(&args[12]).file_name(),
+                Path::new(&args[14]).file_name(),
                 Some(std::ffi::OsStr::new("vk"))
             );
             assert!(!args.iter().any(|a| a == "--write_vk"));
@@ -441,11 +470,16 @@ mod tests {
     #[cfg(unix)]
     use serial_test::serial;
 
-    /// A fake bb that writes a 64-byte proof and `PUB` bytes of public inputs, plus a vk when asked.
+    /// Shell prelude for a fake bb: `$out` from `-o`, `$f` one zero field in JSON form.
     #[cfg(unix)]
-    fn fake_prover(public_input_bytes: usize) -> String {
+    const FIELD: &str = "f=\"\\\"0x$(printf '%064d' 0)\\\"\"";
+
+    /// A fake bb that writes JSON outputs: a two-field proof, `public_input_fields` public inputs,
+    /// and a one-field vk when asked.
+    #[cfg(unix)]
+    fn fake_prover(public_input_fields: usize) -> String {
         format!(
-            "{FIND_OUTDIR}\nprintf '%064d' 0 > \"$out/proof\"\nhead -c {public_input_bytes} /dev/zero > \"$out/public_inputs\"\nfor a in \"$@\"; do [ \"$a\" = --write_vk ] && printf 'key' > \"$out/vk\"; done\ntrue"
+            "{FIND_OUTDIR}\n{FIELD}\nprintf '{{\"proof\":[%s,%s]}}' \"$f\" \"$f\" > \"$out/proof.json\"\npubs=\"\"; i=0; while [ $i -lt {public_input_fields} ]; do pubs=\"$pubs${{pubs:+,}}$f\"; i=$((i+1)); done\nprintf '{{\"public_inputs\":[%s]}}' \"$pubs\" > \"$out/public_inputs.json\"\nfor a in \"$@\"; do [ \"$a\" = --write_vk ] && printf '{{\"vk\":[%s]}}' \"$f\" > \"$out/vk.json\"; done\ntrue"
         )
     }
 
@@ -454,23 +488,27 @@ mod tests {
     #[serial]
     async fn returns_raw_outputs_and_the_key_only_when_bb_computed_it() {
         let dir = tempfile::tempdir().unwrap();
-        let _guard = install_fake_bb(dir.path(), &fake_prover(32));
+        let _guard = install_fake_bb(dir.path(), &fake_prover(1));
 
         let with_key = prove_ultra_honk(job(Some(b"vk")), None, None)
             .await
             .unwrap();
-        assert_eq!(with_key.proof.len(), 64, "no field-count header");
+        assert_eq!(
+            with_key.proof.len(),
+            64,
+            "two fields, no field-count header"
+        );
         assert_eq!(with_key.public_inputs.len(), 32);
         assert_eq!(with_key.vk, None);
 
         let without = prove_ultra_honk(job(None), None, None).await.unwrap();
-        assert_eq!(without.vk.as_deref(), Some(b"key".as_slice()));
+        assert_eq!(without.vk.as_deref(), Some([0u8; 32].as_slice()));
     }
 
     #[cfg(unix)]
     #[tokio::test]
     #[serial]
-    async fn accepts_empty_public_inputs_but_rejects_missing_or_misaligned_outputs() {
+    async fn accepts_empty_public_inputs_but_rejects_missing_or_malformed_outputs() {
         let dir = tempfile::tempdir().unwrap();
         {
             let _guard = install_fake_bb(dir.path(), &fake_prover(0));
@@ -480,21 +518,28 @@ mod tests {
             assert!(out.public_inputs.is_empty());
         }
         {
-            let _guard = install_fake_bb(dir.path(), &fake_prover(33));
-            let err = prove_ultra_honk(job(Some(b"vk")), None, None)
-                .await
-                .unwrap_err();
-            assert!(err.to_string().contains("public_inputs"), "got: {err}");
-        }
-        {
+            // A field that is not 32 bytes: the binary form would be misaligned.
             let _guard = install_fake_bb(
                 dir.path(),
-                &format!("{FIND_OUTDIR}\nprintf '%064d' 0 > \"$out/proof\""),
+                &format!("{FIND_OUTDIR}\n{FIELD}\nprintf '{{\"proof\":[%s]}}' \"$f\" > \"$out/proof.json\"\nprintf '{{\"public_inputs\":[\"0x00\"]}}' > \"$out/public_inputs.json\""),
             );
             let err = prove_ultra_honk(job(Some(b"vk")), None, None)
                 .await
                 .unwrap_err();
-            assert!(err.to_string().contains("public_inputs"), "got: {err}");
+            assert!(
+                err.to_string().contains("public_inputs.json field 0"),
+                "got: {err}"
+            );
+        }
+        {
+            let _guard = install_fake_bb(
+                dir.path(),
+                &format!("{FIND_OUTDIR}\n{FIELD}\nprintf '{{\"proof\":[%s]}}' \"$f\" > \"$out/proof.json\""),
+            );
+            let err = prove_ultra_honk(job(Some(b"vk")), None, None)
+                .await
+                .unwrap_err();
+            assert!(err.to_string().contains("public_inputs.json"), "got: {err}");
         }
     }
 
@@ -506,7 +551,7 @@ mod tests {
         {
             let _guard = install_fake_bb(
                 dir.path(),
-                &format!("{FIND_OUTDIR}\nprintf '%064d' 0 > \"$out/proof\"\n: > \"$out/public_inputs\"\n: > \"$out/vk\""),
+                &format!("{FIND_OUTDIR}\n{FIELD}\nprintf '{{\"proof\":[%s]}}' \"$f\" > \"$out/proof.json\"\nprintf '{{\"public_inputs\":[]}}' > \"$out/public_inputs.json\"\nprintf '{{\"vk\":[]}}' > \"$out/vk.json\""),
             );
             let err = prove_ultra_honk(job(None), None, None).await.unwrap_err();
             assert!(err.to_string().contains("empty vk"), "got: {err}");

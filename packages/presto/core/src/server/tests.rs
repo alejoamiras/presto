@@ -1442,7 +1442,8 @@ fn state_with_approved(origins: &[&str]) -> AppState {
 /// A fake bb for the UltraHonk route: 64-byte proof, 32-byte public inputs, and a key only when
 /// bb was asked to write one.
 #[cfg(unix)]
-const ULTRA_HONK_FAKE_BB: &str = "printf '%064d' 0 > \"$out/proof\"\nprintf '%032d' 0 > \"$out/public_inputs\"\nfor a in \"$@\"; do [ \"$a\" = --write_vk ] && printf 'key' > \"$out/vk\"; done\ntrue";
+/// JSON outputs like the real bb: a two-field proof, one public input, one vk field when asked.
+const ULTRA_HONK_FAKE_BB: &str = "f=\"\\\"0x$(printf '%064d' 0)\\\"\"\nprintf '{\"proof\":[%s,%s]}' \"$f\" \"$f\" > \"$out/proof.json\"\nprintf '{\"public_inputs\":[%s]}' \"$f\" > \"$out/public_inputs.json\"\nfor a in \"$@\"; do [ \"$a\" = --write_vk ] && printf '{\"vk\":[%s]}' \"$f\" > \"$out/vk.json\"; done\ntrue";
 
 #[cfg(unix)]
 #[tokio::test]
@@ -1491,7 +1492,11 @@ async fn ultra_honk_returns_raw_outputs_and_the_key_only_when_bb_computed_it() {
         .unwrap();
     assert_eq!(response.status(), StatusCode::OK);
     let json = json_body(response).await;
-    assert_eq!(json["vk"], "a2V5", "the server-computed key comes back");
+    assert_eq!(
+        json["vk"].as_str().unwrap().len(),
+        44,
+        "the server-computed key comes back (one 32-byte field)"
+    );
 }
 
 #[tokio::test]
