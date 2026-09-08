@@ -5,6 +5,7 @@
 //! acquire the single prove permit and run the proof (bb already uses all cores), returning base64 +
 //! an `x-prove-duration-ms` header. Extracted from server.rs (Q2).
 
+use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -13,7 +14,7 @@ use axum::extract::{Request, State};
 use axum::http::HeaderValue;
 use axum::response::IntoResponse;
 use serde_json::json;
-use tokio::sync::{OwnedSemaphorePermit, Semaphore};
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 
 use crate::{bb, versions};
 
@@ -21,8 +22,9 @@ use super::auth::{authorize_origin, Approval};
 use super::ultra_honk::{OriginSlot, OriginSlots};
 use super::{AppState, ProveError, ServerStatus, StatusCallback};
 
-/// Drop guard that resets tray status to Idle when the prove handler exits for any reason
-/// (success, error, client disconnect, panic).
+/// Drop guard that resets tray status to Idle when the request's seats are released: with the handler
+/// on success or error, after the killed bb is reaped for an abandoned or timed-out request
+/// (see [`on_task`]), on unwind for a panic.
 struct StatusGuard {
     cb: Option<StatusCallback>,
 }
@@ -197,6 +199,73 @@ async fn read_body(
         })
 }
 
+#[cfg(test)]
+mod on_task_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    /// Records, at its own drop, whether the work it was handed to had finished.
+    struct Probe {
+        finished: Arc<AtomicBool>,
+        finished_at_drop: Arc<AtomicBool>,
+        dropped: Arc<AtomicBool>,
+    }
+
+    impl Drop for Probe {
+        fn drop(&mut self) {
+            self.finished_at_drop
+                .store(self.finished.load(Ordering::SeqCst), Ordering::SeqCst);
+            self.dropped.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test]
+    async fn dropping_the_request_keeps_held_until_the_cancelled_work_returns() {
+        let finished = Arc::new(AtomicBool::new(false));
+        let finished_at_drop = Arc::new(AtomicBool::new(false));
+        let dropped = Arc::new(AtomicBool::new(false));
+        let probe = Probe {
+            finished: finished.clone(),
+            finished_at_drop: finished_at_drop.clone(),
+            dropped: dropped.clone(),
+        };
+        let done = finished.clone();
+        // The work is a stand-in for bb: it blocks until cancelled, then "reaps" and returns.
+        let request = on_task(probe, |probe, cancel| async move {
+            cancel.notified().await;
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            done.store(true, Ordering::SeqCst);
+            (probe, ())
+        });
+        // The client goes away: the request future is dropped mid-flight.
+        assert!(tokio::time::timeout(Duration::from_millis(20), request)
+            .await
+            .is_err());
+        for _ in 0..100 {
+            if dropped.load(Ordering::SeqCst) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(
+            dropped.load(Ordering::SeqCst),
+            "held must still be released"
+        );
+        assert!(
+            finished_at_drop.load(Ordering::SeqCst),
+            "held must be released only after the work observed the cancel and returned"
+        );
+    }
+
+    #[tokio::test]
+    async fn completed_work_hands_held_back() {
+        let (held, out) = on_task(7u8, |held, _cancel| async move { (held, held + 1) })
+            .await
+            .unwrap();
+        assert_eq!((held, out), (7, 8));
+    }
+}
+
 /// F-009: try to enter the bounded set of in-flight + waiting authorized `/prove` requests.
 /// Non-blocking: if the cap (`MAX_INFLIGHT_PROVE` permits) is full, shed immediately with 429
 /// (`ProveQueueFull`) rather than queueing. The returned guard must be held for the whole request
@@ -214,9 +283,20 @@ pub(crate) async fn prove(
     tracing::info!("Received /prove request");
     let admitted = admit(&state, request, None).await?;
     let prover = acquire_prover(&state, &admitted.requested_version).await?;
+    let held = Held { admitted, prover };
 
     let start = std::time::Instant::now();
-    let result = bb::prove(&admitted.body, prover.version.as_ref(), prover.threads).await;
+    let (_held, result) = on_task(held, |held, cancel| async move {
+        let result = bb::prove_cancellable(
+            &held.admitted.body,
+            held.prover.version.as_ref(),
+            held.prover.threads,
+            cancel,
+        )
+        .await;
+        (held, result)
+    })
+    .await?;
     let elapsed = start.elapsed();
     log_prove_outcome(result.as_ref().map(Vec::len), elapsed);
 
@@ -225,6 +305,42 @@ pub(crate) async fn prove(
     let mut response = axum::Json(json!({ "proof": encoded })).into_response();
     set_duration_header(&mut response, elapsed);
     Ok(response)
+}
+
+/// Everything a request holds while bb runs, moved INTO the task that runs it (see [`on_task`]): a
+/// request the client abandons must keep its seats until the killed bb is reaped, not drop them
+/// the instant the handler future is dropped.
+pub(super) struct Held {
+    pub(super) admitted: Admitted,
+    pub(super) prover: Prover,
+}
+
+struct CancelOnDrop(bb::Cancel);
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.notify_one();
+    }
+}
+
+/// Run `work` on its own task, which owns `held` until `work` returns. Dropping this future (client
+/// disconnect) does not stop the task; it fires `cancel`, on which bb kills its tree and waits for the
+/// reap before returning, so `held` is released only after bb is gone. A panic inside the task
+/// unwinds `held` without that wait.
+pub(super) async fn on_task<H, T, F>(
+    held: H,
+    work: impl FnOnce(H, bb::Cancel) -> F,
+) -> Result<(H, T), ProveError>
+where
+    H: Send + 'static,
+    T: Send + 'static,
+    F: Future<Output = (H, T)> + Send + 'static,
+{
+    let cancel: bb::Cancel = Arc::new(Notify::new());
+    let _cancel_on_drop = CancelOnDrop(cancel.clone());
+    tokio::spawn(work(held, cancel))
+        .await
+        .map_err(|_| ProveError::ProveFailed("prove task failed".into()))
 }
 
 /// What a scheme handler holds after the shared admission gate. Field order is the drop order:
