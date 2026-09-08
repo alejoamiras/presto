@@ -113,4 +113,6 @@ test.skipIf(!certutil || !openssl)(
       rmSync(directory, { recursive: true, force: true });
     }
   },
+  // Six certutil/openssl invocations against a fresh database: a loaded CI runner exceeds the 5 s default.
+  30_000,
 );
