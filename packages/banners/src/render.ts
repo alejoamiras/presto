@@ -68,7 +68,7 @@ function ribbonPrimary(strings: StateStrings, href: string): string {
 function ribbon(ctx: RenderContext, enter: string): string {
   const s = STRINGS[ctx.state];
   const spark = ctx.state === "available" ? SPARK_GLYPH : "";
-  return `<div class="ribbon${enter}" data-tone="${s.tone}" role="status">
+  return `<div class="ribbon${enter}" data-tone="${s.tone}" data-surface role="status">
     ${BOLT}
     <p><strong>${s.title}${spark}</strong><span class="sep" aria-hidden="true">·</span><span class="sub">${s.support}</span></p>
     ${ribbonPrimary(s, ctx.href)}
@@ -78,7 +78,7 @@ function ribbon(ctx: RenderContext, enter: string): string {
 
 function billboard(ctx: RenderContext, enter: string): string {
   const c = VARIANT_COPY.billboard;
-  return `<div class="billboard${enter}" role="complementary">
+  return `<div class="billboard${enter}" data-surface role="complementary">
     <div class="badge">${BOLT}</div>
     <div class="text"><h2 class="title">${c.title}${SPARK_GLYPH}</h2><p class="support">${c.support}</p></div>
     <div class="actions">${ctaLink(ctx.href, c.cta, "btn-light")}${closeButton()}</div>
@@ -87,7 +87,7 @@ function billboard(ctx: RenderContext, enter: string): string {
 
 function dock(ctx: RenderContext, enter: string): string {
   const c = VARIANT_COPY.dock;
-  return `<div class="dock${enter}" role="status">
+  return `<div class="dock${enter}" data-surface role="status">
     <div class="text">${BOLT}<strong>${c.title}</strong><span>${c.support}</span></div>
     ${ctaLink(ctx.href, c.cta, "btn-primary btn-sm")}
     ${closeButton()}
@@ -100,7 +100,7 @@ function dock(ctx: RenderContext, enter: string): string {
 
 function card(ctx: RenderContext, enter: string): string {
   const c = VARIANT_COPY.card;
-  return `<div class="card${enter}" role="complementary">
+  return `<div class="card${enter}" data-surface role="complementary">
     ${closeButton()}
     <div class="art">${HERO}</div>
     <p class="eyebrow">${c.eyebrow}</p>
@@ -113,7 +113,7 @@ function card(ctx: RenderContext, enter: string): string {
 
 function tile(ctx: RenderContext, enter: string): string {
   const c = VARIANT_COPY.tile;
-  return `<div class="tile${enter}" role="complementary">
+  return `<div class="tile${enter}" data-surface role="complementary">
     <svg class="big-bolt" viewBox="0 0 48 48" aria-hidden="true"><path d="M26 5 L12 27 H21 L19 43 L36 19 H25 Z" fill="currentColor" stroke="currentColor" stroke-width="4" stroke-linejoin="round"/></svg>
     <span class="tw">${SPARK_SVG}</span>
     ${wordmark()}
@@ -126,6 +126,7 @@ function sheet(ctx: RenderContext, enter: string): string {
   const c = VARIANT_COPY.sheet;
   const cta = ctx.platform ? `${c.ctaFor} ${ctx.platform}` : c.cta;
   return `<dialog class="sheet${enter}" aria-labelledby="sheet-title">
+    <div class="sheet-body" data-surface>
     <div class="brand">${BOLT}${wordmark()}</div>
     <h2 class="title" id="sheet-title">${c.title}</h2>
     <p class="support">${c.support}</p>
@@ -136,6 +137,7 @@ function sheet(ctx: RenderContext, enter: string): string {
     <div class="foot">
       <label><input type="checkbox" data-role="never"> ${c.never}</label>
       <span>${c.foot} <a href="${RELEASES}" target="_blank" rel="noopener">${c.otherPlatforms}</a></span>
+    </div>
     </div>
     ${detectedOverlay()}
   </dialog>`;

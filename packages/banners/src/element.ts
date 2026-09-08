@@ -48,15 +48,8 @@ function safeHref(raw: string | null, base: string | undefined): string {
  */
 export class PrestoBanner extends Base {
   static readonly tagName = "presto-banner";
-  static readonly observedAttributes = [
-    "variant",
-    "state",
-    "href",
-    "persist-key",
-    "fonts",
-    "os",
-    "dismiss-days",
-  ];
+  /** `dismiss-days` is read at dismiss time and needs no render work. */
+  static readonly observedAttributes = ["variant", "state", "href", "persist-key", "fonts", "os"];
   /** Detected-morph phase durations in ms. Overridable (tests shorten them). */
   static timings = { morph: 400, hold: 1600, collapse: 350 };
 
@@ -134,6 +127,7 @@ export class PrestoBanner extends Base {
     if (!this.#connected || oldValue === newValue) return;
     if (name === "fonts") ensureFonts(newValue);
     else if (CTA_ATTRIBUTES.has(name) && this.#shown) this.#patchCta();
+    else if (name === "persist-key" && this.#shown && !isDismissed(this.persistKey)) return;
     else this.#update();
   }
 
@@ -175,13 +169,16 @@ export class PrestoBanner extends Base {
   #openSheet(enter: boolean): void {
     const dialog = this.#shadow.querySelector<HTMLDialogElement>("dialog");
     if (!dialog || dialog.open) return;
+    // `close` is queued, so a torn-down dialog's event can land after a newer paint: only a dialog
+    // that is still in the tree speaks for the banner.
+    const live = () => this.#shown && dialog.isConnected;
     dialog.addEventListener("cancel", (event) => {
       event.preventDefault();
-      if (this.#shown) this.#dismiss();
+      if (live()) this.#dismiss();
     });
     // Anything else that closes it (a form method=dialog, devtools) is a dismissal too.
     dialog.addEventListener("close", () => {
-      if (this.#shown) this.#dismiss();
+      if (live()) this.#dismiss();
     });
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
@@ -220,7 +217,10 @@ export class PrestoBanner extends Base {
     this.#morphing = true;
     const { morph, hold, collapse } = PrestoBanner.timings;
     overlay.innerHTML = detectedContent();
-    root.firstElementChild?.setAttribute("inert", "");
+    // The surface (not the dialog, whose live region must stay exposed) goes inert; the entrance
+    // keyframes are dropped so their filled opacity can't override the collapse.
+    root.querySelector("[data-surface]")?.setAttribute("inert", "");
+    root.firstElementChild?.classList.remove("is-enter");
     root.setAttribute("data-phase", "detected");
     this.#after(morph + hold, () => root.setAttribute("data-phase", "gone"));
     this.#after(morph + hold + collapse, () => {

@@ -125,6 +125,24 @@ describe("<presto-banner> lifecycle", () => {
     expect(again.hidden).toBe(true);
   });
 
+  test("a torn-down dialog's queued close never dismisses a newer sheet; dismiss-days keeps choices", () => {
+    const el = mount({ variant: "sheet", state: "offline" });
+    const stale = query<HTMLDialogElement>(el, "dialog");
+    el.state = "error"; // not a Sheet state → hidden
+    expect(el.hidden).toBe(true);
+    el.state = "offline";
+    expect(el.hidden).toBe(false);
+    stale?.dispatchEvent(new Event("close"));
+    expect(el.hidden).toBe(false);
+    expect(localStorage.length).toBe(0);
+    const never = query<HTMLInputElement>(el, '[data-role="never"]');
+    if (!never) throw new Error("checkbox missing");
+    never.checked = true;
+    el.setAttribute("dismiss-days", "3");
+    el.setAttribute("persist-key", "another");
+    expect(query<HTMLInputElement>(el, '[data-role="never"]')?.checked).toBe(true);
+  });
+
   test("a dismiss listener that sets a new state is not undone by the teardown", () => {
     const el = mount({ variant: "ribbon", state: "offline" });
     el.addEventListener(BANNER_EVENTS.dismiss, () => {
@@ -134,7 +152,9 @@ describe("<presto-banner> lifecycle", () => {
     expect(el.hidden).toBe(false);
     expect(query(el, ".ribbon")?.getAttribute("data-tone")).toBe("warn");
   });
+});
 
+describe("<presto-banner> detected morph", () => {
   test("available morphs only a showing banner, collapses, and re-arms on a later offline", async () => {
     const fresh = mount({ variant: "billboard", state: "available" });
     expect(fresh.hidden).toBe(true);
@@ -149,6 +169,7 @@ describe("<presto-banner> lifecycle", () => {
     expect(query(el, ".root")?.getAttribute("data-phase")).toBe("detected");
     expect(query(el, ".detected")?.textContent).toContain("Presto connected");
     expect(query(el, ".billboard")?.hasAttribute("inert")).toBe(true);
+    expect(query(el, ".billboard")?.classList.contains("is-enter")).toBe(false);
     // Attribute churn mid-morph must not restart the timers.
     el.setAttribute("href", "https://example.com/x");
     el.setAttribute("dismiss-days", "3");
@@ -159,6 +180,18 @@ describe("<presto-banner> lifecycle", () => {
     expect(el.hidden).toBe(true);
     el.state = "offline";
     expect(el.hidden).toBe(false);
+  });
+
+  test("the sheet's morph inerts its body, not the dialog that holds the live region", async () => {
+    const el = mount({ variant: "sheet", state: "offline" });
+    const collapsed = nextEvent(el, BANNER_EVENTS.collapsed);
+    el.state = "available";
+    expect(query(el, ".sheet-body")?.hasAttribute("inert")).toBe(true);
+    expect(query(el, "dialog")?.hasAttribute("inert")).toBe(false);
+    expect(query(el, "dialog .detected")?.textContent).toContain("Presto connected");
+    await collapsed;
+    expect(el.hidden).toBe(true);
+    expect(localStorage.length).toBe(0);
   });
 
   test("fonts link is added once by default and skipped with fonts=none", () => {
