@@ -6,5 +6,6 @@ GlobalRegistrator.register({
     disableCSSFileLoading: true,
     disableJavaScriptFileLoading: true,
     disableJavaScriptEvaluation: true,
+    handleDisabledFileLoadingAsSuccess: true,
   },
 });
