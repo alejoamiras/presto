@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Consume a PUBLISHED tarball the way a real dApp does — default `npm install` on a fresh Node — and
-# prove two things nothing else in the repo checks:
+# Consume a PUBLISHED tarball the way a real dApp does — default `npm install` resolution on a fresh
+# Node, with lifecycle scripts off so nothing fetched from the registry runs — and prove two things
+# nothing else in the repo checks:
 #   1. the packed `dist` exports/types RESOLVE, typecheck, and load (workspace consumers use the source
 #      `exports`, so a broken publish rewrite or missing dist would otherwise ship undetected);
 #   2. for a package that pins `@aztec/stdlib`: default npm resolves an EXACT-version host to a SINGLETON
@@ -76,7 +77,7 @@ AZTEC_PIN="$(bun "$REPO_ROOT/scripts/tarball-consumer/exact-pin.ts" --package "$
 echo "=== exact host (${AZTEC_PIN:-no @aztec/stdlib pin}): tarball resolution ==="
 EXACT="$WORK/exact-host"
 make_host "$EXACT" "$AZTEC_PIN"
-( cd "$EXACT" && npm install --no-audit --no-fund --loglevel=error )
+( cd "$EXACT" && npm install --ignore-scripts --no-audit --no-fund --loglevel=error )
 # A supplied dependency must be THE copy the candidate resolves: npm would otherwise keep the root
 # `file:` copy and nest a registry copy under the candidate when the pin and the tarball disagree.
 for pair in "${WITH[@]}"; do
@@ -89,8 +90,9 @@ if [ -n "$EXTRAS" ]; then
 fi
 
 echo "--- typecheck the consumer against the PACKED dist (resolves the 'types' condition) ---"
-# `--package=` is required: `typescript` ships both `tsc` and `tsserver`, so `npx typescript` cannot pick a binary.
-( cd "$EXACT" && npx --yes --package=typescript@5.9 tsc --noEmit -p tsconfig.json )
+# `--package=` is required: `typescript` ships both `tsc` and `tsserver`, so `npx typescript` cannot
+# pick a binary. The version is exact: a range would let the registry choose what runs here.
+( cd "$EXACT" && npx --yes --package=typescript@5.9.3 tsc --noEmit -p tsconfig.json )
 
 echo "--- RUNTIME import: resolve + load the packed dist 'default' export ---"
 ( cd "$EXACT" && node runtime-check.mjs )
@@ -108,7 +110,7 @@ echo "exact host @aztec/stdlib install locations: $EXACT_COUNT"
 echo "=== conflicting host (5.0.0): informational ==="
 CONFLICT="$WORK/conflict-host"
 make_host "$CONFLICT" "5.0.0"
-( cd "$CONFLICT" && npm install --no-audit --no-fund --loglevel=error ) || echo "conflict host install returned non-zero (ERESOLVE?) — recorded"
+( cd "$CONFLICT" && npm install --ignore-scripts --no-audit --no-fund --loglevel=error ) || echo "conflict host install returned non-zero (ERESOLVE?) — recorded"
 echo "--- npm ls @aztec/stdlib (conflict host) ---"
 ( cd "$CONFLICT" && npm ls @aztec/stdlib || true )
 echo "conflict host @aztec/stdlib install locations: $(count_stdlib "$CONFLICT")"

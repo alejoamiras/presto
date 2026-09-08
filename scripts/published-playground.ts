@@ -69,6 +69,31 @@ export function assertPeerPin(
   }
 }
 
+/** npm's integrity form (`sha512-<base64>`) of a tarball's bytes. */
+export function tarballIntegrity(bytes: ArrayBuffer | Uint8Array): string {
+  const hasher = new Bun.CryptoHasher("sha512");
+  hasher.update(bytes);
+  return `sha512-${hasher.digest("base64")}`;
+}
+
+/**
+ * The bytes deployed must be the bytes verified: the attestation fetch, the signature audit, and the
+ * `npm pack` download are three registry conversations that nothing else ties to one digest.
+ */
+export function assertVerifiedTarball(
+  bytes: ArrayBuffer | Uint8Array,
+  audited: string,
+  attested: string,
+  spec: string,
+) {
+  if (attested !== audited) {
+    throw new Error(`Provenance statement and signature audit disagree on the ${spec} tarball`);
+  }
+  if (tarballIntegrity(bytes) !== audited) {
+    throw new Error(`Downloaded ${spec} tarball does not match its verified integrity`);
+  }
+}
+
 /** The directory `name` resolves to from `from`: the copy a bundler resolving there bundles. */
 export function packageRoot(name: string, from: string): string {
   const entry = Bun.resolveSync(name, from);
@@ -98,20 +123,23 @@ if (import.meta.main) {
     return result.stdout.toString().trim();
   };
   const readJson = (rel: string) => Bun.file(join(root, rel)).json();
-  /** Provenance, signatures, and an integrity-matched tarball of one published version. */
+  /** Provenance, signatures, and a tarball whose bytes match the verified integrity. */
   const fetchVerified = async (pkg: NpmPackage, version: string) => {
-    await fetchAndVerifySdkProvenance(version, undefined, undefined, pkg);
-    await verifySdkPackageSignatures(version, pkg);
     const spec = `${pkg.name}@${version}`;
+    const provenance = await fetchAndVerifySdkProvenance(version, undefined, undefined, pkg);
+    const audit = await verifySdkPackageSignatures(version, pkg);
     const packed = parseNpmPackResult(
       JSON.parse(run(["npm", "pack", "--ignore-scripts", "--json", spec])),
       pkg.name,
       version,
     );
-    if (packed.integrity !== run(["npm", "view", spec, "dist.integrity"])) {
-      throw new Error(`Published tarball integrity mismatch for ${spec}`);
-    }
     const tarball = join(directory, packed.filename);
+    assertVerifiedTarball(
+      await Bun.file(tarball).arrayBuffer(),
+      audit.integrity,
+      provenance.integrity,
+      spec,
+    );
     const manifest: PublishedManifest = JSON.parse(
       run(["tar", "-xzOf", tarball, "package/package.json"]),
     );

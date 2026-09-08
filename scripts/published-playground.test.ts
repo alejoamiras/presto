@@ -1,10 +1,13 @@
 import { expect, test } from "bun:test";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import {
   assertPeerPin,
   assertPublishedSdkManifest,
+  assertVerifiedTarball,
   packageRoot,
   sharedCorePin,
+  tarballIntegrity,
 } from "./published-playground";
 
 test("playground requires the exact published SDK identity and matching Aztec dependency graph", () => {
@@ -76,4 +79,17 @@ test("packageRoot finds the copy the playground resolves, not a nested one", asy
   expect(dir.endsWith("/node_modules/@aztec/bb.js")).toBe(true);
   expect((await Bun.file(`${dir}/package.json`).json()).name).toBe("@aztec/bb.js");
   expect(() => packageRoot("@alejoamiras/no-such-package", playground)).toThrow();
+});
+
+test("the deployed tarball must hash to the integrity the audit and the attestation both vouch for", () => {
+  const bytes = new TextEncoder().encode("tarball bytes");
+  const integrity = `sha512-${createHash("sha512").update(bytes).digest("base64")}`;
+  expect(tarballIntegrity(bytes)).toBe(integrity);
+  const spec = "@alejoamiras/presto@5.2.0";
+  expect(() => assertVerifiedTarball(bytes, integrity, integrity, spec)).not.toThrow();
+  const other = tarballIntegrity(new TextEncoder().encode("other bytes"));
+  expect(() => assertVerifiedTarball(bytes, integrity, other, spec)).toThrow("disagree");
+  expect(() => assertVerifiedTarball(bytes, other, other, spec)).toThrow(
+    "does not match its verified integrity",
+  );
 });

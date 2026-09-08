@@ -36,10 +36,33 @@ export function hasVerifiedSdkProvenance(
   );
 }
 
+interface PackageLock {
+  packages?: Record<string, { version?: string; integrity?: string }>;
+}
+
+/**
+ * The integrity npm signed for the installed copy: `npm audit signatures` verifies the registry
+ * signature over `name@version:integrity` using the lockfile's record, so this digest — not the
+ * registry's current `dist.integrity` — is the one the audit vouched for.
+ */
+export function auditedIntegrity(lock: PackageLock, version: string, pkg: NpmPackage): string {
+  const entry = lock.packages?.[`node_modules/${pkg.name}`];
+  if (entry?.version !== version) {
+    throw new Error(
+      `lockfile records ${pkg.name}@${entry?.version ?? "(none)"}, expected ${version}`,
+    );
+  }
+  if (!entry.integrity || !/^sha512-[A-Za-z0-9+/]+={0,2}$/.test(entry.integrity)) {
+    throw new Error(`lockfile has no SHA-512 integrity for ${pkg.name}@${version}`);
+  }
+  return entry.integrity;
+}
+
+/** Cryptographically verified signatures and provenance; returns the integrity the audit covered. */
 export async function verifySdkPackageSignatures(
   version: string,
   pkg: NpmPackage = NPM_PACKAGES.presto,
-): Promise<void> {
+): Promise<{ integrity: string }> {
   if (!isValidVersion(pkg, version)) throw new Error(`invalid ${pkg.name} version ${version}`);
   const directory = await mkdtemp(join(tmpdir(), "presto-sdk-signature-audit-"));
   try {
@@ -62,6 +85,8 @@ export async function verifySdkPackageSignatures(
     if (!hasVerifiedSdkProvenance(report, version, pkg)) {
       throw new Error(`npm did not cryptographically verify provenance for ${pkg.name}@${version}`);
     }
+    const lock = (await Bun.file(join(directory, "package-lock.json")).json()) as PackageLock;
+    return { integrity: auditedIntegrity(lock, version, pkg) };
   } finally {
     await rm(directory, { recursive: true, force: true });
   }

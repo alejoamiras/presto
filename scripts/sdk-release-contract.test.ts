@@ -92,11 +92,51 @@ describe("npm release workflow contract", () => {
     const records = publish.indexOf("Create git tag and GitHub release");
     expect(verification).toBeGreaterThan(0);
     expect(records).toBeGreaterThan(verification);
-    expect(publish.indexOf("bash scripts/sdk-tarball-consumer.sh")).toBeLessThan(
-      publish.indexOf("npm publish"),
+  });
+});
+
+describe("publish job isolation", () => {
+  test("nothing resolved from the registry runs in the job that holds the publish credentials", () => {
+    const pack = job(publish, "pack");
+    const consumer = job(publish, "consumer-test");
+    const publishJob = job(publish, "publish");
+    const verify = job(publish, "verify");
+    for (const unprivileged of [pack, consumer, verify]) {
+      expect(unprivileged).toContain("contents: read");
+      expect(unprivileged).not.toContain("id-token");
+      expect(unprivileged).not.toContain("environment:");
+    }
+    // The digest travels as a job output, recorded before any registry code could run.
+    expect(pack.indexOf("sha256sum")).toBeLessThan(pack.indexOf("upload-artifact"));
+    expect(pack).not.toContain("sdk-tarball-consumer.sh");
+    expect(pack).toMatch(/sha256: \$\{\{ steps\.pack\.outputs\.sha256 \}\}/);
+    expect(consumer).toContain("needs: pack");
+    expect(consumer).toContain('echo "$SHA256  $TARBALL" | sha256sum -c -');
+    expect(consumer).toContain("bash scripts/sdk-tarball-consumer.sh");
+    expect(publishJob).toContain("needs: [pack, consumer-test]");
+    expect(publishJob).toContain("id-token: write");
+    expect(publishJob).not.toContain("sdk-tarball-consumer.sh");
+    expect(publishJob).not.toContain("npx");
+    expect(publishJob.indexOf('echo "$SHA256  $TARBALL" | sha256sum -c -')).toBeLessThan(
+      publishJob.indexOf("npm publish"),
     );
+    expect(publishJob.match(/npm install/g)).toBeNull();
+    expect(verify).toContain("needs: [pack, publish]");
+    expect(verify).toContain("npm install --ignore-scripts");
   });
 
+  test("the consumer host never runs registry lifecycle scripts and pins its compiler exactly", () => {
+    const consumer = readFileSync(resolve(repository, "scripts/sdk-tarball-consumer.sh"), "utf8");
+    const installs = consumer.match(/npm install [^\n]*/g) ?? [];
+    expect(installs.length).toBeGreaterThan(0);
+    for (const install of installs) {
+      expect(install).toContain("--ignore-scripts");
+    }
+    expect(consumer).toMatch(/--package=typescript@\d+\.\d+\.\d+ /);
+  });
+});
+
+describe("playground deployment", () => {
   test("playground verification uses the publish job's Node/npm toolchain", () => {
     const deploy = release.slice(release.indexOf("  deploy-app:"));
     const setup = deploy.indexOf(
@@ -106,9 +146,6 @@ describe("npm release workflow contract", () => {
     expect(deploy.slice(setup)).toContain("node-version: 24");
     expect(setup).toBeLessThan(deploy.indexOf("bun scripts/published-playground.ts"));
   });
-});
-
-describe("playground deployment", () => {
   test("waits for every selected publication and tolerates unselected ones", () => {
     const deploy = job(release, "deploy-app");
     expect(deploy).toContain(

@@ -102,12 +102,13 @@ export function verifyProvenanceStatement(
   };
 }
 
+/** The provenance plus the npm integrity (`sha512-…`) its subject digest was matched against. */
 export async function fetchAndVerifySdkProvenance(
   version: string,
   expectedCommit?: string,
   allowedWorkflows?: readonly string[],
   pkg: NpmPackage = NPM_PACKAGES.presto,
-): Promise<VerifiedProvenance> {
+): Promise<VerifiedProvenance & { integrity: string }> {
   const spec = `${pkg.name}@${version}`;
   const url = npmView(spec, "dist.attestations.url");
   const integrity = npmView(spec, "dist.integrity");
@@ -125,7 +126,7 @@ export async function fetchAndVerifySdkProvenance(
   const payload = attestation?.bundle?.dsseEnvelope?.payload;
   if (!payload) throw new Error("npm package has no SLSA provenance attestation payload");
   const statement = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
-  return verifyProvenanceStatement(
+  const verified = verifyProvenanceStatement(
     statement,
     version,
     expectedCommit,
@@ -133,6 +134,7 @@ export async function fetchAndVerifySdkProvenance(
     expectedSha512,
     pkg,
   );
+  return { ...verified, integrity };
 }
 
 if (import.meta.main) {
