@@ -281,6 +281,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[serial_test::serial]
     fn version_bb_path_format() {
         let version = AztecVersion::parse("5.0.0-nightly.20260307").unwrap();
         let path = version_bb_path(&version).expect("home resolvable in the test environment");

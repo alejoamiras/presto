@@ -1130,7 +1130,9 @@ fn compute_threads_returns_none_without_config() {
 }
 
 #[test]
+#[serial]
 fn resolve_version_flags_uncached_for_download() {
+    let _home = crate::ScopedPrestoHome::new();
     // F-08: resolve_version is now pure (sync, no download, no status). A valid, non-bundled,
     // uncached version resolves Ok with `to_download` set — prove() then owns the download+status
     // (Proving→Downloading→Proving). The full 4-element download-arm sequence can't be unit-tested

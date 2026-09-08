@@ -381,14 +381,8 @@ pub async fn cleanup_old_versions(bundled: &AztecVersion, in_use: Option<&AztecV
         }
     }
 
-    // Round 2 (codex pass over F-06): if the active-window guard deferred anything, this pass may have
-    // left the cache OVER the cap — and cleanup only runs after a download, so an attacker who fills
-    // the cache inside one window and then simply STOPS leaves the excess there indefinitely. That
-    // falsifies the "reclaimed by the next cleanup" reasoning this fix originally shipped with. Wait
-    // out the window once and finish the job; the caller already runs us detached.
-    // Repeat while something stays deferred, so activity that merely continues cannot hold the
-    // cache over its cap for longer than these passes; a cache still over the cap afterwards waits
-    // for the next download or the startup sweep.
+    // Retry deferred size evictions for up to twelve windows (the caller runs us detached);
+    // remaining excess waits for another download or the startup sweep.
     let mut passes = 0;
     while deferred_by_active_window && passes < MAX_DEFERRED_CLEANUP_PASSES {
         tokio::time::sleep(super::downloader::CACHE_ENTRY_ACTIVE_WINDOW).await;
@@ -397,8 +391,6 @@ pub async fn cleanup_old_versions(bundled: &AztecVersion, in_use: Option<&AztecV
     }
 }
 
-/// Deferred size-cap passes after a download: twelve five-minute windows, one hour of continued
-/// activity before the cap is left to the next download or the startup sweep.
 const MAX_DEFERRED_CLEANUP_PASSES: u32 = 12;
 
 /// Delete a version directory, but only if no proof holds it — and hold that exclusion across the

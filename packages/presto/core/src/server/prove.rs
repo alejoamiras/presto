@@ -438,12 +438,9 @@ pub(super) async fn acquire_prover(
     // `None` means a cleanup is deleting this version right now; report unavailable rather than race
     // it. The next request re-downloads.
     let version_lease = acquire_version_lease(resolved.version.as_ref())?;
-    // The lease stops evictions from here on; one may have completed between resolution and now.
-    if let Some(version) = resolved
-        .version
-        .as_ref()
-        .filter(|_| !resolved.needs_download)
-    {
+    // The lease stops evictions from here on; one may have completed between resolution (or the
+    // download another request finished for us) and now.
+    if let Some(version) = resolved.version.as_ref() {
         if !versions::version_bb_path(version).is_some_and(|p| p.exists()) {
             return Err(ProveError::VersionEvicting);
         }
