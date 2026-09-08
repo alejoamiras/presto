@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Harden Report — security — presto-noir</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1a1a; --muted: #6b6b6b; --hairline: #e3e3e3;
+    --surface: #fafafa; --code: #f0f0f0; --link: #0b62c4;
+    --high: #b3261e; --high-bg: #fdeceb; --med: #9a6700; --med-bg: #fff4d6;
+    --low: #57606a; --low-bg: #eef1f4; --green: #1a7f37; --green-bg: #e6f4ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121212; --fg: #e6e6e6; --muted: #9a9a9a; --hairline: #2c2c2c;
+      --surface: #1b1b1b; --code: #242424; --link: #6cb2ff;
+      --high: #ff7b72; --high-bg: #3a1d1b; --med: #e3b341; --med-bg: #3a2f12;
+      --low: #a0a8b0; --low-bg: #23272c; --green: #57c478; --green-bg: #15301d;
+    }
+  }
+  body { background: var(--bg); color: var(--fg); margin: 0 auto; max-width: 820px;
+         padding: 2.5rem 1.25rem 4rem; font: 16px/1.6 -apple-system, BlinkMacSystemFont,
+         "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  h1 { font-size: 1.6rem; } h2 { font-size: 1.25rem; margin-top: 2.5rem; }
+  h3 { font-size: 1.05rem; }
+  a { color: var(--link); }
+  code { background: var(--code); border-radius: 4px; padding: 0.1em 0.35em; font-size: 0.88em; }
+  .muted { color: var(--muted); }
+  .stats { display: flex; gap: 0.5rem; flex-wrap: wrap; margin: 1.25rem 0 2rem; }
+  .chip { border-radius: 999px; padding: 0.15em 0.7em; font-size: 0.8rem; font-weight: 600;
+          background: var(--low-bg); color: var(--low); }
+  .chip-high { background: var(--high-bg); color: var(--high); }
+  .chip-med  { background: var(--med-bg);  color: var(--med); }
+  .chip-low  { background: var(--low-bg);  color: var(--low); }
+  .chip-info { background: var(--low-bg);  color: var(--low); font-weight: 500; }
+  .callout { border: 1px solid var(--hairline); border-left: 4px solid var(--green);
+             background: var(--green-bg); border-radius: 8px; padding: 0.9rem 1.1rem; margin: 1.25rem 0; }
+  .callout-pair { border-left-color: var(--med); background: var(--med-bg); }
+  .finding { background: var(--surface); border: 1px solid var(--hairline); border-radius: 8px;
+             padding: 1.2rem; margin: 1.25rem 0; }
+  .finding-header { display: flex; gap: 0.6rem; align-items: baseline; flex-wrap: wrap; }
+  .finding-id { color: var(--muted); font-weight: 600; }
+  .finding-title { font-weight: 700; }
+  .meta-line { margin: 0.6rem 0 0.9rem; }
+  details { margin-top: 0.75rem; }
+  summary { cursor: pointer; color: var(--link); }
+  ul { padding-left: 1.2rem; }
+  footer { margin-top: 3rem; border-top: 1px solid var(--hairline); padding-top: 1rem;
+           font-size: 0.85rem; color: var(--muted); }
+</style>
+</head>
+<body>
+
+<h1>Harden Report: security</h1>
+<p class="muted">alejoamiras/presto · presto-noir surface (PRs #21–#25, <code>main</code> @ f331a78) · 2026-09-08 · effort: high · run 2026-09-08-presto-noir</p>
+
+<div class="stats">
+  <span class="chip">5 findings</span>
+  <span class="chip chip-high">0 Critical</span>
+  <span class="chip chip-high">1 High</span>
+  <span class="chip chip-med">2 Medium</span>
+  <span class="chip chip-low">2 Low</span>
+</div>
+
+<h2>Executive summary</h2>
+<p>The presto-noir work added a second proving route to the Presto desktop app, a shared transport package (<code>@alejoamiras/presto-core</code>), a bb.js drop-in adapter (<code>@alejoamiras/presto-noir</code>), a playground panel, and a three-package npm release path. Six clusters were audited by two model families independently, each side then challenged the other's report, a coordinator deduplicated and banded the result, and two fresh verifiers re-derived every finding from source. Two clusters — the Noir adapter and the playground panel — came back clean from all four passes. The request path from a web page into the native prover held up against forged hosts, missing origins, revoked approvals, decompression bombs, and malformed keys.</p>
+<p>Five findings survived. The one <strong>High</strong> is in the release pipeline, not the product: the CI job that publishes the three packages with signed provenance runs a fresh <code>npm install</code> from the public registry, with install scripts enabled, <em>before</em> it publishes the file it already packed. A compromised upstream dependency that coincides with a release could swap the artifact and ship it with a valid signature. Two <strong>Medium</strong> findings: in the shared client, two overlapping proofs can share a protocol decision so one private witness is sent to the plain-HTTP port that was never health-checked (only with a non-default downgrade setting); and in the app, a request header drives multi-gigabyte downloads and cache bookkeeping before the request proves it is a real job, so one approved website can force unbounded download churn and hold the cache above its size cap. Two <strong>Low</strong> items: the playground deployment does not tie the file it deploys to the provenance it verified, and caller-supplied code can run after the client's last policy check (informational).</p>
+<p>Recommended order: land the High's interim mitigations today and the CI job split this week; fix the two client findings together in <code>presto-core</code> before promoting the packages to <code>latest</code>; then the download budget in the app; and the playground digest check alongside the High, since they are the same missing-digest pattern.</p>
+
+<div class="callout">
+  <strong>Cheapest fixes first.</strong> F-005 (move one line above a check, under an hour), F-004 (hash the packed file and compare it to the verified attestation, hours), F-002 (build the URL from the protocol that passed the check instead of reading it live, hours). F-001's interim mitigations (<code>--ignore-scripts</code>, an exact <code>typescript</code> pin, a digest asserted before publish) are also hours and should go in the same first PR.
+</div>
+
+<div class="callout callout-pair">
+  <strong>Ship together.</strong> <strong>F-001 + F-004</strong>: both are "verified one thing, consumed another" gaps in the release path; the fix is the same discipline (compute a digest at the trust boundary, assert it at the sink). <strong>F-002 + F-005</strong>: both are checks in <code>PrestoClient.prove()</code> that can be outrun by something else touching shared state; one immutable per-attempt snapshot closes both.
+</div>
+
+<h2>Findings</h2>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="chip chip-high">High</span>
+    <span class="finding-id">F-001</span>
+    <span class="finding-title">Registry-resolved code runs inside the OIDC publish job and can rewrite the artifact published minutes later</span>
+  </div>
+  <div class="meta-line">
+    <span class="chip chip-info">Found by Claude+Codex</span>
+    <span class="chip chip-info">confidence: high</span>
+    <span class="chip chip-info">CWE-829 · CWE-269</span>
+    <span class="chip chip-info">fix: hours (interim) · ~1 day (job split)</span>
+  </div>
+  <div class="eli5">
+    <p><strong>What it is.</strong> When Presto's SDK packages are released, a GitHub Actions job builds the package, packs it into a tarball, and publishes it to npm with a cryptographic "provenance" statement that says "this exact file was built by this exact workflow." Between packing and publishing, the same job runs a "consumer test": it installs the package the way a downstream user would, which pulls fresh copies of its dependencies from the public npm registry and lets those dependencies run install-time scripts. That install happens <em>inside</em> the job that holds the signing credentials, and the path to the not-yet-published tarball is sitting in the job's environment.</p>
+    <p><strong>What an attacker would do.</strong> Compromise any package in that dependency tree (the May 2026 <code>@tanstack/*</code> worm did this to 42 packages in six minutes) and wait for a Presto release. Their install script reads the tarball path from the environment, overwrites the file with a trojaned copy, and exits cleanly. Minutes later the job publishes the trojaned file with a valid provenance signature. Every downstream check, including Presto's own verification scripts, verifies <em>what was published</em>, so they all pass. Every app that installs <code>@alejoamiras/presto</code>, <code>presto-core</code>, or <code>presto-noir</code> then ships the attacker's code, and the provenance says it is legitimate.</p>
+    <p><strong>The fix.</strong> Never run registry code in the job that signs. Pack the tarball, record its hash, and upload it as a workflow artifact <em>before</em> anything from the registry runs; do the consumer test in a separate job with no publishing rights; have the publish job download the artifact, check the hash, and publish. The repository already has the unprivileged shape: the per-package PR gate runs the same consumer script in a job with read-only permissions. Same-day stopgaps: <code>--ignore-scripts</code> on the installs, an exact <code>typescript</code> version, and a hash taken at pack time and asserted right before publish.</p>
+  </div>
+  <details>
+    <summary>Technical trace</summary>
+    <p><strong>Instances:</strong> <code>.github/workflows/_publish-npm.yml:43-45</code> (job-wide <code>id-token: write</code> + <code>contents: write</code>), <code>:52-54</code> (checkout with credential persistence), <code>:158</code> → <code>:167</code> (<code>TARBALL</code> exported, then published as-is), <code>:161-162</code> (consumer test inside the privileged job), <code>:227</code>, <code>:245</code> (fresh unscoped install with <code>GH_TOKEN</code>); <code>scripts/sdk-tarball-consumer.sh:79</code>, <code>:111</code> (unscoped <code>npm install</code>, scripts on), <code>:93</code> (<code>npx --yes --package=typescript@5.9</code>), <code>:96</code> (runtime import of the installed graph); grants re-declared at <code>.github/workflows/release-sdk.yml:144</code>, <code>:173</code>, <code>:186</code>. Not an instance: <code>_ts-package-ci.yml</code>'s <code>tarball-consumer</code> job (runs under <code>contents: read</code>).</p>
+    <p><strong>Trace:</strong> range dependency kept by <code>scripts/prepare-sdk-publish.ts:60</code> → <code>scripts/tarball-consumer/host-manifest.ts:28</code> → <code>scripts/sdk-tarball-consumer.sh:79</code> <code>npm install</code> with lifecycle scripts → a hook overwrites <code>$TARBALL</code> (<code>_publish-npm.yml:158</code>) or requests an OIDC token → <code>_publish-npm.yml:167</code> <code>npm publish "$TARBALL" --provenance</code> signs the substituted bytes → downstream checks (<code>:169-190</code>, <code>:245</code>, <code>scripts/sdk-release-verification.ts</code>) verify the published artifact and pass. <code>bun.lock</code> and the 7-day <code>minimumReleaseAge</code> govern the Bun install, not these npm resolutions; <code>scripts/verify-sdk-package-signatures.ts:51</code> already uses <code>--ignore-scripts</code>, so the class is known but applied to one of four installs.</p>
+    <p><strong>Fix:</strong> (1) build → pack → <code>sha256sum</code> → <code>upload-artifact</code>, no registry execution in between; (2) run <code>sdk-tarball-consumer.sh</code> in a job with <code>contents: read</code> and no <code>id-token</code> against the downloaded artifact; (3) publish job downloads the artifact, asserts the digest recorded by (1), then <code>npm publish</code>; move the <code>:245</code> fresh-install verification to a follow-on job without <code>id-token</code>. Interim: <code>--ignore-scripts</code> at <code>sdk-tarball-consumer.sh:79</code>, <code>:111</code>, <code>_publish-npm.yml:245</code>; exact <code>typescript</code> pin at <code>:93</code>; record <code>sha256sum "$TARBALL"</code> at <code>:158</code> and assert it immediately before <code>:167</code> (partial: same job). Verifier note: a hash computed <em>after</em> the consumer install in the same job is itself mutable; the pack+hash+upload must precede any consumer execution.</p>
+  </details>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="chip chip-med">Medium</span>
+    <span class="finding-id">F-002</span>
+    <span class="finding-title">Concurrent proofs share the protocol pin: a witness can be sent to the never-validated HTTP port</span>
+  </div>
+  <div class="meta-line">
+    <span class="chip chip-info">Found by Codex (Claude verified)</span>
+    <span class="chip chip-info">confidence: high (mechanism) · moderate (browser timing)</span>
+    <span class="chip chip-info">CWE-362 · CWE-200</span>
+    <span class="chip chip-info">fix: hours</span>
+  </div>
+  <div class="eli5">
+    <p><strong>What it is.</strong> A "witness" is the private input to a zero-knowledge proof: the secret the proof is about. The shared client sends it to the local Presto app over HTTPS, and only if the app explicitly allows a downgrade will it fall back to plain HTTP, and even then only after checking that the HTTP port answers Presto's health check. The client keeps one shared "which protocol are we using" setting. When two proofs run at the same time and the first one hits an HTTPS network error, it switches that shared setting to HTTP while it goes off to health-check the HTTP port. The second proof, already past its own checks, reads the shared setting at the moment it sends, and posts its witness to the HTTP port that nobody has checked yet.</p>
+    <p><strong>What an attacker would do.</strong> Same-machine, lower-privilege software (a browser extension cannot do this; a local process can) listens on Presto's HTTP port. It cannot pass Presto's health check, so the normal downgrade path never talks to it. It only needs the app configured with <code>allowInsecureDowngrade</code> and two overlapping proofs, then it triggers an HTTPS failure (or waits for one). The second proof's witness arrives at its port in the clear. The documented boundary already accepts that a fake Presto can pass the health check by mimicking its shape; this path is strictly worse because the fake does not even have to answer.</p>
+    <p><strong>The fix.</strong> Decide the destination when the check passes, not when the request is sent. The client already snapshots the request and re-checks a "generation" counter to catch mid-flight reconfiguration; extend that pattern so the protocol is part of the snapshot, build the URL from the snapshot via the transport's existing explicit-protocol helper, and make the downgrade bump the generation. Requires the non-default <code>{httpsOnly:false, allowInsecureDowngrade:true}</code>; both shipped adapters reach this code.</p>
+  </div>
+  <details>
+    <summary>Technical trace</summary>
+    <p><strong>Instances:</strong> <code>packages/sdk-core/src/lib/presto-client.ts:450</code> → <code>packages/sdk-core/src/lib/presto-transport.ts:648-653</code> (<code>demoteHttpsPin()</code> clears the pin without bumping <code>#generation</code>); <code>presto-client.ts:323</code> → <code>:333</code> → <code>:364</code> → <code>:401</code> / <code>presto-transport.ts:958</code>; <code>presto-transport.ts:688-693</code> (<code>baseUrl</code> computed from the current pin, not the status that authorised the attempt); adapters at <code>packages/sdk/src/lib/presto-prover.ts:162</code>, <code>packages/sdk-noir/src/lib/presto-ultra-honk-backend.ts:126</code>.</p>
+    <p><strong>Trace:</strong> cached healthy-HTTPS status (<code>presto-client.ts:128</code>, <code>:323</code>) → proof B yields → proof A's HTTPS POST fails at the network layer, enters <code>#retryOverHttp</code>, calls <code>demoteHttpsPin()</code> (<code>:450</code>, <code>presto-transport.ts:648</code>) and awaits the HTTP health check → B resumes, generation still matches, reads live <code>baseUrl</code> (<code>presto-client.ts:364</code>, <code>presto-transport.ts:692</code>) = <code>http://…</code> → <code>transport.post</code> (<code>presto-transport.ts:958</code>) sends the witness → A's check fails later and A falls back, after B's disclosure. Reproduced with in-memory fetch mocks; real-browser timing not exercised.</p>
+    <p><strong>Fix:</strong> capture <code>status.protocol</code> with <code>detectGen</code> in <code>prove()</code>; build the URL with the existing explicit-protocol <code>urlFor(protocol, path)</code> (<code>presto-transport.ts:935-938</code>) instead of the live <code>baseUrl</code>; have <code>demoteHttpsPin()</code> bump a generation the final check compares. The <code>generation</code> + <code>Snapshot</code> pattern already in <code>prove()</code> is the template. Reading the live transport protocol after an await keeps the race; the protocol must come from the check that authorised the attempt. Also closes F-005.</p>
+  </details>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="chip chip-med">Medium</span>
+    <span class="finding-id">F-003</span>
+    <span class="finding-title"><code>x-aztec-version</code> drives unbounded download churn and defeats the cache size cap before the payload is validated</span>
+  </div>
+  <div class="meta-line">
+    <span class="chip chip-info">Found by Claude+Codex</span>
+    <span class="chip chip-info">confidence: high (mechanism) · moderate (disk-fill magnitude)</span>
+    <span class="chip chip-info">CWE-400 · CWE-770</span>
+    <span class="chip chip-info">fix: hours (digest-first, re-arm) · ~1 day (download budget)</span>
+  </div>
+  <div class="eli5">
+    <p><strong>What it is.</strong> Presto can prove with many versions of the <code>bb</code> prover binary; a website tells it which one it needs through a request header, and Presto downloads that version (about 64 MB) on demand into a cache with a 2 GB cap and a cleanup that evicts versions not used recently. Two things happen in the wrong order. First, the download and the "this version was just used" bookkeeping run <em>before</em> Presto has looked at the request body, so a garbage request still costs a full download. Second, Presto fetches the whole tarball before it fetches the digest it will check it against, so when GitHub's anonymous API limit is hit (60 requests per hour), every request for an uncached version downloads 64 MB and throws it away.</p>
+    <p><strong>What an attacker would do.</strong> A website the user has approved once (or any local page, if the headless server auto-approves localhost) sends a stream of cheap, malformed requests, each naming a real historical Aztec version. Presto downloads a fresh 64 MB tarball per request, indefinitely, burning the user's bandwidth, RAM, and disk. Separately, the page fills the cache with real versions and then keeps "touching" them every few minutes; the cleanup runs once, sees everything as recently used, and does not run again, so the cache stays above its cap until Presto restarts. Presto's concurrency caps do not help: they bound how many proofs run at once, not how many downloads happen per hour.</p>
+    <p><strong>The fix.</strong> Fetch the digest before the tarball and fail fast. Add a download budget (one uncached download at a time globally, plus a small per-website allowance per ten minutes) that counts <em>every</em> attempted miss, including failures and repeats, and answer over-budget requests with the existing "try again later" code the client already understands. Re-arm the cleanup while versions stay active, or only mark a version as used once a real job reaches the prover.</p>
+  </div>
+  <details>
+    <summary>Technical trace</summary>
+    <p><strong>Instances:</strong> <code>packages/presto/core/src/server/prove.rs:374-379</code> (header) → <code>:82</code> (<code>verify_cached_bb</code> on every resolve) → <code>:312</code> (<code>download_if_needed</code> before the permit); <code>packages/presto/core/src/server/ultra_honk.rs:333</code> precedes <code>:338</code> (download + activity refresh before <code>decode_and_check</code>); <code>packages/presto/core/src/versions/downloader.rs:38</code> → <code>:44</code> (tarball before <code>verify_digest</code>); <code>versions/release_metadata.rs:83-101</code> (unauthenticated GitHub API; rate limit → <code>Ok(None)</code> → digest error); <code>versions/cache_layout.rs:249</code>, <code>:271-275</code> (<code>mark_in_use</code> rewrites <code>.last-used</code> on every resolve); <code>versions/version_policy.rs:414</code>, <code>:458-478</code> (recently-active exemption; single non-looping retry); <code>server/prove.rs:388-404</code> (cleanup only spawns after a download).</p>
+    <p><strong>Trace:</strong> <code>x-aztec-version</code> → <code>resolve_version</code> (<code>prove.rs:51-91</code>) → <code>verify_cached_bb</code>/<code>mark_in_use</code> (<code>cache_layout.rs:232-252</code>) or <code>download_bb</code> (<code>downloader.rs:21-60</code>) → disk/network → cleanup exemption (<code>version_policy.rs:414</code>, <code>:477</code>). <code>MAX_INFLIGHT_PROVE</code> and the per-origin cap bound concurrency only; nothing bounds sequential downloads per origin or per hour.</p>
+    <p><strong>Fix:</strong> (1) digest before tarball in <code>download_bb</code>; (2) a global single-flight + per-origin token bucket (e.g. 3 new versions per 10 min) counting every attempted miss, returning the existing <code>503</code>/<code>transient</code> the client classifies (<code>presto-client.ts:541-550</code>), with duplicate in-flight downloads coalesced; (3) re-arm <code>cleanup_after_active_window</code> while <code>deferred_by_active_window</code> holds, or refresh <code>.last-used</code> only once a job reaches <code>run_ultra_honk</code>; (4) optionally run <code>decode_and_check</code> before <code>acquire_prover</code> on <code>/prove/ultra-honk</code> (the current ordering is deliberate, <code>implementations-plan/presto-noir/plan.md:135</code>).</p>
+  </details>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="chip chip-low">Low</span>
+    <span class="finding-id">F-004</span>
+    <span class="finding-title">Playground deploy consumes a tarball that is not bound to the provenance it verified</span>
+  </div>
+  <div class="meta-line">
+    <span class="chip chip-info">Found by Codex (cross-model disagreement on realism)</span>
+    <span class="chip chip-info">confidence: moderate</span>
+    <span class="chip chip-info">CWE-345</span>
+    <span class="chip chip-info">fix: hours</span>
+  </div>
+  <div class="eli5">
+    <p><strong>What it is.</strong> Before the playground site is deployed with the freshly published SDK, a script verifies the SDK's provenance (the signed statement about where it was built) and its registry signatures. It then downloads the SDK a third time, separately, and deploys <em>that</em> copy. Nothing ties the copy it deploys to the copy it verified; the only check is that the download matches whatever the registry says the hash should be at that moment, which is the registry vouching for itself.</p>
+    <p><strong>What an attacker would do.</strong> Someone who can make the registry (or the network path to it) answer differently to three requests for the same package version within one CI job: serve the real package to the verification steps and a modified one to the download. That is a strong precondition, which is why this is Low. The payoff is real: the playground is a "verified site" in Presto's registry, so its JavaScript runs with users' standing approval to use the local prover.</p>
+    <p><strong>The fix.</strong> Keep the hash from the step that cryptographically verified the package, hash the downloaded file locally, and refuse to deploy if they differ. Small change, and the same discipline F-001 needs.</p>
+  </div>
+  <details>
+    <summary>Technical trace</summary>
+    <p><strong>Instances:</strong> <code>scripts/published-playground.ts:103</code> (provenance), <code>:104</code> (signatures, separate temp install), <code>:107</code> (third download via <code>npm pack</code>), <code>:111</code> (compared only to a fresh <code>npm view dist.integrity</code>); <code>scripts/sdk-release-verification.ts:113-118</code>, <code>:37-42</code> (subject digest compared against a registry response, never a local file; no digest returned); <code>scripts/verify-sdk-package-signatures.ts:39-42</code> (returns <code>void</code>; verifies a discarded copy); sinks <code>.github/scripts/packaged-e2e-swap-sdk.sh:71</code>, <code>:85</code>, <code>:134</code>; <code>.github/workflows/release-sdk.yml:232</code>, <code>:238</code>.</p>
+    <p><strong>Trace:</strong> <code>fetchAndVerifySdkProvenance</code> → <code>verifySdkPackageSignatures</code> → <code>npm pack</code> → <code>dist.integrity</code> self-comparison → swap script → <code>wrangler deploy</code>.</p>
+    <p><strong>Fix:</strong> carry the digest of the cryptographically verified attestation (the <code>npm audit signatures</code> subject, not only the parsed provenance statement), hash the packed file locally (<code>Bun.CryptoHasher("sha512")</code>) and compare before the swap; or run <code>npm audit signatures --include-attestations</code> in the directory the tarball was packed into and assert the audited integrity equals the local file hash.</p>
+  </details>
+</div>
+
+<div class="finding">
+  <div class="finding-header">
+    <span class="chip chip-low">Low · informational</span>
+    <span class="finding-id">F-005</span>
+    <span class="finding-title">Caller-supplied payload iterator runs after the last policy check before dispatch</span>
+  </div>
+  <div class="meta-line">
+    <span class="chip chip-info">Found by Codex (Claude verified)</span>
+    <span class="chip chip-info">confidence: high (mechanism) · low (significance)</span>
+    <span class="chip chip-info">CWE-367</span>
+    <span class="chip chip-info">fix: under an hour · CHEAPEST</span>
+  </div>
+  <div class="eli5">
+    <p><strong>What it is.</strong> The client re-checks its configuration one last time before sending a proof, so a caller who switches to "HTTPS only" mid-flight is honoured. One step still runs after that check: copying the caller's payload, which for exotic payload types can run caller-provided code. That code could reconfigure the client and the check would not see it.</p>
+    <p><strong>What an attacker would do.</strong> Practically nobody: neither shipped adapter builds such a payload, and the only party who can reach this is a program subverting its own client. Both verifiers agree it is a mechanism, not a risk; one would not band it at all.</p>
+    <p><strong>The fix.</strong> Move the copy above the check. One line, done as part of F-002.</p>
+  </div>
+  <details>
+    <summary>Technical trace</summary>
+    <p><strong>Instances:</strong> <code>packages/sdk-core/src/lib/presto-client.ts:385</code> → <code>:396</code> → <code>:401</code> / <code>presto-transport.ts:958</code>.</p>
+    <p><strong>Trace:</strong> <code>prove()</code> re-checks <code>generation</code> after <code>body()</code> (<code>:377</code>) to honour mid-flight reconfiguration; <code>Uint8Array.from(payload)</code> at <code>:396</code> runs a caller-supplied iterator after that check.</p>
+    <p><strong>Fix:</strong> move <code>Uint8Array.from(payload)</code> above the <code>:385</code> check, mirroring the treatment of <code>body()</code> and phase callbacks at <code>:376-385</code>. No second check needed.</p>
+  </details>
+</div>
+
+<h2>What was checked and held</h2>
+<ul>
+  <li><strong>Noir adapter</strong> (<code>packages/sdk-noir</code>): zero findings from both models after rebuttal. Server-key cache poisoning is contained (verification never reads the cache); the peer version not being asserted at runtime does not widen trust.</li>
+  <li><strong>Playground Noir panel</strong>: zero findings. No injection sink; the test stub is DEV-gated and asserted dead in the production smoke.</li>
+  <li><strong>Route ingress</strong> (<code>POST /prove/ultra-honk</code>): Host allowlist, Origin canonicalisation, revocation re-check, decoded-size caps, and per-origin admission all held. Items left as hardening notes: synchronous request parsing on the runtime thread (deliberate, bounded), no minimum-safe bb version floor (no vulnerable build identified).</li>
+  <li><strong>bb child containment</strong>: sound for the authentic bb. Four escape paths (FIFO <code>proof.json</code>, Windows exit leaving job members, Unix <code>setsid</code>, Windows spawn-before-assign) need a malicious bb release, which is outside the trust model. The admission-guard release before reap is fixed in PR #28.</li>
+  <li><strong>Workflow interpolations</strong>: every direct <code>${{ }}</code> use derives from the allowlisted descriptor or a numeric pid. Open question, unverifiable from the repo: the provenance <code>workflow.path</code> for a job inside a called reusable workflow.</li>
+</ul>
+
+<h2>Cross-cutting observations</h2>
+
+<h3>Privileged CI steps trust artifacts across an untrusted boundary without a digest</h3>
+<p>F-001 and F-004 are one pattern in two places: a verification result is produced, then the bytes actually consumed are fetched or mutated separately, and no hash carries the result forward. The release path already knows how to verify (provenance, signatures, <code>--ignore-scripts</code> in one script); what it lacks is the habit of computing a local digest at the trust boundary and asserting it at the sink. Adopt that as a rule for every workflow that publishes or deploys.</p>
+
+<h3>Mutable shared client state consulted after a check</h3>
+<p><code>PrestoClient.prove()</code> snapshots the request and re-checks a generation counter, but the destination is read live from the transport, which any concurrent attempt can change (F-002), and caller code can still run after the last check (F-005). The rule that closes both: one immutable eligibility-plus-destination snapshot per attempt, and every mutation of shared state bumps a generation the final check compares.</p>
+
+<h3>Resource caps bound concurrency and residency, not churn</h3>
+<p>The app limits how many proofs run at once and how big the cache may grow, but nothing limits rate over time: downloads per hour, activity refreshes per window. F-003 is the instance; the general fix is a token bucket wherever a client can trigger a costly side effect repeatedly.</p>
+
+<h3>Side effects before validation</h3>
+<p>On both prove routes, version resolution (download, cache bookkeeping) runs before the payload is decoded, so the cheapest requests pay the most expensive side effects. The ordering is deliberate for latency; the download budget above makes it safe without reordering.</p>
+
+<h3>Containment is best-effort against an adversarial child</h3>
+<p>Process-group and Job-Object containment is correct for the authentic <code>bb</code>. "Confirmed dead" is a statement about the original group or job, not about every descendant a hostile binary might have spawned. Defense-in-depth options exist (<code>CREATE_SUSPENDED</code> + assign + resume on Windows; child-subreaper or cgroup on Linux) if the trust model ever changes.</p>
+
+<h3>The revocation denylist is the only version-safety control and is empty</h3>
+<p>A compile-time constant in <code>version_policy.rs</code> is the sole lever for refusing a known-bad <code>bb</code> version, and activating it needs a Presto release. That is acceptable today; it is worth knowing that there is no faster path.</p>
+
+<footer>
+  Engineering detail: <a href="report.md">report.md</a> ·
+  <a href="findings/verified.md">verified findings</a> ·
+  <a href="findings/consolidated.md">consolidated findings</a> ·
+  <a href="findings/verifier-claude.md">Claude verifier</a> ·
+  <a href="findings/verifier-codex.md">Codex verifier</a> ·
+  <a href="raw/">raw cluster outputs</a> ·
+  <a href="raw/repo-map/">repo map</a>
+  <br>Generated by the <code>/harden</code> skill. Links are relative — this file lives inside the run's audit directory.
+</footer>
+
+</body>
+</html>
