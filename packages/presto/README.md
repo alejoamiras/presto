@@ -68,11 +68,30 @@ the dual HTTP/HTTPS behavior needed by the headless CI server.
 
 Every `/prove` response includes an `x-prove-duration-ms` header with the actual `bb` proving time in milliseconds. The SDK surfaces this via the `"proved"` phase callback, and the frontend displays it in the step breakdown — making it easy to see how much time is pure proving vs. network/serialization overhead.
 
+### Proving any Noir circuit (`POST /prove/ultra-honk`)
+
+`/prove` is Aztec's client-IVC (`chonk`) path. Since Presto 1.1.0 a second route proves **any compiled Noir circuit** with bb's `ultra_honk` scheme — what `@aztec/bb.js`'s `UltraHonkBackend` does in WASM, run natively. `/health.schemes` lists `["chonk", "ultra_honk"]` when both are served.
+
+Request: `Content-Type: application/json`, a flat object of strings.
+
+| Field | Value |
+|---|---|
+| `bytecode` | the compiled artifact's `bytecode` string verbatim (the base64 gzipped ACIR nargo writes into `circuit.json`) |
+| `witness` | base64 of the gzipped witness (`witness.gz` as written by `nargo execute` / `bb.js`'s `compressWitness`) |
+| `verifier_target` | one of bb's `-t` values: `evm`, `evm-no-zk`, `noir-recursive`, `noir-recursive-no-zk`, `noir-rollup`, `noir-rollup-no-zk`, `starknet`, `starknet-no-zk` |
+| `vk` | optional, base64 of the verification key for that circuit **and target**. Omitted → bb computes it (`--write_vk`) and the response carries it |
+
+Response `200`: `{ "proof": "<base64>", "public_inputs": "<base64>", "vk": "<base64>" }` — raw bb output bytes, 32-byte fields; `public_inputs` is empty for a circuit without public inputs; `vk` is present only when the server computed it (a client-supplied key is never echoed); `x-prove-duration-ms` as on `/prove`. A key that belongs to a different circuit is **not** rejected up front: under bb's default key policy the request may return `200` with a proof that fails verification against the circuit's real key — supply the key for the circuit you sent, or omit it. bb.exe 5.2.0 on Windows handles its files in text mode — a supplied key is truncated at the first `0x1A` byte and binary outputs gain a `0x0D` before every `0x0A` — so Presto sets a client key aside there and lets bb recompute it (the response still carries no `vk`), and on every platform asks bb for JSON field output, which text mode cannot corrupt and which converts to the exact same bytes. `bb verify` on Windows reads its inputs the same way, so a Windows proof is checked by byte identity with the bb.js reference rather than by the sidecar. `x-aztec-version` selects the `bb` exactly like `/prove`. Only the `*-no-zk` targets are byte-reproducible (ZK targets add prover randomness); bb 5.2.0 accepts the two `starknet` targets on the command line but refuses them at prove time, which surfaces as `prove_failed`.
+
+Errors are `text/plain` like `/prove`: `400 invalid_request` (shape, base64, gzip, size), `400 invalid_verifier_target`, `403` on a denied or revoked origin, `429 origin_queue_full` (one origin may have at most 4 UltraHonk jobs in flight; `429 prove_queue_full` is the global cap), `500 prove_failed` (bb exited non-zero or timed out).
+
+**Trust boundary.** The route crosses no boundary `/prove` does not already cross: the same loopback `Host` guard, the same origin approval (with a re-check after the queue wait, so an origin removed in Settings while a job was waiting is denied), and the same `bb` child containment (timeout, kill-tree, owner-only 0600 workspace). Inputs reach `bb` only as files, never as arguments; `verifier_target` is parsed into a closed enum at ingress. Decoded inputs are capped (bytecode 16 MiB, witness 32 MiB, key 64 KiB, gzip inflate 256 MiB) and a request that exceeds a cap is rejected before proving starts. A wrong key can only spoil that caller's own proof.
+
 ## Configuration
 
 ### Port
 
-The default port is `59833`. The SDK reads `PRESTO_PORT` to override the client-side target. The server itself currently does **not** honor this env var — it always binds `127.0.0.1:59833`. If you need to change the port on both sides, that requires a code change to `server.rs`.
+The default port is `59833`. The SDK reads `PRESTO_PORT` to override the client-side target. The desktop app always binds `127.0.0.1:59833`. The headless server accepts `--port <n>` for parallel instances, but only together with a private `PRESTO_HOME` (see [headless configuration](#configuration-1)) — two instances must never share one config or version cache.
 
 ### Automatic Version Management
 
@@ -193,13 +212,16 @@ The presto will download the matching `bb` binary on the first prove request (fr
 | `ALLOWED_ORIGINS` | Comma-separated browser origins pre-approved for `/prove`. **Unset = deny-by-default** (non-localhost denied; localhost auto-approved). Mutually exclusive with `--allow-all` / `PRESTO_ALLOW_ALL`. |
 | `PRESTO_ALLOW_ALL` | `1` or `true` → approve **all** browser origins (the pre-SEC-01 behavior). Opt-in; mutually exclusive with `ALLOWED_ORIGINS`. Prefer `ALLOWED_ORIGINS` for an explicit allowlist. (`--allow-all` CLI flag is equivalent.) |
 | `BB_BINARY_PATH` | Path to a pre-installed `bb` binary, bypassing the auto-download. |
+| `PRESTO_HOME` | Private state directory (`config.json`, `versions/`, `data/`) instead of the per-user defaults. Required by `--port`, so parallel instances on one host never share state. The bb CRS (`~/.bb-crs`) stays shared. |
 | `RUST_LOG` | Standard `tracing-subscriber` filter (e.g. `info`, `debug`). |
+
+CLI flags: `--allow-all` (see above) and `--port <n>` (loopback port other than 59833; refused without `PRESTO_HOME`).
 
 ### Verifying it's running
 
 ```sh
 curl http://127.0.0.1:59833/health
-# {"status":"ok","api_version":1,"version":"...","aztec_version":"...","available_versions":[...],"bb_available":true}
+# {"status":"ok","api_version":1,"schemes":["chonk","ultra_honk"],"version":"...","aztec_version":"...","available_versions":[...],"bb_available":true,"versions":[{"aztec_version":"...","bb_version":"..."}]}
 ```
 
 ### Source
@@ -312,19 +334,22 @@ The `scripts/uninstall.sh` wrapper locates the binary and runs this for you.
 
 ## Version Compatibility
 
-The presto supports multiple Aztec versions simultaneously. The `/health` endpoint reports the bundled version and all cached versions:
+The presto supports multiple Aztec versions simultaneously. The `/health` endpoint reports the bundled version, all cached versions, the proving schemes the routes serve, and — for approved origins — which `bb` each Aztec version maps to:
 
 ```json
 {
   "status": "ok",
+  "api_version": 1,
+  "schemes": ["chonk", "ultra_honk"],
   "version": "1.1.0",
   "aztec_version": "5.0.0-nightly.20260309",
   "available_versions": ["5.0.0-nightly.20260309", "5.0.0-nightly.20260308"],
-  "bb_available": true
+  "bb_available": true,
+  "versions": [{ "aztec_version": "5.0.0-nightly.20260309", "bb_version": "5.0.0-nightly.20260309" }]
 }
 ```
 
-When the SDK requests a version that isn't cached, the presto downloads it automatically. If the download fails, the SDK falls back to WASM proving.
+Unapproved origins get the minimal body (`status`, `api_version`, `schemes`). A client selects the version with the `x-aztec-version` header on any prove route; when the SDK requests a version that isn't cached, the presto downloads it automatically. If the download fails, the SDK falls back to WASM proving.
 
 ## Troubleshooting
 
@@ -382,9 +407,13 @@ cargo run --release
 
 ## Testing
 
-### Rust unit tests (~90)
+### Rust tests (~445 across `core`, `server`, `src-tauri`)
 ```bash
-cargo test --manifest-path packages/presto/src-tauri/Cargo.toml
+cargo test --locked --manifest-path packages/presto/core/Cargo.toml
+cargo test --locked --manifest-path packages/presto/server/Cargo.toml
+cargo test --locked --manifest-path packages/presto/src-tauri/Cargo.toml
+# real bb over the committed Noir fixtures (needs a bb and the CRS; CI's ultra-honk-real-bb lane)
+BB_BINARY_PATH=... cargo test --locked --manifest-path packages/presto/core/Cargo.toml --test ultra_honk_real_bb -- --ignored
 ```
 
 ### Playwright UI mock tests (28)
@@ -394,17 +423,17 @@ bun run --cwd packages/presto test:e2e:ui
 ```
 
 ### WebDriver E2E tests
-Real end-to-end tests that launch the actual Tauri app via `tauri-plugin-webdriver` and drive it with WebdriverIO. Covers smoke (app health), settings (speed persistence), and auth flow (Allow persists, Deny does not).
+Real end-to-end tests that launch the actual Tauri app via `tauri-plugin-webdriver` and drive it with WebdriverIO. Covers smoke (app health), settings (speed persistence), theme, the trust boundary, auth flow (Allow persists, Deny does not), and UltraHonk proving (consent popup → native proof of the committed Noir fixture, byte-equal to the bb.js WASM reference and verified by the sidecar `bb`).
 
 ```bash
 # Terminal 1: launch app with WebDriver
 cargo tauri dev --features webdriver
 
-# Terminal 2: run tests
+# Terminal 2: run tests (DISPLAY must be set on Linux, or wdio wraps its workers in xvfb-run and breaks their IPC)
 bun run --cwd packages/presto test:e2e:webdriver
 ```
 
-These run on both macOS and Linux in CI as a PR gate (`presto.yml`) and pre-release gate (`release-presto.yml`).
+These run on macOS, Linux, and Windows in CI as a PR gate (`presto.yml`) and pre-release gate (`release-presto.yml`).
 
 ### Automated release acceptance
 

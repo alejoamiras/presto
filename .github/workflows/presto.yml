@@ -471,6 +471,66 @@ jobs:
           echo "Smoke test passed"
           kill $SERVER_PID 2>/dev/null || true
 
+  ultra-honk-real-bb:
+    name: UltraHonk Real bb
+    needs: changes
+    if: needs.changes.outputs.headless_server == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-cache-key: presto-ultra-honk-x86_64-unknown-linux-gnu
+          rust-workspaces: |
+            packages/presto/core -> target
+            packages/presto/server -> target
+          rust-components: ""
+          # Headless deps only; the prebuild copies the real bb sidecar (a node_modules copy on Linux).
+          install-tauri-system-deps: "false"
+          run-prebuild: "true"
+      - name: Cache the bb CRS
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bb-crs
+          key: bb-crs-${{ runner.os }}-${{ hashFiles('packages/sdk/package.json') }}
+      - name: Point at the sidecar bb
+        run: echo "BB_BINARY_PATH=$GITHUB_WORKSPACE/packages/presto/src-tauri/binaries/bb-x86_64-unknown-linux-gnu" >> "$GITHUB_ENV"
+      - name: In-process route against the real bb (byte identity + native verify, all targets)
+        run: cargo test --locked --manifest-path packages/presto/core/Cargo.toml --test ultra_honk_real_bb -- --ignored
+      - name: Build headless server
+        run: cargo build --locked --manifest-path packages/presto/server/Cargo.toml
+      - name: Start an isolated headless presto
+        id: presto
+        uses: ./.github/actions/start-headless-presto
+        with:
+          binary: packages/presto/server/target/debug/presto-server
+          port: "59900"
+          presto-home: ${{ runner.temp }}/presto-home-a
+      - name: HTTP smoke over the fixtures
+        env:
+          PRESTO_URL: ${{ steps.presto.outputs.url }}
+        run: bun packages/presto/scripts/ultra-honk-smoke.ts
+      - name: A second isolated instance coexists on another port
+        id: presto-b
+        uses: ./.github/actions/start-headless-presto
+        with:
+          binary: packages/presto/server/target/debug/presto-server
+          port: "59901"
+          presto-home: ${{ runner.temp }}/presto-home-b
+      - name: Both instances answer, with separate state directories
+        run: |
+          curl -sf http://127.0.0.1:59900/health | jq -e '.schemes | index("ultra_honk")' > /dev/null
+          curl -sf http://127.0.0.1:59901/health | jq -e '.schemes | index("ultra_honk")' > /dev/null
+          test -d "${{ runner.temp }}/presto-home-a" && test -d "${{ runner.temp }}/presto-home-b"
+      - name: Stop the headless instances
+        if: always()
+        run: |
+          kill "${{ steps.presto.outputs.pid }}" 2>/dev/null || true
+          kill "${{ steps.presto-b.outputs.pid }}" 2>/dev/null || true
+
   release-smoke:
     name: Release Smoke
     needs: changes
@@ -787,6 +847,7 @@ jobs:
         updater-feed-e2e,
         lint,
         smoke,
+        ultra-honk-real-bb,
         release-smoke,
         desktop-ui,
         e2e,
@@ -801,7 +862,7 @@ jobs:
       - name: Check results
         run: |
           test "${{ needs.identity-readiness.result }}" = success
-          results="${{ needs.changes.result }} ${{ needs.clippy.result }} ${{ needs.test.result }} ${{ needs.cert-trust.result }} ${{ needs.updater-feed-e2e.result }} ${{ needs.lint.result }} ${{ needs.smoke.result }} ${{ needs.release-smoke.result }} ${{ needs.desktop-ui.result }} ${{ needs.e2e.result }} ${{ needs.e2e-webdriver.result }} ${{ needs.e2e-webdriver-builtdebug.result }} ${{ needs.windows-prebuild.result }} ${{ needs.windows-build.result }}"
+          results="${{ needs.changes.result }} ${{ needs.clippy.result }} ${{ needs.test.result }} ${{ needs.cert-trust.result }} ${{ needs.updater-feed-e2e.result }} ${{ needs.lint.result }} ${{ needs.smoke.result }} ${{ needs.ultra-honk-real-bb.result }} ${{ needs.release-smoke.result }} ${{ needs.desktop-ui.result }} ${{ needs.e2e.result }} ${{ needs.e2e-webdriver.result }} ${{ needs.e2e-webdriver-builtdebug.result }} ${{ needs.windows-prebuild.result }} ${{ needs.windows-build.result }}"
           for r in $results; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
               echo "Job failed or was cancelled: $r"

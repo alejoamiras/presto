@@ -1379,3 +1379,366 @@ async fn allow_persists_the_origin_to_disk() {
         on_disk.approved_origins
     );
 }
+
+// ── /prove/ultra-honk ──
+
+fn gz(payload: &[u8]) -> Vec<u8> {
+    use std::io::Write;
+    let mut enc = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+    enc.write_all(payload).unwrap();
+    enc.finish().unwrap()
+}
+
+/// A well-formed UltraHonk body (gzipped placeholder inputs) with or without a client key.
+fn ultra_honk_body(with_vk: bool) -> Vec<u8> {
+    let b64 = |b: &[u8]| base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b);
+    let mut body = serde_json::json!({
+        "bytecode": b64(&gz(b"acir")),
+        "witness": b64(&gz(b"witness")),
+        "verifier_target": "noir-recursive-no-zk",
+    });
+    if with_vk {
+        body["vk"] = serde_json::json!(b64(b"key"));
+    }
+    serde_json::to_vec(&body).unwrap()
+}
+
+fn ultra_honk_request(body: Vec<u8>, origin: Option<&str>) -> Request<Body> {
+    let mut builder = Request::builder()
+        .header("host", "127.0.0.1:59833")
+        .method("POST")
+        .uri("/prove/ultra-honk")
+        .header("content-type", "application/json");
+    if let Some(origin) = origin {
+        builder = builder.header("origin", origin);
+    }
+    builder.body(Body::from(body)).unwrap()
+}
+
+async fn json_body(response: axum::http::Response<Body>) -> serde_json::Value {
+    let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+        .await
+        .unwrap();
+    serde_json::from_slice(&body).unwrap()
+}
+
+/// State with `origins` already persisted as approved, so requests reach the route without a popup.
+fn state_with_approved(origins: &[&str]) -> AppState {
+    let mut cfg = crate::config::PrestoConfig::default();
+    for origin in origins {
+        cfg.approved_origins
+            .push(crate::authorization::CanonicalOrigin::parse(origin).unwrap());
+    }
+    AppState {
+        core: Arc::new(HeadlessState {
+            auth_manager: Some(Arc::new(crate::authorization::AuthorizationManager::new())),
+            config: Some(Arc::new(crate::config::ConfigStore::for_test(cfg))),
+            ..Default::default()
+        }),
+        ..Default::default()
+    }
+}
+
+/// A fake bb for the UltraHonk route: 64-byte proof, 32-byte public inputs, and a key only when
+/// bb was asked to write one.
+#[cfg(unix)]
+/// JSON outputs like the real bb: a two-field proof, one public input, one vk field when asked.
+const ULTRA_HONK_FAKE_BB: &str = "f=\"\\\"0x$(printf '%064d' 0)\\\"\"\nprintf '{\"proof\":[%s,%s]}' \"$f\" \"$f\" > \"$out/proof.json\"\nprintf '{\"public_inputs\":[%s]}' \"$f\" > \"$out/public_inputs.json\"\nfor a in \"$@\"; do [ \"$a\" = --write_vk ] && printf '{\"vk\":[%s]}' \"$f\" > \"$out/vk.json\"; done\ntrue";
+
+#[cfg(unix)]
+#[tokio::test]
+#[serial]
+async fn ultra_honk_returns_raw_outputs_and_the_key_only_when_bb_computed_it() {
+    use crate::bb::test_support::{install_fake_bb, FIND_OUTDIR};
+    let dir = tempfile::tempdir().unwrap();
+    let _guard = install_fake_bb(dir.path(), &format!("{FIND_OUTDIR}\n{ULTRA_HONK_FAKE_BB}"));
+    let recorded = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    let rec = recorded.clone();
+    let state = AppState {
+        core: Arc::new(HeadlessState::default()),
+        on_status: Some(Arc::new(move |s: ServerStatus| {
+            rec.lock().unwrap().push(s.display_text().to_string())
+        })),
+        ..Default::default()
+    };
+    let app = router(state);
+
+    let response = app
+        .clone()
+        .oneshot(ultra_honk_request(ultra_honk_body(true), None))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(response.headers().contains_key("x-prove-duration-ms"));
+    let json = json_body(response).await;
+    assert_eq!(
+        json["proof"].as_str().unwrap().len(),
+        88,
+        "64 raw bytes, no header"
+    );
+    assert_eq!(json["public_inputs"].as_str().unwrap().len(), 44);
+    assert!(
+        json.get("vk").is_none(),
+        "a client key is never echoed back"
+    );
+    assert_eq!(
+        *recorded.lock().unwrap(),
+        vec!["Working a proof…".to_string(), "Ready".to_string()]
+    );
+
+    let response = app
+        .oneshot(ultra_honk_request(ultra_honk_body(false), None))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let json = json_body(response).await;
+    assert_eq!(
+        json["vk"].as_str().unwrap().len(),
+        44,
+        "the server-computed key comes back (one 32-byte field)"
+    );
+}
+
+#[tokio::test]
+async fn ultra_honk_rejects_malformed_bodies_with_named_text_plain_errors() {
+    let cases: [(Vec<u8>, &str); 4] = [
+        (b"nope".to_vec(), "invalid_request"),
+        (
+            ultra_honk_body(true).replace(b"noir-recursive-no-zk", b"noir_recursive"),
+            "invalid_verifier_target",
+        ),
+        (
+            {
+                let b64 = |b: &[u8]| {
+                    base64::Engine::encode(&base64::engine::general_purpose::STANDARD, b)
+                };
+                serde_json::to_vec(&serde_json::json!({
+                    "bytecode": b64(&gz(b"acir")),
+                    "witness": b64(b"not gzip"),
+                    "verifier_target": "evm",
+                }))
+                .unwrap()
+            },
+            "invalid_request",
+        ),
+        (
+            b"{\"witness\":\"YQ==\",\"verifier_target\":\"evm\"}".to_vec(),
+            "invalid_request",
+        ),
+    ];
+    for (body, code) in cases {
+        let response = router(AppState::default())
+            .oneshot(ultra_honk_request(body, None))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST, "{code}");
+        let ct = response.headers()["content-type"]
+            .to_str()
+            .unwrap()
+            .to_string();
+        assert!(ct.starts_with("text/plain"), "{code}: {ct}");
+        assert_eq!(json_body(response).await["error"], code);
+    }
+}
+
+trait ReplaceBytes {
+    fn replace(&self, from: &[u8], to: &[u8]) -> Vec<u8>;
+}
+
+impl ReplaceBytes for Vec<u8> {
+    fn replace(&self, from: &[u8], to: &[u8]) -> Vec<u8> {
+        let text = String::from_utf8(self.clone()).unwrap();
+        text.replace(
+            std::str::from_utf8(from).unwrap(),
+            std::str::from_utf8(to).unwrap(),
+        )
+        .into_bytes()
+    }
+}
+
+/// Spawn `n` requests from `origin` while the prove permit is held by the test, and wait until they
+/// are all admitted (holding their per-origin slots, parked before the permit).
+async fn park_ultra_honk_jobs(
+    app: &Router,
+    state: &AppState,
+    origin: &str,
+    n: usize,
+) -> Vec<tokio::task::JoinHandle<StatusCode>> {
+    let tasks: Vec<_> = (0..n)
+        .map(|_| {
+            let app = app.clone();
+            let req = ultra_honk_request(ultra_honk_body(true), Some(origin));
+            tokio::spawn(async move { app.oneshot(req).await.unwrap().status() })
+        })
+        .collect();
+    let canonical = crate::authorization::CanonicalOrigin::parse(origin).unwrap();
+    for _ in 0..200 {
+        if state.ultra_honk_slots.in_flight(&canonical) == n {
+            return tasks;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    panic!("{n} jobs never reached the permit queue");
+}
+
+#[tokio::test]
+async fn ultra_honk_sheds_a_fifth_concurrent_job_from_one_origin_but_not_another() {
+    let (miner, other) = ("https://miner.example", "https://other.example");
+    let state = state_with_approved(&[miner, other]);
+    let app = router(state.clone());
+    let _permit = state.prove_semaphore.clone().acquire_owned().await.unwrap();
+    let cap = super::ultra_honk::MAX_ULTRA_HONK_PER_ORIGIN;
+    let mut parked = park_ultra_honk_jobs(&app, &state, miner, cap).await;
+
+    let shed = app
+        .clone()
+        .oneshot(ultra_honk_request(ultra_honk_body(true), Some(miner)))
+        .await
+        .unwrap();
+    assert_eq!(shed.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(json_body(shed).await["error"], "origin_queue_full");
+
+    // Another approved origin is admitted normally (it parks behind the same permit).
+    parked.extend(park_ultra_honk_jobs(&app, &state, other, 1).await);
+    for task in parked {
+        task.abort();
+    }
+}
+
+#[tokio::test]
+async fn ultra_honk_denies_a_job_whose_origin_was_removed_in_settings_while_queued() {
+    let origin = "https://revoked.example";
+    let state = state_with_approved(&[origin]);
+    let app = router(state.clone());
+    let permit = state.prove_semaphore.clone().acquire_owned().await.unwrap();
+    let mut parked = park_ultra_honk_jobs(&app, &state, origin, 1).await;
+
+    let canonical = crate::authorization::CanonicalOrigin::parse(origin).unwrap();
+    state
+        .auth_manager
+        .as_ref()
+        .unwrap()
+        .revoke(&canonical, || {});
+    drop(permit);
+
+    let status = parked.pop().unwrap().await.unwrap();
+    assert_eq!(
+        status,
+        StatusCode::FORBIDDEN,
+        "revocation applies to queued work"
+    );
+}
+
+#[tokio::test]
+async fn health_advertises_schemes_everywhere_and_version_pairs_only_when_detailed() {
+    let state = AppState {
+        core: Arc::new(HeadlessState {
+            bundled_version: Some("5.2.0".into()),
+            config: Some(Arc::new(crate::config::ConfigStore::for_test(
+                crate::config::PrestoConfig::default(),
+            ))),
+            ..Default::default()
+        }),
+        ..Default::default()
+    };
+    let app = router(state);
+    let health = |origin: Option<&str>| {
+        let mut b = Request::builder()
+            .header("host", "127.0.0.1:59833")
+            .uri("/health");
+        if let Some(o) = origin {
+            b = b.header("origin", o);
+        }
+        b.body(Body::empty()).unwrap()
+    };
+    let minimal = json_body(
+        app.clone()
+            .oneshot(health(Some("https://stranger.example")))
+            .await
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        minimal["schemes"],
+        serde_json::json!(["chonk", "ultra_honk"])
+    );
+    assert!(minimal.get("versions").is_none() && minimal.get("version").is_none());
+
+    let detailed = json_body(app.oneshot(health(None)).await.unwrap()).await;
+    assert_eq!(
+        detailed["schemes"],
+        serde_json::json!(["chonk", "ultra_honk"])
+    );
+    assert_eq!(detailed["api_version"], API_VERSION);
+    let pair = &detailed["versions"][0];
+    assert_eq!(pair["aztec_version"], "5.2.0");
+    assert_eq!(pair["bb_version"], "5.2.0");
+}
+
+#[test]
+fn a_popup_allow_older_than_a_settings_removal_is_dropped() {
+    use crate::authorization::{AuthorizationManager, CanonicalOrigin};
+    let manager = AuthorizationManager::new();
+    let origin = CanonicalOrigin::parse("https://late.example").unwrap();
+    let granted_at = manager.with_generation(|g| g);
+    assert!(!manager.revoked_since(&origin, granted_at));
+    assert_eq!(manager.persist_allow(&origin, granted_at, || 1), Some(1));
+
+    manager.revoke(&origin, || {});
+    assert!(manager.revoked_since(&origin, granted_at));
+    assert_eq!(
+        manager.persist_allow(&origin, granted_at, || 1),
+        None,
+        "the Allow is dropped"
+    );
+
+    let fresh = manager.with_generation(|g| g);
+    assert!(
+        !manager.revoked_since(&origin, fresh),
+        "a grant after the removal stands"
+    );
+    let other = CanonicalOrigin::parse("https://other.example").unwrap();
+    assert!(!manager.revoked_since(&other, granted_at));
+}
+
+/// A popup Allow whose save fails still proves this once and re-prompts next time — the manager
+/// keeps no approval mirror that could outlive the failed write.
+#[tokio::test]
+#[serial]
+async fn an_allow_whose_persist_fails_still_proves_and_re_prompts_later() {
+    let dir = tempfile::tempdir().unwrap();
+    // A directory where the config file should be: every save fails, nothing is written.
+    let (popup_tx, popup_rx) = std::sync::mpsc::channel();
+    let (state, auth) = auth_state_with_popup_at(popup_tx, Some(dir.path().to_path_buf()));
+    let app = router(state);
+    let auth_clone = auth.clone();
+    let popups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let seen = popups.clone();
+    // A plain thread: `recv()` must never block the single-threaded test runtime the router runs on.
+    std::thread::spawn(move || {
+        while let Ok((_origin, request_id)) = popup_rx.recv() {
+            seen.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            auth_clone.resolve(&request_id, crate::authorization::AuthDecision::Allow);
+        }
+    });
+    for _ in 0..2 {
+        let response = app
+            .clone()
+            .oneshot(ultra_honk_request(
+                ultra_honk_body(true),
+                Some("https://unsaved.example"),
+            ))
+            .await
+            .unwrap();
+        assert_ne!(
+            response.status(),
+            StatusCode::FORBIDDEN,
+            "the approved request proceeds"
+        );
+    }
+    assert_eq!(
+        popups.load(std::sync::atomic::Ordering::SeqCst),
+        2,
+        "no mirror: it re-prompts"
+    );
+}

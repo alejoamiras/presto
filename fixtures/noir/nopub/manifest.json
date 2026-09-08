@@ -1,0 +1,46 @@
+{
+  "schema": "presto/noir-fixture@1",
+  "name": "nopub",
+  "verifierTarget": "noir-recursive-no-zk",
+  "toolchain": {
+    "nargo": "1.0.0-beta.25",
+    "bbJs": "5.2.0",
+    "backend": "WasmWorker"
+  },
+  "files": {
+    "Nargo.toml": {
+      "sha256": "7e992bfefcf83da9e6c8b223768d07d8915c32c9e6ae7f9fe9e9f68cda9dde0d",
+      "bytes": 69
+    },
+    "Prover.toml": {
+      "sha256": "5896435436b127499eb72c834f860dcec6b5755973c82a2d4ca54b7cdfd35cca",
+      "bytes": 16
+    },
+    "src/main.nr": {
+      "sha256": "6f2dbed6d9c29706b9cc5ad339443566b71d5c91dcfc439adf113db7b08563f4",
+      "bytes": 135
+    },
+    "circuit.json": {
+      "sha256": "d44ae124bed0851a409be13c9ff42f1a565ccb09ac5264216c7d4fe0dbe6f75f",
+      "bytes": 1022
+    },
+    "witness.gz": {
+      "sha256": "11948f85ece12f6634a0c0f32e88fec9800c40efc614fb1fdda2ef1acfed8db0",
+      "bytes": 49
+    },
+    "vk": {
+      "sha256": "7b4e186ac8f8c8cf82a4adda37bf143143316780a606ae5f7a1771fea0175d12",
+      "bytes": 3680
+    },
+    "proof": {
+      "sha256": "7b4cf32c461b3b80eef05fad9f52f10a3d75ec478c7f879593832901a0da9193",
+      "bytes": 13120,
+      "fields": 410
+    },
+    "public_inputs": {
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "fields": 0
+    }
+  }
+}

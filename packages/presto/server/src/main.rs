@@ -14,12 +14,15 @@
 use parking_lot::RwLock;
 use presto_core::authorization::{AuthorizationManager, CanonicalOrigin};
 use presto_core::config::PrestoConfig;
-use presto_core::server::{start, AppState, HeadlessState};
+use presto_core::server::{start_on, AppState, HeadlessState};
 use std::sync::Arc;
 use tracing_subscriber::fmt;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
+
+/// The canonical loopback port every SDK probes.
+const DEFAULT_PORT: u16 = 59833;
 
 #[tokio::main]
 async fn main() {
@@ -53,6 +56,19 @@ async fn main() {
     let allow_all = std::env::args().skip(1).any(|a| a == "--allow-all")
         || std::env::var("PRESTO_ALLOW_ALL").is_ok_and(|v| v == "1" || v == "true");
     let allowed_origins_env = std::env::var("ALLOWED_ORIGINS").ok();
+
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let port = match resolve_listen_port(
+        port_arg(&args).as_deref(),
+        std::env::var("PRESTO_PORT").ok().as_deref(),
+        presto_core::isolated_presto_home().is_some(),
+    ) {
+        Ok(port) => port,
+        Err(e) => {
+            tracing::error!(error = %e, "Invalid listen configuration; refusing to start");
+            std::process::exit(1);
+        }
+    };
 
     let (auth_manager, config) = match resolve_gating(allow_all, allowed_origins_env.as_deref()) {
         Err(e) => {
@@ -101,13 +117,73 @@ async fn main() {
         auth_manager,
     ));
 
-    if let Err(e) = start(state).await {
+    tokio::spawn(terminate_bb_on_shutdown_signal());
+
+    if let Err(e) = start_on(state, port).await {
         if let Some(guidance) = server_error_guidance(e.as_ref()) {
             tracing::error!("{guidance}");
         }
         tracing::error!("Presto server error: {e}");
         std::process::exit(1);
     }
+}
+
+/// bb runs in its own process group, so a plain SIGTERM/SIGINT to this process would orphan an
+/// in-flight prove: kill and confirm the bb tree first, then exit.
+async fn terminate_bb_on_shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("SIGTERM handler");
+        tokio::select! {
+            _ = term.recv() => {}
+            _ = tokio::signal::ctrl_c() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+    tracing::info!("Shutdown signal received; terminating any in-flight bb");
+    // Quiesce first so a queued request cannot spawn a new bb after the registered one is killed.
+    let _quiesce = presto_core::bb::begin_quiesce();
+    if let Err(e) = presto_core::bb::terminate_and_confirm(std::time::Duration::from_secs(5)).await
+    {
+        tracing::warn!(error = %e, "bb did not confirm exit before shutdown");
+    }
+    std::process::exit(0);
+}
+
+/// `--port <n>` from argv (the value after the flag), if given.
+fn port_arg(args: &[String]) -> Option<String> {
+    args.iter()
+        .position(|a| a == "--port")
+        .and_then(|i| args.get(i + 1).cloned())
+}
+
+/// Which port to serve on. A non-default port is only allowed with an isolated `PRESTO_HOME`:
+/// startup evicts the version cache and reaps prove workspaces on the assumption that the port
+/// winner is the only instance, so a second instance sharing the default state directories would
+/// race the first.
+fn resolve_listen_port(
+    arg: Option<&str>,
+    env: Option<&str>,
+    presto_home_set: bool,
+) -> Result<u16, String> {
+    let Some(raw) = arg.or(env) else {
+        return Ok(DEFAULT_PORT);
+    };
+    let port: u16 = raw
+        .parse()
+        .ok()
+        .filter(|p| *p != 0)
+        .ok_or_else(|| format!("invalid port {raw:?}"))?;
+    if port != DEFAULT_PORT && !presto_home_set {
+        return Err(format!(
+            "port {port} needs PRESTO_HOME set to a private directory (not ~/.presto): a second instance must not share the default config, version cache, and prove workspaces"
+        ));
+    }
+    Ok(port)
 }
 
 fn server_error_guidance(error: &(dyn std::error::Error + 'static)) -> Option<&'static str> {
@@ -183,6 +259,31 @@ mod tests {
 
     fn co(s: &str) -> CanonicalOrigin {
         CanonicalOrigin::parse(s).unwrap()
+    }
+
+    #[test]
+    fn a_non_default_port_requires_an_isolated_presto_home() {
+        assert_eq!(resolve_listen_port(None, None, false), Ok(DEFAULT_PORT));
+        assert_eq!(
+            resolve_listen_port(Some("59833"), None, false),
+            Ok(DEFAULT_PORT)
+        );
+        assert!(resolve_listen_port(Some("60000"), None, false)
+            .unwrap_err()
+            .contains("PRESTO_HOME"));
+        assert_eq!(resolve_listen_port(Some("60000"), None, true), Ok(60000));
+        assert_eq!(resolve_listen_port(None, Some("60001"), true), Ok(60001));
+        assert_eq!(
+            resolve_listen_port(Some("60002"), Some("60001"), true),
+            Ok(60002),
+            "the flag wins over the env"
+        );
+        for bad in ["0", "70000", "port", ""] {
+            assert!(resolve_listen_port(Some(bad), None, true).is_err(), "{bad}");
+        }
+        let args = ["--allow-all".to_string(), "--port".into(), "60003".into()];
+        assert_eq!(port_arg(&args).as_deref(), Some("60003"));
+        assert_eq!(port_arg(&["--port".to_string()]), None);
     }
 
     #[test]

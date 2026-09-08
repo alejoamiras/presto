@@ -117,6 +117,8 @@ cargo test --locked --manifest-path packages/presto/src-tauri/Cargo.toml
 
 Publishing and promotion are separate, serialized events. Publish creates a tested GitHub release but never changes the live updater feed. Promotion verifies an already-published stable release and moves the feed; the same operation is the rollback lever.
 
+**Next app minor: 1.1.0.** `POST /prove/ultra-honk` (generic UltraHonk proving of any Noir circuit, advertised as `ultra_honk` in `/health.schemes`) is an additive route and ships in Presto **1.1.0** — publish it as `1.1.0` (after `1.1.0-rc.N` if a canary is wanted), never as a 1.0.x patch, so clients can map the scheme to an app minor. The `bump-source` flow sets the source version as usual.
+
 ### 1. Publish
 
 ```bash

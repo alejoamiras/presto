@@ -3,6 +3,16 @@ use std::time::Duration;
 
 use crate::versions;
 
+mod ultra_honk;
+pub use ultra_honk::{
+    prove_ultra_honk, UltraHonkJob, UltraHonkOutput, UnknownVerifierTarget, VerifierTarget,
+};
+pub(crate) use ultra_honk::{
+    read_outputs as read_ultra_honk_outputs, run_ultra_honk, UltraHonkWorkspace,
+};
+
+type BbError = Box<dyn std::error::Error + Send + Sync>;
+
 /// Maximum time to wait for bb prove to complete before killing the process.
 const PROVE_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 
@@ -314,8 +324,26 @@ async fn prove_with_timeout(
     );
 
     let mut cmd = build_prove_command(&bb_path, &workspace, threads)?;
+    run_bb(&mut cmd, timeout).await?;
+
+    // Exit success is insufficient: read once through a cap, then reject empty, oversized, or
+    // non-field-aligned proof bytes without a metadata/read race.
+    let proof_path = workspace.output_dir.join("proof");
+    let raw_proof = read_capped(&proof_path, MAX_PROOF_BYTES)?;
+    validate_proof_len(raw_proof.len() as u64)?;
+
+    tracing::debug!(proof_bytes = raw_proof.len(), "bb prove completed");
+
+    Ok(prepend_field_count_header(&raw_proof))
+}
+
+/// Run one bb subcommand to completion: spawn under containment, drain stderr with a cap, wait up to
+/// `timeout`, log the retained stderr, and require exit success. Every scheme goes through here so the
+/// containment registration, the kill-tree-on-timeout path, and the never-block-on-stderr drain exist
+/// exactly once.
+async fn run_bb(cmd: &mut tokio::process::Command, timeout: Duration) -> Result<(), BbError> {
     // Spawn and register atomically so quiescing never observes an untracked bb process tree.
-    let (mut child, guard) = containment::spawn_and_register(&mut cmd)?;
+    let (mut child, guard) = containment::spawn_and_register(cmd)?;
     // Drain stderr concurrently so a full pipe cannot block bb and a grandchild holding the pipe open
     // cannot delay clearing the containment registration after bb exits.
     let stderr_pipe = child.stderr.take().expect("spawn captures stderr");
@@ -338,17 +366,7 @@ async fn prove_with_timeout(
     // backstop; partial retained bytes survive in `stderr_acc` if `drain` must abort.
     let _ = tokio::time::timeout(Duration::from_secs(2), &mut drain.0).await;
     log_bb_stderr(&stderr_acc);
-    require_success(status)?;
-
-    // Exit success is insufficient: read once through a cap, then reject empty, oversized, or
-    // non-field-aligned proof bytes without a metadata/read race.
-    let proof_path = workspace.output_dir.join("proof");
-    let raw_proof = read_capped(&proof_path, MAX_PROOF_BYTES)?;
-    validate_proof_len(raw_proof.len() as u64)?;
-
-    tracing::debug!(proof_bytes = raw_proof.len(), "bb prove completed");
-
-    Ok(prepend_field_count_header(&raw_proof))
+    require_success(status)
 }
 
 fn acquire_version_lease(
@@ -406,14 +424,19 @@ fn build_prove_command(
         "-o",
         output,
     ]);
+    finish_command(&mut command, threads);
+    Ok(command)
+}
+
+/// The scheme-independent tail of every bb command: the thread cap and the containment wiring.
+fn finish_command(command: &mut tokio::process::Command, threads: Option<usize>) {
     if let Some(threads) = threads {
         // bb controls worker count through this variable; `-t` now selects a verifier target.
         command.env("HARDWARE_CONCURRENCY", threads.to_string());
     }
     // Direct-child cancellation plus a process group gives the containment guard whole-tree cleanup.
     command.kill_on_drop(true);
-    containment::configure(&mut command);
-    Ok(command)
+    containment::configure(command);
 }
 
 async fn wait_for_bb(
@@ -453,7 +476,7 @@ fn require_success(
     }
     // Never return stderr to HTTP clients; it may contain paths or witness diagnostics.
     tracing::error!(exit_code = %status, "bb prove failed");
-    Err(format!("bb prove failed (exit {status})").into())
+    Err(format!("bb prove failed ({status})").into())
 }
 
 /// B3 (F5): read `path` in ONE open, at most `cap`+1 bytes (no metadata/read TOCTOU). Reading `cap`+1
@@ -1056,6 +1079,37 @@ fn truncate_stderr(stderr: &str) -> String {
     }
 }
 
+/// Fake-bb harness shared by the chonk and ultra_honk test suites: a `/bin/sh` script stands in for
+/// `bb` via `BB_BINARY_PATH`, so tests exercise the real spawn/containment/read path without a prover.
+#[cfg(all(test, unix))]
+pub(crate) mod test_support {
+    use std::path::Path;
+
+    /// Write an executable fake `bb` at `dir/fake-bb` whose body is `script` (a `/bin/sh` program that
+    /// receives bb's real argv, incl. `-o <output_dir>`), and point `BB_BINARY_PATH` at it. Returns an
+    /// `EnvGuard` that clears the var on drop. Unix-only (shell script); the prove path is POSIX anyway.
+    pub(crate) fn install_fake_bb(dir: &Path, script: &str) -> EnvGuard {
+        use std::os::unix::fs::PermissionsExt;
+        let path = dir.join("fake-bb");
+        std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        std::env::set_var("BB_BINARY_PATH", &path);
+        EnvGuard
+    }
+
+    /// Clears `BB_BINARY_PATH` on drop so a panicking test can't leak it into a sibling (`#[serial]`).
+    pub(crate) struct EnvGuard;
+    impl Drop for EnvGuard {
+        fn drop(&mut self) {
+            std::env::remove_var("BB_BINARY_PATH");
+        }
+    }
+
+    /// Extract `-o <dir>` from bb's argv, portably, for the fake scripts.
+    pub(crate) const FIND_OUTDIR: &str =
+        r#"prev=""; for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done"#;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1385,33 +1439,8 @@ mod tests {
 
     // ── B3 (F4/F5): end-to-end through prove() with a fake bb ──
 
-    /// Write an executable fake `bb` at `dir/fake-bb` whose body is `script` (a `/bin/sh` program that
-    /// receives bb's real argv, incl. `-o <output_dir>`), and point `BB_BINARY_PATH` at it. Returns an
-    /// `EnvGuard` that clears the var on drop. Unix-only (shell script); the prove path is POSIX anyway.
     #[cfg(unix)]
-    fn install_fake_bb(dir: &Path, script: &str) -> EnvGuard {
-        use std::os::unix::fs::PermissionsExt;
-        let path = dir.join("fake-bb");
-        std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
-        std::env::set_var("BB_BINARY_PATH", &path);
-        EnvGuard
-    }
-
-    /// Clears `BB_BINARY_PATH` on drop so a panicking test can't leak it into a sibling (`#[serial]`).
-    #[cfg(unix)]
-    struct EnvGuard;
-    #[cfg(unix)]
-    impl Drop for EnvGuard {
-        fn drop(&mut self) {
-            std::env::remove_var("BB_BINARY_PATH");
-        }
-    }
-
-    /// Extract `-o <dir>` from bb's argv, portably, for the fake scripts below.
-    #[cfg(unix)]
-    const FIND_OUTDIR: &str =
-        r#"prev=""; for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done"#;
+    use super::test_support::{install_fake_bb, FIND_OUTDIR};
 
     #[cfg(unix)]
     #[tokio::test]

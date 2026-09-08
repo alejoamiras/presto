@@ -50,7 +50,7 @@ async fn read_json_capped(mut resp: reqwest::Response) -> Option<serde_json::Val
 /// classification can't silently accept an arbitrary process answering on :59833.
 pub(crate) fn is_healthy_aztec_response(body: &serde_json::Value) -> bool {
     body.get("status").and_then(|s| s.as_str()) == Some("ok")
-        && body.get("api_version").and_then(|v| v.as_u64()) == Some(1)
+        && body.get("api_version").and_then(|v| v.as_u64()) == Some(u64::from(super::API_VERSION))
 }
 
 /// Probe `http://127.0.0.1:59833/health` and return true iff a HEALTHY Aztec instance

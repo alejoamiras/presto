@@ -83,13 +83,13 @@ jobs:
             dev)
               # Exercise the real developer command. Tauri injects a loopback devUrl for its built-in
               # static server; the dynamic-window navigation guard must admit that exact origin.
-              bunx tauri dev --no-watch --features webdriver > /tmp/tauri.log 2>&1 &
+              bunx tauri dev --no-watch --features webdriver > "$RUNNER_TEMP/tauri.log" 2>&1 &
               echo "TAURI_PID=$!" >> "$GITHUB_ENV"
               exit 0
               ;;
             *) echo "unknown WebDriver mode: ${{ inputs.mode }}" >&2; exit 1 ;;
           esac
-          $APP_CMD > /tmp/tauri.log 2>&1 &
+          $APP_CMD > "$RUNNER_TEMP/tauri.log" 2>&1 &
           echo "TAURI_PID=$!" >> "$GITHUB_ENV"
 
       # ── Wait for readiness ──
@@ -101,7 +101,7 @@ jobs:
           for i in $(seq 1 450); do
             if ! kill -0 "$TAURI_PID" 2>/dev/null; then
               echo "::error::App process crashed during startup"
-              cat /tmp/tauri.log 2>/dev/null || true
+              cat "$RUNNER_TEMP/tauri.log" 2>/dev/null || true
               exit 1
             fi
             if curl -sf http://127.0.0.1:4445/status >/dev/null 2>&1 && \
@@ -112,7 +112,7 @@ jobs:
             sleep 2
           done
           echo "::error::Servers not ready after 900s"
-          cat /tmp/tauri.log 2>/dev/null || true
+          cat "$RUNNER_TEMP/tauri.log" 2>/dev/null || true
           exit 1
 
       # ── Run tests ──
@@ -127,9 +127,9 @@ jobs:
         if: always()
         working-directory: .
         run: |
-          if grep -q "Showing update prompt" /tmp/tauri.log 2>/dev/null; then
+          if grep -q "Showing update prompt" "$RUNNER_TEMP/tauri.log" 2>/dev/null; then
             echo "::error::Update prompt fired in a webdriver build — the update check is not gated. See implementations-plan/ci-reliability-2026-05-29/diagnosis.md"
-            grep -n "Showing update prompt\|Update available" /tmp/tauri.log || true
+            grep -n "Showing update prompt\|Update available" "$RUNNER_TEMP/tauri.log" || true
             exit 1
           fi
           echo "OK — no update prompt in webdriver build"
@@ -140,7 +140,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: webdriver-e2e-logs-${{ runner.os }}-${{ inputs.mode }}
-          path: /tmp/tauri.log
+          path: ${{ runner.temp }}/tauri.log
           if-no-files-found: ignore
           retention-days: 7
 

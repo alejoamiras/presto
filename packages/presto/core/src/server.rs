@@ -28,9 +28,18 @@ pub use owner::{may_bow_out, probe_and_identify, PortOwner};
 mod auth;
 mod host;
 mod prove;
+mod ultra_honk;
 
 const PORT: u16 = 59833;
 pub const HTTPS_PORT: u16 = 59834;
+
+/// The `/health` + `/prove*` wire contract version. Mirrored by the SDK's `PRESTO_API_VERSION`,
+/// which recognises a presto only on exact equality — additive fields never bump it.
+pub const API_VERSION: u32 = 1;
+
+/// bb schemes this build can run, advertised on every `/health` body (a static capability, not a
+/// fingerprint) so a client knows whether to attempt `/prove/ultra-honk` before its origin is approved.
+pub const SCHEMES: [&str; 2] = ["chonk", "ultra_honk"];
 
 /// Both generations use the same loopback ports; the user chooses which prover to run.
 pub const PORT_CONFLICT_GUIDANCE: &str =
@@ -157,6 +166,9 @@ pub struct HeadlessState {
     /// Acquired (try, non-blocking) right after origin auth and held for the whole request, so a
     /// burst of slow uploaders is shed with 429 rather than stacking per-request read timeouts.
     pub prove_waiters: Arc<Semaphore>,
+    /// Per-origin admission cap for `/prove/ultra-honk` (half of `MAX_INFLIGHT_PROVE`): one Noir
+    /// origin — a miner — cannot shed every other site to WASM by filling the inflight cap.
+    pub(crate) ultra_honk_slots: ultra_honk::OriginSlots,
 }
 
 /// Full app state: the headless `core` plus the optional GUI callbacks. `Deref`s to `core`, so the
@@ -192,6 +204,7 @@ impl Default for HeadlessState {
             auth_manager: None,
             prove_semaphore: Arc::new(Semaphore::new(1)),
             prove_waiters: Arc::new(Semaphore::new(MAX_INFLIGHT_PROVE)),
+            ultra_honk_slots: ultra_honk::OriginSlots::default(),
         }
     }
 }
@@ -217,6 +230,7 @@ impl HeadlessState {
             auth_manager,
             prove_semaphore: Arc::new(Semaphore::new(1)),
             prove_waiters: Arc::new(Semaphore::new(MAX_INFLIGHT_PROVE)),
+            ultra_honk_slots: ultra_honk::OriginSlots::default(),
         }
     }
 }
@@ -250,6 +264,16 @@ impl AppState {
 }
 
 pub async fn start(state: AppState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    start_on(state, PORT).await
+}
+
+/// [`start`] on an explicit port. Only for an isolated instance (`PRESTO_HOME` set): the sweep and
+/// reap below assume the port winner is the only process touching the cache and workspaces, which
+/// holds for the canonical port and for a private `PRESTO_HOME`, and for nothing in between.
+pub async fn start_on(
+    state: AppState,
+    port: u16,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // F-06 (round 3): the ONE place both binaries pass through on the way up, so the cache-size cap
     // gets a chance to bind even when the previous run left it over the limit — post-download
     // eviction cannot help a cache nothing is downloading into. Detached: never delay the listener.
@@ -262,8 +286,8 @@ pub async fn start(state: AppState) -> Result<(), Box<dyn std::error::Error + Se
         .clone()
         .unwrap_or_else(|| DEFAULT_BB_VERSION.to_string());
 
-    let app = router(state);
-    let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
+    let app = router_for_port(state, port);
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = bind_with_retry(addr).await?;
     tracing::info!("Presto server listening on {addr}");
 
@@ -367,6 +391,7 @@ pub fn router_for_port(state: AppState, expected_port: u16) -> Router {
     Router::new()
         .route("/health", get(health))
         .route("/prove", post(prove::prove))
+        .route("/prove/ultra-honk", post(ultra_honk::prove_ultra_honk))
         .layer(DefaultBodyLimit::max(50 * 1024 * 1024)) // 50MB — proving payloads can be large
         .layer(cors)
         .layer(SetResponseHeaderLayer::overriding(
@@ -418,7 +443,9 @@ async fn health(
 ) -> impl IntoResponse {
     // SEC-05: starve cross-site fingerprinting — an unapproved cross-origin probe gets liveness only.
     if !health_is_detailed(&state, &headers) {
-        return axum::Json(json!({ "status": "ok", "api_version": 1 }));
+        return axum::Json(
+            json!({ "status": "ok", "api_version": API_VERSION, "schemes": SCHEMES }),
+        );
     }
 
     let bundled = state
@@ -432,14 +459,22 @@ async fn health(
             available.push(v);
         }
     }
+    // An Aztec release and the `@aztec/bb.js` package it ships are one version string by construction;
+    // the pair is spelled out so a Noir developer who only knows a bb.js version has a key to match.
+    let version_pairs: Vec<_> = available
+        .iter()
+        .map(|v| json!({ "aztec_version": v, "bb_version": v }))
+        .collect();
 
     #[allow(unused_mut)]
     let mut body = json!({
         "status": "ok",
-        "api_version": 1,
+        "api_version": API_VERSION,
+        "schemes": SCHEMES,
         "version": state.app_version.as_str(),
         "aztec_version": bundled,
         "available_versions": available,
+        "versions": version_pairs,
         "bb_available": bb::find_bb(None).is_ok(),
     });
 
@@ -498,6 +533,13 @@ pub(crate) enum ProveError {
     /// F-009: the authorized-`/prove` waiter cap (`MAX_INFLIGHT_PROVE`) is full — shed with 429
     /// rather than queueing behind slow uploaders. Distinct from `TooManyRequests` (auth backlog).
     ProveQueueFull,
+    /// This origin already holds its share of `/prove/ultra-honk` admissions. Distinct from
+    /// `ProveQueueFull` (the global cap) so a miner can tell "serialise yourself" from "the app is busy".
+    OriginQueueFull,
+    /// `/prove/ultra-honk` body rejected at ingress (shape, base64, size, gzip) — named field inside.
+    InvalidRequest(String),
+    /// `verifier_target` is not one of bb's eight spellings.
+    InvalidVerifierTarget(String),
     AuthorizationTimeout,
     AuthorizationCancelled,
     /// B2 (F9): this origin was denied within the last `DENY_COOLDOWN` window, so we refuse it WITHOUT
@@ -510,7 +552,81 @@ pub(crate) enum ProveError {
 
 impl IntoResponse for ProveError {
     fn into_response(self) -> axum::response::Response {
-        let (status, code, message): (StatusCode, &str, String) = match self {
+        let (status, code, message) = if self.is_admission_error() {
+            self.admission_parts()
+        } else {
+            self.prove_parts()
+        };
+        (status, json_error(code, &message)).into_response()
+    }
+}
+
+type WireParts = (StatusCode, &'static str, String);
+
+impl ProveError {
+    /// Origin gate and admission caps — everything decided before the body is meaningful.
+    fn is_admission_error(&self) -> bool {
+        matches!(
+            self,
+            ProveError::InvalidOrigin
+                | ProveError::OriginDenied(_)
+                | ProveError::TooManyRequests
+                | ProveError::ProveQueueFull
+                | ProveError::OriginQueueFull
+                | ProveError::AuthorizationTimeout
+                | ProveError::AuthorizationCancelled
+                | ProveError::AuthorizationCooldown
+        )
+    }
+
+    fn admission_parts(self) -> WireParts {
+        match self {
+            ProveError::InvalidOrigin => (
+                StatusCode::BAD_REQUEST,
+                "invalid_origin",
+                "Origin header is not a valid RFC 6454 origin".to_string(),
+            ),
+            ProveError::OriginDenied(origin) => (
+                StatusCode::FORBIDDEN,
+                "origin_denied",
+                format!("Access denied for origin: {origin}"),
+            ),
+            ProveError::TooManyRequests => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "too_many_requests",
+                "Too many pending authorization requests".to_string(),
+            ),
+            ProveError::ProveQueueFull => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "prove_queue_full",
+                "Too many concurrent proving requests; retry shortly".to_string(),
+            ),
+            ProveError::OriginQueueFull => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "origin_queue_full",
+                "This origin already has its maximum number of UltraHonk proofs in flight; await one before sending the next".to_string(),
+            ),
+            ProveError::AuthorizationTimeout => (
+                StatusCode::FORBIDDEN,
+                "authorization_timeout",
+                "Authorization request timed out".to_string(),
+            ),
+            ProveError::AuthorizationCancelled => (
+                StatusCode::FORBIDDEN,
+                "authorization_cancelled",
+                "Authorization request was cancelled".to_string(),
+            ),
+            ProveError::AuthorizationCooldown => (
+                StatusCode::FORBIDDEN,
+                "authorization_cooldown",
+                "This origin was recently denied; please try again later".to_string(),
+            ),
+            other => unreachable!("{other:?} is rendered by prove_parts"),
+        }
+    }
+
+    fn prove_parts(self) -> WireParts {
+        match self {
             ProveError::InvalidVersion(v) => (
                 StatusCode::BAD_REQUEST,
                 "invalid_version",
@@ -547,43 +663,18 @@ impl IntoResponse for ProveError {
                 format!("Failed to download bb v{version}: {detail}"),
             ),
             ProveError::ProveFailed(e) => (StatusCode::INTERNAL_SERVER_ERROR, "prove_failed", e),
-            ProveError::InvalidOrigin => (
+            ProveError::InvalidRequest(detail) => (
                 StatusCode::BAD_REQUEST,
-                "invalid_origin",
-                "Origin header is not a valid RFC 6454 origin".to_string(),
+                "invalid_request",
+                format!("Invalid /prove/ultra-honk request: {detail}"),
             ),
-            ProveError::OriginDenied(origin) => (
-                StatusCode::FORBIDDEN,
-                "origin_denied",
-                format!("Access denied for origin: {origin}"),
+            ProveError::InvalidVerifierTarget(target) => (
+                StatusCode::BAD_REQUEST,
+                "invalid_verifier_target",
+                format!("Unknown verifier_target {target:?}; expected one of bb's targets (evm, evm-no-zk, noir-recursive, noir-recursive-no-zk, noir-rollup, noir-rollup-no-zk, starknet, starknet-no-zk)"),
             ),
-            ProveError::TooManyRequests => (
-                StatusCode::TOO_MANY_REQUESTS,
-                "too_many_requests",
-                "Too many pending authorization requests".to_string(),
-            ),
-            ProveError::ProveQueueFull => (
-                StatusCode::TOO_MANY_REQUESTS,
-                "prove_queue_full",
-                "Too many concurrent proving requests; retry shortly".to_string(),
-            ),
-            ProveError::AuthorizationTimeout => (
-                StatusCode::FORBIDDEN,
-                "authorization_timeout",
-                "Authorization request timed out".to_string(),
-            ),
-            ProveError::AuthorizationCancelled => (
-                StatusCode::FORBIDDEN,
-                "authorization_cancelled",
-                "Authorization request was cancelled".to_string(),
-            ),
-            ProveError::AuthorizationCooldown => (
-                StatusCode::FORBIDDEN,
-                "authorization_cooldown",
-                "This origin was recently denied; please try again later".to_string(),
-            ),
-        };
-        (status, json_error(code, &message)).into_response()
+            other => unreachable!("{other:?} is rendered by admission_parts"),
+        }
     }
 }
 

@@ -1,0 +1,6 @@
+[package]
+name = "nopub"
+type = "bin"
+authors = [""]
+
+[dependencies]

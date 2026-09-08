@@ -404,13 +404,22 @@ pub fn set_theme(
 pub fn remove_approved_origin(
     window: tauri::WebviewWindow,
     config: tauri::State<'_, ConfigState>,
+    auth: tauri::State<'_, AuthState>,
     origin: String,
 ) -> Result<(), String> {
     require_label(window.label(), SETTINGS_LABEL)?;
-    mutate_config(&config, |cfg| {
-        cfg.approved_origins
-            .retain(|o| o.as_str() != origin.as_str())
-    })
+    let apply = || {
+        mutate_config(&config, |cfg| {
+            cfg.approved_origins
+                .retain(|o| o.as_str() != origin.as_str())
+        })
+    };
+    // Through the manager so the removal outranks any approval granted before it — including a
+    // popup Allow still in flight and a queued `/prove/ultra-honk` job.
+    match crate::authorization::CanonicalOrigin::parse(&origin) {
+        Some(canonical) => auth.revoke(&canonical, apply),
+        None => apply(),
+    }
 }
 
 #[derive(serde::Serialize)]

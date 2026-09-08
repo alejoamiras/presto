@@ -6,33 +6,62 @@
 //! requests are first constrained to a loopback `Host` (SEC-01a, `super::host`). Extracted from
 //! server.rs (Q2).
 
-use crate::authorization::{AuthDecision, AuthorizationManager, CanonicalOrigin, RequestError};
+use crate::authorization::{
+    AuthDecision, AuthOutcome, AuthorizationManager, CanonicalOrigin, Generation, RequestError,
+};
 use crate::config;
 
 use super::{AppState, ProveError, AUTH_QUEUE_BACKSTOP};
 
-/// Check if the request origin is authorized. Returns Ok(()) if approved.
+/// A granted authorization. `origin` is `None` for callers the origin gate does not apply to
+/// (no `Origin` header, or `--allow-all`); `granted_at` is the manager generation the grant carries,
+/// so a later Settings removal can be told apart from one that happened before this request.
+#[derive(Debug, Clone)]
+pub(crate) struct Approval {
+    pub(crate) origin: Option<CanonicalOrigin>,
+    pub(crate) granted_at: Generation,
+}
+
+impl Approval {
+    fn ungated() -> Self {
+        Self {
+            origin: None,
+            granted_at: 0,
+        }
+    }
+}
+
+/// Check if the request origin is authorized.
 pub(crate) async fn authorize_origin(
     state: &AppState,
     headers: &axum::http::HeaderMap,
-) -> Result<(), ProveError> {
+) -> Result<Approval, ProveError> {
     let Some(auth_manager) = state.auth_manager.as_ref() else {
-        return Ok(());
+        return Ok(Approval::ungated());
     };
     let Some(origin) = parse_request_origin(headers)? else {
-        return Ok(());
+        return Ok(Approval::ungated());
     };
-    if origin_is_approved(state, &origin) {
-        return Ok(());
+    // The approval read and the generation stamp happen under one lock, so a removal cannot slip
+    // between them and leave this request holding a grant older than the removal it never saw.
+    if let Some(granted_at) = auth_manager
+        .with_generation(|generation| origin_is_approved(state, &origin).then_some(generation))
+    {
+        return Ok(Approval {
+            origin: Some(origin),
+            granted_at,
+        });
     }
     if state.show_auth_popup.is_none() {
         tracing::info!(origin = %origin, "Origin not approved (no popup available), denying");
         return Err(ProveError::OriginDenied(origin.to_string()));
     }
 
-    let decision = request_authorization(state, auth_manager, &origin).await?;
-    match decision {
-        AuthDecision::Allow => persist_approved_origin(state, origin),
+    let outcome = request_authorization(state, auth_manager, &origin).await?;
+    match outcome.decision {
+        AuthDecision::Allow => {
+            persist_approved_origin(state, auth_manager, origin, outcome.generation)
+        }
         AuthDecision::Deny => {
             tracing::info!(origin = %origin, "Origin denied");
             Err(ProveError::OriginDenied(origin.to_string()))
@@ -76,7 +105,7 @@ async fn request_authorization(
     state: &AppState,
     auth_manager: &AuthorizationManager,
     origin: &CanonicalOrigin,
-) -> Result<AuthDecision, ProveError> {
+) -> Result<AuthOutcome, ProveError> {
     tracing::info!(origin = %origin, "Origin not approved, requesting authorization");
     // B2 (F9): `request` checks the post-deny cooldown atomically with the insert (so a concurrent Deny
     // can't slip in and let a just-denied origin re-popup). A cooling-down origin is refused WITHOUT a
@@ -119,35 +148,57 @@ fn map_request_error(origin: &CanonicalOrigin, error: RequestError) -> ProveErro
     }
 }
 
-fn persist_approved_origin(state: &AppState, origin: CanonicalOrigin) -> Result<(), ProveError> {
-    tracing::info!(origin = %origin, "Origin authorized (persistent)");
+/// Persist a popup Allow. Runs under the manager lock so it is ordered against Settings removals: an
+/// Allow decided before a removal is dropped (denied), never written back. A failed or read-only save
+/// still grants this request — the user just clicked Allow — and simply re-prompts next time.
+fn persist_approved_origin(
+    state: &AppState,
+    auth_manager: &AuthorizationManager,
+    origin: CanonicalOrigin,
+    granted_at: Generation,
+) -> Result<Approval, ProveError> {
+    let persisted = auth_manager.persist_allow(&origin, granted_at, || {
+        tracing::info!(origin = %origin, "Origin authorized (persistent)");
+        save_approved_origin(state, &origin);
+    });
+    if persisted.is_none() {
+        tracing::info!(origin = %origin, "Allow arrived after the origin was removed in Settings; denying");
+        return Err(ProveError::OriginDenied(origin.to_string()));
+    }
+    Ok(Approval {
+        origin: Some(origin),
+        granted_at,
+    })
+}
+
+fn save_approved_origin(state: &AppState, origin: &CanonicalOrigin) {
     // Unconditional: there is no ephemeral Allow any more. The popup discloses that approving
     // is permanent, so this write IS the thing the user consented to.
-    if let Some(ref store) = state.config {
-        // Save only a new origin, and never fail an approved proof because persistence failed.
-        // A capability prevents an older app from overwriting a config written by a newer build.
-        match store.cap.as_ref() {
-            Some(cap) => {
-                if let Err(e) = config::lock_mutate_save_to(
-                    &store.lock,
-                    state.core.config_path.as_deref(),
-                    cap,
-                    |cfg| {
-                        if cfg.approved_origins.contains(&origin) {
-                            false
-                        } else {
-                            cfg.approved_origins.push(origin);
-                            true
-                        }
-                    },
-                ) {
-                    tracing::warn!(error = %e, "Failed to persist approved origin");
-                }
+    let Some(store) = state.config.as_ref() else {
+        return;
+    };
+    // Save only a new origin, and never fail an approved proof because persistence failed.
+    // A capability prevents an older app from overwriting a config written by a newer build.
+    match store.cap.as_ref() {
+        Some(cap) => {
+            if let Err(e) = config::lock_mutate_save_to(
+                &store.lock,
+                state.core.config_path.as_deref(),
+                cap,
+                |cfg| {
+                    if cfg.approved_origins.contains(origin) {
+                        false
+                    } else {
+                        cfg.approved_origins.push(origin.clone());
+                        true
+                    }
+                },
+            ) {
+                tracing::warn!(error = %e, "Failed to persist approved origin");
             }
-            None => tracing::warn!(
-                "Config was written by a newer build; not persisting approved origin (read-only)"
-            ),
         }
+        None => tracing::warn!(
+            "Config was written by a newer build; not persisting approved origin (read-only)"
+        ),
     }
-    Ok(())
 }
