@@ -105,6 +105,18 @@ describe("release plan", () => {
       ).toThrow("release tag or GitHub release already exists");
     });
   });
+
+  test("a malformed manifest version fails the plan before anything publishes", () => {
+    withSiblings(() => {
+      for (const version of ["1.0.0-alpha..x", "01.0.0", "1.0.0-01", "1.0.0-revision.1"]) {
+        expect(() =>
+          planRelease(keys(["presto-core"]), {
+            "presto-core": { manifest: { name: core.name, version }, published: [] },
+          } as never),
+        ).toThrow("is not a valid manifest version");
+      }
+    });
+  });
 });
 
 describe("release plan: dependencies", () => {
@@ -191,6 +203,28 @@ describe("release plan: dependencies", () => {
       // Same pins → reuse, and no deferred checks for a package whose publish job will not run.
       const plan = planRelease(keys(["presto-core", "presto-noir"]), facts("1.0.0"));
       expect(plan["presto-noir" as PackageKey]).toMatchObject({ action: "reuse", deferred: [] });
+    });
+  });
+
+  test("a sibling pinned only as a peer dependency is still recognised on reuse", () => {
+    withSiblings(() => {
+      const plan = planRelease(keys(["presto-core", "presto-noir"]), {
+        "presto-core": coreFacts(["1.0.0"], verified),
+        "presto-noir": {
+          manifest: {
+            name: noir.name,
+            version: "1.0.0",
+            peerDependencies: { [core.name]: "workspace:^" },
+          },
+          published: ["1.0.0"],
+          ...verified,
+          publishedDependencies: { [core.name]: "1.0.0" },
+        },
+      } as never);
+      expect(plan["presto-noir" as PackageKey]).toMatchObject({
+        action: "reuse",
+        dependencyVersions: { [core.name]: "1.0.0" },
+      });
     });
   });
 });

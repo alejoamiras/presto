@@ -315,12 +315,26 @@ async function releaseFacts(
     pkg.dir,
     ...SHARED_BUILD_INPUTS,
   ]);
-  const dependencies = npmViewJson(`${pkg.name}@${version}`, "dependencies");
   return {
     releaseVerified: true,
     changedSinceTag: diff.exitCode !== 0,
-    publishedDependencies: (dependencies as Record<string, string> | undefined) ?? {},
+    publishedDependencies: publishedPins(`${pkg.name}@${version}`),
   };
+}
+
+/** Every pin the published artifact carries, across the fields the manifest preparer rewrites. */
+function publishedPins(spec: string): Record<string, string> {
+  const pins: Record<string, string> = {};
+  for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+    const deps = npmViewJson(spec, field) as Record<string, string> | undefined;
+    for (const [name, version] of Object.entries(deps ?? {})) {
+      if (pins[name] !== undefined && pins[name] !== version) {
+        throw new Error(`${spec} pins ${name} inconsistently across dependency fields`);
+      }
+      pins[name] = version;
+    }
+  }
+  return pins;
 }
 
 async function packageFacts(pkg: NpmPackage): Promise<PackageFacts> {

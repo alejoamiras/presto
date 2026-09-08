@@ -62,7 +62,12 @@ describe("npm release workflow contract", () => {
         "(needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped')",
       );
     }
-    expect(job(release, "plan")).toContain("bun scripts/release-plan.ts");
+    const plan = job(release, "plan");
+    expect(plan).toContain("bun scripts/release-plan.ts");
+    // Release records are read through `gh`, reuse runs npm's signature audit: token + the publish npm.
+    expect(plan).toContain("GH_TOKEN: ${{ github.token }}");
+    expect(plan).toContain("uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020");
+    expect(plan).toContain("node-version: 24");
   });
 
   test("exact cryptographic verification precedes the publication records", () => {
