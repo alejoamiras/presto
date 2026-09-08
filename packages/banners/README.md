@@ -101,6 +101,8 @@ bun run dev                    # demo page for manual review
 bun run build                  # tsc → dist (publish artifact)
 ```
 
-`exports` point at TypeScript source for workspace consumers, like the SDK. Publishing to npm needs
-the same dist rewrite the SDK's `scripts/prepare-sdk-publish.ts` does (both entries), plus a trusted
-publisher for this package name; neither is wired yet.
+`exports` point at TypeScript source for workspace consumers, like the SDK. Publishing to npm is a
+follow-up: register the package in `scripts/npm-packages.ts` (which also switches CI to the shared
+`_ts-package-ci.yml` and adds the tarball-consumer gate), add its consumer profile, teach
+`prepare-sdk-publish.ts` to rewrite the two-entry `exports` map, wire a release job, and configure
+the npm trusted publisher.

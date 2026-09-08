@@ -29,7 +29,7 @@ jobs:
             relevant:
               - 'packages/banners/**'
               # status.test.ts pins SDK PrestoStatus ⊆ PrestoStatusLike; an SDK type change must re-run it.
-              - 'packages/sdk/src/lib/types.ts'
+              - 'packages/sdk-core/src/lib/types.ts'
               - 'tsconfig.json'
               - 'biome.json'
               - 'package.json'
