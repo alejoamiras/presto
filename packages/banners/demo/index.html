@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>presto-banner demo</title>
+  <style>
+    :root { color-scheme: light dark; --h-bg: #f3f4f8; --h-surface: #fff; --h-border: #e2e5ee; --h-text: #1f2330; --h-muted: #7a8194; --h-block: #e6e8f0; }
+    [data-host="dark"] { --h-bg: #12141b; --h-surface: #1a1d27; --h-border: #2a2e3d; --h-text: #e6e8ef; --h-muted: #8a90a3; --h-block: #232735; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: system-ui, sans-serif; background: var(--h-bg); color: var(--h-text); }
+    header { position: sticky; top: 0; z-index: 10; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 20px; background: var(--h-surface); border-bottom: 1px solid var(--h-border); font-size: 13px; }
+    header b { margin-right: 6px; }
+    header select, header button { font: inherit; padding: 5px 10px; border-radius: 8px; border: 1px solid var(--h-border); background: var(--h-bg); color: inherit; cursor: pointer; }
+    main { max-width: 960px; margin: 0 auto; padding: 24px 20px 120px; display: grid; gap: 28px; }
+    section { background: var(--h-surface); border: 1px solid var(--h-border); border-radius: 14px; overflow: hidden; }
+    section h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--h-muted); margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--h-border); }
+    .body { padding: 18px 16px; display: grid; gap: 10px; }
+    .body.row { grid-template-columns: 1fr auto; align-items: start; gap: 20px; }
+    .blocks { display: grid; gap: 10px; }
+    .blocks i { display: block; height: 10px; border-radius: 5px; background: var(--h-block); }
+    .blocks i.tall { height: 80px; border-radius: 10px; }
+    .blocks i.w60 { width: 60%; } .blocks i.w80 { width: 80%; }
+    #events { font: 12px ui-monospace, monospace; color: var(--h-muted); white-space: pre-wrap; padding: 10px 16px; max-height: 120px; overflow: auto; }
+  </style>
+</head>
+<body data-host="light">
+  <header>
+    <b>presto-banner</b>
+    <label>State <select id="state">
+      <option value="">(unset)</option>
+      <option value="offline" selected>offline</option>
+      <option value="permission-blocked">permission-blocked</option>
+      <option value="secure-connection-unavailable">secure-connection-unavailable</option>
+      <option value="version-mismatch">version-mismatch</option>
+      <option value="error">error</option>
+      <option value="downloading">downloading</option>
+      <option value="available">available (morph)</option>
+    </select></label>
+    <label>Theme <select id="theme"><option value="auto">auto</option><option value="light">light</option><option value="dark">dark</option></select></label>
+    <label>Host <select id="host"><option value="light">light</option><option value="dark">dark</option></select></label>
+    <button id="reset" type="button">Reset dismissals + remount</button>
+    <button id="sheet" type="button">Open sheet</button>
+    <button id="dock" type="button">Show dock</button>
+  </header>
+  <main>
+    <section><h2>Ribbon</h2><presto-banner variant="ribbon" state="offline"></presto-banner><div class="body blocks"><i class="w60"></i><i class="w80"></i><i class="tall"></i></div></section>
+    <section><h2>Billboard</h2><div class="body"><div class="blocks"><i class="w80"></i></div><presto-banner variant="billboard" state="offline"></presto-banner><div class="blocks"><i class="w60"></i></div></div></section>
+    <section><h2>Card + Tile</h2><div class="body row"><div class="blocks"><i class="w60"></i><i class="w80"></i><i class="tall"></i><i class="w60"></i><i class="tall"></i></div><div style="display:grid;gap:16px"><presto-banner variant="card" state="offline"></presto-banner><presto-banner variant="tile"></presto-banner></div></div></section>
+    <section><h2>Events</h2><div id="events"></div></section>
+  </main>
+  <presto-banner variant="dock" state="offline" persist-key="demo"></presto-banner>
+  <presto-banner variant="sheet" persist-key="demo"></presto-banner>
+  <script type="module" src="./main.ts"></script>
+</body>
+</html>

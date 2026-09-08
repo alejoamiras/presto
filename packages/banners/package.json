@@ -1,0 +1,34 @@
+{
+  "name": "@alejoamiras/presto-banners",
+  "version": "0.0.0",
+  "description": "Presto install banners: a zero-dependency <presto-banner> web component keyed to the SDK's PrestoStatus",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alejoamiras/presto",
+    "directory": "packages/banners"
+  },
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./register": "./src/register.ts"
+  },
+  "files": [
+    "src",
+    "dist"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "dev": "bun --hot demo/serve.ts",
+    "test": "bun test",
+    "test:unit": "bun test",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@alejoamiras/presto": "workspace:*",
+    "@happy-dom/global-registrator": "^20.12.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
