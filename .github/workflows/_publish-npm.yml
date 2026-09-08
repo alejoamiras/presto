@@ -283,15 +283,15 @@ jobs:
 
       - name: Verify npm version, dist-tag, and provenance
         run: |
-          for attempt in $(seq 1 10); do
+          for attempt in $(seq 1 60); do
             published="$(npm view "$PACKAGE_NAME@$VERSION" version 2>/dev/null || true)"
             tagged="$(npm view "$PACKAGE_NAME" "dist-tags.$DIST_TAG" 2>/dev/null || true)"
             if [ "$published" = "$VERSION" ] && [ "$tagged" = "$VERSION" ] && \
                bun scripts/sdk-release-verification.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"; then
               exit 0
             fi
-            echo "Registry/provenance not consistent yet (attempt $attempt/10)"
-            sleep 6
+            echo "Registry/provenance not consistent yet (attempt $attempt/60)"
+            sleep 10
           done
           echo "::error::npm publish could not be verified"
           exit 1
