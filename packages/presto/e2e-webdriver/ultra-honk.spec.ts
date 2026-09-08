@@ -35,6 +35,12 @@ const SIDECAR_BB = path.join(
   "binaries",
   `bb-${getTargetTriple()}${process.platform === "win32" ? ".exe" : ""}`,
 );
+/**
+ * bb.exe 5.2.0 reads `bb verify`'s binary inputs in text mode (truncating at the first 0x1A byte),
+ * so the sidecar cannot check a proof on Windows; there the byte identity with the WASM reference,
+ * which bb.js verified when the fixture was generated, is the whole assertion.
+ */
+const SIDECAR_VERIFIES = process.platform !== "win32";
 
 function post(origin: string, job: Record<string, string>): Promise<Response> {
   return fetch(PROVE_URL, {
@@ -96,15 +102,17 @@ describe("UltraHonk proving", () => {
 
     const body = JSON.parse(text) as ProveResponse;
     expect(checkOutputs(body, fixture, false)).toEqual([]);
-    expect(
-      verifyNatively(
-        SIDECAR_BB,
-        unb64(body.proof),
-        unb64(body.public_inputs),
-        fixture.vk,
-        fixture.verifierTarget,
-      ),
-    ).toBe(true);
+    if (SIDECAR_VERIFIES) {
+      expect(
+        verifyNatively(
+          SIDECAR_BB,
+          unb64(body.proof),
+          unb64(body.public_inputs),
+          fixture.vk,
+          fixture.verifierTarget,
+        ),
+      ).toBe(true);
+    }
   });
 
   it("an unknown verifier_target from the approved origin is a 400 with no consent prompt", async () => {

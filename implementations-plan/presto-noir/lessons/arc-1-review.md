@@ -94,6 +94,15 @@ residual remain separate outstanding items."
 Both codex runs in this stretch had to be run in the foreground: the harness killed background
 jobs for low memory while another session's `playwright-mcp` process held 6.4 GB of swap.
 
+### Windows, third pass (run 34183869544)
+
+With JSON output the Windows desktop proof is **byte-identical** to the WASM reference (the
+`checkOutputs` assertion passed). The remaining failure was the spec's own `bb verify -k` through
+the sidecar: bb.exe reads verify inputs in text mode too, so it cannot check a binary proof, and
+`bb verify` has no JSON input form. The spec now skips the sidecar step on Windows with the reason
+in code; byte identity — a proof bb.js itself verified when the fixture was generated — is the
+assertion there. Recorded in F-26 and the README.
+
 ### Resolved: Windows desktop returned 500 on the UltraHonk prove (F-26)
 
 Run 34174258877 failed without a log; run 34181934669 (with the `$RUNNER_TEMP` upload) shows bb's
