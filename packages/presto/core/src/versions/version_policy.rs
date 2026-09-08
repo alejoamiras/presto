@@ -381,16 +381,17 @@ pub async fn cleanup_old_versions(bundled: &AztecVersion, in_use: Option<&AztecV
         }
     }
 
-    // Round 2 (codex pass over F-06): if the active-window guard deferred anything, this pass may have
-    // left the cache OVER the cap — and cleanup only runs after a download, so an attacker who fills
-    // the cache inside one window and then simply STOPS leaves the excess there indefinitely. That
-    // falsifies the "reclaimed by the next cleanup" reasoning this fix originally shipped with. Wait
-    // out the window once and finish the job; the caller already runs us detached.
-    if deferred_by_active_window {
+    // Retry deferred size evictions for up to twelve windows (the caller runs us detached);
+    // remaining excess waits for another download or the startup sweep.
+    let mut passes = 0;
+    while deferred_by_active_window && passes < MAX_DEFERRED_CLEANUP_PASSES {
         tokio::time::sleep(super::downloader::CACHE_ENTRY_ACTIVE_WINDOW).await;
-        cleanup_after_active_window(bundled, in_use).await;
+        deferred_by_active_window = cleanup_after_active_window(bundled, in_use).await;
+        passes += 1;
     }
 }
+
+const MAX_DEFERRED_CLEANUP_PASSES: u32 = 12;
 
 /// Delete a version directory, but only if no proof holds it — and hold that exclusion across the
 /// deletion itself.
@@ -456,26 +457,31 @@ pub async fn sweep_cache_on_start(bundled: &str) {
     cleanup_old_versions(&bundled, None).await;
 }
 
-/// The retry half of the above. It does NOT call back into `cleanup_old_versions`, so there is no
-/// recursion and no re-armed timer: a cache still over the cap after this pass waits for the next
-/// download or the next startup sweep rather than looping. (The `Box::pin` this used to carry was
-/// guarding against a recursion that does not exist — codex round 5.)
-async fn cleanup_after_active_window(bundled: &AztecVersion, in_use: Option<&AztecVersion>) {
+/// One size-cap pass over the survivors; `true` when something was skipped (active or held) and
+/// the caller should wait out another window. Does not call back into `cleanup_old_versions`.
+async fn cleanup_after_active_window(
+    bundled: &AztecVersion,
+    in_use: Option<&AztecVersion>,
+) -> bool {
     let cached: Vec<AztecVersion> = list_cached_versions()
         .iter()
         .filter_map(|s| AztecVersion::parse(s))
         .collect();
     let Some(base) = versions_base_dir() else {
-        return;
+        return false;
     };
     let sized: Vec<(AztecVersion, u64)> = cached
         .iter()
         .map(|v| (v.clone(), version_dir_size(&base.join(v.as_str()))))
         .collect();
+    let mut deferred = false;
     for version in versions_to_evict_for_size(&sized, bundled, in_use, CACHE_MAX_TOTAL_BYTES) {
         let dir = base.join(version.as_str());
-        evict_if_unheld(&version, &dir, super::downloader::recently_active(&dir));
+        if evict_if_unheld(&version, &dir, super::downloader::recently_active(&dir)) {
+            deferred = true;
+        }
     }
+    deferred
 }
 
 /// The versions to actually delete: the retention-policy evictions MINUS the in-use version.

@@ -103,6 +103,37 @@ pub fn log_dir() -> PathBuf {
         .join("logs")
 }
 
+/// A private `PRESTO_HOME` for one test: an empty temp dir, restoring the previous value on drop.
+/// `PRESTO_HOME` is process-global, so every test using this must also be `#[serial]`.
+#[cfg(test)]
+pub(crate) struct ScopedPrestoHome {
+    previous: Option<std::ffi::OsString>,
+    _dir: tempfile::TempDir,
+}
+
+#[cfg(test)]
+impl ScopedPrestoHome {
+    pub(crate) fn new() -> Self {
+        let dir = tempfile::tempdir().expect("temp dir");
+        let previous = std::env::var_os("PRESTO_HOME");
+        std::env::set_var("PRESTO_HOME", dir.path());
+        Self {
+            previous,
+            _dir: dir,
+        }
+    }
+}
+
+#[cfg(test)]
+impl Drop for ScopedPrestoHome {
+    fn drop(&mut self) {
+        match self.previous.take() {
+            Some(value) => std::env::set_var("PRESTO_HOME", value),
+            None => std::env::remove_var("PRESTO_HOME"),
+        }
+    }
+}
+
 #[cfg(test)]
 mod presto_home_tests {
     use serial_test::serial;
