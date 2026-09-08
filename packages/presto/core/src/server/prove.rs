@@ -17,7 +17,8 @@ use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
 use crate::{bb, versions};
 
-use super::auth::authorize_origin;
+use super::auth::{authorize_origin, Approval};
+use super::ultra_honk::{OriginSlot, OriginSlots};
 use super::{AppState, ProveError, ServerStatus, StatusCallback};
 
 /// Drop guard that resets tray status to Idle when the prove handler exits for any reason
@@ -214,7 +215,7 @@ pub(crate) async fn prove(
     request: Request,
 ) -> Result<impl IntoResponse, ProveError> {
     tracing::info!("Received /prove request");
-    let admitted = admit(&state, request).await?;
+    let admitted = admit(&state, request, None).await?;
     let prover = acquire_prover(&state, &admitted.requested_version).await?;
 
     let start = std::time::Instant::now();
@@ -230,22 +231,36 @@ pub(crate) async fn prove(
 }
 
 /// What a scheme handler holds after the shared admission gate. Field order is the drop order:
-/// the tray returns to Idle before the inflight slot is released, exactly as the inlined handler did.
+/// the tray returns to Idle before the inflight slot is released, exactly as the inlined handler did;
+/// the per-origin slot goes last.
 pub(super) struct Admitted {
     pub(super) body: Bytes,
     pub(super) requested_version: Option<String>,
+    pub(super) approval: Approval,
     _status: StatusGuard,
     _inflight: OwnedSemaphorePermit,
+    _origin_slot: Option<OriginSlot>,
 }
 
-/// Stage 1 of every prove: authorize → inflight slot → declared-size reject → capped, timed body read
-/// → version header → `Proving`. Nothing here depends on the body's meaning (chonk hands it to bb
-/// verbatim; ultra_honk validates it next) and nothing here touches the download, lease, or permit.
-pub(super) async fn admit(state: &AppState, request: Request) -> Result<Admitted, ProveError> {
+/// Stage 1 of every prove: authorize → (per-origin slot, when the scheme caps one) → inflight slot →
+/// declared-size reject → capped, timed body read → version header → `Proving`. Nothing here depends
+/// on the body's meaning (chonk hands it to bb verbatim; ultra_honk validates it next) and nothing
+/// here touches the download, lease, or permit.
+pub(super) async fn admit(
+    state: &AppState,
+    request: Request,
+    origin_slots: Option<&OriginSlots>,
+) -> Result<Admitted, ProveError> {
     // Extract headers before consuming the request body. Run authorization FIRST
     // so unapproved origins are rejected without buffering the (potentially large) body.
     let (parts, raw_body) = request.into_parts();
-    authorize_origin(state, &parts.headers).await?;
+    let approval = authorize_origin(state, &parts.headers).await?;
+
+    // Taken before the body is buffered so one origin cannot fill the inflight cap for other sites.
+    let origin_slot = match (origin_slots, approval.origin.as_ref()) {
+        (Some(slots), Some(origin)) => Some(slots.try_enter(origin)?),
+        _ => None,
+    };
 
     // F-009: cap total in-flight + waiting authorized /prove requests. Held (RAII) for the whole
     // request; a burst beyond MAX_INFLIGHT_PROVE is shed immediately with 429 instead of queueing
@@ -272,8 +287,10 @@ pub(super) async fn admit(state: &AppState, request: Request) -> Result<Admitted
     Ok(Admitted {
         body,
         requested_version,
+        approval,
         _status: status,
         _inflight: inflight,
+        _origin_slot: origin_slot,
     })
 }
 

@@ -243,13 +243,30 @@ const MAX_COOLDOWN_ENTRIES: usize = 64;
 /// legitimate retry burst while a popup is on screen — a real dApp fires one prove and awaits it.
 pub const MAX_PIGGYBACK_SENDERS: usize = 16;
 
+/// Monotonic counter over every approval-relevant decision (Allow, Deny, Settings removal). An
+/// approval remembers the generation it was granted at; a removal with a newer generation wins over
+/// it, whichever order their side effects happen to land.
+pub type Generation = u64;
+
+/// Cap on remembered removals so a Settings-spamming user cannot grow the map without bound; the
+/// oldest removal is forgotten first, which is safe because only requests older than it could care.
+const MAX_REVOCATION_ENTRIES: usize = 256;
+
+/// The decision delivered to every waiter of a popup, stamped with the generation assigned when the
+/// decision was taken — never when the prompt was created.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AuthOutcome {
+    pub decision: AuthDecision,
+    pub generation: Generation,
+}
+
 /// A pending authorization awaiting the user's decision: its origin (for display + cleanup) and the
 /// receivers of every request piggybacking on it.
 struct PendingRequest {
     /// q7e3-F-08: the validated origin (display + cleanup) — the maps are keyed by `CanonicalOrigin`,
     /// so a non-canonical string can no longer enter the pending state.
     origin: CanonicalOrigin,
-    senders: Vec<oneshot::Sender<AuthDecision>>,
+    senders: Vec<oneshot::Sender<AuthOutcome>>,
 }
 
 #[derive(Default)]
@@ -265,9 +282,39 @@ struct PendingState {
     queue: VecDeque<String>,
     /// B2 (F9): origin → the `Instant` at which its post-deny cooldown EXPIRES. Pruned lazily on read.
     cooldowns: HashMap<CanonicalOrigin, Instant>,
+    generation: Generation,
+    /// origin → the generation of its most recent removal.
+    revocations: HashMap<CanonicalOrigin, Generation>,
 }
 
 impl PendingState {
+    fn next_generation(&mut self) -> Generation {
+        self.generation += 1;
+        self.generation
+    }
+
+    fn record_revocation(&mut self, origin: CanonicalOrigin, generation: Generation) {
+        if self.revocations.len() >= MAX_REVOCATION_ENTRIES
+            && !self.revocations.contains_key(&origin)
+        {
+            if let Some(oldest) = self
+                .revocations
+                .iter()
+                .min_by_key(|(_, &g)| g)
+                .map(|(k, _)| k.clone())
+            {
+                self.revocations.remove(&oldest);
+            }
+        }
+        self.revocations.insert(origin, generation);
+    }
+
+    fn revoked_since(&self, origin: &CanonicalOrigin, granted_at: Generation) -> bool {
+        self.revocations
+            .get(origin)
+            .is_some_and(|&revoked_at| revoked_at > granted_at)
+    }
+
     /// q7e3-F-09: insert a new pending request, updating BOTH indexes. The origin↔request_id coupling
     /// lives here, not hand-synced at each call site, so a future mutator can't update one map and
     /// forget the other. C9 (D18): returns whether this new request became the ACTIVE one (slot was free)
@@ -276,7 +323,7 @@ impl PendingState {
         &mut self,
         origin: CanonicalOrigin,
         request_id: String,
-        tx: oneshot::Sender<AuthDecision>,
+        tx: oneshot::Sender<AuthOutcome>,
     ) -> bool {
         self.by_origin.insert(origin.clone(), request_id.clone());
         self.by_request.insert(
@@ -380,7 +427,7 @@ impl AuthorizationManager {
     pub fn request(
         &self,
         origin: &CanonicalOrigin,
-    ) -> Result<(oneshot::Receiver<AuthDecision>, String, bool, bool), RequestError> {
+    ) -> Result<(oneshot::Receiver<AuthOutcome>, String, bool, bool), RequestError> {
         let (tx, rx) = oneshot::channel();
         let mut st = self.state.lock();
         // B2 (F9): refuse a recently-denied origin here, atomically with the insert below. Only reached
@@ -424,10 +471,51 @@ impl AuthorizationManager {
         if matches!(decision, AuthDecision::Deny) {
             st.record_cooldown(req.origin.clone(), Instant::now() + self.deny_cooldown);
         }
+        let generation = st.next_generation();
         for tx in req.senders {
-            let _ = tx.send(decision);
+            let _ = tx.send(AuthOutcome {
+                decision,
+                generation,
+            });
         }
         promoted
+    }
+
+    /// Run `f` under the manager lock with the current generation. Persisted-approval reads go through
+    /// here so the generation an approval is granted at cannot interleave with a removal.
+    pub fn with_generation<T>(&self, f: impl FnOnce(Generation) -> T) -> T {
+        let st = self.state.lock();
+        f(st.generation)
+    }
+
+    /// Record a Settings removal of `origin` and run `apply` (the config write) under the same lock, so
+    /// the removal and the write are one step relative to every approval check and persist.
+    pub fn revoke<T>(&self, origin: &CanonicalOrigin, apply: impl FnOnce() -> T) -> T {
+        let mut st = self.state.lock();
+        let generation = st.next_generation();
+        st.record_revocation(origin.clone(), generation);
+        apply()
+    }
+
+    /// Persist a popup `Allow` granted at `granted_at` by running `apply` under the lock — unless a
+    /// removal newer than the grant exists, in which case nothing runs and `None` says the Allow was
+    /// dropped: a delayed waiter can never restore an origin the user has since removed.
+    pub fn persist_allow<T>(
+        &self,
+        origin: &CanonicalOrigin,
+        granted_at: Generation,
+        apply: impl FnOnce() -> T,
+    ) -> Option<T> {
+        let st = self.state.lock();
+        if st.revoked_since(origin, granted_at) {
+            return None;
+        }
+        Some(apply())
+    }
+
+    /// Whether `origin` was removed after an approval granted at `granted_at`.
+    pub fn revoked_since(&self, origin: &CanonicalOrigin, granted_at: Generation) -> bool {
+        self.state.lock().revoked_since(origin, granted_at)
     }
 
     /// C9 (D19): resolve a USER decision (from `respond_auth`), enforced SERVER-SIDE — succeeds ONLY if
@@ -447,8 +535,12 @@ impl AuthorizationManager {
                 if matches!(decision, AuthDecision::Deny) {
                     st.record_cooldown(req.origin.clone(), Instant::now() + self.deny_cooldown);
                 }
+                let generation = st.next_generation();
                 for tx in req.senders {
-                    let _ = tx.send(decision);
+                    let _ = tx.send(AuthOutcome {
+                        decision,
+                        generation,
+                    });
                 }
                 ResolveOutcome::Resolved(promoted)
             }
@@ -580,8 +672,8 @@ mod tests {
 
         mgr.resolve(&id1, AuthDecision::Allow);
 
-        assert_eq!(rx1.await.unwrap(), AuthDecision::Allow);
-        assert_eq!(rx2.await.unwrap(), AuthDecision::Allow);
+        assert_eq!(rx1.await.unwrap().decision, AuthDecision::Allow);
+        assert_eq!(rx2.await.unwrap().decision, AuthDecision::Allow);
     }
 
     #[tokio::test]
@@ -589,7 +681,7 @@ mod tests {
         let mgr = AuthorizationManager::new();
         let (rx, id, _, _) = mgr.request(&co("https://evil.com")).unwrap();
         mgr.resolve(&id, AuthDecision::Deny);
-        assert_eq!(rx.await.unwrap(), AuthDecision::Deny);
+        assert_eq!(rx.await.unwrap().decision, AuthDecision::Deny);
     }
 
     /// SEC-06: a decision addressed to a WRONG/unknown `request_id` must NOT resolve a pending
@@ -606,7 +698,7 @@ mod tests {
         );
         // The correct id resolves it.
         mgr.resolve(&id, AuthDecision::Deny);
-        assert_eq!(rx.await.unwrap(), AuthDecision::Deny);
+        assert_eq!(rx.await.unwrap().decision, AuthDecision::Deny);
     }
 
     #[test]
@@ -669,7 +761,7 @@ mod tests {
             Some(id2.as_str()),
             "queued b.com is promoted to active"
         );
-        assert_eq!(rx1.await.unwrap(), AuthDecision::Deny);
+        assert_eq!(rx1.await.unwrap().decision, AuthDecision::Deny);
         assert_eq!(
             mgr.peek(&id2).map(|(_, a)| a),
             Some(true),
@@ -685,7 +777,7 @@ mod tests {
         // Resolving the QUEUED one (its window was closed) leaves the active one; nobody is promoted.
         let promoted = mgr.resolve(&id2, AuthDecision::Deny);
         assert_eq!(promoted, None, "resolving a queued popup promotes nobody");
-        assert_eq!(rx2.await.unwrap(), AuthDecision::Deny);
+        assert_eq!(rx2.await.unwrap().decision, AuthDecision::Deny);
         assert_eq!(
             mgr.peek(&id1).map(|(_, a)| a),
             Some(true),

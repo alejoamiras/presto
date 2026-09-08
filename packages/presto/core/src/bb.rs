@@ -1079,13 +1079,13 @@ fn truncate_stderr(stderr: &str) -> String {
 /// Fake-bb harness shared by the chonk and ultra_honk test suites: a `/bin/sh` script stands in for
 /// `bb` via `BB_BINARY_PATH`, so tests exercise the real spawn/containment/read path without a prover.
 #[cfg(all(test, unix))]
-pub(super) mod test_support {
+pub(crate) mod test_support {
     use std::path::Path;
 
     /// Write an executable fake `bb` at `dir/fake-bb` whose body is `script` (a `/bin/sh` program that
     /// receives bb's real argv, incl. `-o <output_dir>`), and point `BB_BINARY_PATH` at it. Returns an
     /// `EnvGuard` that clears the var on drop. Unix-only (shell script); the prove path is POSIX anyway.
-    pub(super) fn install_fake_bb(dir: &Path, script: &str) -> EnvGuard {
+    pub(crate) fn install_fake_bb(dir: &Path, script: &str) -> EnvGuard {
         use std::os::unix::fs::PermissionsExt;
         let path = dir.join("fake-bb");
         std::fs::write(&path, format!("#!/bin/sh\n{script}\n")).unwrap();
@@ -1095,7 +1095,7 @@ pub(super) mod test_support {
     }
 
     /// Clears `BB_BINARY_PATH` on drop so a panicking test can't leak it into a sibling (`#[serial]`).
-    pub(super) struct EnvGuard;
+    pub(crate) struct EnvGuard;
     impl Drop for EnvGuard {
         fn drop(&mut self) {
             std::env::remove_var("BB_BINARY_PATH");
@@ -1103,7 +1103,7 @@ pub(super) mod test_support {
     }
 
     /// Extract `-o <dir>` from bb's argv, portably, for the fake scripts.
-    pub(super) const FIND_OUTDIR: &str =
+    pub(crate) const FIND_OUTDIR: &str =
         r#"prev=""; for a in "$@"; do [ "$prev" = "-o" ] && out="$a"; prev="$a"; done"#;
 }
 
