@@ -32,6 +32,19 @@ function fireProveRequest(): Promise<Response> {
   });
 }
 
+/**
+ * Click a decision button until the blocked /prove request settles: a late focus or activation can
+ * leave the click inside the popup's 700 ms click-steal guard (silently ignored), so retry after it.
+ */
+async function decide(selector: string, pending: Promise<Response>): Promise<Response> {
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    await clickBy(selector);
+    const settled = await Promise.race([pending, browser.pause(1500).then(() => null)]);
+    if (settled) return settled;
+  }
+  throw new Error(`${selector}: the decision never reached the server`);
+}
+
 describe("Authorization Flow", () => {
   let settingsHandle: string;
   let pendingProve: Promise<Response> | null = null;
@@ -83,10 +96,7 @@ describe("Authorization Flow", () => {
     // this is the real-app proof that the disclosure is truthful (the mocked specs pin the copy).
     expect(await browser.$("#permanence").getText()).toContain("Stays approved");
 
-    // Click Allow — use JS click on Linux (WebKitGTK elementClick returns malformed response)
-    await clickBy("#allow");
-
-    const proveResponse = await pendingProve;
+    const proveResponse = await decide("#allow", pendingProve);
     pendingProve = null;
     expect(proveResponse.status).not.toBe(403);
 
@@ -119,9 +129,7 @@ describe("Authorization Flow", () => {
 
     // C9 (D8/A): wait for the server origin to render (get_pending_auth) + the click-guard to elapse.
     await waitForActivePopup(TEST_ORIGIN);
-    await clickBy("#deny");
-
-    const proveResponse = await pendingProve;
+    const proveResponse = await decide("#deny", pendingProve);
     pendingProve = null;
     expect(proveResponse.status).toBe(403);
 
