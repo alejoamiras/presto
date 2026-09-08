@@ -295,8 +295,23 @@ pub async fn prove(
     version: Option<&versions::AztecVersion>,
     threads: Option<usize>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    prove_with_timeout(ivc_inputs, version, threads, PROVE_TIMEOUT).await
+    prove_with_timeout(ivc_inputs, version, threads, PROVE_TIMEOUT, None).await
 }
+
+/// [`prove`] that a caller can cancel: notifying `cancel` kills the bb tree and the call returns only
+/// once the child is reaped, so whatever the caller holds across it is released after bb is gone.
+pub async fn prove_cancellable(
+    ivc_inputs: &[u8],
+    version: Option<&versions::AztecVersion>,
+    threads: Option<usize>,
+    cancel: Cancel,
+) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
+    prove_with_timeout(ivc_inputs, version, threads, PROVE_TIMEOUT, Some(cancel)).await
+}
+
+/// A cancellation signal for one bb run: `notify_one()` kills the tree. A `Notify` keeps the
+/// permit when nobody is waiting yet, so a signal that arrives before bb spawns still takes effect.
+pub type Cancel = std::sync::Arc<tokio::sync::Notify>;
 
 /// The body of [`prove`], with the timeout injected so tests can drive the timeout/kill path without a
 /// 5-minute wait (the same externalized-`Duration` shape as `bind_with_retry_inner`).
@@ -305,6 +320,7 @@ async fn prove_with_timeout(
     version: Option<&versions::AztecVersion>,
     threads: Option<usize>,
     timeout: Duration,
+    cancel: Option<Cancel>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
     // Take the lease BEFORE resolving the path, and hold it for this whole function — the window
     // being closed is between "cleanup decided this version was evictable" and "we executed it".
@@ -324,7 +340,7 @@ async fn prove_with_timeout(
     );
 
     let mut cmd = build_prove_command(&bb_path, &workspace, threads)?;
-    run_bb(&mut cmd, timeout).await?;
+    run_bb(&mut cmd, timeout, cancel).await?;
 
     // Exit success is insufficient: read once through a cap, then reject empty, oversized, or
     // non-field-aligned proof bytes without a metadata/read race.
@@ -338,10 +354,16 @@ async fn prove_with_timeout(
 }
 
 /// Run one bb subcommand to completion: spawn under containment, drain stderr with a cap, wait up to
-/// `timeout`, log the retained stderr, and require exit success. Every scheme goes through here so the
-/// containment registration, the kill-tree-on-timeout path, and the never-block-on-stderr drain exist
-/// exactly once.
-async fn run_bb(cmd: &mut tokio::process::Command, timeout: Duration) -> Result<(), BbError> {
+/// `timeout` or until `cancel` fires, log the retained stderr, and require exit success. Every scheme
+/// goes through here so the containment registration, the kill-tree path, and the never-block-on-stderr
+/// drain exist exactly once. On timeout or cancellation the whole tree is killed and the child is
+/// REAPED before this returns: a caller that holds admission guards across the call therefore frees
+/// them only once bb is gone, not while it is dying.
+async fn run_bb(
+    cmd: &mut tokio::process::Command,
+    timeout: Duration,
+    cancel: Option<Cancel>,
+) -> Result<(), BbError> {
     // Spawn and register atomically so quiescing never observes an untracked bb process tree.
     let (mut child, guard) = containment::spawn_and_register(cmd)?;
     // Drain stderr concurrently so a full pipe cannot block bb and a grandchild holding the pipe open
@@ -355,8 +377,23 @@ async fn run_bb(cmd: &mut tokio::process::Command, timeout: Duration) -> Result<
         stderr_acc.clone(),
     )));
 
-    // `?` here drops `guard`, which reaps the whole bb tree on timeout or wait failure.
-    let status = wait_for_bb(&mut child, timeout).await?;
+    let waited = match cancel {
+        Some(cancel) => tokio::select! {
+            result = wait_for_bb(&mut child, timeout) => result,
+            _ = cancel.notified() => Err("bb prove cancelled: the request was dropped".into()),
+        },
+        None => wait_for_bb(&mut child, timeout).await,
+    };
+    let status = match waited {
+        Ok(status) => status,
+        Err(e) => {
+            // Kill the tree now (the guard would on drop) and confirm the direct child is reaped; SIGKILL
+            // cannot be refused, so the bound only covers a wedged wait.
+            guard.finish();
+            let _ = tokio::time::timeout(REAP_CONFIRM_BOUND, child.wait()).await;
+            return Err(e);
+        }
+    };
     // Finish containment before waiting for stderr EOF so a lingering pipe holder cannot leave a stale
     // process-group registration. On Unix, finish kills the group before clearing the registry.
     guard.finish();
@@ -438,6 +475,9 @@ fn finish_command(command: &mut tokio::process::Command, threads: Option<usize>)
     command.kill_on_drop(true);
     containment::configure(command);
 }
+
+/// How long a killed bb may take to be reaped before the caller stops waiting for it.
+const REAP_CONFIRM_BOUND: Duration = Duration::from_secs(5);
 
 async fn wait_for_bb(
     child: &mut tokio::process::Child,
@@ -1497,10 +1537,79 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // A bb that sleeps far past the injected timeout and never writes a proof.
         let _guard = install_fake_bb(dir.path(), "sleep 30");
-        let err = prove_with_timeout(b"witness", None, None, Duration::from_millis(150))
+        let err = prove_with_timeout(b"witness", None, None, Duration::from_millis(150), None)
             .await
             .expect_err("a hung bb must time out");
         assert!(err.to_string().contains("timed out"), "got: {err}");
+    }
+
+    /// The fake bb's own pid, once its script has written it.
+    #[cfg(unix)]
+    async fn wait_for_pid(pidfile: &Path) -> i32 {
+        for _ in 0..250 {
+            if let Some(pid) = std::fs::read_to_string(pidfile)
+                .ok()
+                .and_then(|s| s.trim().parse::<i32>().ok())
+            {
+                return pid;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("fake bb never reported its pid");
+    }
+
+    /// `kill(pid, 0)` still succeeds for a zombie, so `-1` here means killed AND reaped.
+    #[cfg(unix)]
+    fn reaped(pid: i32) -> bool {
+        unsafe { libc::kill(pid, 0) == -1 }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    #[serial]
+    async fn prove_timeout_returns_only_after_bb_is_reaped() {
+        let dir = tempfile::tempdir().unwrap();
+        let pidfile = dir.path().join("bb.pid");
+        let _env = install_fake_bb(
+            dir.path(),
+            &format!("echo $$ > \"{}\"\nexec sleep 300", pidfile.display()),
+        );
+        let err = prove_with_timeout(b"witness", None, None, Duration::from_millis(150), None)
+            .await
+            .expect_err("a hung bb must time out");
+        assert!(err.to_string().contains("timed out"), "got: {err}");
+        let pid = wait_for_pid(&pidfile).await;
+        assert!(
+            reaped(pid),
+            "the timed-out bb must be reaped before prove returns (guards are released after it)"
+        );
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    #[serial]
+    async fn prove_cancel_kills_bb_and_returns_only_after_the_reap() {
+        let dir = tempfile::tempdir().unwrap();
+        let pidfile = dir.path().join("bb.pid");
+        let _env = install_fake_bb(
+            dir.path(),
+            &format!("echo $$ > \"{}\"\nexec sleep 300", pidfile.display()),
+        );
+        let cancel: Cancel = std::sync::Arc::new(tokio::sync::Notify::new());
+        let signal = cancel.clone();
+        let run =
+            tokio::spawn(async move { prove_cancellable(b"witness", None, None, cancel).await });
+        let pid = wait_for_pid(&pidfile).await;
+        signal.notify_one();
+        let err = run
+            .await
+            .unwrap()
+            .expect_err("a cancelled bb must not yield a proof");
+        assert!(err.to_string().contains("cancelled"), "got: {err}");
+        assert!(
+            reaped(pid),
+            "the cancelled bb must be reaped before prove returns"
+        );
     }
 
     // ── B3 (F6): terminate the whole bb PROCESS TREE, not just the direct child ──
