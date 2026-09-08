@@ -19,6 +19,11 @@ bun add @alejoamiras/presto
 
 The SDK ships its `@aztec/*` packages as exact-pinned **dependencies** (not peer dependencies), so it installs standalone. When your project already depends on the same exact `@aztec` version — the normal case for an Aztec dApp — npm/Bun dedupe them to a single `@aztec` graph.
 
+The transport and fallback policy live in [`@alejoamiras/presto-core`](../sdk-core/README.md), an
+exact-pinned dependency shared with [`@alejoamiras/presto-noir`](../sdk-noir/README.md) — the
+adapter for proving **any Noir circuit** (bb.js `UltraHonkBackend` surface) through the same app.
+Nothing from core needs importing for Aztec proving; this package re-exports the types it uses.
+
 ## Quick Start
 
 ```typescript
@@ -109,6 +114,8 @@ type PrestoStatus =
       sdkAztecVersion?: string;
       appVersion?: string;
       apiVersion?: number;
+      schemes?: readonly string[];   // proving schemes served ("chonk", "ultra_honk"); absent on an app older than 1.1.0
+      versions?: readonly { aztecVersion: string; bbVersion: string }[]; // cached Aztec ↔ bb pairs (detailed body only)
       protocol: PrestoProtocol; // "http" | "https"
     }
   | { available: false; reason: "offline"; sdkAztecVersion?: string }
@@ -215,7 +222,7 @@ try { await prover.createChonkProof(steps); }
 catch (e) { if (e instanceof PrestoHttpError) { /* e.status, e.code */ } }
 ```
 
-`checkPrestoStatus()` additionally surfaces the presto's `appVersion` and `apiVersion` on an available result.
+`checkPrestoStatus()` additionally surfaces the presto's `appVersion` and `apiVersion` on an available result, plus `schemes` (the proving schemes its routes serve — `chonk` for `/prove`, `ultra_honk` for `/prove/ultra-honk`) and, once the origin is approved, `versions` (which `bb` each cached Aztec version maps to). A presto that predates the scheme list omits `schemes`; `PrestoProver` treats that as `chonk` only.
 
 ## Configuration
 

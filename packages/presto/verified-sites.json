@@ -21,6 +21,15 @@
       "description": "Playground for trying Presto",
       "curatedBy": "alejoamiras",
       "addedAt": "2026-05-28"
+    },
+    {
+      "origins": [
+        "https://yacana.network"
+      ],
+      "displayName": "Yacana",
+      "description": "Yacana browser miner — UltraHonk proofs of Noir work circuits through /prove/ultra-honk",
+      "curatedBy": "alejoamiras",
+      "addedAt": "2026-09-08"
     }
   ]
 }

@@ -1,13 +1,17 @@
 # Release runbook
 
-This repository ships two independently versioned artifacts:
+This repository ships three npm packages and one native app, each versioned independently:
 
-| Artifact | Release entry point | Use it when |
-|---|---|---|
-| SDK (`@alejoamiras/presto`) | `release-sdk.yml` | The SDK or pinned `@aztec/*` dependencies changed |
-| Desktop + headless presto | `release-presto.yml` | Native server, desktop UI, updater, trust, or bb download logic changed |
+| Artifact | Version | Release entry point | Use it when |
+|---|---|---|---|
+| SDK (`@alejoamiras/presto`) | derived from the pinned `@aztec/stdlib` | `release-sdk.yml` (`packages=presto`, the default) | The SDK or pinned `@aztec/*` dependencies changed |
+| Core (`@alejoamiras/presto-core`) | `packages/sdk-core/package.json` | `release-sdk.yml` (`packages=presto-core`) | Transport, status, or fallback policy changed |
+| Noir adapter (`@alejoamiras/presto-noir`) | `packages/sdk-noir/package.json` | `release-sdk.yml` (`packages=presto-noir`) | The adapter changed, or its `@aztec/bb.js` peer pin moved |
+| Desktop + headless presto | `packages/presto` | `release-presto.yml` | Native server, desktop UI, updater, trust, or bb download logic changed |
 
-An Aztec protocol bump is normally SDK-only. Installed Presto apps download and verify the matching `bb` version at runtime; do not cut a native-app release merely to track an `@aztec/*` bump.
+An Aztec protocol bump is normally SDK-only. Installed Presto apps download and verify the matching `bb` version at runtime; do not cut a native-app release merely to track an `@aztec/*` bump. It is also **not** a core release: core has no `@aztec/*` dependency. It is a `presto-noir` release only when the adapter's `@aztec/bb.js` peer pin (and `TESTED_BB_VERSIONS`) moves with it — `scripts/update-aztec-version.ts` bumps that pin in lockstep, so a bump that touches `packages/sdk-noir` publishes the adapter too.
+
+Both SDKs depend on core at an **exact** version (`workspace:*` in the tree, pinned to the packed version at publish time), so a core change reaches users only through a publish of core **and** of every adapter that must pick it up: publish core, bump nothing else, and the adapters keep their previous core pin until they are republished.
 
 ## One-time production configuration
 
@@ -275,7 +279,7 @@ Publish order is core → `presto-noir` → `presto`, each adapter's consumer pr
 
 ### Candidate version and gates
 
-The SDK package's checked-in version remains `0.0.0`. The workflow derives a version from the pinned `@aztec/stdlib` version. If the base already exists, it chooses `<base>-revision.N` for a stable base or appends `.N` to a prerelease base.
+The SDK package's checked-in version remains `0.0.0`. The workflow derives a version from the pinned `@aztec/stdlib` version. If the base already exists, it chooses `<base>-revision.N` for a stable base or appends `.N` to a prerelease base. `presto-core` and `presto-noir` publish the version in their `package.json` verbatim, so a change to either starts with a version bump in the tree (a `manifest` version is never suffixed).
 
 Preview the derived version (`--package <key>` for a sibling; the base comes from the package's manifest):
 
@@ -341,6 +345,20 @@ bun run sdk:promote -- <VERSION> --dry-run
 bun run sdk:promote -- <VERSION>
 ```
 
+Every package publishes under `testnet` and is promoted on its own with `--package <key>`
+(`presto`, the default, `presto-core`, `presto-noir`); one command moves one package's tag:
+
+```bash
+bun run sdk:promote -- --package presto-core <CORE_VERSION> --dry-run
+bun run sdk:promote -- --package presto-core <CORE_VERSION>
+bun run sdk:promote -- --package presto-noir <NOIR_VERSION>
+bun run sdk:promote -- <SDK_VERSION>
+```
+
+Promote in dependency order — core, then the adapters — so `latest` reads coherently. Installs do
+not depend on that order: an adapter pins its core exactly, so a bare `npm install
+@alejoamiras/presto-noir` resolves the pinned core version whatever `latest` points at.
+
 The script refuses to mutate npm unless:
 
 - no `release-sdk.yml` run is queued or active;
@@ -365,7 +383,9 @@ Never delete or re-publish an npm version. Fix forward under a new derived revis
 
 ## Failure classification
 
-Always read external state before retrying:
+Always read external state before retrying (substitute the sibling's npm name for a core or
+adapter release; the `presto-core` / `presto-noir` release tags are `@alejoamiras/<name>@<version>`
+like the SDK's):
 
 ```bash
 npm view @alejoamiras/presto versions dist-tags --json
