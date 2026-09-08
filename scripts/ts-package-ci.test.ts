@@ -54,6 +54,11 @@ describe("TypeScript package CI contract", () => {
     expect(reusable).toContain("test:identity");
     expect(reusable).toContain("test:e2e");
     expect(reusable).toContain("uses: ./.github/actions/start-headless-presto");
+    // The live presto must serve the requested version from the sidecar, never download it.
+    expect(reusable).toContain(
+      'echo "AZTEC_BB_VERSION=$(cat packages/presto/src-tauri/AZTEC_VERSION)"',
+    );
+    expect(reusable).toMatch(/aztec-bb-version: \$\{\{ env\.AZTEC_BB_VERSION \}\}/);
     expect(reusable).toContain(
       "cargo build --locked --manifest-path packages/presto/server/Cargo.toml",
     );

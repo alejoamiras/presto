@@ -220,8 +220,12 @@ jobs:
         with:
           path: ~/.bb-crs
           key: bb-crs-${{ runner.os }}-${{ hashFiles('packages/sdk/package.json') }}
+      # The prebuild wrote the sidecar's Aztec version; advertising it makes a request for that version
+      # use the sidecar instead of downloading bb and verifying it through the (rate-limited) GitHub API.
       - name: Point at the sidecar bb
-        run: echo "BB_BINARY_PATH=$GITHUB_WORKSPACE/packages/presto/src-tauri/binaries/bb-x86_64-unknown-linux-gnu" >> "$GITHUB_ENV"
+        run: |
+          echo "BB_BINARY_PATH=$GITHUB_WORKSPACE/packages/presto/src-tauri/binaries/bb-x86_64-unknown-linux-gnu" >> "$GITHUB_ENV"
+          echo "AZTEC_BB_VERSION=$(cat packages/presto/src-tauri/AZTEC_VERSION)" >> "$GITHUB_ENV"
       - name: Build headless server
         run: cargo build --locked --manifest-path packages/presto/server/Cargo.toml
       - name: Start an isolated headless presto
@@ -231,6 +235,7 @@ jobs:
           binary: packages/presto/server/target/debug/presto-server
           port: "59910"
           presto-home: ${{ runner.temp }}/presto-home-live
+          aztec-bb-version: ${{ env.AZTEC_BB_VERSION }}
       - name: Adapter e2e against the live presto
         env:
           PRESTO_URL: ${{ steps.presto.outputs.url }}
