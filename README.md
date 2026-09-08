@@ -16,6 +16,7 @@ Native prover for Aztec transactions. Bypasses browser WASM throttling by runnin
 | [`packages/presto`](packages/presto) | Desktop tray app (macOS/Linux/Windows) + headless server for CI test acceleration | [![Presto](https://github.com/alejoamiras/presto/actions/workflows/presto.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/presto.yml) |
 | [`packages/playground`](packages/playground) | [Live demo](https://playground.presto.build) — WASM vs accelerated comparison | [![App](https://github.com/alejoamiras/presto/actions/workflows/app.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/app.yml) |
 | [`packages/landing`](packages/landing) | Landing page at [presto.build](https://presto.build) | |
+| [`@alejoamiras/presto-banners`](packages/banners) | `<presto-banner>` install banners for integrating dApps, keyed to `PrestoStatus` | [![Banners](https://github.com/alejoamiras/presto/actions/workflows/banners.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/banners.yml) |
 
 ## Architecture
 
