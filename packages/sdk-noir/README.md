@@ -153,7 +153,8 @@ PRESTO_URL=http://127.0.0.1:59833 bun run --cwd packages/sdk-noir test:e2e  # li
 `test:e2e` requires a presto: an unset `PRESTO_URL` fails the suite unless `PRESTO_NOIR_SKIP_LIVE=1`
 opts out explicitly. `PRESTO_NOIR_W_FIXTURE_DIR=<dir>` adds a cross-check against any directory with
 the fixture layout (`circuit.json`, `manifest.json`, `witness.gz`, `vk`, `proof`, `public_inputs`).
-Fixtures are regenerated with `bun scripts/noir-fixture.ts` from the repository root.
+Fixtures are regenerated with `bun scripts/noir-fixture.ts --regenerate` from the repository root
+(without the flag the script only verifies them).
 
 ## License
 

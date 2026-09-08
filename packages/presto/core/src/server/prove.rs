@@ -174,12 +174,9 @@ fn reject_declared_oversize(headers: &axum::http::HeaderMap) -> Result<(), Prove
     Ok(())
 }
 
-/// A1 (full-branch audit): buffer the request body under the size cap + an absolute read timeout,
-/// WITHOUT holding the single prove permit. Concurrent buffers are already bounded by the `_inflight`
-/// waiters cap (`MAX_INFLIGHT_PROVE`) the caller holds, so at most `MAX_INFLIGHT_PROVE × MAX_BODY_SIZE`
-/// is resident. Decoupling the read from the prove permit is the fix for the head-of-line DoS where one
-/// slow (slowloris) uploader held the CPU-bound prover for up to `read_timeout`, 429-ing everyone else;
-/// now a slow upload only occupies an inflight slot while the prover runs on ready requests. Testable seam.
+/// Buffer the request body under the size cap and an absolute read timeout WITHOUT holding the prove
+/// permit: a slow (slowloris) upload may occupy an inflight slot, never the CPU-bound prover. Residency
+/// stays bounded by `MAX_INFLIGHT_PROVE × MAX_BODY_SIZE` through the inflight cap the caller holds.
 async fn read_body(
     raw_body: Body,
     max_body_size: usize,

@@ -49,3 +49,7 @@ Commit 2222acc.
 
 Codex accepted omitting the entry-module unit test ("no existing entry-module harness that makes
 this inexpensive, and introducing one is disproportionate"). Three rounds.
+
+CI: `app.yml` dispatch 34196696329 on fbc6369 and 34197113450 on 2222acc — both green (Lint, Unit
+Tests, Mocked E2E 18/18, Production Build Smoke incl. the Noir WASM proof of the built bundle,
+Local Network E2E, Chromium LNA E2E).

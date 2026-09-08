@@ -358,9 +358,9 @@ export class PrestoClient {
    * failures also degrade, while misconfiguration/unexpected responses become the typed error.
    */
   async #proveRemote(request: Snapshot, attemptGen: number): Promise<ProveOutcome> {
-    // IMMUTABLE snapshot of the endpoint this attempt targets, taken BEFORE any `onPhase` callback
-    // runs: a dApp's handler can call `configure(B)` between here and the POST, and the old code then
-    // sent the witness to the unprobed B. Every POST below uses these snapshots.
+    // Endpoint snapshot taken BEFORE any `onPhase` callback runs: a dApp's handler may call
+    // `configure(B)` between here and the POST, and the witness must never reach an unprobed B.
+    // Every POST below uses these snapshots.
     const url = `${this.#transport.baseUrl}${request.path}`;
     const wasHttps = url.startsWith("https:");
     // Only snapshot the HTTP PROOF-retry target when plaintext proving is permitted — gated on the

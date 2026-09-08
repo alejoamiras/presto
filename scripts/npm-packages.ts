@@ -1,7 +1,7 @@
 /**
- * The closed list of npm packages the release tooling can publish, verify, and promote. Every script
- * that used to hardcode `@alejoamiras/presto` takes one of these instead (`--package <key>`, default
- * `presto`), so a new package is one entry here plus its consumer profile.
+ * The closed list of npm packages the release tooling publishes, verifies, and promotes. Every script
+ * takes one of these (`--package <key>`, default `presto`), so a new package is one entry here plus
+ * its consumer profile.
  */
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";

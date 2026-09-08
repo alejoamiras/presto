@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { NPM_PACKAGES, type PackageKey } from "./npm-packages.ts";
 import {
   describePlan,
+  lockfileSlice,
   orderByDependencies,
   planRelease,
   selectPackages,
@@ -204,5 +205,60 @@ describe("release plan: dependencies", () => {
         dependencyVersions: { [core.name]: "1.0.0" },
       });
     });
+  });
+});
+
+describe("lockfileSlice", () => {
+  const lock = (overrides: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      lockfileVersion: 1,
+      workspaces: {
+        "": { devDependencies: { typescript: "^7.0.2" } },
+        "packages/sdk-core": {
+          name: "@alejoamiras/presto-core",
+          version: "1.0.0",
+          dependencies: { "@logtape/logtape": "^2.3.2", ms: "^2.1.3" },
+          devDependencies: { "@types/ms": "^2.1.0" },
+        },
+        "packages/playground": { name: "playground", dependencies: { vite: "^8" } },
+      },
+      packages: {
+        "@logtape/logtape": ["@logtape/logtape@2.3.2", "", {}, "sha512-a"],
+        ms: ["ms@2.1.3", "", {}, "sha512-b"],
+        "@types/ms": ["@types/ms@2.1.0", "", {}, "sha512-c"],
+        typescript: ["typescript@7.0.2", "", {}, "sha512-d"],
+        vite: ["vite@8.2.2", "", {}, "sha512-e"],
+        ...overrides,
+      },
+    });
+  const base = lockfileSlice(lock(), "packages/sdk-core");
+
+  test("ignores other workspaces' dependencies and the package's own dev dependencies", () => {
+    expect(lockfileSlice(lock({ vite: ["vite@8.3.0", "", {}, "x"] }), "packages/sdk-core")).toBe(
+      base,
+    );
+    expect(
+      lockfileSlice(lock({ "@types/ms": ["@types/ms@2.2.0", "", {}, "x"] }), "packages/sdk-core"),
+    ).toBe(base);
+  });
+
+  test("changes when a runtime dependency, a nested resolution, or the compiler moves", () => {
+    expect(lockfileSlice(lock({ ms: ["ms@2.1.4", "", {}, "x"] }), "packages/sdk-core")).not.toBe(
+      base,
+    );
+    expect(
+      lockfileSlice(
+        lock({ "@alejoamiras/presto-core/ms": ["ms@2.0.0", "", {}, "x"] }),
+        "packages/sdk-core",
+      ),
+    ).not.toBe(base);
+    expect(
+      lockfileSlice(lock({ typescript: ["typescript@7.1.0", "", {}, "x"] }), "packages/sdk-core"),
+    ).not.toBe(base);
+  });
+
+  test("parses bun.lock's trailing commas", () => {
+    const text = `{"workspaces": {"packages/x": {"name": "x", "dependencies": {"a": "1",},},}, "packages": {"a": ["a@1", "", {}, "h",],},}`;
+    expect(JSON.parse(lockfileSlice(text, "packages/x")).packages.a[0]).toBe("a@1");
   });
 });

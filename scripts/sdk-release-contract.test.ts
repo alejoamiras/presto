@@ -107,3 +107,25 @@ describe("npm release workflow contract", () => {
     expect(setup).toBeLessThan(deploy.indexOf("bun scripts/published-playground.ts"));
   });
 });
+
+describe("playground deployment", () => {
+  test("waits for every selected publication and tolerates unselected ones", () => {
+    const deploy = job(release, "deploy-app");
+    expect(deploy).toContain(
+      "needs: [assert-main, plan, e2e, dependency-audit, publish-core, publish-noir, publish-presto]",
+    );
+    for (const [jobName, slug] of [
+      ["publish-core", "presto_core"],
+      ["publish-noir", "presto_noir"],
+      ["publish-presto", "presto"],
+    ]) {
+      expect(deploy).toContain(
+        `(needs.${jobName}.result == 'success' || (needs.${jobName}.result == 'skipped' && needs.plan.outputs.publish_${slug} != 'true'))`,
+      );
+    }
+    expect(deploy).toContain("inputs.mode == 'playground-only' ||");
+    expect(deploy).toMatch(
+      /PUBLISHED_VERSION: \$\{\{ needs\.publish-presto\.outputs\.version \|\| needs\.plan\.outputs\.version_presto \}\}/,
+    );
+  });
+});
