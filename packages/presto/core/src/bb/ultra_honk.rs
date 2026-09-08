@@ -11,6 +11,8 @@ use std::path::{Path, PathBuf};
 use std::str::FromStr;
 use std::time::Duration;
 
+use serde::de::{self, DeserializeSeed};
+
 use super::{
     acquire_version_lease, create_prove_tempdir, find_bb, finish_command, read_capped, run_bb,
     validate_proof_len, write_witness, BbError, MAX_PROOF_BYTES, PROVE_TIMEOUT,
@@ -309,28 +311,98 @@ fn validate_vk_len(len: u64) -> Result<(), BbError> {
 /// named on failure (a missing `public_inputs.json` is otherwise an anonymous "No such file").
 fn read_fields(workspace: &UltraHonkWorkspace, name: &str, cap: u64) -> Result<Vec<u8>, BbError> {
     // Each 32-byte field is 69 JSON bytes; the file cap follows the byte cap plus metadata headroom.
-    let text = read_capped(
-        &workspace.output_dir.join(format!("{name}.json")),
-        cap * 3 + 1024,
-    )
-    .map_err(|e| format!("bb output {name}.json: {e}"))?;
-    let doc: serde_json::Value =
-        serde_json::from_slice(&text).map_err(|e| format!("bb output {name}.json: {e}"))?;
-    let fields = doc
-        .get(name)
-        .and_then(serde_json::Value::as_array)
-        .ok_or_else(|| format!("bb output {name}.json has no {name:?} array"))?;
-    let mut bytes = Vec::with_capacity(fields.len() * 32);
-    for (i, field) in fields.iter().enumerate() {
-        let hex = field
-            .as_str()
-            .and_then(|s| s.strip_prefix("0x"))
-            .filter(|h| h.len() == 64)
-            .and_then(|h| hex::decode(h).ok())
-            .ok_or_else(|| format!("bb output {name}.json field {i} is not a 32-byte hex field"))?;
-        bytes.extend_from_slice(&hex);
+    let json_cap = cap * 3 + 1024;
+    let text = read_capped(&workspace.output_dir.join(format!("{name}.json")), json_cap)
+        .map_err(|e| format!("bb output {name}.json: {e}"))?;
+    if text.len() as u64 > json_cap {
+        return Err(format!("bb output {name}.json exceeds {json_cap} bytes").into());
     }
+    parse_fields(&text, name, cap / 32).map_err(|e| format!("bb output {name}.json: {e}").into())
+}
+
+/// Stream `{"<name>": ["0x<64 hex>", …], …}` into bytes without building a value tree: each element
+/// is validated as it arrives and the count is capped, so a malformed file cannot cost more memory
+/// than its byte cap. Other keys are skipped; trailing content is rejected.
+fn parse_fields(text: &[u8], name: &str, max_fields: u64) -> Result<Vec<u8>, String> {
+    let mut de = serde_json::Deserializer::from_slice(text);
+    let bytes = FieldsSeed { name, max_fields }
+        .deserialize(&mut de)
+        .map_err(|e| e.to_string())?;
+    de.end().map_err(|e| e.to_string())?;
     Ok(bytes)
+}
+
+struct FieldsSeed<'a> {
+    name: &'a str,
+    max_fields: u64,
+}
+
+impl<'de> de::DeserializeSeed<'de> for FieldsSeed<'_> {
+    type Value = Vec<u8>;
+
+    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Vec<u8>, D::Error> {
+        d.deserialize_map(self)
+    }
+}
+
+impl<'de> de::Visitor<'de> for FieldsSeed<'_> {
+    type Value = Vec<u8>;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "an object with a {:?} array", self.name)
+    }
+
+    fn visit_map<A: de::MapAccess<'de>>(self, mut map: A) -> Result<Vec<u8>, A::Error> {
+        let mut found = None;
+        while let Some(key) = map.next_key::<String>()? {
+            if key != self.name {
+                map.next_value::<de::IgnoredAny>()?;
+            } else if found.is_some() {
+                return Err(de::Error::custom(format!("duplicate {:?} key", self.name)));
+            } else {
+                found = Some(map.next_value_seed(FieldArray(self.max_fields))?);
+            }
+        }
+        found.ok_or_else(|| de::Error::custom(format!("no {:?} array", self.name)))
+    }
+}
+
+struct FieldArray(u64);
+
+impl<'de> de::DeserializeSeed<'de> for FieldArray {
+    type Value = Vec<u8>;
+
+    fn deserialize<D: de::Deserializer<'de>>(self, d: D) -> Result<Vec<u8>, D::Error> {
+        d.deserialize_seq(self)
+    }
+}
+
+impl<'de> de::Visitor<'de> for FieldArray {
+    type Value = Vec<u8>;
+
+    fn expecting(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str("an array of 0x-prefixed 32-byte hex fields")
+    }
+
+    fn visit_seq<A: de::SeqAccess<'de>>(self, mut seq: A) -> Result<Vec<u8>, A::Error> {
+        let mut bytes = Vec::new();
+        let mut count: u64 = 0;
+        while let Some(field) = seq.next_element::<String>()? {
+            if count >= self.0 {
+                return Err(de::Error::custom(format!("more than {} fields", self.0)));
+            }
+            let decoded = field
+                .strip_prefix("0x")
+                .filter(|h| h.len() == 64)
+                .and_then(|h| hex::decode(h).ok())
+                .ok_or_else(|| {
+                    de::Error::custom(format!("field {count} is not a 32-byte hex field"))
+                })?;
+            bytes.extend_from_slice(&decoded);
+            count += 1;
+        }
+        Ok(bytes)
+    }
 }
 
 /// Read and validate bb's output files; blocking, so callers run it on a worker.
@@ -376,6 +448,27 @@ mod tests {
         assert_eq!(err, UnknownVerifierTarget("noir_recursive".into()));
         let long = "x".repeat(200).parse::<VerifierTarget>().unwrap_err();
         assert_eq!(long.0.len(), 64, "the rejected spelling is truncated");
+    }
+
+    #[test]
+    fn json_fields_are_streamed_validated_and_bounded() {
+        let field = format!("\"0x{}\"", "ab".repeat(32));
+        let two = format!("{{\"proof\":[{field},{field}],\"bb_version\":\"x\",\"scheme\":{{}}}}");
+        assert_eq!(
+            parse_fields(two.as_bytes(), "proof", 2).unwrap(),
+            [0xab; 64].to_vec()
+        );
+        assert_eq!(
+            parse_fields(b"{\"public_inputs\":[]}", "public_inputs", 0).unwrap(),
+            b""
+        );
+        let err = |json: &str, max| parse_fields(json.as_bytes(), "proof", max).unwrap_err();
+        assert!(err(&two, 1).contains("more than 1 fields"));
+        assert!(err("{\"proof\":[0]}", 2).contains("expected a string"));
+        assert!(err("{\"proof\":[\"0x00\"]}", 2).contains("field 0 is not a 32-byte hex field"));
+        assert!(err("{\"vk\":[]}", 2).contains("no \"proof\" array"));
+        assert!(err(&format!("{two}{two}"), 2).contains("trailing"));
+        assert!(err(&format!("{{\"proof\":[],\"proof\":[{field}]}}"), 2).contains("duplicate"));
     }
 
     #[test]
@@ -526,8 +619,9 @@ mod tests {
             let err = prove_ultra_honk(job(Some(b"vk")), None, None)
                 .await
                 .unwrap_err();
+            let text = err.to_string();
             assert!(
-                err.to_string().contains("public_inputs.json field 0"),
+                text.contains("public_inputs.json") && text.contains("field 0 is not a 32-byte"),
                 "got: {err}"
             );
         }
