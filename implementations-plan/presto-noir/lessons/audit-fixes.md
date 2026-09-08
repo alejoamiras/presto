@@ -32,3 +32,9 @@ introduces an HTTPS-only bypass."
 - Comment (accepted): `demoteHttpsPin`'s doc claimed the caller uses its return value; it does not.
 Codex confirmed no demotion generation bump is needed and found no internal sequence that yields an
 HTTPS-only policy with a cached HTTP status.
+
+**Round 2** — "production fix looks sound; no new material findings." One test-quality
+correction applied: my coverage assertion matched the initial dual probe's HTTP health request, not
+A's retry check, so depth 0 counted as covered while B had posted before the demotion. The
+assertion now requires, within one depth, A's POST → A's HTTP retry check → B's POST with exactly
+one HTTPS probe before B's POST (B reused the original status). Converged after 2 rounds.

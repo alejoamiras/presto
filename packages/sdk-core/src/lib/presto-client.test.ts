@@ -1038,9 +1038,17 @@ describe("PrestoClient", () => {
         expect(await c.prove(PROVE)).toEqual({ kind: "fallback", reason: "network" });
         expect(await second).toEqual({ kind: "fallback", reason: "network" });
         expect(fetchedUrls).not.toContain("http://127.0.0.1:59833/prove");
-        const httpHealth = fetchedUrls.indexOf("http://127.0.0.1:59833/health");
-        const secondPost = fetchedUrls.lastIndexOf("https://127.0.0.1:59834/prove");
-        if (httpHealth >= 0 && secondPost > httpHealth) coveredTheWindow = true;
+        // The window: A's POST, then A's HTTP retry check, then B's POST — with B having reused
+        // the original status (one HTTPS probe before its POST, none of its own).
+        const aPost = fetchedUrls.indexOf("https://127.0.0.1:59834/prove");
+        const retryHealth = fetchedUrls.indexOf("http://127.0.0.1:59833/health", aPost + 1);
+        const bPost = fetchedUrls.lastIndexOf("https://127.0.0.1:59834/prove");
+        const httpsProbesBeforeB = fetchedUrls
+          .slice(0, bPost)
+          .filter((u) => u === "https://127.0.0.1:59834/health").length;
+        if (retryHealth > aPost && bPost > retryHealth && httpsProbesBeforeB === 1) {
+          coveredTheWindow = true;
+        }
       }
       expect(coveredTheWindow).toBe(true);
     });
