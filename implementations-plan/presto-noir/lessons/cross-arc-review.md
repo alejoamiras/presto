@@ -48,7 +48,18 @@ argument accepted: "not a convergence blocker"). Two new findings, both verified
 | # | Severity | Finding | Fix |
 |---|---|---|---|
 | 1 | Medium | The round-1 `PUBLISHED_VERSION` fallback to the plan's `version_presto` handed a `playground-only` run the NEXT presto publication (e.g. `5.2.0-revision.1`), which does not exist; provenance lookup fails and the deployment stops | Fallback removed: only the version `publish-presto` produced in this run is passed, empty otherwise (the SDK on `testnet`). `presto` is aztec-derived and always publishes when selected, so the plan's version is never a published one. Contract test pins the expression and the absence of the plan output; comment in the workflow. A "behavioural" mode test was not added — every workflow test in the repo is a string contract and there is no expression evaluator |
-| 2 | Medium | `lockfileSlice` included the `typescript` wrapper but not the platform package that carries the compiler binary (`@typescript/typescript-linux-x64`), whose integrity can move under an unchanged wrapper | `include()` follows one level of `optionalDependencies`; test changes the platform entry's integrity alone |
+| 2 | Medium | `lockfileSlice` included the `typescript` wrapper but not the platform package that carries the compiler binary (`@typescript/typescript-linux-x64`), whose integrity can move under an unchanged wrapper | `include()` follows `optionalDependencies` (recursively, revisits guarded); test changes the platform entry's integrity alone |
 
 Gates: `release-plan.test.ts` + `sdk-release-contract.test.ts` 19/19, `bun run lint:actions` ✓,
 `bun run test` exit 0.
+
+Commit 0ff2319.
+
+## Round 3 — 2026-09-08 (`response-2.md`) — converged
+
+> Both fixes are **VERIFIED**. Confidence: **high**. No new material findings. […]
+> **Verdict: converged—the final cross-arc integration pass has no remaining material findings.**
+
+Codex re-ran its reproduction against the real `bun.lock` (the native compiler entry is in the
+slice; an integrity change moves it) and accepted the exact-expression contract test for the
+deployment. Three rounds.
