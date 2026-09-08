@@ -4,104 +4,18 @@
  *
  * This is the highest-value WebDriver test because it exercises concurrent
  * HTTP + GUI interactions that can't be tested with mocked Playwright.
- *
- * On Linux (WebKitGTK), native WebDriver elementClick() returns "Unsupported result type"
- * even though the click fires successfully. We work around this by using JavaScript clicks
- * on Linux while keeping native clicks on macOS.
  */
-import * as os from "node:os";
+import {
+  clickBy,
+  closeExtraWindows,
+  readConfig,
+  removeOriginViaUI,
+  waitForActivePopup,
+  waitForNewWindow,
+} from "./helpers.ts";
 
-import { readConfig } from "./helpers.ts";
-
-const IS_LINUX = os.platform() === "linux";
 const TEST_ORIGIN = "https://test-e2e-webdriver.example.com";
 const PROVE_URL = "http://127.0.0.1:59833/prove";
-
-/**
- * Click an element by CSS selector. On Linux (WebKitGTK), both native elementClick
- * and browser.execute() return "Unsupported result type" — but the click DOES fire.
- * The error occurs because the click handler closes the window (e.g. respond_auth),
- * and the WebDriver response is lost. We catch and ignore these errors.
- */
-async function clickBy(selector: string): Promise<void> {
-  try {
-    if (IS_LINUX) {
-      await browser.execute((sel: string) => {
-        const el = document.querySelector(sel) as HTMLElement;
-        if (!el) throw new Error(`clickBy: element not found for "${sel}"`);
-        el.click();
-      }, selector);
-    } else {
-      const el = await browser.$(selector);
-      await el.click();
-    }
-  } catch (err) {
-    // On WebKitGTK, clicks that close the window return "Unsupported result type"
-    // or "No window could be found" — but the click succeeded. Only swallow these
-    // known errors; re-throw genuine failures (wrong selector, element not found).
-    const msg = String(err);
-    if (
-      !msg.includes("Unsupported result") &&
-      !msg.includes("No window") &&
-      !msg.includes("no such window")
-    ) {
-      throw err;
-    }
-  }
-  await browser.pause(300);
-}
-
-/**
- * Remove the test origin via the Settings UI (Remove button).
- * This triggers the real IPC call which updates both in-memory config and disk.
- */
-async function removeTestOriginViaUI(): Promise<void> {
-  const url = await browser.getUrl();
-  if (!url.includes("settings.html")) {
-    await browser.navigateTo("tauri://localhost/settings.html");
-    await browser.pause(500);
-  }
-
-  const speedLabel = await browser.$("#speed-label");
-  await speedLabel.waitForExist({ timeout: 5000 });
-
-  await browser.refresh();
-  await browser.pause(500);
-
-  const items = await browser.$$(".origin-item");
-  for (const item of items) {
-    const span = await item.$("span");
-    const text = await span.getText();
-    if (text === TEST_ORIGIN) {
-      // Use JS click to trigger IPC — native clicks return malformed response on WebKitGTK
-      await browser.execute((origin: string) => {
-        const items = document.querySelectorAll(".origin-item");
-        for (const li of items) {
-          if (li.querySelector("span")?.textContent === origin) {
-            (li.querySelector("button") as HTMLElement)?.click();
-            return;
-          }
-        }
-      }, TEST_ORIGIN);
-      await browser.pause(500);
-      return;
-    }
-  }
-}
-
-/** Close all windows except Settings, then switch back to Settings. */
-async function closeExtraWindows(settingsHandle: string): Promise<void> {
-  const handles = await browser.getWindowHandles();
-  for (const h of handles) {
-    if (h !== settingsHandle) {
-      await browser.switchToWindow(h);
-      await browser.closeWindow();
-    }
-  }
-  if (handles.includes(settingsHandle)) {
-    await browser.switchToWindow(settingsHandle);
-  }
-}
 
 /**
  * Fire a /prove POST with an unknown origin. The request blocks until the
@@ -118,37 +32,13 @@ function fireProveRequest(): Promise<Response> {
   });
 }
 
-/** Poll getWindowHandles() until a new handle appears (up to 15s). */
-async function waitForNewWindow(existingHandles: string[]): Promise<string | null> {
-  for (let i = 0; i < 30; i++) {
-    await browser.pause(500);
-    const handlesNow = await browser.getWindowHandles();
-    const newHandle = handlesNow.find((h) => !existingHandles.includes(h));
-    if (newHandle) return newHandle;
-  }
-  return null;
-}
-
-/**
- * After switching to the (active) auth window: wait until the SERVER origin renders — C9 (D8) sources the
- * origin from `get_pending_auth`, not the URL, so `#origin` starts as a placeholder and updates async —
- * AND let the C9 (A) click-steal guard's ~700 ms window elapse so the Allow/Deny clicks aren't ignored.
- */
-async function waitForActivePopup(): Promise<void> {
-  await browser.waitUntil(async () => (await browser.$("#origin").getText()) === TEST_ORIGIN, {
-    timeout: 8000,
-    timeoutMsg: "auth popup did not render the server origin",
-  });
-  await browser.pause(900); // let the 700ms click-steal guard elapse
-}
-
 describe("Authorization Flow", () => {
   let settingsHandle: string;
   let pendingProve: Promise<Response> | null = null;
 
   before(async () => {
     settingsHandle = await browser.getWindowHandle();
-    await removeTestOriginViaUI();
+    await removeOriginViaUI(TEST_ORIGIN);
   });
 
   beforeEach(async () => {
@@ -166,7 +56,7 @@ describe("Authorization Flow", () => {
   after(async () => {
     try {
       await closeExtraWindows(settingsHandle);
-      await removeTestOriginViaUI();
+      await removeOriginViaUI(TEST_ORIGIN);
     } catch (e) {
       console.error("Auth flow cleanup failed:", e);
     }
@@ -185,7 +75,7 @@ describe("Authorization Flow", () => {
     // C9 (D8/A): the popup now loads its origin async (get_pending_auth), so wait for the page to render
     // (server origin) + the click-guard to elapse BEFORE asserting title/content — getTitle() on the
     // not-yet-loaded page returns "" (this ordering was the CI failure).
-    await waitForActivePopup();
+    await waitForActivePopup(TEST_ORIGIN);
     expect(await browser.getTitle()).toBe("Authorize Site");
     expect(await browser.$("#origin").getText()).toBe(TEST_ORIGIN);
 
@@ -208,7 +98,7 @@ describe("Authorization Flow", () => {
 
     await browser.refresh();
     await browser.pause(500);
-    await removeTestOriginViaUI();
+    await removeOriginViaUI(TEST_ORIGIN);
   });
 
   it("Deny returns 403, does not persist the origin, and cools down re-requests (B2/F9)", async () => {
@@ -228,7 +118,7 @@ describe("Authorization Flow", () => {
     await browser.switchToWindow(authWindowHandle!);
 
     // C9 (D8/A): wait for the server origin to render (get_pending_auth) + the click-guard to elapse.
-    await waitForActivePopup();
+    await waitForActivePopup(TEST_ORIGIN);
     await clickBy("#deny");
 
     const proveResponse = await pendingProve;

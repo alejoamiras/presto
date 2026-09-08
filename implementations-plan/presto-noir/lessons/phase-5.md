@@ -51,4 +51,4 @@ Date: 2026-09-08.
 x86_64-pc-windows-gnu --lib` ✓ · `bun run --cwd packages/presto test:unit` (105) ✓ ·
 `bun run test:scripts` (125) ✓ · `cargo test --test ultra_honk_real_bb -- --ignored` with
 `BB_BINARY_PATH` (4) ✓ · local smoke against `presto-server --port 59901 --allow-all` with a private
-`PRESTO_HOME`: 4/4 ok ✓ · `presto.yml` dispatch on the branch: see the run link appended below.
+`PRESTO_HOME`: 4/4 ok ✓ · `presto.yml` dispatch on the branch (run 34173789777, commit 5fbeac9): `UltraHonk Real bb` ✓ — https://github.com/alejoamiras/presto/actions/runs/34173789777

@@ -3,11 +3,13 @@
  * HTTP smoke for `POST /prove/ultra-honk` against a running presto (headless or desktop): proves the
  * committed Noir fixtures, checks the bytes against their bb.js WASM references, and verifies them
  * with the native bb. The first real HTTP consumer of the route, so arc 1 is proven end to end
- * without any SDK.
+ * without any SDK. The exported helpers are runtime-neutral (the WebDriver spec imports them under
+ * Node); only the entrypoint and `defaultBbPath` need Bun.
  *
  *   PRESTO_URL       base URL (default http://127.0.0.1:59833)
  *   BB_BINARY_PATH   the bb used for `bb verify` (default: the installed @aztec/bb.js native binary)
  */
+import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -108,9 +110,9 @@ export function verifyNatively(
     writeFileSync(join(dir, "proof"), proof);
     writeFileSync(join(dir, "public_inputs"), publicInputs);
     writeFileSync(join(dir, "vk"), vk);
-    const result = Bun.spawnSync(
+    const result = spawnSync(
+      bb,
       [
-        bb,
         "verify",
         "--scheme",
         "ultra_honk",
@@ -123,9 +125,9 @@ export function verifyNatively(
         "-t",
         target,
       ],
-      { stdout: "pipe", stderr: "pipe" },
+      { stdio: "ignore" },
     );
-    return result.exitCode === 0;
+    return result.status === 0;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

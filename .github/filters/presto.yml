@@ -29,6 +29,8 @@ desktop_runtime:
   - 'packages/presto/scripts/bb-version.ts'
   - 'packages/presto/scripts/build-frontend.ts'
   - 'packages/presto/scripts/copy-bb*.ts'
+  - 'packages/presto/scripts/ultra-honk-smoke*.ts'
+  - 'fixtures/noir/**'
   - 'scripts/download-bb*.ts'
   - 'scripts/__fixtures__/**'
   - 'packages/presto/package.json'
