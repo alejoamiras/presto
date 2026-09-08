@@ -8,6 +8,7 @@ const read = (rel: string) => readFileSync(resolve(repository, rel), "utf8");
 const reusable = read(".github/workflows/_ts-package-ci.yml");
 const sdk = read(".github/workflows/sdk.yml");
 const sdkCore = read(".github/workflows/sdk-core.yml");
+const sdkNoir = read(".github/workflows/sdk-noir.yml");
 const app = read(".github/workflows/app.yml");
 const publish = read(".github/workflows/_publish-npm.yml");
 
@@ -48,12 +49,45 @@ describe("TypeScript package CI contract", () => {
     }
   });
 
-  test("per-package PR gates are thin callers of the reusable", () => {
-    expect(sdkCore).toContain("uses: ./.github/workflows/_ts-package-ci.yml");
-    expect(sdkCore).toContain("package: presto-core");
-    expect(sdkCore).toContain("'packages/sdk-core/**'");
-    expect(sdkCore).toContain("'.github/workflows/_ts-package-ci.yml'");
-    expect(sdkCore).not.toContain("e2e_presto");
+  test("the Noir adapter's production gates run pre-merge: WASM identity and a live presto from this ref", () => {
+    for (const job of ["identity:", "live:"]) expect(reusable).toContain(`\n  ${job}\n`);
+    expect(reusable).toContain("test:identity");
+    expect(reusable).toContain("test:e2e");
+    expect(reusable).toContain("uses: ./.github/actions/start-headless-presto");
+    // The live presto must serve the requested version from the sidecar, never download it.
+    expect(reusable).toContain(
+      'echo "AZTEC_BB_VERSION=$(cat packages/presto/src-tauri/AZTEC_VERSION)"',
+    );
+    expect(reusable).toMatch(/aztec-bb-version: \$\{\{ env\.AZTEC_BB_VERSION \}\}/);
+    expect(reusable).toContain(
+      "cargo build --locked --manifest-path packages/presto/server/Cargo.toml",
+    );
+    expect(sdkNoir).toContain("identity: true");
+    expect(sdkNoir).toContain("live: true");
+    for (const path of ["'packages/presto/core/**'", "'packages/presto/server/**'"]) {
+      expect(sdkNoir).toContain(path);
+    }
+    expect(sdk).toMatch(/identity: \$\{\{ inputs\.package == 'presto-noir' \}\}/);
+    expect(sdk).toMatch(/live: \$\{\{ inputs\.package == 'presto-noir' \}\}/);
+    expect(sdkCore).not.toMatch(/identity|live:/);
+  });
+
+  test.each([
+    ["sdk-core.yml", sdkCore, "presto-core", ["'packages/sdk-core/**'"]],
+    [
+      "sdk-noir.yml",
+      sdkNoir,
+      "presto-noir",
+      ["'packages/sdk-noir/**'", "'packages/sdk-core/**'", "'fixtures/noir/**'"],
+    ],
+  ])("%s is a thin caller of the reusable", (_name, workflow, key, paths) => {
+    expect(workflow).toContain("uses: ./.github/workflows/_ts-package-ci.yml");
+    expect(workflow).toContain(`package: ${key}`);
+    for (const path of [...paths, "'.github/workflows/_ts-package-ci.yml'"]) {
+      expect(workflow).toContain(path);
+    }
+    expect(workflow).not.toContain("e2e_presto");
+    expect(workflow).not.toContain("id-token");
   });
 
   test("the app pipeline re-runs when core changes", () => {

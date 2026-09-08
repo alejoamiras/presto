@@ -30,7 +30,7 @@ describe("npm release workflow contract", () => {
       expect(block).toContain("uses: ./.github/workflows/_publish-npm.yml");
       expect(block).toContain("id-token: write");
     }
-    for (const name of ["assert-main", "plan", "deploy-app"]) {
+    for (const name of ["assert-main", "plan", "noir-gates", "deploy-app"]) {
       expect(job(release, name)).not.toContain("id-token");
     }
     expect(release.match(/id-token: write/g)?.length).toBe(publishJobs.length);
@@ -62,6 +62,23 @@ describe("npm release workflow contract", () => {
         "(needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped')",
       );
     }
+    // Noir's production gates run at the release SHA before it publishes; presto publishes last so
+    // the playground deployment sees both adapters on the registry.
+    const gates = job(release, "noir-gates");
+    expect(gates).toContain("uses: ./.github/workflows/_ts-package-ci.yml");
+    expect(gates).toContain("package: presto-noir");
+    expect(gates).toContain("identity: true");
+    expect(gates).toContain("live: true");
+    expect(gates).toContain("needs.plan.outputs.publish_presto_noir == 'true'");
+    const noir = job(release, "publish-noir");
+    expect(noir).toContain("noir-gates]");
+    expect(noir).toContain("needs.noir-gates.result == 'success'");
+    const presto = job(release, "publish-presto");
+    expect(presto).toContain("publish-noir]");
+    // A selected noir whose gates failed skips its publication; that skip must not release presto.
+    expect(presto).toContain(
+      "(needs.publish-noir.result == 'success' || (needs.publish-noir.result == 'skipped' && needs.plan.outputs.publish_presto_noir != 'true'))",
+    );
     const plan = job(release, "plan");
     expect(plan).toContain("bun scripts/release-plan.ts");
     // Release records are read through `gh`, reuse runs npm's signature audit: token + the publish npm.

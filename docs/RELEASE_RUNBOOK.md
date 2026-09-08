@@ -269,6 +269,8 @@ The `plan` job (`scripts/release-plan.ts`) decides before anything is published:
 
 After a partial publish (a dependency published, an adapter failed), rerun with the same selection: the published dependency is reused and only the remaining packages publish.
 
+Publish order is core → `presto-noir` → `presto`, each adapter's consumer profile rerun against the registry core before it publishes. `@alejoamiras/presto` keeps the sandbox e2e (native chonk parity) as its gate; `@alejoamiras/presto-noir` has its own production gates at the release SHA, run by the `noir-gates` job through `_ts-package-ci.yml`: bb.js WASM must reproduce the committed Noir fixtures byte for byte, and the adapter must prove natively (`fallback: "none"`) against a headless presto built from that commit with the real `bb`. Either failing blocks the adapter's publish and, through the order above, the SDK's.
+
 `testnet` is the npm candidate dist-tag used by the public testnet playground. It is not an npm network or a lesser form of the package. There is no separate `mainnet` publish path today: accepted candidates are deliberately promoted from `testnet` to npm's default `latest` tag. The old npm nightly publish path is retired; the historical `nightlies` dist-tag is left untouched.
 
 ### Candidate version and gates

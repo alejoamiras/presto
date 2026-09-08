@@ -16,6 +16,16 @@ on:
         required: false
         type: boolean
         default: false
+      identity:
+        description: "Run the package's `test:identity` (bb.js WASM must reproduce the committed Noir fixtures)"
+        required: false
+        type: boolean
+        default: false
+      live:
+        description: "Run the package's `test:e2e` against a headless presto built from this ref with the real bb"
+        required: false
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -157,3 +167,87 @@ jobs:
       # against the local sandbox — not just the WASM fallback. This is the standing parity gate that
       # the SDK-only release relies on (proves the deployed presto handles the pinned bb version).
       build_presto: true
+
+  # bb.js WASM must reproduce the committed fixtures byte for byte: the native route is tested
+  # against those same bytes in presto.yml, so this is what makes the two provers interchangeable.
+  identity:
+    name: WASM Identity
+    if: inputs.identity
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+      - name: Cache the bb CRS
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bb-crs
+          key: bb-crs-${{ runner.os }}-${{ hashFiles('packages/sdk/package.json') }}
+      - run: bun run --cwd "${{ needs.resolve.outputs.dir }}" test:identity
+
+  # The adapter against a headless presto built from THIS ref with the real bb sidecar, on an
+  # isolated port with a private PRESTO_HOME. The suite fails without PRESTO_URL, so a missing
+  # environment can never pass as a skip.
+  live:
+    name: Live Presto
+    if: inputs.live
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-cache-key: presto-ultra-honk-x86_64-unknown-linux-gnu
+          rust-workspaces: |
+            packages/presto/core -> target
+            packages/presto/server -> target
+          rust-components: ""
+          # Headless deps only; the prebuild copies the real bb sidecar (a node_modules copy on Linux).
+          install-tauri-system-deps: "false"
+          run-prebuild: "true"
+      - name: Cache the bb CRS
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bb-crs
+          key: bb-crs-${{ runner.os }}-${{ hashFiles('packages/sdk/package.json') }}
+      # The prebuild wrote the sidecar's Aztec version; advertising it makes a request for that version
+      # use the sidecar instead of downloading bb and verifying it through the (rate-limited) GitHub API.
+      - name: Point at the sidecar bb
+        run: |
+          echo "BB_BINARY_PATH=$GITHUB_WORKSPACE/packages/presto/src-tauri/binaries/bb-x86_64-unknown-linux-gnu" >> "$GITHUB_ENV"
+          echo "AZTEC_BB_VERSION=$(cat packages/presto/src-tauri/AZTEC_VERSION)" >> "$GITHUB_ENV"
+      - name: Build headless server
+        run: cargo build --locked --manifest-path packages/presto/server/Cargo.toml
+      - name: Start an isolated headless presto
+        id: presto
+        uses: ./.github/actions/start-headless-presto
+        with:
+          binary: packages/presto/server/target/debug/presto-server
+          port: "59910"
+          presto-home: ${{ runner.temp }}/presto-home-live
+          aztec-bb-version: ${{ env.AZTEC_BB_VERSION }}
+      - name: Adapter e2e against the live presto
+        env:
+          PRESTO_URL: ${{ steps.presto.outputs.url }}
+        run: bun run --cwd "${{ needs.resolve.outputs.dir }}" test:e2e
+      - name: Stop the headless instance
+        if: always()
+        run: kill "${{ steps.presto.outputs.pid }}" 2>/dev/null || true
+      - name: Upload presto log
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: presto-live-log-${{ inputs.package }}
+          path: ${{ runner.temp }}/presto-home-live/server.log
+          if-no-files-found: ignore
+          retention-days: 7

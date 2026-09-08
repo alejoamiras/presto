@@ -1,0 +1,38 @@
+{
+  "name": "@alejoamiras/presto-noir",
+  "version": "1.0.0",
+  "description": "Native UltraHonk proving for any Noir circuit through the local Presto app: a drop-in for @aztec/bb.js's UltraHonkBackend that falls back to WASM.",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/alejoamiras/presto",
+    "directory": "packages/sdk-noir"
+  },
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": "./src/index.ts",
+  "files": [
+    "src",
+    "dist"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc",
+    "prepublishOnly": "bun run test:lint && bun run build",
+    "test:e2e": "bun test --preload ./e2e/e2e-setup.ts e2e/native.test.ts",
+    "test:identity": "bun test --preload ./e2e/e2e-setup.ts e2e/wasm-identity.test.ts",
+    "test:lint": "tsc --noEmit --emitDeclarationOnly false && tsc --noEmit -p tsconfig.e2e.json",
+    "test:unit": "bun test --parallel src/"
+  },
+  "dependencies": {
+    "@alejoamiras/presto-core": "workspace:*",
+    "@logtape/logtape": "^2.3.2"
+  },
+  "devDependencies": {
+    "@aztec/bb.js": "5.2.0"
+  },
+  "peerDependencies": {
+    "@aztec/bb.js": "5.2.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
