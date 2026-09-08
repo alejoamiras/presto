@@ -53,7 +53,9 @@ if (outcome.kind === "native") {
 
 `prove` runs one request under the transport rules every adapter inherits: HTTPS-only by default in
 browsers (pages and Workers), a working HTTPS endpoint is never downgraded to plaintext, and a
-witness is never sent to an endpoint that was not itself probed. Every condition the presto signals
+witness is never sent to an endpoint that was not itself probed: each attempt posts to the protocol
+that answered its own health check, so a concurrent proof's HTTP demotion cannot redirect it. Every
+condition the presto signals
 comes back as `{ kind: "fallback", reason }` — offline, denied, cooldown, version mismatch, an app
 that does not advertise the route's scheme (nothing is sent), a `404` from one that does, capacity
 (`408`/`413`/`429`/`503`), a body over the cap. Only a

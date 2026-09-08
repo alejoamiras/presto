@@ -1,6 +1,6 @@
 {
   "name": "@alejoamiras/presto-noir",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Native UltraHonk proving for any Noir circuit through the local Presto app: a drop-in for @aztec/bb.js's UltraHonkBackend that falls back to WASM.",
   "repository": {
     "type": "git",

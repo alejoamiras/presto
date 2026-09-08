@@ -1,6 +1,6 @@
 {
   "name": "@alejoamiras/presto-core",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Transport, endpoint policy, and status client for the Presto native prover, shared by every Presto SDK adapter.",
   "repository": {
     "type": "git",

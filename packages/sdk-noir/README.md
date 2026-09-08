@@ -126,6 +126,7 @@ adapter must prove natively against a headless presto built with the real `bb`):
 
 | `@alejoamiras/presto-noir` | `@aztec/bb.js` (peer, exact) | `bbVersion` (default) | Presto |
 |---|---|---|---|
+| 1.0.1 | 5.2.0 | 5.2.0 | ≥ 1.1.0 |
 | 1.0.0 | 5.2.0 | 5.2.0 | ≥ 1.1.0 |
 
 `TESTED_BB_VERSIONS` is exported; a `bbVersion` outside it is refused unless
