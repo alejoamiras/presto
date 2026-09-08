@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { SDK_PACKAGE, SDK_VERSION_PATTERN } from "./sdk-release-verification.ts";
+import { isValidVersion, NPM_PACKAGES, type NpmPackage, packageFromArgs } from "./npm-packages.ts";
 
 interface SignatureAudit {
   verified?: Array<{
@@ -21,41 +21,46 @@ function run(command: string[], cwd: string): string {
   return result.stdout.toString();
 }
 
-export function hasVerifiedSdkProvenance(report: SignatureAudit, version: string): boolean {
+export function hasVerifiedSdkProvenance(
+  report: SignatureAudit,
+  version: string,
+  pkg: NpmPackage = NPM_PACKAGES.presto,
+): boolean {
   return Boolean(
     report.verified?.some(
       (item) =>
-        item.name === SDK_PACKAGE &&
+        item.name === pkg.name &&
         item.version === version &&
         item.attestations?.provenance?.predicateType === "https://slsa.dev/provenance/v1",
     ),
   );
 }
 
-export async function verifySdkPackageSignatures(version: string): Promise<void> {
-  if (!SDK_VERSION_PATTERN.test(version)) throw new Error(`invalid SDK version ${version}`);
+export async function verifySdkPackageSignatures(
+  version: string,
+  pkg: NpmPackage = NPM_PACKAGES.presto,
+): Promise<void> {
+  if (!isValidVersion(pkg, version)) throw new Error(`invalid ${pkg.name} version ${version}`);
   const directory = await mkdtemp(join(tmpdir(), "presto-sdk-signature-audit-"));
   try {
     await Bun.write(
       join(directory, "package.json"),
-      `${JSON.stringify({ private: true, dependencies: { [SDK_PACKAGE]: version } }, null, 2)}\n`,
+      `${JSON.stringify({ private: true, dependencies: { [pkg.name]: version } }, null, 2)}\n`,
     );
     run(
       ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error"],
       directory,
     );
     const installed = run(
-      ["node", "-p", "require('./node_modules/@alejoamiras/presto/package.json').version"],
+      ["node", "-p", `require('./node_modules/${pkg.name}/package.json').version`],
       directory,
     ).trim();
     if (installed !== version) throw new Error(`installed ${installed}, expected ${version}`);
     const report = JSON.parse(
       run(["npm", "audit", "signatures", "--json", "--include-attestations"], directory),
     ) as SignatureAudit;
-    if (!hasVerifiedSdkProvenance(report, version)) {
-      throw new Error(
-        `npm did not cryptographically verify provenance for ${SDK_PACKAGE}@${version}`,
-      );
+    if (!hasVerifiedSdkProvenance(report, version, pkg)) {
+      throw new Error(`npm did not cryptographically verify provenance for ${pkg.name}@${version}`);
     }
   } finally {
     await rm(directory, { recursive: true, force: true });
@@ -63,11 +68,14 @@ export async function verifySdkPackageSignatures(version: string): Promise<void>
 }
 
 if (import.meta.main) {
-  const version = process.argv[2];
+  const { pkg, rest } = packageFromArgs(process.argv.slice(2));
+  const version = rest[0];
   if (!version) {
-    console.error("usage: bun scripts/verify-sdk-package-signatures.ts <version>");
+    console.error(
+      "usage: bun scripts/verify-sdk-package-signatures.ts [--package <key>] <version>",
+    );
     process.exit(1);
   }
-  await verifySdkPackageSignatures(version);
-  console.log(`verified registry signatures and SLSA provenance for ${SDK_PACKAGE}@${version}`);
+  await verifySdkPackageSignatures(version, pkg);
+  console.log(`verified registry signatures and SLSA provenance for ${pkg.name}@${version}`);
 }

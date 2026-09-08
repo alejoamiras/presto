@@ -1,20 +1,36 @@
 #!/usr/bin/env bash
-# B7: consume the PUBLISHED SDK tarball the way a real dApp does — default `npm install` on a fresh Node —
-# and prove two things nothing else in the repo checks:
-#   1. the packed `dist` exports/types actually RESOLVE + typecheck (the playground uses `workspace:*`, i.e.
-#      the source `exports`, so a broken publish rewrite / missing dist would ship undetected);
-#   2. the F13 deps-vs-peers decision: default npm's `@aztec/stdlib` graph for an EXACT-version host is a
-#      SINGLETON (exact-pinned deps already deliver "one @aztec graph"), and a CONFLICTING-version host is
-#      recorded. Peers are not better here — on a skew they ERESOLVE-fail the install; reproducible evidence
-#      lives in implementations-plan/v2-release-train/evidence/f13-peer-vs-deps.sh + the F13 ledger entry.
+# Consume a PUBLISHED tarball the way a real dApp does — default `npm install` on a fresh Node — and
+# prove two things nothing else in the repo checks:
+#   1. the packed `dist` exports/types RESOLVE, typecheck, and load (workspace consumers use the source
+#      `exports`, so a broken publish rewrite or missing dist would otherwise ship undetected);
+#   2. for a package that pins `@aztec/stdlib`: default npm resolves an EXACT-version host to a SINGLETON
+#      `@aztec/stdlib` graph. A conflicting-version host is recorded for comparison only.
 #
-#   scripts/sdk-tarball-consumer.sh <absolute-path-to-tarball>
+# The host's files come from the package's profile under scripts/tarball-consumer/<profile>/ (see
+# scripts/npm-packages.ts): index.ts, runtime-check.mjs, tsconfig.json, and optional
+# host-dependencies.json. The tarball under test is always the host's own copy of the package; a
+# profile extra cannot replace it with a registry version.
+#
+#   scripts/sdk-tarball-consumer.sh <absolute-path-to-tarball> [package-key]
 set -euo pipefail
 
-TARBALL="${1:?usage: sdk-tarball-consumer.sh <tarball>}"
+TARBALL="${1:?usage: sdk-tarball-consumer.sh <tarball> [package-key]}"
+PACKAGE_KEY="${2:-presto}"
 [ -f "$TARBALL" ] || { echo "tarball not found: $TARBALL" >&2; exit 2; }
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
+
+# shellcheck disable=SC2016  # single quotes are deliberate: the JS must not shell-expand
+read -r PACKAGE_NAME PROFILE < <(bun -e '
+  import { CONSUMER_PROFILE_ROOT, resolvePackage } from "./scripts/npm-packages.ts";
+  const pkg = resolvePackage(process.argv[1]);
+  console.log(`${pkg.name} ${CONSUMER_PROFILE_ROOT}/${pkg.consumerProfile}`);
+' "$PACKAGE_KEY")
+PROFILE_DIR="$REPO_ROOT/$PROFILE"
+[ -d "$PROFILE_DIR" ] || { echo "consumer profile not found: $PROFILE_DIR" >&2; exit 2; }
+EXTRAS=""
+[ -f "$PROFILE_DIR/host-dependencies.json" ] && EXTRAS="$PROFILE_DIR/host-dependencies.json"
 
 # Count DISTINCT @aztec/stdlib install locations in a consumer dir (1 = singleton graph).
 count_stdlib() {
@@ -23,107 +39,41 @@ count_stdlib() {
 }
 
 make_host() {
-  # make_host <dir> <aztec-version>
-  local dir="$1" aztec="$2"
+  # make_host <dir> [aztec-version]
+  local dir="$1" aztec="${2:-}"
   mkdir -p "$dir"
-  cat > "$dir/package.json" <<JSON
-{
-  "name": "host-$aztec",
-  "version": "0.0.0",
-  "private": true,
-  "dependencies": {
-    "@alejoamiras/presto": "file:$TARBALL",
-    "@aztec/stdlib": "$aztec"
-  }
-}
-JSON
+  bun "$REPO_ROOT/scripts/tarball-consumer/host-manifest.ts" "$dir" "$TARBALL" "$PACKAGE_NAME" "$aztec" "$EXTRAS"
+  cp "$PROFILE_DIR/tsconfig.json" "$PROFILE_DIR/index.ts" "$PROFILE_DIR/runtime-check.mjs" "$dir/"
 }
 
-# "Exact host" means: the host pins the SAME @aztec/stdlib version the SDK ships with. Derive it
-# from the TARBALL UNDER TEST — the artifact's own manifest — never a hardcode (which silently
-# manufactures the very skew this gate exists to catch after every @aztec bump) and never the
-# workspace manifest (which skews whenever the script is pointed
-# at a previously-built tarball). Fails fast, with the reason, if the pin is absent — e.g. if the
-# F13 deps-vs-peers decision is ever revisited and @aztec/stdlib leaves `dependencies`.
-# shellcheck disable=SC2016  # single quotes are deliberate: the node program must not shell-expand
-AZTEC_PIN="$(tar -xzOf "$TARBALL" package/package.json | node -e '
-  const manifest = JSON.parse(require("fs").readFileSync(0, "utf8"));
-  const pin = (manifest.dependencies ?? {})["@aztec/stdlib"];
-  if (!pin) {
-    console.error("FATAL: tarball manifest has no dependencies[\"@aztec/stdlib\"] — the exact-host pin cannot be derived");
-    process.exit(1);
-  }
-  // F13 invariant: the SDK ships EXACT pins. A range/alias here (^5.2.0, npm:...) could still
-  // resolve to a singleton while silently weakening the exact-pin contract this gate proves.
-  // Canonical semver.org expression (no ranges; rejects empty identifiers and leading zeros —
-  // npm treats malformed specs like "5.2.0-alpha..x" as mutable TAGS, the opposite of a pin).
-  const EXACT_SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
-  if (!EXACT_SEMVER.test(pin)) {
-    console.error(`FATAL: tarball pins @aztec/stdlib as "${pin}" — not an exact semver; the F13 exact-pin invariant is broken`);
-    process.exit(1);
-  }
-  console.log(pin);
-')"
+# The exact-host pin comes from the ARTIFACT UNDER TEST (scripts/tarball-consumer/exact-pin.ts): an
+# aztec-derived package without it fails there; a package that does not ship the dependency gets a
+# plain host and no singleton gate.
+AZTEC_PIN="$(bun "$REPO_ROOT/scripts/tarball-consumer/exact-pin.ts" --package "$PACKAGE_KEY" "$TARBALL")"
 
-echo "=== exact host ($AZTEC_PIN): the decisive F13 case + tarball resolution ==="
+echo "=== exact host (${AZTEC_PIN:-no @aztec/stdlib pin}): tarball resolution ==="
 EXACT="$WORK/exact-host"
 make_host "$EXACT" "$AZTEC_PIN"
-cat > "$EXACT/tsconfig.json" <<'JSON'
-{
-  "compilerOptions": {
-    "module": "nodenext",
-    "moduleResolution": "nodenext",
-    "strict": true,
-    "noEmit": true,
-    "skipLibCheck": true,
-    "types": []
-  },
-  "files": ["index.ts"]
-}
-JSON
-# Exercise the FULL published surface — runtime values + types — so a broken barrel/exports/types fails.
-cat > "$EXACT/index.ts" <<'TS'
-import {
-  PrestoProver,
-  PrestoHttpError,
-  PRESTO_API_VERSION,
-} from "@alejoamiras/presto";
-import type { PrestoStatus, PrestoPhase } from "@alejoamiras/presto";
-
-const _prover: typeof PrestoProver = PrestoProver;
-const _err: typeof PrestoHttpError = PrestoHttpError;
-const _api: number = PRESTO_API_VERSION;
-const _phase: PrestoPhase = "version-mismatch";
-function _use(s: PrestoStatus): boolean {
-  return s.available && (s.appVersion !== undefined || _api > 0) && _phase.length > 0 && !!_prover && !!_err;
-}
-void _use;
-TS
-
 ( cd "$EXACT" && npm install --no-audit --no-fund --loglevel=error )
+
+echo "--- typecheck the consumer against the PACKED dist (resolves the 'types' condition) ---"
+# `--package=` is required: `typescript` ships both `tsc` and `tsserver`, so `npx typescript` cannot pick a binary.
+( cd "$EXACT" && npx --yes --package=typescript@5.9 tsc --noEmit -p tsconfig.json )
+
+echo "--- RUNTIME import: resolve + load the packed dist 'default' export ---"
+( cd "$EXACT" && node runtime-check.mjs )
+
+if [ -z "$AZTEC_PIN" ]; then
+  echo "OK: packed tarball resolves, typechecks, and loads (no @aztec/stdlib dependency: singleton gate not applicable)"
+  exit 0
+fi
+
 echo "--- npm ls @aztec/stdlib (exact host) ---"
 ( cd "$EXACT" && npm ls @aztec/stdlib || true )
 EXACT_COUNT="$(count_stdlib "$EXACT")"
 echo "exact host @aztec/stdlib install locations: $EXACT_COUNT"
 
-echo "--- typecheck the consumer against the PACKED dist (resolves the 'types' condition) ---"
-# `--package=` is required: `typescript` ships both `tsc` and `tsserver`, so `npx typescript` cannot pick a
-# binary ("could not determine executable to run"). (codex B7 #1)
-( cd "$EXACT" && npx --yes --package=typescript@5.9 tsc --noEmit -p tsconfig.json )
-
-echo "--- RUNTIME import: resolve + load the packed dist 'default' export (types-check can't — codex #2) ---"
-cat > "$EXACT/runtime-check.mjs" <<'MJS'
-import { PrestoProver, PrestoHttpError, PRESTO_API_VERSION } from "@alejoamiras/presto";
-if (typeof PrestoProver !== "function") throw new Error("PrestoProver missing from dist");
-if (typeof PrestoHttpError !== "function") throw new Error("PrestoHttpError missing from dist");
-if (typeof PRESTO_API_VERSION !== "number") throw new Error("PRESTO_API_VERSION missing from dist");
-// The typed error must actually be `instanceof Error` (extends Error), or `catch` narrowing breaks.
-if (!(new PrestoHttpError(400, "invalid_version") instanceof Error)) throw new Error("PrestoHttpError is not an Error");
-console.log("runtime import OK: dist exports resolve and load");
-MJS
-( cd "$EXACT" && node runtime-check.mjs )
-
-echo "=== conflicting host (5.0.0): recorded for the F13 ledger (informational) ==="
+echo "=== conflicting host (5.0.0): informational ==="
 CONFLICT="$WORK/conflict-host"
 make_host "$CONFLICT" "5.0.0"
 ( cd "$CONFLICT" && npm install --no-audit --no-fund --loglevel=error ) || echo "conflict host install returned non-zero (ERESOLVE?) — recorded"
@@ -131,9 +81,7 @@ echo "--- npm ls @aztec/stdlib (conflict host) ---"
 ( cd "$CONFLICT" && npm ls @aztec/stdlib || true )
 echo "conflict host @aztec/stdlib install locations: $(count_stdlib "$CONFLICT")"
 
-# The decisive gate: the exact host — the supported case — MUST resolve to a single @aztec/stdlib. The
-# conflict host is diagnostic only: default npm nests a duplicate here (deps degrade gracefully), whereas
-# peers would ERESOLVE-fail the install — see the F13 ledger entry + evidence/f13-peer-vs-deps.sh.
+# The decisive gate: the exact host — the supported case — MUST resolve to a single @aztec/stdlib.
 if [ "$EXACT_COUNT" != "1" ]; then
   echo "::error::exact-host resolved $EXACT_COUNT copies of @aztec/stdlib; expected a singleton graph" >&2
   exit 1
