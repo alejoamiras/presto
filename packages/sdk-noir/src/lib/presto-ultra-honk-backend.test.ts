@@ -291,6 +291,26 @@ describe("PrestoUltraHonkBackend", () => {
     expect(provided.destroy).not.toHaveBeenCalled();
   });
 
+  test("destroy during initialisation still releases the api the factory is about to create", async () => {
+    const wasmVk = spyOn(bbJs.UltraHonkBackend.prototype, "getVerificationKey").mockResolvedValue(
+      new Uint8Array([7]),
+    );
+    try {
+      const owned = fakeApi();
+      const factory = mock(async () => owned);
+      const { backend: b } = backend({}, factory as unknown as Barretenberg);
+      // The WASM path is initialising (peer import in flight); the factory has not run yet.
+      const pending = b.getVerificationKey({ verifierTarget: "evm" });
+      expect(factory).not.toHaveBeenCalled();
+      await b.destroy();
+      expect(factory).toHaveBeenCalledTimes(1);
+      expect(owned.destroy).toHaveBeenCalledTimes(1);
+      expect(await pending).toEqual(new Uint8Array([7]));
+    } finally {
+      wasmVk.mockRestore();
+    }
+  });
+
   test("bbVersion: the tested default, a refused stranger, and the explicit opt-in", async () => {
     expect(() => backend({ bbVersion: "5.3.0" })).toThrow("not a tested pairing");
     expect(() => backend({ bbVersion: "latest" })).toThrow("Invalid bbVersion");

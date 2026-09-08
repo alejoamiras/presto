@@ -22,6 +22,8 @@ import { resolveVerifierTarget } from "./verifier-target.js";
 
 type OnPhase = (phase: PrestoPhase, data?: PrestoPhaseData) => void;
 
+const noop = () => undefined;
+
 /**
  * A `Barretenberg` instance, or a factory for one. A factory is called only when WASM is actually
  * needed (a fallback, `verifyProof`, a cold `getVerificationKey`), so a dApp with a running Presto
@@ -183,12 +185,16 @@ export class PrestoUltraHonkBackend implements UltraHonkSurface {
 
   /** Release the WASM backend this instance created from a factory; a caller-provided one is untouched. */
   async destroy(): Promise<void> {
+    // An initialisation still awaiting the peer import calls the factory only afterwards; wait for
+    // it so the API it is about to create is the one released here, not one that outlives us.
+    const pending = this.#wasm;
+    this.#wasm = null;
+    if (pending) await pending.then(noop, noop);
     const api = this.#api;
     this.#api = null;
-    this.#wasm = null;
     if (this.#ownsApi && api) {
       this.#ownsApi = false;
-      await api.then((instance) => instance.destroy());
+      await api.then((instance) => instance.destroy(), noop);
     }
   }
 

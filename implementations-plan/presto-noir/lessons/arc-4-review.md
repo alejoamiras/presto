@@ -23,4 +23,13 @@ suspect. All verified (codex reproduced #2, #4, and #5) and all accepted.
 | 8 | Suspect (moderate) | Only `noir-recursive-no-zk` had cross-backend evidence; the default ZK target no consumer has to name was never proven native → WASM-verified | Live test: default options prove natively (`transmit`, no `fallback`) and verify in WASM; no byte comparison (ZK proofs are randomised) |
 
 Gates after the fixes: adapter unit 37 ✓, root scripts 178 ✓, live suite 5/5 against the local
-headless presto (+1 skipped W cross-check), typecheck ✓, actionlint ✓.
+headless presto (+1 skipped W cross-check), typecheck ✓, actionlint ✓. Commit ee59714.
+
+## Round 2 — 2026-09-08 (`response-1.md`)
+
+All eight round-1 fixes re-verified; one new material finding, reproduced by codex with the real
+bb.js constructor.
+
+| # | Severity | Finding | Fix |
+|---|---|---|---|
+| 1 | Medium | Loading bb.js before the factory (round-1 #6) opened a window: `destroy()` during the peer import saw no API and returned, then the pending initialiser called the factory and created an API teardown missed (a component unmounting mid-initialisation leaks WASM workers) | `destroy()` first awaits a pending initialisation (result and rejection both absorbed), then releases the owned API; regression test: `getVerificationKey()` then immediate `destroy()` → factory called once, its API destroyed once, the pending call still resolves |
