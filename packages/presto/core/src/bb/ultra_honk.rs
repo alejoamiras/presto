@@ -199,7 +199,7 @@ pub(crate) struct UltraHonkWorkspace {
 
 /// bb.exe 5.2.0 reads the `-k` file in text mode: it stops at the first 0x1A byte (a 3680-byte key
 /// came back as 983) and would fold CRLF. Bytecode and witness are read in binary mode. So on Windows
-/// a client key is set aside and bb recomputes it; the result is the same proof.
+/// a client key is set aside and bb recomputes it: a proof for the same circuit, under the true key.
 const BB_READS_KEY_IN_TEXT_MODE: bool = cfg!(windows);
 
 impl UltraHonkWorkspace {

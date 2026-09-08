@@ -68,7 +68,8 @@ fn resolve_directory(path: &std::path::Path, cwd: &std::path::Path) -> PathBuf {
         }
         existing -= 1;
     };
-    // The remainder does not exist yet, so fold it the way `create_dir_all` would lay it out.
+    // Fold the remainder the way `create_dir_all` would lay it out; `..` can step back onto an
+    // existing symlink, so re-resolve whenever the folded path exists again.
     for component in &components[existing..] {
         match component {
             Component::ParentDir => {
@@ -76,6 +77,9 @@ fn resolve_directory(path: &std::path::Path, cwd: &std::path::Path) -> PathBuf {
             }
             Component::CurDir => {}
             other => resolved.push(other.as_os_str()),
+        }
+        if let Ok(canonical) = resolved.canonicalize() {
+            resolved = canonical;
         }
     }
     resolved
@@ -150,6 +154,11 @@ mod presto_home_tests {
                 resolve(&alias.join("later")),
                 default.join("later"),
                 "a missing leaf under a symlinked parent"
+            );
+            assert_eq!(
+                resolve(&cwd.join("missing").join("..").join("alias")),
+                default,
+                "stepping back through .. onto the symlink resolves it"
             );
         }
     }

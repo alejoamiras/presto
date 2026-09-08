@@ -348,6 +348,8 @@ pub(crate) async fn prove_ultra_honk(
         UltraHonkWorkspace::create(&job).map_err(prove_failed)
     })
     .await?;
+    // Last check before bb starts: the workspace write is another window for a Settings removal.
+    ensure_not_revoked(&state, &held.admitted.approval)?;
     let start = Instant::now();
     let run = bb::run_ultra_honk(
         &workspace,

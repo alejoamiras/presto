@@ -43,6 +43,18 @@ Two new material findings, one test race, one isolation hole, two wording nits; 
 Codex confirmed the deferred cancellation-confirm item (round 1 #2) is defensible to keep open and
 saw no UltraHonk-specific Windows failure path in the Rust code.
 
+## Round 3 — 2026-09-08 (`response-2.md`)
+
+| # | Severity | Finding | Fix |
+|---|---|---|---|
+| 1 | Medium | No revocation re-check between the workspace stage and bb start | `ensure_not_revoked` after the workspace worker returns; no new test — the check is the function the revoked-while-queued router test already exercises, and the window is a file write |
+| 2 | Low | `missing/../alias` folded lexically onto an unresolved symlink (reproduced by codex) | Re-canonicalize after each folded component; regression case added |
+| 3 | Nit | "the same proof" overclaims for ZK targets | "a proof for the same circuit, under the true key" |
+
+Codex endorsed the Windows key workaround (optimisation-only key contract; response shape kept).
+Its remaining unverified concern — that `bb verify -k` on Windows shares the text-mode read — is
+answered by the Windows WebDriver lane, which verifies with the sidecar bb.exe.
+
 ### Resolved: Windows desktop returned 500 on the UltraHonk prove (F-26)
 
 Run 34174258877 failed without a log; run 34181934669 (with the `$RUNNER_TEMP` upload) shows bb's
