@@ -212,7 +212,7 @@ Gate — `bun run lint:actions && bun run --cwd packages/presto test:unit && bun
 **Phase 6 ✓ (2026-09-08, gate green; lessons/phase-6.md) — WebDriver desktop e2e.** `packages/presto/e2e-webdriver/ultra-honk.spec.ts`, **added to the explicit `specs` list in `wdio.conf.ts`** (between `auth-flow` and `autostart`): unknown origin → popup → Allow → 200 → proof bytes == fixture for the fixture's `*-no-zk` target, plus sidecar `bb verify` exit 0 as a separate assertion (a byte mismatch on any platform is a real finding to surface, I-01 — never a silent downgrade to "verifies"); denied origin → 403 without execution; bad `verifier_target` → 400 without a re-prompt.
 Gate — `bun run --cwd packages/presto test:e2e:webdriver` locally (Linux); `presto.yml` dispatched on the branch with the `e2e-webdriver` matrix (macOS/Linux/Windows) green (`_e2e-webdriver.yml` is `workflow_call`-only; `presto.yml` is its dispatchable caller). Layers: e2e (real app, real bb).
 
-**Phase 7 — App docs.** `packages/presto/README.md` (route contract, `/health` example with `schemes`/`versions`, trust-boundary note), `CLAUDE.md` current-state bullets, `docs/RELEASE_RUNBOOK.md` note that the next app minor carries the route (A-03).
+**Phase 7 ✓ (2026-09-08, gate green; lessons/phase-7.md) — App docs.** `packages/presto/README.md` (route contract, `/health` example with `schemes`/`versions`, trust-boundary note), `CLAUDE.md` current-state bullets, `docs/RELEASE_RUNBOOK.md` note that the next app minor carries the route (A-03).
 Gate — `bun run test` (doc-sync tests) + `bun run lint`. Layers: lint, unit.
 
 ### Arc 2 — npm publish tooling generalization (behaviour-preserving)
