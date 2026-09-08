@@ -100,6 +100,17 @@
         "vite-plugin-node-polyfills": "^0.28",
       },
     },
+    "packages/sdk-core": {
+      "name": "@alejoamiras/presto-core",
+      "version": "1.0.0",
+      "dependencies": {
+        "@logtape/logtape": "^2.3.2",
+        "ms": "^2.1.3",
+      },
+      "devDependencies": {
+        "@types/ms": "^2.1.0",
+      },
+    },
   },
   "overrides": {
     "systeminformation": "5.31.7",
@@ -109,6 +120,8 @@
     "@adraffy/ens-normalize": ["@adraffy/ens-normalize@1.11.1", "", {}, "sha512-nhCBV3quEgesuf7c7KYfperqSS14T8bYuvJ8PcLJp6znkZpFc0AuW4qBtr8eKVyPPe/8RSr7sglCWPU5eaxwKQ=="],
 
     "@alejoamiras/presto": ["@alejoamiras/presto@workspace:packages/sdk"],
+
+    "@alejoamiras/presto-core": ["@alejoamiras/presto-core@workspace:packages/sdk-core"],
 
     "@alejoamiras/presto-desktop": ["@alejoamiras/presto-desktop@workspace:packages/presto"],
 

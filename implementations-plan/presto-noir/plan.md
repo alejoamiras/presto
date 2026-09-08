@@ -225,7 +225,7 @@ Gate — `bun run lint:actions && bun run test:scripts`; `sdk.yml` dispatched on
 
 ### Arc 3 — `presto-core` and `presto` on core
 
-**Phase 10 — Scaffold `packages/sdk-core`.** package.json (`exports: ./src/index.ts`, `files`, `publishConfig`, `prepublishOnly`), tsconfig, README skeleton + doc-sync test, root `workspaces` + `test:unit`/`test:typecheck` chains, descriptor entry.
+**Phase 10 ✓ (2026-09-08, gate green; lessons/phase-10.md) — Scaffold `packages/sdk-core`.** package.json (`exports: ./src/index.ts`, `files`, `publishConfig`, `prepublishOnly`), tsconfig, README skeleton + doc-sync test, root `workspaces` + `test:unit`/`test:typecheck` chains, descriptor entry.
 Gate — `bun run test`. Layers: lint/typecheck.
 
 **Phase 11 — Move transport, add `PrestoClient`, re-base `PrestoProver` (one phase: the SDK imports these modules locally, so the move and the consumer migration must land under one gate).** `git mv` transport/errors/logger/types + tests into `packages/sdk-core`; `PrestoClient` with the hoisted policy and the moved decision-table tests; `legacy-wire-compatibility.test.ts` (moved) still replays the historical `/prove` contract; `PrestoProver` re-based on `PrestoClient` with the barrel re-exporting the same names; `public-contract.test.ts` green; the existing chonk regressions (`packages/sdk/e2e/proving.test.ts` native-path phase trail, `legacy-compatibility.test.ts`) retained; `scripts/published-playground.ts` and the packaged-e2e SDK swap script (+ tests) resolve `workspace:*` to the pinned core version and assert the installed core matches; `MIGRATION.md` note (core is a dependency; no API change).
