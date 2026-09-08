@@ -341,6 +341,9 @@ async fn prove_with_timeout(
 
     let mut cmd = build_prove_command(&bb_path, &workspace, threads)?;
     run_bb(&mut cmd, timeout, cancel).await?;
+    if let Some(v) = version {
+        versions::mark_cached_bb_active(v);
+    }
 
     // Exit success is insufficient: read once through a cap, then reject empty, oversized, or
     // non-field-aligned proof bytes without a metadata/read race.

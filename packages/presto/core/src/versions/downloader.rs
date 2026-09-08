@@ -32,16 +32,23 @@ pub async fn download_bb(version: &AztecVersion) -> Result<PathBuf, Box<dyn Erro
         return Ok(bb_path);
     }
 
-    // Download the tarball (bounded streaming) and verify its integrity before touching the fs
-    // (Q11: extracted to `download_tarball` + `verify_digest`; the digest→extract ordering — verify
-    // BEFORE install — is preserved here in the orchestrator).
+    // The digest comes first: once the unauthenticated GitHub API is rate-limited, every request for
+    // an uncached version would otherwise stream the full tarball only to discard it.
+    let expected_digest = expected_digest(version_str).await?;
     let bytes = download_tarball(version).await?;
+    let archive_digest = sha256_hex(&bytes);
+    if archive_digest != expected_digest {
+        return Err(format!(
+            "Integrity check failed for bb v{version}: expected sha256:{expected_digest}, got sha256:{archive_digest}"
+        )
+        .into());
+    }
     tracing::info!(
         version = version_str,
         bytes = bytes.len(),
-        "Download complete, verifying integrity"
+        digest = %archive_digest,
+        "Download integrity verified"
     );
-    let archive_digest = verify_digest(version_str, &bytes).await?;
 
     // F-007: stage privately, finalize (chmod + macOS codesign), fingerprint the FINAL binary, write
     // the marker, THEN publish fail-closed — so the live dir only ever appears with a codesigned binary
@@ -151,27 +158,13 @@ async fn download_tarball(version: &AztecVersion) -> Result<Vec<u8>, Box<dyn Err
     Ok(bytes)
 }
 
-/// Verify the downloaded `bytes` against the GitHub release asset's published SHA-256 digest, returning
-/// the verified hex (recorded as the marker's `archive_sha256` provenance field).
+/// The GitHub release asset's published SHA-256 digest (hex) for this platform's tarball.
 /// **Fail-closed:** a missing digest (`Ok(None)`) or a fetch error is an error, not a skip — we never
 /// install unverified code. The bundled sidecar path never reaches here.
-async fn verify_digest(
-    version: &str,
-    bytes: &[u8],
-) -> Result<String, Box<dyn Error + Send + Sync>> {
+async fn expected_digest(version: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
     let asset_name = format!("barretenberg-{}.tar.gz", current_platform());
     match fetch_github_asset_digest(version, &asset_name).await {
-        Ok(Some(expected)) => {
-            let actual = sha256_hex(bytes);
-            if actual != expected {
-                return Err(format!(
-                    "Integrity check failed for bb v{version}: expected sha256:{expected}, got sha256:{actual}"
-                )
-                .into());
-            }
-            tracing::info!(version, digest = %actual, "Download integrity verified");
-            Ok(actual)
-        }
+        Ok(Some(expected)) => Ok(expected),
         Ok(None) => {
             Err(format!("Cannot verify bb v{version}: no digest available from GitHub API").into())
         }

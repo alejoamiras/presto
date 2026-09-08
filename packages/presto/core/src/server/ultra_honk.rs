@@ -324,7 +324,8 @@ pub(crate) async fn prove_ultra_honk(
     let parsed = parse_request(&body)?;
     drop(body);
 
-    let prover = acquire_prover(&state, &admitted.requested_version).await?;
+    let origin = admitted.approval.origin.as_ref().map(|o| o.as_str());
+    let prover = acquire_prover(&state, &admitted.requested_version, origin).await?;
     ensure_not_revoked(&state, &admitted.approval)?;
     let held = Held { admitted, prover };
     let target = parsed.target;

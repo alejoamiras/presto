@@ -1,4 +1,4 @@
-use super::prove::{compute_threads, resolve_version};
+use super::prove::{acquire_prover, compute_threads, resolve_version};
 use super::*;
 
 // ── F-03 sink B (audit 2026-07-31-9c4cb0c) ──
@@ -1130,7 +1130,9 @@ fn compute_threads_returns_none_without_config() {
 }
 
 #[test]
+#[serial]
 fn resolve_version_flags_uncached_for_download() {
+    let _home = crate::ScopedPrestoHome::new();
     // F-08: resolve_version is now pure (sync, no download, no status). A valid, non-bundled,
     // uncached version resolves Ok with `to_download` set — prove() then owns the download+status
     // (Proving→Downloading→Proving). The full 4-element download-arm sequence can't be unit-tested
@@ -1198,6 +1200,77 @@ fn resolve_version_returns_none_without_header() {
     let resolved = resolve_version(&state, &None).expect("no header resolves");
     assert_eq!(resolved.version, None);
     assert!(!resolved.needs_download);
+}
+
+#[tokio::test]
+#[serial]
+async fn an_exhausted_download_budget_refuses_an_uncached_version_before_any_download() {
+    let _home = crate::ScopedPrestoHome::new();
+    let core = HeadlessState::headless("1.0.0", Some("5.0.0-rc.1".to_string()), None, None);
+    let state = AppState::headless(core);
+    let origin = "https://dapp.example";
+    for _ in 0..versions::PER_ORIGIN_DOWNLOADS {
+        state
+            .download_budget
+            .take(Some(origin))
+            .expect("within budget");
+    }
+    // Uncached, so this would download; the exhausted budget must answer first (no network here).
+    let Err(err) = acquire_prover(&state, &Some("5.0.0-rc.2".to_string()), Some(origin)).await
+    else {
+        panic!("the fourth uncached download in the window must be refused");
+    };
+    assert!(
+        matches!(err, ProveError::DownloadBudgetExhausted),
+        "{err:?}"
+    );
+    assert_eq!(err.into_response().status(), StatusCode::TOO_MANY_REQUESTS);
+    // The bundled version never downloads, so it is never budgeted.
+    let Ok(bundled) = acquire_prover(&state, &Some("5.0.0-rc.1".to_string()), Some(origin)).await
+    else {
+        panic!("the bundled version must resolve without a download");
+    };
+    assert!(bundled.version.is_none());
+}
+
+/// A request queued behind the download that installs its version spends no budget.
+#[tokio::test]
+#[serial]
+async fn a_request_that_waited_for_the_same_version_spends_no_download_budget() {
+    let _home = crate::ScopedPrestoHome::new();
+    let core = HeadlessState::headless("1.0.0", Some("5.0.0-rc.1".to_string()), None, None);
+    let state = AppState::headless(core);
+    let origin = "https://dapp.example";
+    for _ in 0..versions::PER_ORIGIN_DOWNLOADS {
+        state
+            .download_budget
+            .take(Some(origin))
+            .expect("within budget");
+    }
+    // Hold the download lock as the "downloader" would, queue the waiter, then publish a verified
+    // cache entry for its version before releasing.
+    let held = state.download_budget.serial.lock().await;
+    let waiter = tokio::spawn({
+        let state = state.clone();
+        async move { acquire_prover(&state, &Some("5.0.0-rc.2".to_string()), Some(origin)).await }
+    });
+    tokio::time::sleep(Duration::from_millis(50)).await;
+    assert!(
+        !waiter.is_finished(),
+        "the waiter must queue behind the download lock"
+    );
+    let dir = versions::versions_base_dir().unwrap().join("5.0.0-rc.2");
+    std::fs::create_dir_all(&dir).unwrap();
+    let bb = dir.join(versions::bb_binary_name());
+    std::fs::write(&bb, b"the-bb-bytes").unwrap();
+    let digest = versions::sha256_file(&bb).unwrap();
+    versions::write_bb_marker(&dir, "5.0.0-rc.2", &"a".repeat(64), &digest).unwrap();
+    drop(held);
+    let prover = waiter
+        .await
+        .expect("join")
+        .unwrap_or_else(|e| panic!("a version installed while waiting must resolve: {e:?}"));
+    assert_eq!(prover.version.as_deref(), Some("5.0.0-rc.2"));
 }
 
 // ── Failure-path tests ──

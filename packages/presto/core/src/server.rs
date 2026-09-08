@@ -169,6 +169,8 @@ pub struct HeadlessState {
     /// Per-origin admission cap for `/prove/ultra-honk` (half of `MAX_INFLIGHT_PROVE`): one Noir
     /// origin — a miner — cannot shed every other site to WASM by filling the inflight cap.
     pub(crate) ultra_honk_slots: ultra_honk::OriginSlots,
+    /// Rate limit on uncached bb downloads, keyed by origin and globally (`versions::DownloadBudget`).
+    pub(crate) download_budget: Arc<versions::DownloadBudget>,
 }
 
 /// Full app state: the headless `core` plus the optional GUI callbacks. `Deref`s to `core`, so the
@@ -205,6 +207,7 @@ impl Default for HeadlessState {
             prove_semaphore: Arc::new(Semaphore::new(1)),
             prove_waiters: Arc::new(Semaphore::new(MAX_INFLIGHT_PROVE)),
             ultra_honk_slots: ultra_honk::OriginSlots::default(),
+            download_budget: Arc::new(versions::DownloadBudget::default()),
         }
     }
 }
@@ -231,6 +234,7 @@ impl HeadlessState {
             prove_semaphore: Arc::new(Semaphore::new(1)),
             prove_waiters: Arc::new(Semaphore::new(MAX_INFLIGHT_PROVE)),
             ultra_honk_slots: ultra_honk::OriginSlots::default(),
+            download_budget: Arc::new(versions::DownloadBudget::default()),
         }
     }
 }
@@ -526,6 +530,8 @@ pub(crate) enum ProveError {
         version: String,
         detail: String,
     },
+    /// This origin (or the app as a whole) started too many uncached bb downloads recently.
+    DownloadBudgetExhausted,
     ProveFailed(String),
     InvalidOrigin,
     OriginDenied(String),
@@ -651,6 +657,11 @@ impl ProveError {
                 StatusCode::SERVICE_UNAVAILABLE,
                 "service_unavailable",
                 "Proving service shutting down".to_string(),
+            ),
+            ProveError::DownloadBudgetExhausted => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "download_budget_exhausted",
+                "Too many uncached bb versions requested recently; retry later".to_string(),
             ),
             ProveError::VersionEvicting => (
                 StatusCode::SERVICE_UNAVAILABLE,
