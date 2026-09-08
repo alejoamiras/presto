@@ -102,11 +102,12 @@ impl fmt::Display for VerifierTarget {
 
 /// Validated inputs for one UltraHonk proof. `bytecode` and `witness` are the gzipped blobs exactly
 /// as the Noir toolchain emits them (bb inflates them itself); `vk` skips bb's key recomputation.
-#[derive(Clone, Copy, Debug)]
-pub struct UltraHonkJob<'a> {
-    pub bytecode: &'a [u8],
-    pub witness: &'a [u8],
-    pub vk: Option<&'a [u8]>,
+/// Owned so the workspace writes can run on a blocking worker.
+#[derive(Clone, Debug)]
+pub struct UltraHonkJob {
+    pub bytecode: Vec<u8>,
+    pub witness: Vec<u8>,
+    pub vk: Option<Vec<u8>>,
     pub target: VerifierTarget,
 }
 
@@ -119,7 +120,7 @@ pub struct UltraHonkOutput {
 }
 
 pub async fn prove_ultra_honk(
-    job: UltraHonkJob<'_>,
+    job: UltraHonkJob,
     version: Option<&versions::AztecVersion>,
     threads: Option<usize>,
 ) -> Result<UltraHonkOutput, BbError> {
@@ -128,7 +129,7 @@ pub async fn prove_ultra_honk(
 
 /// [`prove_ultra_honk`] with the timeout injected so tests can exercise the kill path quickly.
 pub(super) async fn prove_ultra_honk_with_timeout(
-    job: UltraHonkJob<'_>,
+    job: UltraHonkJob,
     version: Option<&versions::AztecVersion>,
     threads: Option<usize>,
     timeout: Duration,
@@ -137,19 +138,31 @@ pub(super) async fn prove_ultra_honk_with_timeout(
     // unlink the binary between resolution and execution.
     let _lease = acquire_version_lease(version)?;
     let bb_path = find_bb(version).map_err(|e| -> BbError { e.into() })?;
-    let workspace = UltraHonkWorkspace::create(&job)?;
+    let target = job.target;
+    let client_vk = job.vk.is_some();
+    // Tens of MiB may be written here; keep it off the async runtime like the inflate dry-run.
+    let workspace = blocking(move || UltraHonkWorkspace::create(&job)).await?;
 
     tracing::info!(
         version = version.map_or("bundled", |v| v.as_str()),
         ?threads,
-        target = %job.target,
-        client_vk = job.vk.is_some(),
+        %target,
+        client_vk,
         "Starting bb prove (ultra_honk)"
     );
 
-    let mut cmd = build_ultra_honk_command(&bb_path, &workspace, job.target, threads)?;
+    let mut cmd = build_ultra_honk_command(&bb_path, &workspace, target, threads)?;
     run_bb(&mut cmd, timeout).await?;
-    read_outputs(&workspace)
+    blocking(move || read_outputs(&workspace)).await
+}
+
+async fn blocking<T: Send + 'static, E: Into<BbError> + Send + 'static>(
+    work: impl FnOnce() -> Result<T, E> + Send + 'static,
+) -> Result<T, BbError> {
+    match tokio::task::spawn_blocking(work).await {
+        Ok(result) => result.map_err(Into::into),
+        Err(join) => Err(format!("prove workspace worker failed: {join}").into()),
+    }
 }
 
 /// Private 0700 tempdir holding the three input files (0600) and bb's output directory.
@@ -162,15 +175,15 @@ struct UltraHonkWorkspace {
 }
 
 impl UltraHonkWorkspace {
-    fn create(job: &UltraHonkJob<'_>) -> std::io::Result<Self> {
+    fn create(job: &UltraHonkJob) -> std::io::Result<Self> {
         let dir = create_prove_tempdir()?;
         let bytecode_path = dir.path().join("bytecode.gz");
         let witness_path = dir.path().join("witness.gz");
         let output_dir = dir.path().join("output");
         std::fs::create_dir_all(&output_dir)?;
-        write_witness(&bytecode_path, job.bytecode)?;
-        write_witness(&witness_path, job.witness)?;
-        let vk_path = match job.vk {
+        write_witness(&bytecode_path, &job.bytecode)?;
+        write_witness(&witness_path, &job.witness)?;
+        let vk_path = match &job.vk {
             Some(vk) => {
                 let path = dir.path().join("vk");
                 write_witness(&path, vk)?;
@@ -317,11 +330,11 @@ mod tests {
         assert!(validate_vk_len(MAX_VK_BYTES + 1).is_err());
     }
 
-    fn job<'a>(vk: Option<&'a [u8]>) -> UltraHonkJob<'a> {
+    fn job(vk: Option<&[u8]>) -> UltraHonkJob {
         UltraHonkJob {
-            bytecode: b"acir",
-            witness: b"witness",
-            vk,
+            bytecode: b"acir".to_vec(),
+            witness: b"witness".to_vec(),
+            vk: vk.map(<[u8]>::to_vec),
             target: VerifierTarget::NoirRecursiveNoZk,
         }
     }
@@ -343,7 +356,10 @@ mod tests {
         assert_eq!(args[7], "-t");
         assert_eq!(args[8], "evm");
         assert_eq!(args[11], "-k");
-        assert!(args[12].ends_with("/vk"));
+        assert_eq!(
+            Path::new(&args[12]).file_name(),
+            Some(std::ffi::OsStr::new("vk"))
+        );
         assert!(!args.iter().any(|a| a == "--write_vk"));
 
         let without = UltraHonkWorkspace::create(&job(None)).unwrap();

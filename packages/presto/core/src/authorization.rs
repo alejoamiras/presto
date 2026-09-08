@@ -248,8 +248,9 @@ pub const MAX_PIGGYBACK_SENDERS: usize = 16;
 /// it, whichever order their side effects happen to land.
 pub type Generation = u64;
 
-/// Cap on remembered removals so a Settings-spamming user cannot grow the map without bound; the
-/// oldest removal is forgotten first, which is safe because only requests older than it could care.
+/// Cap on remembered removals so a Settings-spamming user cannot grow the map without bound. The
+/// oldest removal is forgotten first and its generation becomes a floor: any grant older than the
+/// floor is treated as revoked, so forgetting can only deny a stale grant, never revive one.
 const MAX_REVOCATION_ENTRIES: usize = 256;
 
 /// The decision delivered to every waiter of a popup, stamped with the generation assigned when the
@@ -285,6 +286,8 @@ struct PendingState {
     generation: Generation,
     /// origin → the generation of its most recent removal.
     revocations: HashMap<CanonicalOrigin, Generation>,
+    /// The newest removal generation ever forgotten from `revocations`.
+    revocation_floor: Generation,
 }
 
 impl PendingState {
@@ -303,16 +306,20 @@ impl PendingState {
                 .min_by_key(|(_, &g)| g)
                 .map(|(k, _)| k.clone())
             {
-                self.revocations.remove(&oldest);
+                if let Some(forgotten) = self.revocations.remove(&oldest) {
+                    self.revocation_floor = self.revocation_floor.max(forgotten);
+                }
             }
         }
         self.revocations.insert(origin, generation);
     }
 
     fn revoked_since(&self, origin: &CanonicalOrigin, granted_at: Generation) -> bool {
-        self.revocations
-            .get(origin)
-            .is_some_and(|&revoked_at| revoked_at > granted_at)
+        granted_at < self.revocation_floor
+            || self
+                .revocations
+                .get(origin)
+                .is_some_and(|&revoked_at| revoked_at > granted_at)
     }
 
     /// q7e3-F-09: insert a new pending request, updating BOTH indexes. The origin↔request_id coupling
@@ -1155,5 +1162,35 @@ mod tests {
             "the oldest entry must be evicted"
         );
         assert!(st.cooldowns.contains_key(&co("https://newcomer.example")));
+    }
+
+    #[test]
+    fn forgetting_a_removal_denies_older_grants_instead_of_reviving_them() {
+        let mut st = PendingState::default();
+        let first = co("https://origin-0.example");
+        let old_grant = st.next_generation();
+        let removal = st.next_generation();
+        st.record_revocation(first.clone(), removal);
+        for i in 1..MAX_REVOCATION_ENTRIES {
+            let g = st.next_generation();
+            st.record_revocation(co(&format!("https://origin-{i}.example")), g);
+        }
+        assert!(st.revoked_since(&first, old_grant));
+
+        let overflow = st.next_generation();
+        st.record_revocation(co("https://origin-overflow.example"), overflow);
+        assert!(
+            !st.revocations.contains_key(&first),
+            "the oldest removal is the one forgotten"
+        );
+        assert!(
+            st.revoked_since(&first, old_grant),
+            "a grant older than a forgotten removal stays denied"
+        );
+        let fresh_grant = st.next_generation();
+        assert!(
+            !st.revoked_since(&first, fresh_grant),
+            "a grant newer than every removal is unaffected"
+        );
     }
 }

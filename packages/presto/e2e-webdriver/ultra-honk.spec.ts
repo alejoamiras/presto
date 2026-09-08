@@ -90,10 +90,11 @@ describe("UltraHonk proving", () => {
     // The first native proof also fetches the CRS, which the 30 s suite default does not cover.
     this.timeout(180_000);
     const response = await proveThroughPopup(ALLOW_ORIGIN, buildJob(fixture, true), "#allow");
-    expect(response.status).toBe(200);
+    const text = await response.text();
+    if (response.status !== 200) throw new Error(`prove returned ${response.status}: ${text}`);
     expect(approvedOrigins()).toContain(ALLOW_ORIGIN);
 
-    const body = (await response.json()) as ProveResponse;
+    const body = JSON.parse(text) as ProveResponse;
     expect(checkOutputs(body, fixture, false)).toEqual([]);
     expect(
       verifyNatively(

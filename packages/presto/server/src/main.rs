@@ -61,7 +61,7 @@ async fn main() {
     let port = match resolve_listen_port(
         port_arg(&args).as_deref(),
         std::env::var("PRESTO_PORT").ok().as_deref(),
-        presto_core::presto_home().is_some(),
+        presto_core::isolated_presto_home().is_some(),
     ) {
         Ok(port) => port,
         Err(e) => {
@@ -117,6 +117,8 @@ async fn main() {
         auth_manager,
     ));
 
+    tokio::spawn(terminate_bb_on_shutdown_signal());
+
     if let Err(e) = start_on(state, port).await {
         if let Some(guidance) = server_error_guidance(e.as_ref()) {
             tracing::error!("{guidance}");
@@ -126,6 +128,30 @@ async fn main() {
     }
 }
 
+/// bb runs in its own process group, so a plain SIGTERM/SIGINT to this process would orphan an
+/// in-flight prove: kill and confirm the bb tree first, then exit.
+async fn terminate_bb_on_shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut term = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("SIGTERM handler");
+        tokio::select! {
+            _ = term.recv() => {}
+            _ = tokio::signal::ctrl_c() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = tokio::signal::ctrl_c().await;
+    }
+    tracing::info!("Shutdown signal received; terminating any in-flight bb");
+    if let Err(e) = presto_core::bb::terminate_and_confirm(std::time::Duration::from_secs(5)).await
+    {
+        tracing::warn!(error = %e, "bb did not confirm exit before shutdown");
+    }
+    std::process::exit(0);
+}
+
 /// `--port <n>` from argv (the value after the flag), if given.
 fn port_arg(args: &[String]) -> Option<String> {
     args.iter()
@@ -133,9 +159,10 @@ fn port_arg(args: &[String]) -> Option<String> {
         .and_then(|i| args.get(i + 1).cloned())
 }
 
-/// Which port to serve on. A non-default port is only allowed with `PRESTO_HOME` set: startup
-/// evicts the version cache and reaps prove workspaces on the assumption that the port winner is the
-/// only instance, so a second instance sharing the default state directories would race the first.
+/// Which port to serve on. A non-default port is only allowed with an isolated `PRESTO_HOME`:
+/// startup evicts the version cache and reaps prove workspaces on the assumption that the port
+/// winner is the only instance, so a second instance sharing the default state directories would
+/// race the first.
 fn resolve_listen_port(
     arg: Option<&str>,
     env: Option<&str>,
@@ -151,7 +178,7 @@ fn resolve_listen_port(
         .ok_or_else(|| format!("invalid port {raw:?}"))?;
     if port != DEFAULT_PORT && !presto_home_set {
         return Err(format!(
-            "port {port} needs PRESTO_HOME set to a private directory: a second instance must not share the default config, version cache, and prove workspaces"
+            "port {port} needs PRESTO_HOME set to a private directory (not ~/.presto): a second instance must not share the default config, version cache, and prove workspaces"
         ));
     }
     Ok(port)

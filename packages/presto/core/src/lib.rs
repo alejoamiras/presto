@@ -37,6 +37,20 @@ pub fn presto_home() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// `PRESTO_HOME` only when it really is a private directory: an override that resolves to the
+/// default `~/.presto` (by name or through a symlink) would share the version cache with the
+/// desktop app while running its own eviction sweeps, so it does not count as isolation.
+pub fn isolated_presto_home() -> Option<PathBuf> {
+    let home = presto_home()?;
+    let default = dirs::home_dir()?.join(".presto");
+    (!same_directory(&home, &default)).then_some(home)
+}
+
+fn same_directory(a: &std::path::Path, b: &std::path::Path) -> bool {
+    let resolve = |p: &std::path::Path| p.canonicalize().unwrap_or_else(|_| p.to_path_buf());
+    resolve(a) == resolve(b)
+}
+
 pub(crate) fn runtime_data_dir() -> Option<PathBuf> {
     if let Some(home) = presto_home() {
         return Some(home.join("data"));
@@ -80,6 +94,31 @@ mod presto_home_tests {
         std::env::remove_var("PRESTO_HOME");
         assert!(!under(super::runtime_data_dir().unwrap()));
         assert!(!under(super::config::config_path()));
+    }
+
+    #[test]
+    fn the_default_state_directory_is_not_an_isolated_home_even_through_a_symlink() {
+        let root = tempfile::tempdir().unwrap();
+        let default = root.path().join(".presto");
+        std::fs::create_dir(&default).unwrap();
+        assert!(super::same_directory(
+            &default,
+            &root.path().join(".presto")
+        ));
+        assert!(!super::same_directory(&default, &root.path().join("other")));
+        assert!(
+            !super::same_directory(
+                &root.path().join("missing-a"),
+                &root.path().join("missing-b")
+            ),
+            "unresolvable paths compare by name"
+        );
+        #[cfg(unix)]
+        {
+            let alias = root.path().join("alias");
+            std::os::unix::fs::symlink(&default, &alias).unwrap();
+            assert!(super::same_directory(&alias, &default));
+        }
     }
 }
 

@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { resolveAztecBb } from "../packages/presto/scripts/copy-bb.ts";
 import {
   buildManifest,
   FIXTURE_NAMES,
@@ -81,14 +82,16 @@ test("bb.js hex public inputs round-trip to raw 32-byte fields", () => {
   expect(() => publicInputsToBytes(["0x1234"])).toThrow("expected 32");
 });
 
-test("the committed fixtures verify against their manifests", () => {
+test("the committed fixtures verify against their manifests and the installed bb.js", () => {
   const root = join(import.meta.dirname, "..");
+  // An Aztec bump fails here until the fixtures are regenerated with the new bb.js.
+  const installedBbJs = resolveAztecBb().version;
   for (const name of FIXTURE_NAMES) {
     const dir = fixtureDir(root, name);
     const manifestPath = join(dir, "manifest.json");
     expect(existsSync(manifestPath)).toBe(true);
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    expect(verifyManifest(manifest, readFixtureFiles(dir))).toEqual([]);
+    expect(verifyManifest(manifest, readFixtureFiles(dir), installedBbJs)).toEqual([]);
     expect(manifest.verifierTarget).toBe("noir-recursive-no-zk");
   }
 });

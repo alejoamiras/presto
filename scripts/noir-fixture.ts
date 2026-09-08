@@ -20,7 +20,7 @@ import { resolveAztecBb } from "../packages/presto/scripts/copy-bb.ts";
 export const FIXTURE_SCHEMA = "presto/noir-fixture@1";
 export const FIXTURE_ROOT = "fixtures/noir";
 export const FIXTURE_NAMES = ["square", "nopub"] as const;
-/** The only deterministic family the plan certifies for byte identity. */
+/** A `*-no-zk` target: the only kind whose proof bytes are reproducible across bb and bb.js. */
 export const FIXTURE_TARGET = "noir-recursive-no-zk";
 export const VERIFIER_TARGETS = [
   "evm",

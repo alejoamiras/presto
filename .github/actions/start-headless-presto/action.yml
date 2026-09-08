@@ -46,6 +46,11 @@ runs:
         AZTEC_BB_VERSION: ${{ inputs.aztec-bb-version }}
       run: |
         set -euo pipefail
+        # A foreign listener on the port would answer /health for us and the smoke would hit it.
+        if curl -sf "http://127.0.0.1:$PORT/health" > /dev/null 2>&1; then
+          echo "::error::port $PORT already answers /health; refusing to start a second instance"
+          exit 1
+        fi
         mkdir -p "$PRESTO_HOME"
         export PRESTO_HOME
         if [ -z "$AZTEC_BB_VERSION" ]; then unset AZTEC_BB_VERSION; else export AZTEC_BB_VERSION; fi
@@ -55,14 +60,15 @@ runs:
         pid=$!
         echo "pid=$pid" >> "$GITHUB_OUTPUT"
         for i in $(seq 1 60); do
-          if curl -sf "http://127.0.0.1:$PORT/health" > /dev/null 2>&1; then
-            echo "presto-server ready on :$PORT (pid $pid)"
-            exit 0
-          fi
           if ! kill -0 "$pid" 2>/dev/null; then
             echo "::error::presto-server exited during startup"
             cat "$PRESTO_HOME/server.log"
             exit 1
+          fi
+          if grep -q "listening on 127.0.0.1:$PORT" "$PRESTO_HOME/server.log" \
+             && curl -sf "http://127.0.0.1:$PORT/health" > /dev/null 2>&1; then
+            echo "presto-server ready on :$PORT (pid $pid)"
+            exit 0
           fi
           sleep 0.5
         done

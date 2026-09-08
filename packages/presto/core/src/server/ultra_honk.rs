@@ -213,10 +213,16 @@ fn require_gzip(name: &str, bytes: &[u8]) -> Result<(), ProveError> {
 }
 
 /// Inflate `bytes` into a counting sink so a gzip bomb is caught here, bounded, rather than inside bb.
-/// The trailer's ISIZE is attacker-writable, so the stream is actually walked. `cancel` is polled per
-/// chunk: a disconnected client's job stops within one chunk instead of inflating to the cap.
-fn inflate_dry_run(name: &str, bytes: &[u8], cancel: &AtomicBool) -> Result<(), ProveError> {
-    let mut decoder = flate2::read::GzDecoder::new(bytes);
+/// The trailer's ISIZE is attacker-writable, so the stream is actually walked, and every concatenated
+/// member is counted because bb accepts multi-member input. `cancel` is polled per chunk: a
+/// disconnected client's job stops within one chunk instead of inflating to the cap.
+fn inflate_dry_run(
+    name: &str,
+    bytes: &[u8],
+    cap: u64,
+    cancel: &AtomicBool,
+) -> Result<(), ProveError> {
+    let mut decoder = flate2::read::MultiGzDecoder::new(bytes);
     let mut sink = [0u8; INFLATE_CHUNK];
     let mut total: u64 = 0;
     loop {
@@ -230,9 +236,9 @@ fn inflate_dry_run(name: &str, bytes: &[u8], cancel: &AtomicBool) -> Result<(), 
             return Ok(());
         }
         total += n as u64;
-        if total > MAX_INFLATED_BYTES {
+        if total > cap {
             return Err(ProveError::InvalidRequest(format!(
-                "{name} inflates past {MAX_INFLATED_BYTES} bytes"
+                "{name} inflates past {cap} bytes"
             )));
         }
     }
@@ -242,10 +248,10 @@ fn inflate_dry_run(name: &str, bytes: &[u8], cancel: &AtomicBool) -> Result<(), 
 fn decode_and_check(raw: &RawRequest, cancel: &AtomicBool) -> Result<DecodedJob, ProveError> {
     let bytecode = decode_field("bytecode", raw.bytecode.as_str(), MAX_BYTECODE_BYTES)?;
     require_gzip("bytecode", &bytecode)?;
-    inflate_dry_run("bytecode", &bytecode, cancel)?;
+    inflate_dry_run("bytecode", &bytecode, MAX_INFLATED_BYTES, cancel)?;
     let witness = decode_field("witness", raw.witness.as_str(), MAX_WITNESS_BYTES)?;
     require_gzip("witness", &witness)?;
-    inflate_dry_run("witness", &witness, cancel)?;
+    inflate_dry_run("witness", &witness, MAX_INFLATED_BYTES, cancel)?;
     let vk = raw
         .vk
         .as_deref()
@@ -275,7 +281,11 @@ struct Held {
     prover: Prover,
 }
 
-async fn decode_on_worker(held: Held, raw: RawRequest) -> Result<(Held, DecodedJob), ProveError> {
+/// Generic over what is held so the ownership rule can be tested without a whole server state.
+async fn decode_on_worker<H: Send + 'static>(
+    held: H,
+    raw: RawRequest,
+) -> Result<(H, DecodedJob), ProveError> {
     let cancel = Arc::new(AtomicBool::new(false));
     let _cancel_on_drop = CancelOnDrop(cancel.clone());
     let worker = tokio::task::spawn_blocking(move || {
@@ -318,9 +328,9 @@ pub(crate) async fn prove_ultra_honk(
     ensure_not_revoked(&state, &held.admitted.approval)?;
 
     let job = UltraHonkJob {
-        bytecode: &decoded.bytecode,
-        witness: &decoded.witness,
-        vk: decoded.vk.as_deref(),
+        bytecode: decoded.bytecode,
+        witness: decoded.witness,
+        vk: decoded.vk,
         target: parsed.target,
     };
     let start = Instant::now();
@@ -487,16 +497,25 @@ mod tests {
     }
 
     #[test]
-    fn inflate_dry_run_stops_at_the_cap_and_on_cancel() {
+    fn inflate_dry_run_stops_at_the_cap_counts_every_member_and_honours_cancel() {
         // 4 MiB of zeros compresses to a few KiB; a cap below it must trip without allocating it.
-        let bomb = gz(&vec![0u8; 4 * 1024 * 1024]);
+        let four_mib = 4 * 1024 * 1024;
+        let bomb = gz(&vec![0u8; four_mib as usize]);
+        let live = AtomicBool::new(false);
+        assert!(inflate_dry_run("witness", &bomb, four_mib, &live).is_ok());
+        assert!(matches!(
+            inflate_dry_run("witness", &bomb, four_mib - 1, &live),
+            Err(ProveError::InvalidRequest(m)) if m == format!("witness inflates past {} bytes", four_mib - 1)
+        ));
+        // Two concatenated members inflate to twice the size; bb reads such input, so both count.
+        let two_members = [bomb.clone(), bomb.clone()].concat();
+        assert!(inflate_dry_run("witness", &two_members, 2 * four_mib, &live).is_ok());
+        assert!(inflate_dry_run("witness", &two_members, four_mib, &live).is_err());
         let cancelled = AtomicBool::new(true);
         assert!(matches!(
-            inflate_dry_run("witness", &bomb, &cancelled),
+            inflate_dry_run("witness", &bomb, four_mib, &cancelled),
             Err(ProveError::ProveFailed(m)) if m == "request cancelled"
         ));
-        let live = AtomicBool::new(false);
-        assert!(inflate_dry_run("witness", &bomb, &live).is_ok());
     }
 
     #[test]
@@ -518,24 +537,41 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn a_dropped_request_keeps_its_guards_until_the_worker_exits() {
-        // The pattern under test, isolated from the router: guards moved into spawn_blocking survive
-        // the JoinHandle being dropped and are released only when the closure returns.
+    async fn a_dropped_request_releases_its_guards_only_after_the_worker_returns() {
         let permit_owner = Arc::new(tokio::sync::Semaphore::new(1));
         let permit = permit_owner.clone().acquire_owned().await.unwrap();
-        let worker = tokio::task::spawn_blocking(move || {
-            std::thread::sleep(Duration::from_millis(150));
-            drop(permit);
-        });
-        drop(worker);
+        // 64 MiB of zeros is a few KiB on the wire but takes the worker well past the drop below.
+        let big = BASE64.encode(gz(&vec![0u8; 64 * 1024 * 1024]));
+        let raw = RawRequest {
+            bytecode: big.clone(),
+            witness: big,
+            vk: None,
+            verifier_target: "evm".into(),
+        };
+        {
+            let request = decode_on_worker(permit, raw);
+            tokio::pin!(request);
+            // Like a client disconnecting mid-validation: the request future is dropped at the end
+            // of this block while the worker is still inflating.
+            assert!(
+                tokio::time::timeout(Duration::from_millis(20), &mut request)
+                    .await
+                    .is_err()
+            );
+        }
         assert!(
             permit_owner.try_acquire().is_err(),
             "still held by the detached worker"
         );
-        tokio::time::sleep(Duration::from_millis(300)).await;
+        let released = tokio::time::timeout(Duration::from_secs(10), async {
+            while permit_owner.try_acquire().is_err() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await;
         assert!(
-            permit_owner.try_acquire().is_ok(),
-            "released once the worker returned"
+            released.is_ok(),
+            "the cancel flag stops the worker within a chunk and the permit follows"
         );
     }
 

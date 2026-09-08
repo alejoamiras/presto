@@ -2,8 +2,8 @@
 /**
  * HTTP smoke for `POST /prove/ultra-honk` against a running presto (headless or desktop): proves the
  * committed Noir fixtures, checks the bytes against their bb.js WASM references, and verifies them
- * with the native bb. The first real HTTP consumer of the route, so arc 1 is proven end to end
- * without any SDK. The exported helpers are runtime-neutral (the WebDriver spec imports them under
+ * with the native bb. The first real HTTP consumer of the route, so it is proven end to end without
+ * any SDK. The exported helpers are runtime-neutral (the WebDriver spec imports them under
  * Node); only the entrypoint and `defaultBbPath` need Bun.
  *
  *   PRESTO_URL       base URL (default http://127.0.0.1:59833)
