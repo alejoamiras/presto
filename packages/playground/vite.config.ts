@@ -105,6 +105,48 @@ function sqliteWasmAssetsPlugin(): Plugin {
   };
 }
 
+/**
+ * Vite plugin: `virtual:noir-fixture` embeds the committed `square` fixture as base64 at build
+ * time. Serving the raw files by path does not survive the dev server — extension-less bb outputs
+ * (`vk`, `proof`, `public_inputs`) are treated as JavaScript and `witness.gz` is inflated by
+ * content negotiation — and the bytes must reach the page exactly as committed.
+ */
+function noirFixturePlugin(): Plugin {
+  const id = "virtual:noir-fixture";
+  const resolvedId = `\0${id}`;
+  const dir = resolve(import.meta.dirname, "../../fixtures/noir/square");
+  return {
+    name: "noir-fixture",
+    resolveId(source) {
+      return source === id ? resolvedId : undefined;
+    },
+    load(moduleId) {
+      if (moduleId !== resolvedId) return undefined;
+      const file = (name: string) => resolve(dir, name);
+      for (const name of [
+        "circuit.json",
+        "manifest.json",
+        "witness.gz",
+        "vk",
+        "proof",
+        "public_inputs",
+      ]) {
+        this.addWatchFile(file(name));
+      }
+      const base64 = (name: string) => readFileSync(file(name)).toString("base64");
+      const fixture = {
+        bytecode: JSON.parse(readFileSync(file("circuit.json"), "utf8")).bytecode,
+        verifierTarget: JSON.parse(readFileSync(file("manifest.json"), "utf8")).verifierTarget,
+        witness: base64("witness.gz"),
+        vk: base64("vk"),
+        proof: base64("proof"),
+        publicInputs: base64("public_inputs"),
+      };
+      return `export default ${JSON.stringify(fixture)};`;
+    },
+  };
+}
+
 export default defineConfig(({ mode, command }) => {
   const allEnv = loadEnv(mode, process.cwd(), "");
   const env = {
@@ -125,6 +167,7 @@ export default defineConfig(({ mode, command }) => {
       }),
       bbWorkerPlugin(),
       sqliteWasmAssetsPlugin(),
+      noirFixturePlugin(),
     ],
     optimizeDeps: {
       exclude: ["@aztec/noir-acvm_js", "@aztec/noir-noirc_abi"],

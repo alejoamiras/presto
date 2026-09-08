@@ -6,26 +6,34 @@ const toBase64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");
 
 import {
   configureNoir,
-  loadNoirFixture,
+  decodeNoirFixture,
   matchesFixture,
   type NoirFixture,
   proveNoirFixture,
 } from "./noir";
 import { stubBarretenberg } from "./noir-stub";
 
-// The committed fixture files, served to the loader the way Vite serves URL assets.
-const fromDisk: typeof fetch = (async (input: RequestInfo | URL) => {
-  const url = input instanceof Request ? input.url : String(input);
-  return new Response(readFileSync(fileURLToPath(url)));
-}) as unknown as typeof fetch;
+// The committed fixture files, encoded the way vite.config.ts's `virtual:noir-fixture` ships them.
+const dir = fileURLToPath(new URL("../../../fixtures/noir/square/", import.meta.url));
+const read = (file: string) => readFileSync(`${dir}${file}`);
+const fixtureModule = {
+  bytecode: JSON.parse(read("circuit.json").toString("utf8")).bytecode as string,
+  verifierTarget: JSON.parse(read("manifest.json").toString("utf8")).verifierTarget,
+  witness: read("witness.gz").toString("base64"),
+  vk: read("vk").toString("base64"),
+  proof: read("proof").toString("base64"),
+  publicInputs: read("public_inputs").toString("base64"),
+};
 
 const originalFetch = globalThis.fetch;
 let fixture: NoirFixture;
 const logs: string[] = [];
 const log = (msg: string) => logs.push(msg);
 
-beforeAll(async () => {
-  fixture = await loadNoirFixture(fromDisk);
+beforeAll(() => {
+  fixture = decodeNoirFixture(fixtureModule);
+  expect(fixture.proof).toEqual(new Uint8Array(read("proof")));
+  expect(fixture.witness).toEqual(new Uint8Array(read("witness.gz")));
 });
 
 afterEach(() => {

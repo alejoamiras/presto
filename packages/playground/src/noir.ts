@@ -26,41 +26,36 @@ export interface NoirProofResult {
   fellBack: boolean;
 }
 
-// Vite bundles a file referenced through a LITERAL `new URL("...", import.meta.url)` as a hashed
-// asset (a directory base resolved later would stay a runtime path and 404 in production).
-const FIXTURE_FILES = {
-  circuit: new URL("../../../fixtures/noir/square/circuit.json", import.meta.url),
-  manifest: new URL("../../../fixtures/noir/square/manifest.json", import.meta.url),
-  witness: new URL("../../../fixtures/noir/square/witness.gz", import.meta.url),
-  vk: new URL("../../../fixtures/noir/square/vk", import.meta.url),
-  proof: new URL("../../../fixtures/noir/square/proof", import.meta.url),
-  publicInputs: new URL("../../../fixtures/noir/square/public_inputs", import.meta.url),
-};
+/** The fixture as `virtual:noir-fixture` ships it (vite.config.ts): bytes base64-encoded. */
+export interface NoirFixtureModule {
+  bytecode: string;
+  verifierTarget: VerifierTarget;
+  witness: string;
+  vk: string;
+  proof: string;
+  publicInputs: string;
+}
 
-export async function loadNoirFixture(fetchImpl: typeof fetch = fetch): Promise<NoirFixture> {
-  const bytes = async (file: keyof typeof FIXTURE_FILES) => {
-    const response = await fetchImpl(FIXTURE_FILES[file]);
-    if (!response.ok) throw new Error(`fixture ${file}: HTTP ${response.status}`);
-    return new Uint8Array(await response.arrayBuffer());
-  };
-  const text = async (file: keyof typeof FIXTURE_FILES) =>
-    new TextDecoder().decode(await bytes(file));
-  const [artifact, manifest, witness, vk, proof, publicInputs] = await Promise.all([
-    text("circuit"),
-    text("manifest"),
-    bytes("witness"),
-    bytes("vk"),
-    bytes("proof"),
-    bytes("publicInputs"),
-  ]);
+function fromBase64(text: string): Uint8Array {
+  const binary = atob(text);
+  const out = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
+  return out;
+}
+
+export function decodeNoirFixture(module: NoirFixtureModule): NoirFixture {
   return {
-    bytecode: JSON.parse(artifact).bytecode,
-    witness,
-    vk,
-    proof,
-    publicInputs,
-    verifierTarget: JSON.parse(manifest).verifierTarget,
+    bytecode: module.bytecode,
+    verifierTarget: module.verifierTarget,
+    witness: fromBase64(module.witness),
+    vk: fromBase64(module.vk),
+    proof: fromBase64(module.proof),
+    publicInputs: fromBase64(module.publicInputs),
   };
+}
+
+export async function loadNoirFixture(): Promise<NoirFixture> {
+  return decodeNoirFixture((await import("virtual:noir-fixture")).default);
 }
 
 const same = (a: Uint8Array, b: Uint8Array) =>
@@ -115,7 +110,13 @@ async function getNoirBackend(): Promise<{
   fixturePromise ??= loadNoirFixture();
   const fixture = await fixturePromise;
   if (!backend) {
-    const httpsOnly = new URLSearchParams(window.location.search).get("httpsOnly") === "true";
+    const params = new URLSearchParams(window.location.search);
+    const httpsOnly = params.get("httpsOnly") === "true";
+    // Test-only: `?noirStub=true` answers the in-browser path with the fixture bytes instead of
+    // WASM, so the mocked e2e can assert the fallback UI without CRS or worker traffic.
+    if (params.get("noirStub") === "true") {
+      apiSource = async () => (await import("./noir-stub")).stubBarretenberg(fixture);
+    }
     backend = new PrestoUltraHonkBackend(fixture.bytecode, apiSource, {
       verificationKey: { bytes: fixture.vk, verifierTarget: fixture.verifierTarget },
       ...(httpsOnly ? { presto: { httpsOnly: true, allowInsecureDowngrade: false } } : {}),
