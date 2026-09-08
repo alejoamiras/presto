@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { NPM_PACKAGES } from "./npm-packages.ts";
 import { hasVerifiedSdkProvenance } from "./verify-sdk-package-signatures.ts";
 
 describe("SDK signature verification", () => {
@@ -14,5 +15,7 @@ describe("SDK signature verification", () => {
     };
     expect(hasVerifiedSdkProvenance(report, "5.2.0")).toBe(true);
     expect(hasVerifiedSdkProvenance(report, "5.2.1")).toBe(false);
+    const sibling = { ...NPM_PACKAGES.presto, name: "@alejoamiras/presto-core" };
+    expect(hasVerifiedSdkProvenance(report, "5.2.0", sibling)).toBe(false);
   });
 });

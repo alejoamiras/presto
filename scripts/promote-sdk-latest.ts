@@ -1,9 +1,8 @@
+import { isValidVersion, type NpmPackage, packageFromArgs, releaseTag } from "./npm-packages.ts";
 import {
   fetchAndVerifySdkProvenance,
   LEGACY_SDK_RELEASE_WORKFLOW,
-  SDK_PACKAGE,
   SDK_RELEASE_WORKFLOW,
-  SDK_VERSION_PATTERN,
 } from "./sdk-release-verification.ts";
 import { verifySdkPackageSignatures } from "./verify-sdk-package-signatures.ts";
 
@@ -20,8 +19,8 @@ function run(command: string[], options: { inherit?: boolean } = {}): string {
   return options.inherit ? "" : (result.stdout?.toString().trim() ?? "");
 }
 
-function npmJson(field: string): unknown {
-  return JSON.parse(run(["npm", "view", SDK_PACKAGE, field, "--json"]));
+function npmJson(pkg: NpmPackage, field: string): unknown {
+  return JSON.parse(run(["npm", "view", pkg.name, field, "--json"]));
 }
 
 export function isActiveWorkflowStatus(status: string): boolean {
@@ -74,9 +73,9 @@ function assertNoActiveReleaseRuns(): void {
   }
 }
 
-async function fetchUncachedDistTags(): Promise<Record<string, string>> {
+async function fetchUncachedDistTags(pkg: NpmPackage): Promise<Record<string, string>> {
   const response = await fetch(
-    `https://registry.npmjs.org/@alejoamiras%2fpresto?cache_bust=${Date.now()}`,
+    `https://registry.npmjs.org/${encodeURIComponent(pkg.name)}?cache_bust=${Date.now()}`,
     {
       headers: {
         accept: "application/json",
@@ -100,6 +99,7 @@ export function resolveRemoteTagCommit(output: string): string | undefined {
 }
 
 interface PromotionOptions {
+  pkg: NpmPackage;
   version: string;
   dryRun: boolean;
   rollback: boolean;
@@ -111,27 +111,29 @@ interface PromotionCandidate {
   releaseUrl: string;
 }
 
-function parsePromotionOptions(args: string[]): PromotionOptions {
-  const dryRun = args.includes("--dry-run");
-  const rollback = args.includes("--rollback");
-  const positional = args.filter((arg) => arg !== "--dry-run" && arg !== "--rollback");
+export function parsePromotionOptions(args: string[]): PromotionOptions {
+  const { pkg, rest } = packageFromArgs(args);
+  const dryRun = rest.includes("--dry-run");
+  const rollback = rest.includes("--rollback");
+  const positional = rest.filter((arg) => arg !== "--dry-run" && arg !== "--rollback");
   const version = positional[0];
-  if (!version || positional.length !== 1 || !SDK_VERSION_PATTERN.test(version)) {
+  if (!version || positional.length !== 1 || !isValidVersion(pkg, version)) {
     throw new Error(
-      "usage: bun run sdk:promote -- <X.Y.Z|X.Y.Z-revision.N> [--dry-run] [--rollback]",
+      "usage: bun run sdk:promote -- [--package <key>] <version> [--dry-run] [--rollback]",
     );
   }
-  return { version, dryRun, rollback };
+  return { pkg, version, dryRun, rollback };
 }
 
 async function verifyPromotionCandidate(
+  pkg: NpmPackage,
   version: string,
   rollback: boolean,
 ): Promise<PromotionCandidate> {
   assertNoActiveReleaseRuns();
-  const published = run(["npm", "view", `${SDK_PACKAGE}@${version}`, "version"]);
+  const published = run(["npm", "view", `${pkg.name}@${version}`, "version"]);
   if (published !== version) throw new Error(`npm returned unexpected version ${published}`);
-  const tags = npmJson("dist-tags") as Record<string, string>;
+  const tags = npmJson(pkg, "dist-tags") as Record<string, string>;
   if (!rollback && tags.testnet !== version) {
     throw new Error(`npm testnet points to ${tags.testnet ?? "nothing"}, not ${version}`);
   }
@@ -148,9 +150,10 @@ async function verifyPromotionCandidate(
     version,
     undefined,
     rollback ? [SDK_RELEASE_WORKFLOW, LEGACY_SDK_RELEASE_WORKFLOW] : undefined,
+    pkg,
   );
-  await verifySdkPackageSignatures(version);
-  const gitTag = `${SDK_PACKAGE}@${version}`;
+  await verifySdkPackageSignatures(version, pkg);
+  const gitTag = releaseTag(pkg, version);
   const remoteRefs = run([
     "git",
     "ls-remote",
@@ -176,9 +179,9 @@ async function verifyPromotionCandidate(
 }
 
 function printPromotionCandidate(options: PromotionOptions, candidate: PromotionCandidate): void {
-  const { version, rollback } = options;
+  const { pkg, version, rollback } = options;
   const previousLatest = candidate.tags.latest;
-  console.log(`Candidate: ${SDK_PACKAGE}@${version}`);
+  console.log(`Candidate: ${pkg.name}@${version}`);
   console.log(`Provenance commit: ${candidate.commit}`);
   console.log(`GitHub release: ${candidate.releaseUrl}`);
   console.log(`Current latest: ${previousLatest ?? "unset"}`);
@@ -201,12 +204,15 @@ function confirmPromotion(
   return true;
 }
 
-async function readBackLatest(version: string): Promise<{ latest?: string; error?: string }> {
+async function readBackLatest(
+  pkg: NpmPackage,
+  version: string,
+): Promise<{ latest?: string; error?: string }> {
   let latest: string | undefined;
   let error: string | undefined;
   for (let attempt = 1; attempt <= 10; attempt++) {
     try {
-      latest = (await fetchUncachedDistTags()).latest;
+      latest = (await fetchUncachedDistTags(pkg)).latest;
       if (latest === version) break;
       error = `registry still reports ${latest ?? "unset"}`;
     } catch (cause) {
@@ -224,19 +230,19 @@ async function promoteLatest(
   options: PromotionOptions,
   initialTags: Record<string, string>,
 ): Promise<void> {
-  const { version, rollback } = options;
+  const { pkg, version, rollback } = options;
   // npm dist-tags have no compare-and-swap API. Narrow the solo-maintainer race window by
   // repeating both external-state checks immediately before the only mutation.
   assertNoActiveReleaseRuns();
-  assertFreshPromotionState(initialTags, await fetchUncachedDistTags(), version, rollback);
+  assertFreshPromotionState(initialTags, await fetchUncachedDistTags(pkg), version, rollback);
 
-  run(["npm", "dist-tag", "add", `${SDK_PACKAGE}@${version}`, "latest"], { inherit: true });
-  const readBack = await readBackLatest(version);
+  run(["npm", "dist-tag", "add", `${pkg.name}@${version}`, "latest"], { inherit: true });
+  const readBack = await readBackLatest(pkg, version);
   if (readBack.latest !== version) {
     const previousLatest = initialTags.latest;
     if (previousLatest) {
       console.error(
-        `Verification failed. Review npm state, then roll back with:\n  npm dist-tag add ${SDK_PACKAGE}@${previousLatest} latest`,
+        `Verification failed. Review npm state, then roll back with:\n  npm dist-tag add ${pkg.name}@${previousLatest} latest`,
       );
     }
     throw new Error(
@@ -248,7 +254,7 @@ async function promoteLatest(
 
 async function main() {
   const options = parsePromotionOptions(process.argv.slice(2));
-  const candidate = await verifyPromotionCandidate(options.version, options.rollback);
+  const candidate = await verifyPromotionCandidate(options.pkg, options.version, options.rollback);
   printPromotionCandidate(options, candidate);
   if (options.dryRun) {
     console.log("Dry run complete; npm latest was not changed.");

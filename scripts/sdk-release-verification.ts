@@ -1,9 +1,17 @@
-export const SDK_PACKAGE = "@alejoamiras/presto";
+import {
+  NPM_PACKAGES,
+  type NpmPackage,
+  packageFromArgs,
+  provenanceSubject,
+  VERSION_PATTERNS,
+} from "./npm-packages.ts";
+
+export const SDK_PACKAGE = NPM_PACKAGES.presto.name;
 export const SDK_RELEASE_WORKFLOW = ".github/workflows/release-sdk.yml";
 export const LEGACY_SDK_RELEASE_WORKFLOW = ".github/workflows/publish-testnet.yml";
 export const SDK_REPOSITORY = "https://github.com/alejoamiras/presto";
 export const SDK_SOURCE_DEPENDENCY = "git+https://github.com/alejoamiras/presto@refs/heads/main";
-export const SDK_VERSION_PATTERN = /^\d+\.\d+\.\d+(?:-revision\.\d+)?$/;
+export const SDK_VERSION_PATTERN = VERSION_PATTERNS["aztec-derived"];
 
 interface AttestationResponse {
   attestations?: Array<{
@@ -46,14 +54,16 @@ function npmView(spec: string, field: string): string {
   return value;
 }
 
+/** The provenance must name exactly `pkg@version`: a statement for a sibling package is rejected. */
 export function verifyProvenanceStatement(
   statement: ProvenanceStatement,
   version: string,
   expectedCommit?: string,
   allowedWorkflows: readonly string[] = [SDK_RELEASE_WORKFLOW],
   expectedSha512?: string,
+  pkg: NpmPackage = NPM_PACKAGES.presto,
 ): VerifiedProvenance {
-  const expectedSubject = `pkg:npm/%40alejoamiras/presto@${version}`;
+  const expectedSubject = provenanceSubject(pkg, version);
   const subject = statement.subject?.find((subject) => subject.name === expectedSubject);
   if (!subject) {
     throw new Error(`provenance subject does not contain ${expectedSubject}`);
@@ -96,9 +106,11 @@ export async function fetchAndVerifySdkProvenance(
   version: string,
   expectedCommit?: string,
   allowedWorkflows?: readonly string[],
+  pkg: NpmPackage = NPM_PACKAGES.presto,
 ): Promise<VerifiedProvenance> {
-  const url = npmView(`${SDK_PACKAGE}@${version}`, "dist.attestations.url");
-  const integrity = npmView(`${SDK_PACKAGE}@${version}`, "dist.integrity");
+  const spec = `${pkg.name}@${version}`;
+  const url = npmView(spec, "dist.attestations.url");
+  const integrity = npmView(spec, "dist.integrity");
   const match = /^sha512-([A-Za-z0-9+/]+={0,2})$/.exec(integrity);
   const encodedDigest = match?.[1];
   if (!encodedDigest) throw new Error(`unexpected npm integrity format: ${integrity}`);
@@ -119,18 +131,22 @@ export async function fetchAndVerifySdkProvenance(
     expectedCommit,
     allowedWorkflows,
     expectedSha512,
+    pkg,
   );
 }
 
 if (import.meta.main) {
-  const version = process.argv[2];
-  const expectedCommit = process.argv[3];
+  const { pkg, rest } = packageFromArgs(process.argv.slice(2));
+  const version = rest[0];
+  const expectedCommit = rest[1];
   if (!version) {
-    console.error("usage: bun scripts/sdk-release-verification.ts <version> [expected-commit]");
+    console.error(
+      "usage: bun scripts/sdk-release-verification.ts [--package <key>] <version> [expected-commit]",
+    );
     process.exit(1);
   }
-  const verified = await fetchAndVerifySdkProvenance(version, expectedCommit);
+  const verified = await fetchAndVerifySdkProvenance(version, expectedCommit, undefined, pkg);
   console.log(
-    `verified npm provenance: ${verified.repository}/${verified.workflow}@${verified.ref} (${verified.commit})`,
+    `verified npm provenance for ${pkg.name}@${version}: ${verified.repository}/${verified.workflow}@${verified.ref} (${verified.commit})`,
   );
 }

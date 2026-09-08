@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { PUBLISHED_EXPORTS, preparePublishManifest } from "./prepare-sdk-publish.ts";
+import {
+  PUBLISHED_EXPORTS,
+  parseDependencyPins,
+  preparePublishManifest,
+} from "./prepare-sdk-publish.ts";
 
 describe("preparePublishManifest (B7 SDK publish rewrite)", () => {
   const src = {
@@ -32,5 +36,39 @@ describe("preparePublishManifest (B7 SDK publish rewrite)", () => {
     const copy = structuredClone(src);
     preparePublishManifest(src, "9.9.9");
     expect(src).toEqual(copy);
+  });
+
+  test("pins workspace ranges to the sibling publish versions in every dependency field", () => {
+    const out = preparePublishManifest(
+      {
+        ...src,
+        dependencies: { "@alejoamiras/presto-core": "workspace:*", "@aztec/stdlib": "5.0.1" },
+        peerDependencies: { "@alejoamiras/presto-core": "workspace:^" },
+      },
+      "1.0.0",
+      { "@alejoamiras/presto-core": "1.2.3" },
+    );
+    expect(out.dependencies).toEqual({
+      "@alejoamiras/presto-core": "1.2.3",
+      "@aztec/stdlib": "5.0.1",
+    });
+    expect(out.peerDependencies).toEqual({ "@alejoamiras/presto-core": "1.2.3" });
+  });
+
+  test("a workspace dependency without a supplied version fails closed", () => {
+    expect(() =>
+      preparePublishManifest(
+        { ...src, dependencies: { "@alejoamiras/presto-core": "workspace:*" } },
+        "1.0.0",
+      ),
+    ).toThrow("no publish version was supplied");
+  });
+
+  test("--dep name=version pairs are taken from argv and the rest is kept in order", () => {
+    expect(
+      parseDependencyPins(["1.0.0", "--dep", "@alejoamiras/presto-core=1.2.3", "package.json"]),
+    ).toEqual({ pins: { "@alejoamiras/presto-core": "1.2.3" }, rest: ["1.0.0", "package.json"] });
+    expect(() => parseDependencyPins(["--dep", "nope"])).toThrow("name=version");
+    expect(() => parseDependencyPins(["--dep"])).toThrow("name=version");
   });
 });

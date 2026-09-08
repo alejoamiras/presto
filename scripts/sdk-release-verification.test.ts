@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { NPM_PACKAGES } from "./npm-packages.ts";
 import {
   LEGACY_SDK_RELEASE_WORKFLOW,
   SDK_RELEASE_WORKFLOW,
@@ -79,6 +80,25 @@ describe("SDK provenance verification", () => {
         LEGACY_SDK_RELEASE_WORKFLOW,
       ]).workflow,
     ).toBe(LEGACY_SDK_RELEASE_WORKFLOW);
+  });
+
+  test("rejects a statement that names a sibling package", () => {
+    const core = {
+      ...NPM_PACKAGES.presto,
+      name: "@alejoamiras/presto-core",
+      dir: "packages/sdk-core",
+      versionMode: "manifest" as const,
+    };
+    expect(() =>
+      verifyProvenanceStatement(
+        statement(),
+        "5.2.0-revision.1",
+        undefined,
+        undefined,
+        undefined,
+        core,
+      ),
+    ).toThrow("does not contain pkg:npm/%40alejoamiras/presto-core@5.2.0-revision.1");
   });
 
   test("rejects a tag commit that differs from the published provenance", () => {

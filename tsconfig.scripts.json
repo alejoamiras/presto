@@ -9,5 +9,7 @@
     "allowImportingTsExtensions": true,
     "noEmit": true
   },
-  "include": ["scripts/**/*.ts"]
+  "include": ["scripts/**/*.ts"],
+  // Consumer-profile sources are typechecked inside the tarball-consumer host, against the packed dist.
+  "exclude": ["scripts/tarball-consumer/*/**"]
 }
