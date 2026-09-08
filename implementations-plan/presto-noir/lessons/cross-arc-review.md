@@ -67,3 +67,20 @@ deployment. Three rounds.
 CI: `sdk.yml package=presto-core` dispatch 34198820547 on 0ff2319 green. Delivery: `gh stack submit
 --auto` → PRs #21 (noir-route), #22 (npm-tooling), #23 (sdk-core), #24 (sdk-noir), #25
 (playground-docs), stack #26.
+
+## Merge and npm bootstrap — 2026-09-08
+
+- #21 squash-merged into `main` (3b5f16f) by `gh stack merge 21 --yes --squash`; the rest of the
+  stack is merged one PR at a time after `gh stack sync`, because `main`'s ruleset requires the
+  four `* Status` contexts up to date with `main` and those only exist on a PR that targets `main`.
+- Owner bootstrapped `@alejoamiras/presto-core@0.0.0-bootstrap.0` and
+  `@alejoamiras/presto-noir@0.0.0-bootstrap.0` (tag `bootstrap`) and registered both trusted
+  publishers with `npm trust github … --file release-sdk.yml --repo alejoamiras/presto
+  --env npm-publish --allow-publish` (ids `7f63b9fc-…`, `14797c21-…`). Every npm write, and even
+  `npm trust list`, needs an OTP (`auth-and-writes`); the web flow cannot complete from a
+  non-interactive shell, `--otp=<code>` works.
+- The `sdk.yml package=presto` dispatch on the delivered head failed once on a pre-existing 5 s
+  timeout in the legacy NSS trust test (`test:scripts`); the re-run passed. Not in this stack's
+  scope; worth a timeout bump in a follow-up.
+- Follow-up PR agreed with the owner: release admission guards only after the killed bb is reaped
+  (shared `/prove` runner), outside this stack.
