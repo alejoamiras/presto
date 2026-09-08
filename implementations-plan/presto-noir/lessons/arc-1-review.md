@@ -77,6 +77,23 @@ Windows lane alike. `-k` accepts only the binary key (JSON is refused as `wrong 
 Windows key set-aside stays. Whether the chonk `/prove` path on Windows suffers the same text-mode
 write has never been exercised in CI; surfaced to the owner.
 
+## Rounds 5–6 — 2026-09-08 (`response-4.md`, `response-5.md`) — converged again
+
+Round 5 reviewed the JSON-output commit (246510c): one medium — the reader built an unbounded
+`serde_json::Value` and reserved by element count before validating anything, so a malformed
+output could amplify memory past its cap — and one low — `read_capped`'s `+1` sentinel was not
+checked before parsing. Fixed in 335d7a8: a streaming `DeserializeSeed` pair validates each field
+as it arrives, caps the count at `cap / 32`, skips other keys, rejects duplicate keys and trailing
+content; the file length is checked against the cap first. Codex endorsed JSON-everywhere over a
+Windows-only reader and the `3 × cap + 1024` file allowance.
+
+Round 6, quoted: "**Verdict: no material findings remain in the reviewed changes. Confidence:
+high.** … Windows native verification and the previously documented cancellation-confirmation
+residual remain separate outstanding items."
+
+Both codex runs in this stretch had to be run in the foreground: the harness killed background
+jobs for low memory while another session's `playwright-mcp` process held 6.4 GB of swap.
+
 ### Resolved: Windows desktop returned 500 on the UltraHonk prove (F-26)
 
 Run 34174258877 failed without a log; run 34181934669 (with the `$RUNNER_TEMP` upload) shows bb's
