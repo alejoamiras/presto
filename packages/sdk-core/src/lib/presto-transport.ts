@@ -643,7 +643,7 @@ export class PrestoTransport {
    * Drop an HTTPS pin after a network-level `/prove` failure so the retry (and the next probe) can
    * use HTTP. No-op in strict mode or when the pin isn't `https`. Also invalidates the status cache —
    * it described an endpoint that just failed at the transport layer. Returns whether a demotion
-   * happened (the caller uses this to decide on an HTTP retry).
+   * happened.
    */
   demoteHttpsPin(): boolean {
     if (this.#effectiveHttpsOnly || this.#protocol !== "https") return false;
@@ -703,10 +703,15 @@ export class PrestoTransport {
     return null;
   }
 
-  /** Store a freshly-computed status and return it (call-site convenience). */
+  /**
+   * Store a freshly-computed status and return it. Frozen: the same object reaches callers through
+   * `checkStatus()` and later routes a witness (`prove` posts to `status.protocol`), so a mutation
+   * would redirect it past the transport policy.
+   */
   cacheStatus(status: PrestoStatus): PrestoStatus {
-    this.#statusCache = { result: status, timestamp: performance.now() };
-    return status;
+    const frozen = Object.freeze(status);
+    this.#statusCache = { result: frozen, timestamp: performance.now() };
+    return frozen;
   }
 
   /**

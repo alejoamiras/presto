@@ -86,7 +86,7 @@ The environment has no npm secret. Configure each package's [npm GitHub Actions 
 | Environment | `npm-publish` |
 | Allowed action | Direct `npm publish` enabled; npm also grants staged publishing |
 
-`_publish-npm.yml` is intentionally `workflow_call`-only. npm validates the calling workflow name for reusable workflows, so the trusted-publisher filename is `release-sdk.yml`; the reusable declares `id-token: write` and only the `publish-*` jobs in `release-sdk.yml` delegate it.
+`_publish-npm.yml` is intentionally `workflow_call`-only. npm validates the calling workflow name for reusable workflows, so the trusted-publisher filename is `release-sdk.yml`; the reusable's `publish` job declares `id-token: write` and only the `publish-*` jobs in `release-sdk.yml` delegate it. The reusable's other jobs run with `contents: read`: `pack` builds and packs the candidate and records its SHA-256 as a job output, `consumer-test` installs the artifact from the registry with lifecycle scripts off, and `verify` performs the post-publish fresh install. The `publish` job re-asserts the recorded digest before `npm publish`, so nothing resolved from the registry ever runs beside the OIDC identity and no job that does can swap the artifact.
 
 Bootstrap the package interactively with npm login and 2FA. Publish only
 `@alejoamiras/presto@0.0.0-bootstrap.0` under the `bootstrap` tag, configure the trust above,
@@ -273,7 +273,7 @@ The `plan` job (`scripts/release-plan.ts`) decides before anything is published:
 
 After a partial publish (a dependency published, an adapter failed), rerun with the same selection: the published dependency is reused and only the remaining packages publish.
 
-Publish order is core → `presto-noir` → `presto`, each adapter's consumer profile rerun against the registry core before it publishes. With `mode=sdk-and-playground` the playground deploys once every selected package has published (or was reused); a package not selected is consumed at its current published version — `packages=presto-noir` alone deploys the published adapter with the SDK currently on `testnet`. `@alejoamiras/presto` keeps the sandbox e2e (native chonk parity) as its gate; `@alejoamiras/presto-noir` has its own production gates at the release SHA, run by the `noir-gates` job through `_ts-package-ci.yml`: bb.js WASM must reproduce the committed Noir fixtures byte for byte, and the adapter must prove natively (`fallback: "none"`) against a headless presto built from that commit with the real `bb`. Either failing blocks the adapter's publish and, through the order above, the SDK's.
+Publish order is core → `presto-noir` → `presto`, each adapter's consumer profile rerun against the registry core before it publishes. With `mode=sdk-and-playground` the playground deploys once every selected package has published (or was reused); a package not selected is consumed at its current published version — `packages=presto-noir` alone deploys the published adapter with the SDK currently on `testnet`. The deployment consumes only tarballs whose bytes hash to the integrity that both the provenance statement and npm's signature audit vouched for; a download that differs from what was verified aborts the deploy. `@alejoamiras/presto` keeps the sandbox e2e (native chonk parity) as its gate; `@alejoamiras/presto-noir` has its own production gates at the release SHA, run by the `noir-gates` job through `_ts-package-ci.yml`: bb.js WASM must reproduce the committed Noir fixtures byte for byte, and the adapter must prove natively (`fallback: "none"`) against a headless presto built from that commit with the real `bb`. Either failing blocks the adapter's publish and, through the order above, the SDK's.
 
 `testnet` is the npm candidate dist-tag used by the public testnet playground. It is not an npm network or a lesser form of the package. There is no separate `mainnet` publish path today: accepted candidates are deliberately promoted from `testnet` to npm's default `latest` tag. The old npm nightly publish path is retired; the historical `nightlies` dist-tag is left untouched.
 
@@ -287,7 +287,7 @@ Preview the derived version (`--package <key>` for a sibling; the base comes fro
 bun scripts/get-sdk-publish-version.ts --package presto
 ```
 
-Before dispatching, verify the derived npm version, matching Git tag, and GitHub release are all absent. The workflow repeats these checks, builds and rewrites the package manifest, packs one exact tarball, runs the consumer test against that tarball, and publishes those bytes with OIDC to `testnet`.
+Before dispatching, verify the derived npm version, matching Git tag, and GitHub release are all absent. The workflow repeats these checks, builds and rewrites the package manifest, packs one exact tarball and records its digest (`pack`), runs the consumer test against that tarball in a read-only job (`consumer-test`), then re-checks the digest and publishes those bytes with OIDC to `testnet` (`publish`).
 
 After npm accepts the package, the workflow requires all of the following before creating the tag/release:
 
@@ -296,7 +296,7 @@ After npm accepts the package, the workflow requires all of the following before
 - npm's current verifier cryptographically validates registry signatures and the SLSA attestation for the exact installed package;
 - the verified attestation subject digest matches npm's exact tarball integrity, and its source dependency identifies `alejoamiras/presto`, `.github/workflows/release-sdk.yml`, `refs/heads/main`, and the dispatched commit.
 
-It then tags the commit, creates a non-latest GitHub release, and verifies a fresh registry install. npm publication is irreversible, so if npm accepted the package but a later step failed, do not redispatch blindly; inspect and repair only the missing record.
+It then tags the commit and creates a non-latest GitHub release; a final read-only job verifies the records and a fresh registry install. npm publication is irreversible, so if npm accepted the package but a later step failed, do not redispatch blindly; inspect and repair only the missing record.
 
 ### HTTPS-by-default candidate canary
 

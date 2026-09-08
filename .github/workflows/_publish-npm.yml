@@ -3,6 +3,12 @@ name: _Publish npm package (reusable)
 # Intentionally call-only. npm trusted publishing authenticates the top-level
 # `.github/workflows/release-sdk.yml` workflow in the `npm-publish` environment; this workflow
 # declares the OIDC permission and the calling job in release-sdk.yml delegates it.
+#
+# The job holding the publish credentials executes no dependency lifecycle script, only repository code: `pack`
+# builds the candidate and records its digest, `consumer-test` runs the registry-resolved consumer
+# host with read-only permissions, `publish` re-asserts the digest before `npm publish`, and
+# `verify` does the post-publish registry install. The digest travels as a job output because an
+# artifact can be replaced within a run and a recorded output cannot.
 on:
   workflow_call:
     inputs:
@@ -34,38 +40,33 @@ on:
         description: "The version published to npm"
         value: ${{ jobs.publish.outputs.version }}
 
+env:
+  CANDIDATE_ARTIFACT: npm-candidate-${{ inputs.package }}
+
 jobs:
-  publish:
-    name: Publish ${{ inputs.package }}
+  pack:
+    name: Pack ${{ inputs.package }}
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    environment: npm-publish
+    timeout-minutes: 15
     permissions:
-      id-token: write
-      contents: write
+      contents: read
     outputs:
+      name: ${{ steps.pkg.outputs.name }}
+      dir: ${{ steps.pkg.outputs.dir }}
+      version_mode: ${{ steps.pkg.outputs.version_mode }}
       version: ${{ steps.version.outputs.version }}
+      tarball: ${{ steps.pack.outputs.tarball }}
+      sha256: ${{ steps.pack.outputs.sha256 }}
     env:
       PACKAGE: ${{ inputs.package }}
-      DIST_TAG: ${{ inputs.dist_tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.20.0
-          registry-url: https://registry.npmjs.org
-
-      - name: Require an npm CLI with trusted-publishing support
-        run: |
-          npm_version="$(npm --version)"
-          node -e 'const [major=0,minor=0,patch=0]=process.argv[1].split(".").map(Number); if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) process.exit(1)' "$npm_version" || {
-            echo "::error::npm 11.5.1 or newer is required for trusted publishing (got $npm_version)"
-            exit 1
-          }
-          echo "npm $npm_version"
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
@@ -126,7 +127,7 @@ jobs:
             exit 1
           fi
 
-          remote_refs="$(git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")"
+          remote_refs="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$tag" "refs/tags/$tag^{}")"
           if [ -n "$remote_refs" ]; then
             echo "::error::git tag $tag already exists on origin"
             exit 1
@@ -143,6 +144,7 @@ jobs:
           esac
 
       - name: Prepare and pack the exact publish artifact
+        id: pack
         working-directory: ${{ steps.pkg.outputs.dir }}
         env:
           VERSION: ${{ steps.version.outputs.version }}
@@ -154,12 +156,125 @@ jobs:
             [ -n "$pin" ] && deps+=(--dep "$pin")
           done
           bun "$GITHUB_WORKSPACE/scripts/prepare-sdk-publish.ts" "$VERSION" package.json "${deps[@]}"
-          tarball="$PWD/$(npm pack --silent)"
-          echo "TARBALL=$tarball" >> "$GITHUB_ENV"
-          echo "Packed $tarball"
+          tarball="$(npm pack --silent)"
+          sha256="$(sha256sum "$tarball" | cut -d' ' -f1)"
+          mkdir -p "$RUNNER_TEMP/candidate"
+          mv "$tarball" "$RUNNER_TEMP/candidate/"
+          echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
+          echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
+          echo "Packed $tarball (sha256 $sha256)"
 
-      - name: Test the exact publish artifact as an npm consumer
-        run: bash scripts/sdk-tarball-consumer.sh "$TARBALL" "$PACKAGE"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.CANDIDATE_ARTIFACT }}
+          path: ${{ runner.temp }}/candidate/${{ steps.pack.outputs.tarball }}
+          if-no-files-found: error
+          retention-days: 1
+
+  # Registry-resolved dependencies (and their install scripts, were they enabled) run here, with a
+  # read-only token and no OIDC identity.
+  consumer-test:
+    name: Consume ${{ inputs.package }}
+    needs: pack
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    env:
+      PACKAGE: ${{ inputs.package }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.20.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - run: bun install --frozen-lockfile
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.CANDIDATE_ARTIFACT }}
+          path: ${{ runner.temp }}/candidate
+
+      - name: Test the packed artifact as an npm consumer
+        env:
+          TARBALL: ${{ runner.temp }}/candidate/${{ needs.pack.outputs.tarball }}
+          SHA256: ${{ needs.pack.outputs.sha256 }}
+        run: |
+          echo "$SHA256  $TARBALL" | sha256sum -c -
+          bash scripts/sdk-tarball-consumer.sh "$TARBALL" "$PACKAGE"
+
+  publish:
+    name: Publish ${{ inputs.package }}
+    needs: [pack, consumer-test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: npm-publish
+    permissions:
+      id-token: write
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      PACKAGE: ${{ inputs.package }}
+      DIST_TAG: ${{ inputs.dist_tag }}
+      VERSION: ${{ needs.pack.outputs.version }}
+      PACKAGE_NAME: ${{ needs.pack.outputs.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.20.0
+          registry-url: https://registry.npmjs.org
+
+      - name: Require an npm CLI with trusted-publishing support
+        run: |
+          npm_version="$(npm --version)"
+          node -e 'const [major=0,minor=0,patch=0]=process.argv[1].split(".").map(Number); if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) process.exit(1)' "$npm_version" || {
+            echo "::error::npm 11.5.1 or newer is required for trusted publishing (got $npm_version)"
+            exit 1
+          }
+          echo "npm $npm_version"
+
+      # No dependency lifecycle script runs in this job: the verification scripts below import only
+      # repository modules and runtime built-ins, so there is no lockfile install here — even a locked
+      # dependency's `prepare` must not run beside the OIDC identity.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.CANDIDATE_ARTIFACT }}
+          path: ${{ runner.temp }}/candidate
+
+      - name: Assert the artifact is the one packed, then confirm the planned version
+        id: version
+        env:
+          TARBALL: ${{ runner.temp }}/candidate/${{ needs.pack.outputs.tarball }}
+          SHA256: ${{ needs.pack.outputs.sha256 }}
+          PLANNED: ${{ inputs.version }}
+        run: |
+          echo "$SHA256  $TARBALL" | sha256sum -c -
+          if [ "$VERSION" != "$PLANNED" ]; then
+            echo "::error::packed $VERSION, planned $PLANNED"
+            exit 1
+          fi
+          echo "TARBALL=$TARBALL" >> "$GITHUB_ENV"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
       - name: Publish the candidate to npm with OIDC
         # npm exchanges GitHub's OIDC identity through the configured trusted publisher.
@@ -167,9 +282,6 @@ jobs:
         run: npm publish "$TARBALL" --provenance --access public --tag "$DIST_TAG" --workspaces=false
 
       - name: Verify npm version, dist-tag, and provenance
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-          PACKAGE_NAME: ${{ steps.pkg.outputs.name }}
         run: |
           for attempt in $(seq 1 10); do
             published="$(npm view "$PACKAGE_NAME@$VERSION" version 2>/dev/null || true)"
@@ -185,17 +297,13 @@ jobs:
           exit 1
 
       - name: Cryptographically verify registry signatures and provenance
-        env:
-          VERSION: ${{ steps.version.outputs.version }}
-        run: bun scripts/verify-sdk-package-signatures.ts --package "$PACKAGE" "$VERSION"
+        run: bun scripts/verify-sdk-package-signatures.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"
 
       - name: Create git tag and GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
-          PACKAGE_NAME: ${{ steps.pkg.outputs.name }}
-          PACKAGE_DIR: ${{ steps.pkg.outputs.dir }}
-          VERSION_MODE: ${{ steps.pkg.outputs.version_mode }}
+          PACKAGE_DIR: ${{ needs.pack.outputs.dir }}
+          VERSION_MODE: ${{ needs.pack.outputs.version_mode }}
           RELEASE_ASSET: ${{ inputs.release_asset }}
         run: |
           tag="${PACKAGE_NAME}@${VERSION}"
@@ -222,27 +330,41 @@ jobs:
             --latest=false \
             "${assets[@]}"
 
+  # A fresh registry install of the published version, with a read-only token and no OIDC identity.
+  verify:
+    name: Verify ${{ inputs.package }}
+    needs: [pack, publish]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.publish.outputs.version }}
+      PACKAGE_NAME: ${{ needs.pack.outputs.name }}
+    steps:
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.20.0
+
       - name: Verify release records and a fresh registry install
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ steps.version.outputs.version }}
-          PACKAGE_NAME: ${{ steps.pkg.outputs.name }}
         run: |
           tag="${PACKAGE_NAME}@${VERSION}"
-          remote_refs="$(git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")"
+          remote_refs="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$tag" "refs/tags/$tag^{}")"
           remote_sha="$(printf '%s\n' "$remote_refs" | awk '/\^\{\}$/ {print $1; exit}')"
           [ -z "$remote_sha" ] && remote_sha="$(printf '%s\n' "$remote_refs" | awk 'NR==1 {print $1}')"
           if [ "$remote_sha" != "$GITHUB_SHA" ]; then
             echo "::error::remote tag resolves to $remote_sha, expected $GITHUB_SHA"
             exit 1
           fi
-          gh release view "$tag" --json tagName --jq '.tagName' | grep -Fx "$tag"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName' | grep -Fx "$tag"
 
           work="$(mktemp -d)"
           trap 'rm -rf "$work"' EXIT
           cd "$work"
           npm init -y >/dev/null
-          npm install --no-audit --no-fund --loglevel=error "$PACKAGE_NAME@$VERSION"
+          npm install --ignore-scripts --no-audit --no-fund --loglevel=error "$PACKAGE_NAME@$VERSION"
           installed="$(node -p "require('./node_modules/$PACKAGE_NAME/package.json').version")"
           [ "$installed" = "$VERSION" ] || {
             echo "::error::fresh install resolved $installed, expected $VERSION"

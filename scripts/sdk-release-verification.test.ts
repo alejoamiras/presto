@@ -59,7 +59,17 @@ describe("SDK provenance verification", () => {
       ref: "refs/heads/main",
       repository: SDK_REPOSITORY,
       workflow: SDK_RELEASE_WORKFLOW,
+      integrity: `sha512-${Buffer.from("ab".repeat(64), "hex").toString("base64")}`,
     });
+  });
+
+  test("a subject without a SHA-512 digest cannot vouch for any bytes", () => {
+    expect(() => verifyProvenanceStatement(statement({ digest: "" }), "5.2.0-revision.1")).toThrow(
+      "no SHA-512 digest",
+    );
+    expect(() =>
+      verifyProvenanceStatement(statement({ digest: "ab".repeat(32) }), "5.2.0-revision.1"),
+    ).toThrow("no SHA-512 digest");
   });
 
   test("rejects provenance from the reusable workflow identity", () => {

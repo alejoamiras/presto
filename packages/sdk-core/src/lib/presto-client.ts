@@ -348,7 +348,7 @@ export class PrestoClient {
       logger.info("Presto needs to download bb for this version");
       this.#onPhase?.("downloading");
     }
-    return this.#proveRemote(request, detectGen);
+    return this.#proveRemote(request, detectGen, status.protocol);
   }
 
   /**
@@ -357,12 +357,16 @@ export class PrestoClient {
    * permitted; otherwise it degrades and the witness never goes plaintext. Recognized HTTP-level
    * failures also degrade, while misconfiguration/unexpected responses become the typed error.
    */
-  async #proveRemote(request: Snapshot, attemptGen: number): Promise<ProveOutcome> {
-    // Endpoint snapshot taken BEFORE any `onPhase` callback runs: a dApp's handler may call
-    // `configure(B)` between here and the POST, and the witness must never reach an unprobed B.
-    // Every POST below uses these snapshots.
-    const url = `${this.#transport.baseUrl}${request.path}`;
-    const wasHttps = url.startsWith("https:");
+  async #proveRemote(
+    request: Snapshot,
+    attemptGen: number,
+    protocol: PrestoProtocol,
+  ): Promise<ProveOutcome> {
+    // The destination is the protocol that answered THIS attempt's health check, never the live pin:
+    // a concurrent proof's HTTP demotion clears the pin without a generation bump, and a dApp's
+    // `onPhase` handler may `configure(B)` before the POST. Every POST below uses these snapshots.
+    const url = this.#transport.urlFor(protocol, request.path);
+    const wasHttps = protocol === "https";
     // Only snapshot the HTTP PROOF-retry target when plaintext proving is permitted — gated on the
     // EFFECTIVE policy, not the raw `httpsOnly` flag: once HTTPS has proven healthy here the
     // downgrade is refused too.
@@ -374,7 +378,9 @@ export class PrestoClient {
     logger.info("Presto available, proving natively", { url });
 
     this.#onPhase?.("serialize");
-    const payload = request.body();
+    // Copied here, not after the check below: `Uint8Array.from` iterates a caller-supplied payload,
+    // which is caller code that must run before the last look at the configuration.
+    const payload = Uint8Array.from(request.body());
     this.#onPhase?.("transmit");
     this.#onPhase?.("proving");
 
@@ -393,7 +399,7 @@ export class PrestoClient {
       url,
       wasHttps,
       httpRetryUrl,
-      payload: Uint8Array.from(payload),
+      payload,
       startedAt: performance.now(),
     };
     let response: Response;

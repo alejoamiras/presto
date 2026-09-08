@@ -327,7 +327,7 @@ async function releaseFacts(
   if (!tagCommit) return { releaseVerified: false };
   try {
     const provenance = await fetchAndVerifySdkProvenance(version, tagCommit, undefined, pkg);
-    await verifySdkPackageSignatures(version, pkg);
+    await verifySdkPackageSignatures(version, pkg, tagCommit);
     if (provenance.commit !== tagCommit || !githubReleaseExists(tag)) {
       return { releaseVerified: false };
     }
