@@ -12,6 +12,21 @@ on:
           - sdk-only
           - playground-only
         default: sdk-and-playground
+      packages:
+        description: "Which npm packages to release (scripts/npm-packages.ts keys, or all in dependency order)"
+        required: false
+        type: choice
+        options:
+          - presto
+          - presto-core
+          - presto-noir
+          - all
+        default: presto
+      dry_run:
+        description: "Plan and preflight only: publish nothing, report which dependency checks would be deferred"
+        required: false
+        type: boolean
+        default: false
 
 # npm publication is irreversible. Never cancel an in-flight release, and verify that a
 # dispatch actually starts because GitHub retains at most one queued run per group.
@@ -42,8 +57,59 @@ jobs:
             exit 1
           fi
 
-  e2e:
+  # Decides publish / reuse / collision for every selected package before anything is published, using
+  # only registry-independent checks plus what is already on npm. A dependency published in this run
+  # cannot have its provenance or a registry-consumer rerun checked here; the plan lists those as
+  # deferred and the publish jobs perform them in order.
+  plan:
+    name: Release plan
     needs: assert-main
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      publish_presto: ${{ steps.plan.outputs.publish_presto }}
+      deps_presto: ${{ steps.plan.outputs.deps_presto }}
+      publish_presto_core: ${{ steps.plan.outputs.publish_presto_core }}
+      deps_presto_core: ${{ steps.plan.outputs.deps_presto_core }}
+      publish_presto_noir: ${{ steps.plan.outputs.publish_presto_noir }}
+      deps_presto_noir: ${{ steps.plan.outputs.deps_presto_noir }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+      - name: Plan the release
+        id: plan
+        env:
+          PACKAGES: ${{ inputs.packages }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          args=(--packages "$PACKAGES")
+          if [ "$DRY_RUN" = "true" ]; then args+=(--dry-run); fi
+          bun scripts/release-plan.ts "${args[@]}"
+      - name: Record the plan
+        env:
+          SUMMARY: ${{ steps.plan.outputs.summary }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          {
+            echo "## Release plan${DRY_RUN:+ (dry run: nothing is published)}"
+            echo '```'
+            printf '%s\n' "$SUMMARY"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  e2e:
+    needs: [assert-main, plan]
+    if: ${{ !inputs.dry_run }}
     uses: ./.github/workflows/_e2e.yml
     with:
       ref: ${{ github.sha }}
@@ -52,20 +118,49 @@ jobs:
       build_presto: ${{ inputs.mode != 'playground-only' }}
 
   dependency-audit:
-    needs: assert-main
+    needs: [assert-main, plan]
+    if: ${{ !inputs.dry_run }}
     uses: ./.github/workflows/dependency-audit.yml
 
-  publish-sdk:
-    needs: [assert-main, e2e, dependency-audit]
-    if: ${{ inputs.mode != 'playground-only' }}
+  # Dependencies first: the adapters' deferred checks (dependency provenance, consumer rerun against
+  # the registry dependency) run inside their own publish job, after this one verified the artifact.
+  publish-core:
+    needs: [assert-main, plan, e2e, dependency-audit]
+    if: ${{ !cancelled() && !inputs.dry_run && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto_core == 'true' }}
     permissions:
       id-token: write
       contents: write
-    uses: ./.github/workflows/_publish-sdk.yml
+    uses: ./.github/workflows/_publish-npm.yml
+    with:
+      package: presto-core
+      dependency_versions: ${{ needs.plan.outputs.deps_presto_core }}
+
+  publish-presto:
+    needs: [assert-main, plan, e2e, dependency-audit, publish-core]
+    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') }}
+    permissions:
+      id-token: write
+      contents: write
+    uses: ./.github/workflows/_publish-npm.yml
+    with:
+      package: presto
+      release_asset: packages/sdk/MIGRATION.md
+      dependency_versions: ${{ needs.plan.outputs.deps_presto }}
+
+  publish-noir:
+    needs: [assert-main, plan, e2e, dependency-audit, publish-core]
+    if: ${{ !cancelled() && !inputs.dry_run && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto_noir == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') }}
+    permissions:
+      id-token: write
+      contents: write
+    uses: ./.github/workflows/_publish-npm.yml
+    with:
+      package: presto-noir
+      dependency_versions: ${{ needs.plan.outputs.deps_presto_noir }}
 
   deploy-app:
-    needs: [assert-main, e2e, dependency-audit, publish-sdk]
-    if: ${{ !cancelled() && inputs.mode != 'sdk-only' && needs.assert-main.result == 'success' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && (inputs.mode == 'playground-only' || needs.publish-sdk.result == 'success') }}
+    needs: [assert-main, plan, e2e, dependency-audit, publish-presto]
+    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'sdk-only' && needs.assert-main.result == 'success' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && (inputs.mode == 'playground-only' || needs.publish-presto.result == 'success') }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -88,7 +183,7 @@ jobs:
 
       - name: Consume the exact verified published candidate
         env:
-          PUBLISHED_VERSION: ${{ needs.publish-sdk.outputs.sdk_version }}
+          PUBLISHED_VERSION: ${{ needs.publish-presto.outputs.version }}
         run: bun scripts/published-playground.ts "$PUBLISHED_VERSION"
 
       - name: Build playground

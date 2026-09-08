@@ -100,10 +100,36 @@ export function releaseTag(pkg: NpmPackage, version: string): string {
   return `${pkg.name}@${version}`;
 }
 
+export interface Manifest {
+  name?: string;
+  version?: string;
+  dependencies?: Record<string, string>;
+  peerDependencies?: Record<string, string>;
+  optionalDependencies?: Record<string, string>;
+  [key: string]: unknown;
+}
+
 /** The package's workspace manifest, read from disk. */
 export function readManifest(
   pkg: NpmPackage,
   root: string = resolve(import.meta.dir, ".."),
-): Record<string, unknown> & { name?: string; version?: string } {
+): Manifest {
   return JSON.parse(readFileSync(join(root, pkg.dir, "package.json"), "utf8"));
+}
+
+/** The descriptor keys this manifest depends on through `workspace:` ranges, in any dependency field. */
+export function workspaceDependencies(manifest: Manifest): PackageKey[] {
+  const keys: PackageKey[] = [];
+  const fields = [manifest.dependencies, manifest.peerDependencies, manifest.optionalDependencies];
+  for (const deps of fields) {
+    for (const [name, range] of Object.entries(deps ?? {})) {
+      if (!range.startsWith("workspace:")) continue;
+      const key = (Object.keys(NPM_PACKAGES) as PackageKey[]).find(
+        (k) => NPM_PACKAGES[k].name === name,
+      );
+      if (!key) throw new Error(`${name} is a workspace dependency but not a publishable package`);
+      if (!keys.includes(key)) keys.push(key);
+    }
+  }
+  return keys;
 }

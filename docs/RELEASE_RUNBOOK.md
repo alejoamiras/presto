@@ -72,7 +72,7 @@ release; resolve future failures under the ordinary append-only release rules.
 
 ### `npm-publish` GitHub environment and npm trusted publisher
 
-The environment has no npm secret. Configure the package's [npm GitHub Actions trusted publisher](https://docs.npmjs.com/trusted-publishers/) exactly as follows:
+The environment has no npm secret. Configure each package's [npm GitHub Actions trusted publisher](https://docs.npmjs.com/trusted-publishers/) exactly as follows — one registration per npm name in `scripts/npm-packages.ts` (`@alejoamiras/presto`, and `@alejoamiras/presto-core` / `@alejoamiras/presto-noir` before their first publish; registering a new name is an owner action, never a workflow step):
 
 | Field | Value |
 |---|---|
@@ -82,7 +82,7 @@ The environment has no npm secret. Configure the package's [npm GitHub Actions t
 | Environment | `npm-publish` |
 | Allowed action | Direct `npm publish` enabled; npm also grants staged publishing |
 
-`_publish-sdk.yml` is intentionally `workflow_call`-only. npm validates the calling workflow name for reusable workflows, so the trusted-publisher filename is `release-sdk.yml`; both caller and called workflow grant `id-token: write`.
+`_publish-npm.yml` is intentionally `workflow_call`-only. npm validates the calling workflow name for reusable workflows, so the trusted-publisher filename is `release-sdk.yml`; the reusable declares `id-token: write` and only the `publish-*` jobs in `release-sdk.yml` delegate it.
 
 Bootstrap the package interactively with npm login and 2FA. Publish only
 `@alejoamiras/presto@0.0.0-bootstrap.0` under the `bootstrap` tag, configure the trust above,
@@ -240,10 +240,10 @@ remains deployable forever. See [Cloudflare rollback semantics](https://develope
 
 ## Releasing the SDK candidate
 
-`release-sdk.yml` has one manual entry point and three modes:
+`release-sdk.yml` has one manual entry point, three modes, a package selection, and a dry run:
 
 ```bash
-# Default: publish SDK candidate, then deploy the testnet playground
+# Default: publish the SDK candidate, then deploy the testnet playground
 gh workflow run release-sdk.yml --ref main -f mode=sdk-and-playground
 
 # Publish only
@@ -251,7 +251,23 @@ gh workflow run release-sdk.yml --ref main -f mode=sdk-only
 
 # Deploy playground only; no npm mutation
 gh workflow run release-sdk.yml --ref main -f mode=playground-only
+
+# One sibling package, or every package in dependency order (core before its adapters)
+gh workflow run release-sdk.yml --ref main -f mode=sdk-only -f packages=presto-core
+gh workflow run release-sdk.yml --ref main -f mode=sdk-only -f packages=all
+
+# Plan and preflight only: publishes nothing, reports what would publish, reuse, or be deferred
+gh workflow run release-sdk.yml --ref main -f mode=sdk-only -f packages=all -f dry_run=true
 ```
+
+The `plan` job (`scripts/release-plan.ts`) decides before anything is published:
+
+- `@alejoamiras/presto` (`aztec-derived`) always publishes, with a revision suffix when its base is taken.
+- A `manifest`-versioned package (`presto-core`, `presto-noir`) publishes its `package.json` version exactly once. A version already on npm is **reused** — not republished, not a collision — when its release tag and provenance name the same commit and the package's sources are unchanged since that commit; otherwise the run fails before publishing anything, and the fix is forward: bump the version and rerun with the same selection. Nothing is ever deleted or overwritten.
+- A package that depends on a sibling published in the same run cannot have that dependency's provenance, or its consumer rerun against the registry dependency, checked up front; the plan lists those as **deferred**, and the adapter's publish job performs them after the dependency is published and verified. With `dry_run=true` the summary shows exactly which checks would be deferred.
+- A `workspace:` dependency that is neither selected nor already on npm at the pinned version fails the plan.
+
+After a partial publish (a dependency published, an adapter failed), rerun with the same selection: the published dependency is reused and only the remaining packages publish.
 
 `testnet` is the npm candidate dist-tag used by the public testnet playground. It is not an npm network or a lesser form of the package. There is no separate `mainnet` publish path today: accepted candidates are deliberately promoted from `testnet` to npm's default `latest` tag. The old npm nightly publish path is retired; the historical `nightlies` dist-tag is left untouched.
 
@@ -259,11 +275,10 @@ gh workflow run release-sdk.yml --ref main -f mode=playground-only
 
 The SDK package's checked-in version remains `0.0.0`. The workflow derives a version from the pinned `@aztec/stdlib` version. If the base already exists, it chooses `<base>-revision.N` for a stable base or appends `.N` to a prerelease base.
 
-Preview the derived version:
+Preview the derived version (`--package <key>` for a sibling; the base comes from the package's manifest):
 
 ```bash
-AZTEC_VERSION=$(node -p "require('./packages/sdk/package.json').dependencies['@aztec/stdlib']")
-bun scripts/get-sdk-publish-version.ts "$AZTEC_VERSION"
+bun scripts/get-sdk-publish-version.ts --package presto
 ```
 
 Before dispatching, verify the derived npm version, matching Git tag, and GitHub release are all absent. The workflow repeats these checks, builds and rewrites the package manifest, packs one exact tarball, runs the consumer test against that tarball, and publishes those bytes with OIDC to `testnet`.

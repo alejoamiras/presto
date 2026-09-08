@@ -1,0 +1,234 @@
+name: _Publish npm package (reusable)
+
+# Intentionally call-only. npm trusted publishing authenticates the top-level
+# `.github/workflows/release-sdk.yml` workflow in the `npm-publish` environment; this workflow
+# declares the OIDC permission and the calling job in release-sdk.yml delegates it.
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: "Descriptor key in scripts/npm-packages.ts"
+        required: true
+        type: string
+      dist_tag:
+        description: "npm dist-tag the candidate publishes under; promotion to latest is a separate step"
+        required: false
+        type: string
+        default: testnet
+      release_asset:
+        description: "Optional repository file attached to the GitHub release"
+        required: false
+        type: string
+        default: ""
+      dependency_versions:
+        description: "Comma-separated name=version pins for the package's workspace: dependencies"
+        required: false
+        type: string
+        default: ""
+    outputs:
+      version:
+        description: "The version published to npm"
+        value: ${{ jobs.publish.outputs.version }}
+
+jobs:
+  publish:
+    name: Publish ${{ inputs.package }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: npm-publish
+    permissions:
+      id-token: write
+      contents: write
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    env:
+      PACKAGE: ${{ inputs.package }}
+      DIST_TAG: ${{ inputs.dist_tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.20.0
+          registry-url: https://registry.npmjs.org
+
+      - name: Require an npm CLI with trusted-publishing support
+        run: |
+          npm_version="$(npm --version)"
+          node -e 'const [major=0,minor=0,patch=0]=process.argv[1].split(".").map(Number); if (major < 11 || (major === 11 && (minor < 5 || (minor === 5 && patch < 1)))) process.exit(1)' "$npm_version" || {
+            echo "::error::npm 11.5.1 or newer is required for trusted publishing (got $npm_version)"
+            exit 1
+          }
+          echo "npm $npm_version"
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - run: bun install --frozen-lockfile
+
+      - name: Resolve the package from the descriptor
+        id: pkg
+        run: |
+          # shellcheck disable=SC2016  # single quotes are deliberate: the JS must not shell-expand
+          bun -e '
+            import { resolvePackage } from "./scripts/npm-packages.ts";
+            const pkg = resolvePackage(process.argv[1]);
+            require("fs").appendFileSync(process.env.GITHUB_OUTPUT, `name=${pkg.name}\ndir=${pkg.dir}\nversion_mode=${pkg.versionMode}\n`);
+          ' "$PACKAGE"
+
+      - run: bun run --cwd "${{ steps.pkg.outputs.dir }}" build
+
+      - name: Determine the publish version
+        id: version
+        run: |
+          version=$(bun scripts/get-sdk-publish-version.ts --package "$PACKAGE")
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "$PACKAGE candidate: $version"
+
+      - name: Fail closed if npm, git, or GitHub already contains the candidate
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE_NAME: ${{ steps.pkg.outputs.name }}
+        run: |
+          tag="${PACKAGE_NAME}@${VERSION}"
+          encoded_tag="$(jq -rn --arg tag "$tag" '$tag | @uri')"
+
+          versions="$(npm view "$PACKAGE_NAME" versions --json 2>/dev/null || echo '[]')"
+          if printf '%s' "$versions" | jq -e --arg version "$VERSION" 'if type == "array" then index($version) != null else . == $version end' >/dev/null; then
+            echo "::error::$PACKAGE_NAME@$VERSION already exists on npm"
+            exit 1
+          fi
+
+          remote_refs="$(git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")"
+          if [ -n "$remote_refs" ]; then
+            echo "::error::git tag $tag already exists on origin"
+            exit 1
+          fi
+
+          release_status="$(curl -sS -o "$RUNNER_TEMP/release.json" -w '%{http_code}' \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/$GITHUB_REPOSITORY/releases/tags/$encoded_tag")"
+          case "$release_status" in
+            404) ;;
+            200) echo "::error::GitHub release $tag already exists"; exit 1 ;;
+            *) echo "::error::GitHub release preflight returned HTTP $release_status"; exit 1 ;;
+          esac
+
+      - name: Prepare and pack the exact publish artifact
+        working-directory: ${{ steps.pkg.outputs.dir }}
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          DEPENDENCY_VERSIONS: ${{ inputs.dependency_versions }}
+        run: |
+          deps=()
+          IFS=',' read -ra pins <<< "$DEPENDENCY_VERSIONS"
+          for pin in "${pins[@]}"; do
+            [ -n "$pin" ] && deps+=(--dep "$pin")
+          done
+          bun "$GITHUB_WORKSPACE/scripts/prepare-sdk-publish.ts" "$VERSION" package.json "${deps[@]}"
+          tarball="$PWD/$(npm pack --silent)"
+          echo "TARBALL=$tarball" >> "$GITHUB_ENV"
+          echo "Packed $tarball"
+
+      - name: Test the exact publish artifact as an npm consumer
+        run: bash scripts/sdk-tarball-consumer.sh "$TARBALL" "$PACKAGE"
+
+      - name: Publish the candidate to npm with OIDC
+        # npm exchanges GitHub's OIDC identity through the configured trusted publisher.
+        # Do not add a traditional token fallback to this run.
+        run: npm publish "$TARBALL" --provenance --access public --tag "$DIST_TAG" --workspaces=false
+
+      - name: Verify npm version, dist-tag, and provenance
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE_NAME: ${{ steps.pkg.outputs.name }}
+        run: |
+          for attempt in $(seq 1 10); do
+            published="$(npm view "$PACKAGE_NAME@$VERSION" version 2>/dev/null || true)"
+            tagged="$(npm view "$PACKAGE_NAME" "dist-tags.$DIST_TAG" 2>/dev/null || true)"
+            if [ "$published" = "$VERSION" ] && [ "$tagged" = "$VERSION" ] && \
+               bun scripts/sdk-release-verification.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"; then
+              exit 0
+            fi
+            echo "Registry/provenance not consistent yet (attempt $attempt/10)"
+            sleep 6
+          done
+          echo "::error::npm publish could not be verified"
+          exit 1
+
+      - name: Cryptographically verify registry signatures and provenance
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: bun scripts/verify-sdk-package-signatures.ts --package "$PACKAGE" "$VERSION"
+
+      - name: Create git tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE_NAME: ${{ steps.pkg.outputs.name }}
+          PACKAGE_DIR: ${{ steps.pkg.outputs.dir }}
+          VERSION_MODE: ${{ steps.pkg.outputs.version_mode }}
+          RELEASE_ASSET: ${{ inputs.release_asset }}
+        run: |
+          tag="${PACKAGE_NAME}@${VERSION}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$tag"
+          git push origin "$tag"
+
+          if [ "$VERSION_MODE" = "aztec-derived" ]; then
+            aztec_version="$(node -p "require('./$PACKAGE_DIR/package.json').dependencies['@aztec/stdlib']")"
+            if [ "$VERSION" = "$aztec_version" ]; then
+              notes="Aligned with Aztec testnet version \`$aztec_version\`."
+            else
+              notes="SDK revision for Aztec testnet version \`$aztec_version\`."
+            fi
+          else
+            notes="Release of \`$PACKAGE_NAME\` $VERSION."
+          fi
+          assets=()
+          if [ -n "$RELEASE_ASSET" ]; then assets+=("$RELEASE_ASSET"); fi
+          gh release create "$tag" \
+            --title "$tag" \
+            --notes "$notes" \
+            --latest=false \
+            "${assets[@]}"
+
+      - name: Verify release records and a fresh registry install
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PACKAGE_NAME: ${{ steps.pkg.outputs.name }}
+        run: |
+          tag="${PACKAGE_NAME}@${VERSION}"
+          remote_refs="$(git ls-remote origin "refs/tags/$tag" "refs/tags/$tag^{}")"
+          remote_sha="$(printf '%s\n' "$remote_refs" | awk '/\^\{\}$/ {print $1; exit}')"
+          [ -z "$remote_sha" ] && remote_sha="$(printf '%s\n' "$remote_refs" | awk 'NR==1 {print $1}')"
+          if [ "$remote_sha" != "$GITHUB_SHA" ]; then
+            echo "::error::remote tag resolves to $remote_sha, expected $GITHUB_SHA"
+            exit 1
+          fi
+          gh release view "$tag" --json tagName --jq '.tagName' | grep -Fx "$tag"
+
+          work="$(mktemp -d)"
+          trap 'rm -rf "$work"' EXIT
+          cd "$work"
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund --loglevel=error "$PACKAGE_NAME@$VERSION"
+          installed="$(node -p "require('./node_modules/$PACKAGE_NAME/package.json').version")"
+          [ "$installed" = "$VERSION" ] || {
+            echo "::error::fresh install resolved $installed, expected $VERSION"
+            exit 1
+          }
+          echo "Verified $PACKAGE_NAME@$VERSION; npm latest remains unchanged."

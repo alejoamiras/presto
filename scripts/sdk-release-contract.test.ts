@@ -1,27 +1,75 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
+import { NPM_PACKAGES } from "./npm-packages.ts";
 
 const repository = resolve(import.meta.dir, "..");
 const release = readFileSync(resolve(repository, ".github/workflows/release-sdk.yml"), "utf8");
-const publish = readFileSync(resolve(repository, ".github/workflows/_publish-sdk.yml"), "utf8");
+const publish = readFileSync(resolve(repository, ".github/workflows/_publish-npm.yml"), "utf8");
 
-describe("SDK release workflow contract", () => {
-  test("OIDC is the only publish credential and binds the top-level environment", () => {
-    expect(release).toContain("id-token: write");
-    expect(publish).toContain("id-token: write");
+/** The `jobs:` block of one job, up to the next top-level job. */
+function job(workflow: string, name: string): string {
+  const start = workflow.indexOf(`\n  ${name}:\n`);
+  expect(start).toBeGreaterThan(0);
+  const rest = workflow.slice(start + 1);
+  const next = rest.slice(1).search(/\n {2}[a-z-]+:\n/);
+  return next === -1 ? rest : rest.slice(0, next + 1);
+}
+
+describe("npm release workflow contract", () => {
+  test("OIDC is the only publish credential, declared by the reusable and delegated only at the call edge", () => {
     expect(publish).toContain("environment: npm-publish");
+    expect(publish).toContain("id-token: write");
     expect(`${release}\n${publish}`).not.toMatch(/NPM_TOKEN|NODE_AUTH_TOKEN/);
-    expect(publish).toContain('npm publish "$TARBALL" --provenance --access public --tag testnet');
+    expect(publish).toContain(
+      'npm publish "$TARBALL" --provenance --access public --tag "$DIST_TAG" --workspaces=false',
+    );
+    const publishJobs = ["publish-core", "publish-presto", "publish-noir"];
+    for (const name of publishJobs) {
+      const block = job(release, name);
+      expect(block).toContain("uses: ./.github/workflows/_publish-npm.yml");
+      expect(block).toContain("id-token: write");
+    }
+    for (const name of ["assert-main", "plan", "deploy-app"]) {
+      expect(job(release, name)).not.toContain("id-token");
+    }
+    expect(release.match(/id-token: write/g)?.length).toBe(publishJobs.length);
   });
 
-  test("dependency audit and exact cryptographic verification gate publication records", () => {
+  test("every descriptor package is a dispatch choice with its own gated publish job", () => {
+    const choices = release.slice(release.indexOf("packages:"), release.indexOf("dry_run:"));
+    for (const key of Object.keys(NPM_PACKAGES)) {
+      expect(choices).toContain(`- ${key}`);
+      expect(release).toContain(`package: ${key}`);
+      const slug = key.replace(/-/g, "_");
+      expect(release).toContain(`needs.plan.outputs.publish_${slug} == 'true'`);
+    }
+    expect(choices).toContain("- all");
+  });
+
+  test("dependency audit, e2e, and the plan gate every publish; adapters wait for core", () => {
     expect(release).toContain("uses: ./.github/workflows/dependency-audit.yml");
-    expect(release).toContain("needs: [assert-main, e2e, dependency-audit]");
+    for (const name of ["publish-core", "publish-presto", "publish-noir"]) {
+      const block = job(release, name);
+      expect(block).toContain("needs: [assert-main, plan, e2e, dependency-audit");
+      expect(block).toContain("!inputs.dry_run");
+    }
+    for (const name of ["publish-presto", "publish-noir"]) {
+      expect(job(release, name)).toContain(
+        "(needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped')",
+      );
+    }
+    expect(job(release, "plan")).toContain("bun scripts/release-plan.ts");
+  });
+
+  test("exact cryptographic verification precedes the publication records", () => {
     const verification = publish.indexOf("bun scripts/verify-sdk-package-signatures.ts");
     const records = publish.indexOf("Create git tag and GitHub release");
     expect(verification).toBeGreaterThan(0);
     expect(records).toBeGreaterThan(verification);
+    expect(publish.indexOf("bash scripts/sdk-tarball-consumer.sh")).toBeLessThan(
+      publish.indexOf("npm publish"),
+    );
   });
 
   test("playground verification uses the publish job's Node/npm toolchain", () => {

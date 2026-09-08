@@ -65,7 +65,7 @@ describe("SDK provenance verification", () => {
   test("rejects provenance from the reusable workflow identity", () => {
     expect(() =>
       verifyProvenanceStatement(
-        statement({ path: ".github/workflows/_publish-sdk.yml" }),
+        statement({ path: ".github/workflows/_publish-npm.yml" }),
         "5.2.0-revision.1",
       ),
     ).toThrow("unexpected provenance workflow");
