@@ -218,9 +218,12 @@ jobs:
           restore-keys: ${{ runner.os }}-bun-
       - run: bun install --frozen-lockfile
 
+      # Empty when presto was not published in this run (unselected, or playground-only): the script
+      # then takes the SDK on `testnet`. The plan's version_presto is the NEXT publication, never a
+      # published one, so it must not be used here.
       - name: Consume the exact verified published candidate
         env:
-          PUBLISHED_VERSION: ${{ needs.publish-presto.outputs.version || needs.plan.outputs.version_presto }}
+          PUBLISHED_VERSION: ${{ needs.publish-presto.outputs.version }}
         run: bun scripts/published-playground.ts "$PUBLISHED_VERSION"
 
       - name: Build playground

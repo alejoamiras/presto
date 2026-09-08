@@ -226,7 +226,18 @@ describe("lockfileSlice", () => {
         "@logtape/logtape": ["@logtape/logtape@2.3.2", "", {}, "sha512-a"],
         ms: ["ms@2.1.3", "", {}, "sha512-b"],
         "@types/ms": ["@types/ms@2.1.0", "", {}, "sha512-c"],
-        typescript: ["typescript@7.0.2", "", {}, "sha512-d"],
+        typescript: [
+          "typescript@7.0.2",
+          "",
+          { optionalDependencies: { "@typescript/typescript-linux-x64": "7.0.2" } },
+          "sha512-d",
+        ],
+        "@typescript/typescript-linux-x64": [
+          "@typescript/typescript-linux-x64@7.0.2",
+          "",
+          {},
+          "sha512-f",
+        ],
         vite: ["vite@8.2.2", "", {}, "sha512-e"],
         ...overrides,
       },
@@ -254,6 +265,20 @@ describe("lockfileSlice", () => {
     ).not.toBe(base);
     expect(
       lockfileSlice(lock({ typescript: ["typescript@7.1.0", "", {}, "x"] }), "packages/sdk-core"),
+    ).not.toBe(base);
+    // The binary lives in the platform package; its bytes can change under an unchanged wrapper.
+    expect(
+      lockfileSlice(
+        lock({
+          "@typescript/typescript-linux-x64": [
+            "@typescript/typescript-linux-x64@7.0.2",
+            "",
+            {},
+            "x",
+          ],
+        }),
+        "packages/sdk-core",
+      ),
     ).not.toBe(base);
   });
 

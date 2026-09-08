@@ -237,8 +237,10 @@ const SHARED_BUILD_INPUTS = ["tsconfig.json"];
 
 /**
  * The part of `bun.lock` that can change a package's artifact: its workspace entry, the resolutions
- * of its runtime dependencies, and the compiler. Another workspace's dependency moving must not
- * demand a version bump, or an adapter-only release needs a core bump first.
+ * of its runtime dependencies, and the compiler (the `typescript` wrapper and the platform packages
+ * that carry the actual binary, listed as its optional dependencies). Another workspace's
+ * dependency moving must not demand a version bump, or an adapter-only release needs a core bump
+ * first.
  */
 export function lockfileSlice(lockText: string, dir: string): string {
   // bun.lock is JSONC with trailing commas.
@@ -249,10 +251,15 @@ export function lockfileSlice(lockText: string, dir: string): string {
     for (const name of Object.keys(workspace[field] ?? {})) names.add(name);
   }
   const packages: Record<string, unknown> = {};
+  const include = (key: string) => {
+    const entry = lock.packages?.[key];
+    if (!entry || packages[key]) return;
+    packages[key] = entry;
+    for (const dep of Object.keys(entry[2]?.optionalDependencies ?? {})) include(dep);
+  };
   for (const name of [...names].sort()) {
-    for (const key of [name, `${workspace.name}/${name}`]) {
-      if (lock.packages?.[key]) packages[key] = lock.packages[key];
-    }
+    include(name);
+    include(`${workspace.name}/${name}`);
   }
   return JSON.stringify({ workspace, packages });
 }

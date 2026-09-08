@@ -36,3 +36,19 @@ ceiling would only enlarge what a malicious presto can make a page allocate.
 
 Gates after the fixes: touched script tests 37/37, `bun run lint:actions` ✓, `cargo fmt --check`
 (core) ✓, `bun run test` exit 0.
+
+Commit a9eb0c2. `sdk.yml package=presto-core` dispatch 34198442747 on it: green (Lint, Typecheck,
+Unit Tests incl. the root script tests, Tarball Consumer).
+
+## Round 2 — 2026-09-08 (`response-1.md`)
+
+Four of six fixes accepted (peer resolution, host pin, fixture command, comments; the response-cap
+argument accepted: "not a convergence blocker"). Two new findings, both verified.
+
+| # | Severity | Finding | Fix |
+|---|---|---|---|
+| 1 | Medium | The round-1 `PUBLISHED_VERSION` fallback to the plan's `version_presto` handed a `playground-only` run the NEXT presto publication (e.g. `5.2.0-revision.1`), which does not exist; provenance lookup fails and the deployment stops | Fallback removed: only the version `publish-presto` produced in this run is passed, empty otherwise (the SDK on `testnet`). `presto` is aztec-derived and always publishes when selected, so the plan's version is never a published one. Contract test pins the expression and the absence of the plan output; comment in the workflow. A "behavioural" mode test was not added — every workflow test in the repo is a string contract and there is no expression evaluator |
+| 2 | Medium | `lockfileSlice` included the `typescript` wrapper but not the platform package that carries the compiler binary (`@typescript/typescript-linux-x64`), whose integrity can move under an unchanged wrapper | `include()` follows one level of `optionalDependencies`; test changes the platform entry's integrity alone |
+
+Gates: `release-plan.test.ts` + `sdk-release-contract.test.ts` 19/19, `bun run lint:actions` ✓,
+`bun run test` exit 0.

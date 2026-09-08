@@ -124,8 +124,11 @@ describe("playground deployment", () => {
       );
     }
     expect(deploy).toContain("inputs.mode == 'playground-only' ||");
+    // Only a version published in THIS run may be passed; the plan's version_presto is the next
+    // publication (a playground-only run would otherwise ask for an unpublished revision).
     expect(deploy).toMatch(
-      /PUBLISHED_VERSION: \$\{\{ needs\.publish-presto\.outputs\.version \|\| needs\.plan\.outputs\.version_presto \}\}/,
+      /PUBLISHED_VERSION: \$\{\{ needs\.publish-presto\.outputs\.version \}\}/,
     );
+    expect(deploy).not.toContain("needs.plan.outputs.version_presto");
   });
 });
