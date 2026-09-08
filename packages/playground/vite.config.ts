@@ -193,7 +193,9 @@ export default defineConfig(({ mode, command }) => {
           ),
         }),
       },
-      dedupe: ["@aztec/bb-prover"],
+      // One bb.js for the Aztec prover, the Noir adapter's peer, and the page's own import: two
+      // copies would mean two WASM runtimes and two `Barretenberg` types.
+      dedupe: ["@aztec/bb-prover", "@aztec/bb.js"],
     },
     define: {
       "process.env": JSON.stringify({

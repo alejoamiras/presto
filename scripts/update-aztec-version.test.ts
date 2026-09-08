@@ -48,6 +48,16 @@ describe("updatePackageJson", () => {
     expect(pkg.devDependencies["@aztec/simulator"]).toBe("5.0.0-nightly.20260224");
   });
 
+  test("bumps an exact @aztec peer dependency too (the Noir adapter's bb.js peer)", () => {
+    const withPeer = JSON.stringify({
+      peerDependencies: { "@aztec/bb.js": "5.2.0" },
+      devDependencies: { "@aztec/bb.js": "5.2.0" },
+    });
+    const pkg = JSON.parse(updatePackageJson(withPeer, "5.3.0"));
+    expect(pkg.peerDependencies["@aztec/bb.js"]).toBe("5.3.0");
+    expect(pkg.devDependencies["@aztec/bb.js"]).toBe("5.3.0");
+  });
+
   test("does not touch non-@aztec dependencies", () => {
     const result = updatePackageJson(samplePkg, "5.0.0-nightly.20260224");
     const pkg = JSON.parse(result);

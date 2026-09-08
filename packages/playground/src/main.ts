@@ -19,6 +19,7 @@ import {
   installWasmDiagnostics,
   installWorkerDiagnostics,
 } from "./diagnostics";
+import { proveNoirFixture } from "./noir";
 import {
   HttpSessionConsentController,
   PrestoStatusController,
@@ -155,7 +156,46 @@ function setActionButtonsDisabled(disabled: boolean): void {
   // The token flow needs a session-deployed sender (see pickSessionSender) — an enabled
   // button must imply the action can succeed, so it stays disabled until one exists.
   $btn("token-flow-btn").disabled = disabled || state.sessionAddresses.length === 0;
+  $btn("noir-btn").disabled = disabled;
 }
+
+// ── Noir circuit ──
+$("noir-btn").addEventListener("click", async () => {
+  if (deploying) return;
+  deploying = true;
+  const walletReady = !$btn("deploy-btn").disabled;
+  setActionButtonsDisabled(true);
+
+  const btn = $btn("noir-btn");
+  btn.textContent = "Proving...";
+  $("progress").classList.remove("hidden");
+
+  const ascii = new SparkOrbitController($("ascii-art"), document.getElementById("ascii-elapsed"));
+  ascii.start(state.uiMode);
+
+  try {
+    const result = await proveNoirFixture(state.uiMode, appendLog, (phase, data) =>
+      handleProverPhase(ascii, phase, data),
+    );
+    appendLog(`noir proof: ${formatDuration(result.durationMs)}`, "success");
+    showResult(
+      "noir-",
+      result.fellBack ? "local" : result.mode,
+      result.durationMs,
+      result.identical ? "identical to fixture" : "differs from fixture",
+    );
+  } catch (err) {
+    appendLog(`Noir proof failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+  } finally {
+    ascii.stop();
+    deploying = false;
+    // The Aztec actions stay disabled until the wallet is ready; the Noir circuit needs no node.
+    setActionButtonsDisabled(!walletReady);
+    btn.disabled = false;
+    btn.textContent = "Prove Noir Circuit";
+    $("progress").classList.add("hidden");
+  }
+});
 
 // ── Deploy ──
 $("deploy-btn").addEventListener("click", async () => {
@@ -354,6 +394,8 @@ async function init(): Promise<void> {
 
   // Default mode UI
   updateModeUI("accelerated");
+  // The Noir circuit proves without an Aztec node or a wallet.
+  $btn("noir-btn").disabled = false;
 
   appendLog("Checking Aztec node...");
   const { reachable: aztec, nodeVersion } = await checkAztecNode();

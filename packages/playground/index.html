@@ -157,6 +157,9 @@
             <button id="token-flow-btn" disabled class="action-btn action-btn-secondary">
               Run Token Flow
             </button>
+            <button id="noir-btn" disabled class="action-btn action-btn-secondary" title="Prove a committed Noir circuit (square) with bb's UltraHonk — no Aztec node needed">
+              Prove Noir Circuit
+            </button>
           </div>
         </section>
 
@@ -205,6 +208,30 @@
                   <div id="time-accelerated" class="text-3xl font-bold tabular-nums text-brand-text-muted/60 font-mono">—</div>
                   <div id="tag-accelerated" class="mt-1.5 text-[10px] uppercase tracking-widest text-brand-text-muted/60"></div>
                   <div id="steps-accelerated" class="hidden mt-2 pt-2 border-t border-brand-border/40 text-left"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- NOIR RESULTS: the same circuit proven in-browser and with Presto -->
+          <section id="noir-results" class="hidden panel">
+            <div class="border-b border-brand-border px-4 py-1.5">
+              <span class="text-[10px] uppercase tracking-[0.2em] text-brand-text-muted">noir circuit</span>
+              <span class="ml-2 text-[10px] text-brand-text-muted/60 font-mono">square · UltraHonk · noir-recursive-no-zk</span>
+            </div>
+            <div class="p-3">
+              <div class="grid grid-cols-2 gap-2">
+                <div id="noir-result-local" class="border border-brand-border p-4 text-center transition-colors rounded-xl">
+                  <div class="text-[10px] uppercase tracking-[0.15em] text-brand-text-muted mb-2">In-browser</div>
+                  <div id="noir-time-local" class="text-3xl font-bold tabular-nums text-brand-text-muted/60 font-mono">—</div>
+                  <div id="noir-tag-local" class="mt-1.5 text-[10px] uppercase tracking-widest text-brand-text-muted/60"></div>
+                  <div id="noir-steps-local" class="hidden"></div>
+                </div>
+                <div id="noir-result-accelerated" class="border border-brand-border p-4 text-center transition-colors rounded-xl">
+                  <div class="text-[10px] uppercase tracking-[0.15em] text-brand-text-muted mb-2">With Presto</div>
+                  <div id="noir-time-accelerated" class="text-3xl font-bold tabular-nums text-brand-text-muted/60 font-mono">—</div>
+                  <div id="noir-tag-accelerated" class="mt-1.5 text-[10px] uppercase tracking-widest text-brand-text-muted/60"></div>
+                  <div id="noir-steps-accelerated" class="hidden"></div>
                 </div>
               </div>
             </div>

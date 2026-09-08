@@ -8,7 +8,15 @@
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly\.\d{8}|rc\.\d+|aztecnr-rc\.\d+))?$/;
 const AZTEC_VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly|spartan|devnet|aztecnr-rc|rc)[\w.-]*)?$/;
 
-const PACKAGE_JSON_FILES = ["packages/sdk/package.json", "packages/playground/package.json"];
+// The Noir adapter's exact `@aztec/bb.js` peer (and its dev copy) move with every Aztec bump; its
+// `TESTED_BB_VERSIONS` constant is a separate, deliberate step — the adapter's tests fail loud
+// until the new pairing is declared tested.
+const PACKAGE_JSON_FILES = [
+  "packages/sdk/package.json",
+  "packages/playground/package.json",
+  "packages/sdk-noir/package.json",
+];
+const DEPENDENCY_SECTIONS = ["dependencies", "devDependencies", "peerDependencies"] as const;
 
 /**
  * Companion packages that must stay in version-lockstep with @aztec/*: their generated
@@ -33,7 +41,7 @@ export function updatePackageJson(
 ): string {
   const pkg = JSON.parse(content);
 
-  for (const section of ["dependencies", "devDependencies"] as const) {
+  for (const section of DEPENDENCY_SECTIONS) {
     const deps = pkg[section];
     if (!deps) continue;
     for (const [key, value] of Object.entries(deps)) {
@@ -55,7 +63,7 @@ async function findMissingPackages(version: string, packageFiles: string[]): Pro
   const allAztecPackages = new Set<string>();
   for (const filePath of packageFiles) {
     const pkg = await Bun.file(filePath).json();
-    for (const section of ["dependencies", "devDependencies"] as const) {
+    for (const section of DEPENDENCY_SECTIONS) {
       const deps = pkg[section];
       if (!deps) continue;
       for (const [key, value] of Object.entries(deps)) {
