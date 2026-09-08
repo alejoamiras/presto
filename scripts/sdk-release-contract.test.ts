@@ -53,7 +53,10 @@ describe("npm release workflow contract", () => {
       const block = job(release, name);
       expect(block).toContain("needs: [assert-main, plan, e2e, dependency-audit");
       expect(block).toContain("!inputs.dry_run");
+      expect(block).toContain("inputs.mode != 'playground-only'");
+      expect(block).toMatch(/version: \$\{\{ needs\.plan\.outputs\.version_[a-z_]+ \}\}/);
     }
+    expect(publish).toMatch(/PLANNED: \$\{\{ inputs\.version \}\}/);
     for (const name of ["publish-presto", "publish-noir"]) {
       expect(job(release, name)).toContain(
         "(needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped')",

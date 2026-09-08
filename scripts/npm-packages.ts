@@ -90,6 +90,13 @@ export function isValidVersion(pkg: NpmPackage, version: string): boolean {
   return VERSION_PATTERNS[pkg.versionMode].test(version);
 }
 
+/**
+ * One exact semver.org version: no ranges, no empty identifiers, no leading zeros. npm treats a
+ * malformed spec like `5.2.0-alpha..x` as a mutable TAG — the opposite of a pin.
+ */
+export const EXACT_SEMVER =
+  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+
 /** The SLSA provenance subject npm records for a published version (purl: scope `@` is `%40`). */
 export function provenanceSubject(pkg: NpmPackage, version: string): string {
   return `pkg:npm/${pkg.name.replace(/^@/, "%40")}@${version}`;

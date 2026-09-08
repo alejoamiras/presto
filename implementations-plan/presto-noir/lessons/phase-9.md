@@ -40,4 +40,4 @@ Date: 2026-09-08. Branch `presto-noir/npm-tooling` (arc 2).
 ## Gate
 
 `bun run lint:actions` ✓ · `bun run test:scripts` ✓ · `bun run typecheck:scripts` ✓ · biome ✓ ·
-`sdk.yml` dispatched on `presto-noir/npm-tooling`: see the run link appended below.
+`sdk.yml` dispatched on `presto-noir/npm-tooling` (0e34127): run 34185530760 — https://github.com/alejoamiras/presto/actions/runs/34185530760 (result recorded in the arc 2 review log).

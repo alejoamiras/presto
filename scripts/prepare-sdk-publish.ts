@@ -1,8 +1,9 @@
-// B7 (F14/F15): rewrite a package.json for publishing — set the resolved version, repoint
-// `main`/`types`/`exports` at the built `dist/` (replacing the source `exports: "./src/index.ts"` the repo
-// uses for workspace consumption), and pin `workspace:` dependencies to the versions publishing alongside.
-// Extracted from an inline `node -e` in the publish workflow so the rewrite is diff-reviewable, unit-tested
-// (the mutation is pure), and reusable by the tarball-consumer CI job.
+// Rewrite a package.json for publishing: the resolved version, `main`/`types`/`exports` repointed at the
+// built `dist/` (the repo's source `exports: "./src/index.ts"` serves workspace consumption only), and
+// every `workspace:` dependency pinned to the exact sibling version publishing alongside. Pure, so the
+// rewrite is unit-tested; the publish workflow and the tarball-consumer CI job run the same code.
+
+import { EXACT_SEMVER } from "./npm-packages.ts";
 
 /** The published `exports` map — dist-based, dual types/default condition. */
 export const PUBLISHED_EXPORTS = {
@@ -12,11 +13,10 @@ export const PUBLISHED_EXPORTS = {
 const DEPENDENCY_FIELDS = ["dependencies", "peerDependencies", "optionalDependencies"] as const;
 
 /**
- * Pure rewrite: given the source manifest, the resolved version, and the publish versions of any
- * workspace siblings it depends on, return the manifest to publish. Sets `version`, `main`, `types`,
- * `exports` (dist-based), drops any `publishConfig.exports` override so the top-level `exports` wins,
- * and replaces every `workspace:` range with the sibling's exact version. Everything else — `files`,
- * `publishConfig.access`, non-workspace dependencies — is preserved verbatim.
+ * Sets `version`, `main`, `types`, `exports` (dist-based), drops any `publishConfig.exports` override
+ * so the top-level `exports` wins, and replaces every `workspace:` range with the sibling's exact
+ * version. Everything else — `files`, `publishConfig.access`, non-workspace dependencies — is preserved
+ * verbatim.
  */
 export function preparePublishManifest(
   pkg: Record<string, unknown>,
@@ -45,10 +45,11 @@ export function preparePublishManifest(
 }
 
 /**
- * `workspace:*` (or `workspace:^` / `workspace:~`) becomes the sibling's exact publish version — exact,
- * whatever the workspace modifier, because a published range could drift onto an untested sibling. A
- * workspace dependency with no version supplied fails closed: shipping the literal `workspace:` range
- * would publish an uninstallable package.
+ * `workspace:*` (or `workspace:^` / `workspace:~`) becomes the sibling's exact publish version — exact
+ * whatever the workspace modifier, because a published range could drift onto an untested sibling.
+ * A workspace dependency with no version supplied, or a supplied value that is not one exact semver
+ * version (a tag, a range, a URL), fails closed: the literal would publish an uninstallable or
+ * untested package.
  */
 export function rewriteWorkspaceRanges(
   deps: Record<string, string>,
@@ -65,6 +66,9 @@ export function rewriteWorkspaceRanges(
       throw new Error(
         `${name} is a workspace dependency but no publish version was supplied for it (--dep ${name}=<version>)`,
       );
+    }
+    if (!EXACT_SEMVER.test(pinned)) {
+      throw new Error(`${name} pin ${JSON.stringify(pinned)} is not an exact semver version`);
     }
     out[name] = pinned;
   }
@@ -92,21 +96,35 @@ export function parseDependencyPins(args: string[]): {
   return { pins, rest };
 }
 
-// CLI: `bun scripts/prepare-sdk-publish.ts <version> [package.json path] [--dep name=version ...]`.
-// Version also accepted via $VERSION. Reads, rewrites in place, writes back with a trailing newline.
-if (import.meta.main) {
-  const { pins, rest } = parseDependencyPins(process.argv.slice(2));
-  const version = process.env.VERSION ?? rest[0];
+/**
+ * CLI arguments: `<version> [package.json path] [--dep name=version ...]`; `$VERSION` may replace the
+ * first positional but never shifts the path, which is always the second positional.
+ */
+export function parseCliArgs(
+  args: string[],
+  env: { VERSION?: string },
+): { version: string; manifestPath: string; pins: Record<string, string> } {
+  const { pins, rest } = parseDependencyPins(args);
+  const version = env.VERSION ?? rest[0];
   if (!version) {
-    console.error(
+    throw new Error(
       "usage: prepare-sdk-publish.ts <version> [package.json path] [--dep name=version ...]  (or $VERSION)",
     );
+  }
+  return { version, manifestPath: rest[1] ?? "package.json", pins };
+}
+
+if (import.meta.main) {
+  let parsed: ReturnType<typeof parseCliArgs>;
+  try {
+    parsed = parseCliArgs(process.argv.slice(2), { VERSION: process.env.VERSION });
+  } catch (error) {
+    console.error(error instanceof Error ? error.message : String(error));
     process.exit(1);
   }
-  const manifestPath = (process.env.VERSION ? rest[0] : rest[1]) ?? "package.json";
   const fs = await import("node:fs");
-  const pkg = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  const next = preparePublishManifest(pkg, version, pins);
-  fs.writeFileSync(manifestPath, `${JSON.stringify(next, null, 2)}\n`);
-  console.log(`prepared ${manifestPath} for publish as ${version}`);
+  const pkg = JSON.parse(fs.readFileSync(parsed.manifestPath, "utf8"));
+  const next = preparePublishManifest(pkg, parsed.version, parsed.pins);
+  fs.writeFileSync(parsed.manifestPath, `${JSON.stringify(next, null, 2)}\n`);
+  console.log(`prepared ${parsed.manifestPath} for publish as ${parsed.version}`);
 }

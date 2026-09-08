@@ -10,6 +10,10 @@ on:
         description: "Descriptor key in scripts/npm-packages.ts"
         required: true
         type: string
+      version:
+        description: "The version the release plan decided on; publication refuses any other"
+        required: true
+        type: string
       dist_tag:
         description: "npm dist-tag the candidate publishes under; promotion to latest is a separate step"
         required: false
@@ -87,10 +91,16 @@ jobs:
 
       - run: bun run --cwd "${{ steps.pkg.outputs.dir }}" build
 
-      - name: Determine the publish version
+      - name: Confirm the planned version is still the one to publish
         id: version
+        env:
+          PLANNED: ${{ inputs.version }}
         run: |
           version=$(bun scripts/get-sdk-publish-version.ts --package "$PACKAGE")
+          if [ "$version" != "$PLANNED" ]; then
+            echo "::error::the registry moved since planning: $PACKAGE would now publish $version, not the planned $PLANNED"
+            exit 1
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "$PACKAGE candidate: $version"
 
@@ -103,7 +113,14 @@ jobs:
           tag="${PACKAGE_NAME}@${VERSION}"
           encoded_tag="$(jq -rn --arg tag "$tag" '$tag | @uri')"
 
-          versions="$(npm view "$PACKAGE_NAME" versions --json 2>/dev/null || echo '[]')"
+          # Only a registry 404 (a never-published name) counts as absence; any other failure aborts.
+          if ! versions="$(npm view "$PACKAGE_NAME" versions --json 2> "$RUNNER_TEMP/npm-view.err")"; then
+            if ! grep -q E404 "$RUNNER_TEMP/npm-view.err"; then
+              echo "::error::npm view $PACKAGE_NAME failed: $(cat "$RUNNER_TEMP/npm-view.err")"
+              exit 1
+            fi
+            versions='[]'
+          fi
           if printf '%s' "$versions" | jq -e --arg version "$VERSION" 'if type == "array" then index($version) != null else . == $version end' >/dev/null; then
             echo "::error::$PACKAGE_NAME@$VERSION already exists on npm"
             exit 1

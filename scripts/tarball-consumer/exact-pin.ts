@@ -6,14 +6,7 @@
  * Usage: bun scripts/tarball-consumer/exact-pin.ts [--package <key>] <tarball>
  * Prints the pin, or nothing for a package that does not ship the dependency.
  */
-import { type NpmPackage, packageFromArgs } from "../npm-packages.ts";
-
-/**
- * Canonical semver.org expression: no ranges, no empty identifiers, no leading zeros. npm treats a
- * malformed spec like `5.2.0-alpha..x` as a mutable TAG — the opposite of a pin.
- */
-export const EXACT_SEMVER =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+import { EXACT_SEMVER, type NpmPackage, packageFromArgs } from "../npm-packages.ts";
 
 /**
  * An `aztec-derived` package must pin `@aztec/stdlib` exactly (the F13 deps-vs-peers decision: exact

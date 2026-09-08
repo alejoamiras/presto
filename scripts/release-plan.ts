@@ -1,17 +1,21 @@
 /**
  * Decide what one `release-sdk.yml` run publishes, before anything is published. Pure planning over
- * facts the caller gathers (registry versions, release tags, provenance, source changes), so the
+ * facts the caller gathers (registry versions, release records, provenance, source changes), so the
  * release DAG is unit-testable; the CLI gathers the facts and writes the plan to `$GITHUB_OUTPUT`.
  *
- * Rules (decision ledger D-32, D-48, D-53, D-56):
+ * Rules:
  * - `aztec-derived` packages always publish; a republished base gets a revision suffix.
- * - `manifest` packages publish their version exactly once. A version already on npm is REUSED when
- *   its release tag and provenance both name the same commit and the package's sources are unchanged
- *   since that commit; otherwise it is a collision and the run fails before publishing anything.
+ * - `manifest` packages publish their version exactly once. A version already on npm is REUSED only
+ *   when its release tag and cryptographically verified provenance name the same commit, its GitHub
+ *   release exists, its build inputs are unchanged since that commit, and the dependency pins this run
+ *   would give it equal the ones in the published artifact; anything else is a collision and the run
+ *   fails before publishing anything.
+ * - A candidate that is not on npm but already has a release tag or GitHub release is a collision.
  * - A package whose `workspace:` dependency is being published in this run cannot have that
  *   dependency's provenance or a registry-dependency consumer rerun checked up front: those checks
- *   are DEFERRED to after the dependency is published and verified, and the plan says so.
- * - A `workspace:` dependency that is neither selected nor already on npm is a hard failure.
+ *   are DEFERRED to the package's own publish job, and the plan says so.
+ * - A `workspace:` dependency that is not selected must already be on npm at the pinned version with
+ *   a verified, unchanged release.
  *
  * Usage: bun scripts/release-plan.ts --packages <key|all> [--dry-run]
  */
@@ -19,6 +23,7 @@
 import { baseVersionFor, resolvePublishVersion } from "./get-sdk-publish-version.ts";
 import {
   isPackageKey,
+  isValidVersion,
   type Manifest,
   NPM_PACKAGES,
   type NpmPackage,
@@ -36,10 +41,17 @@ export interface PackageFacts {
   manifest: Manifest;
   /** Versions already on npm. */
   published: string[];
-  /** For a manifest version already on npm: does its release tag exist and match its provenance commit? */
+  /** For a candidate NOT on npm: does a release tag or GitHub release already exist for it? */
+  recordsExist?: boolean;
+  /**
+   * For a manifest version already on npm: tag commit == verified provenance commit, signatures
+   * verified by npm, GitHub release present.
+   */
   releaseVerified?: boolean;
-  /** For a manifest version already on npm: have the package's sources changed since the tag commit? */
+  /** For a manifest version already on npm: have its build inputs changed since the tag commit? */
   changedSinceTag?: boolean;
+  /** For a manifest version already on npm: the `dependencies` the published artifact carries. */
+  publishedDependencies?: Record<string, string>;
 }
 
 export interface PlanEntry {
@@ -80,21 +92,34 @@ export function orderByDependencies(
 
 function decide(pkg: NpmPackage, facts: PackageFacts): { version: string; action: Action } {
   const base = baseVersionFor(pkg, facts.manifest);
-  if (pkg.versionMode === "aztec-derived") {
-    return { version: resolvePublishVersion(base, facts.published), action: "publish" };
+  const version =
+    pkg.versionMode === "aztec-derived" ? resolvePublishVersion(base, facts.published) : base;
+  if (!isValidVersion(pkg, version)) {
+    throw new Error(`${pkg.name}: ${version} is not a valid ${pkg.versionMode} version`);
   }
-  if (!facts.published.includes(base)) return { version: base, action: "publish" };
+  if (!facts.published.includes(version)) {
+    if (facts.recordsExist) {
+      throw new Error(
+        `${pkg.name}@${version} is not on npm but a release tag or GitHub release already exists; fix forward by bumping the version`,
+      );
+    }
+    return { version, action: "publish" };
+  }
+  requireReusable(pkg, version, facts);
+  return { version, action: "reuse" };
+}
+
+function requireReusable(pkg: NpmPackage, version: string, facts: PackageFacts): void {
   if (!facts.releaseVerified) {
     throw new Error(
-      `${pkg.name}@${base} is on npm but its release tag and provenance do not agree; fix forward by bumping the version`,
+      `${pkg.name}@${version} is on npm but its release records and provenance do not verify; fix forward by bumping the version`,
     );
   }
   if (facts.changedSinceTag) {
     throw new Error(
-      `${pkg.name}@${base} is published but ${pkg.dir} changed since its release tag; bump the version`,
+      `${pkg.name}@${version} is published but its build inputs changed since its release tag; bump the version`,
     );
   }
-  return { version: base, action: "reuse" };
 }
 
 /**
@@ -122,6 +147,7 @@ export function planRelease(
     for (const dep of workspaceDependencies(own.manifest)) {
       resolveDependency(entry, dep, plan, facts);
     }
+    if (action === "reuse") requireSamePins(entry, own);
     plan[key] = entry;
   }
   return plan;
@@ -137,7 +163,7 @@ function resolveDependency(
   const planned = plan[dep];
   if (planned) {
     entry.dependencyVersions[depPkg.name] = planned.version;
-    if (planned.action === "publish") {
+    if (planned.action === "publish" && entry.action === "publish") {
       entry.deferred.push(
         `${depPkg.name}@${planned.version} provenance (published in this run)`,
         `${entry.name} consumer rerun against registry ${depPkg.name}@${planned.version}`,
@@ -153,7 +179,20 @@ function resolveDependency(
       `${entry.name} depends on ${depPkg.name}@${version}, which is neither selected for this run nor on npm`,
     );
   }
+  requireReusable(depPkg, version, depFacts);
   entry.dependencyVersions[depPkg.name] = version;
+}
+
+/** A reused artifact is immutable: the pins this run would give it must be the ones it already has. */
+function requireSamePins(entry: PlanEntry, facts: PackageFacts): void {
+  for (const [name, version] of Object.entries(entry.dependencyVersions)) {
+    const published = facts.publishedDependencies?.[name];
+    if (published !== version) {
+      throw new Error(
+        `${entry.name}@${entry.version} is published with ${name}@${published ?? "(absent)"} but this run would pin ${version}; bump the version to pick up the new dependency`,
+      );
+    }
+  }
 }
 
 /** One line per package for the run summary, deferred checks included. */
@@ -172,7 +211,29 @@ export function describePlan(plan: ReleasePlan): string {
     .join("\n");
 }
 
-// ── fact gathering (registry, git) ──
+/**
+ * `$GITHUB_OUTPUT` lines: the plan, the summary, and per descriptor key `publish_<key>`,
+ * `version_<key>`, `deps_<key>` (dashes as underscores) so job conditions need no JSON walking.
+ */
+export function workflowOutputs(plan: ReleasePlan, summary: string): string {
+  const lines = [`plan=${JSON.stringify(plan)}`, `summary<<EOF`, summary, "EOF"];
+  for (const key of Object.keys(NPM_PACKAGES) as PackageKey[]) {
+    const entry = plan[key];
+    const slug = key.replace(/-/g, "_");
+    lines.push(`publish_${slug}=${entry?.action === "publish"}`);
+    lines.push(`version_${slug}=${entry?.version ?? ""}`);
+    const deps = Object.entries(entry?.dependencyVersions ?? {})
+      .map(([name, version]) => `${name}=${version}`)
+      .join(",");
+    lines.push(`deps_${slug}=${deps}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+// ── fact gathering (registry, git, GitHub) ──
+
+/** Build inputs of a package beyond its own directory; a change here can change the artifact. */
+const SHARED_BUILD_INPUTS = ["bun.lock", "tsconfig.json"];
 
 function run(command: string[]): string {
   const result = Bun.spawnSync(command, { stdout: "pipe", stderr: "pipe" });
@@ -182,26 +243,27 @@ function run(command: string[]): string {
   return result.stdout.toString().trim();
 }
 
-function publishedVersions(name: string): string[] {
-  const result = Bun.spawnSync(["npm", "view", name, "versions", "--json"], {
+/** `npm view` output as JSON, or `undefined` when the registry has no such package or version. */
+function npmViewJson(spec: string, field: string): unknown {
+  const result = Bun.spawnSync(["npm", "view", spec, field, "--json"], {
     stdout: "pipe",
     stderr: "pipe",
   });
   if (result.exitCode !== 0) {
-    if (result.stderr.toString().includes("E404")) return [];
-    throw new Error(`npm view ${name} versions failed: ${result.stderr.toString().trim()}`);
+    if (result.stderr.toString().includes("E404")) return undefined;
+    throw new Error(`npm view ${spec} ${field} failed: ${result.stderr.toString().trim()}`);
   }
-  const parsed = JSON.parse(result.stdout.toString());
-  return Array.isArray(parsed) ? parsed : [parsed];
+  const text = result.stdout.toString().trim();
+  return text ? JSON.parse(text) : undefined;
 }
 
-async function releaseFacts(
-  pkg: NpmPackage,
-  version: string,
-): Promise<Pick<PackageFacts, "releaseVerified" | "changedSinceTag">> {
-  const { fetchAndVerifySdkProvenance } = await import("./sdk-release-verification.ts");
-  const { resolveRemoteTagCommit } = await import("./promote-sdk-latest.ts");
-  const tag = releaseTag(pkg, version);
+function publishedVersions(name: string): string[] {
+  const parsed = npmViewJson(name, "versions");
+  if (parsed === undefined) return [];
+  return Array.isArray(parsed) ? parsed : [parsed as string];
+}
+
+function remoteTagCommit(tag: string): string | undefined {
   const refs = run([
     "git",
     "ls-remote",
@@ -210,18 +272,71 @@ async function releaseFacts(
     `refs/tags/${tag}`,
     `refs/tags/${tag}^{}`,
   ]);
-  const tagCommit = resolveRemoteTagCommit(refs);
+  const lines = refs.split("\n").filter(Boolean);
+  const peeled = lines.find((line) => line.endsWith("^{}"));
+  return (peeled ?? lines[0])?.split(/\s+/)[0];
+}
+
+function githubReleaseExists(tag: string): boolean {
+  const result = Bun.spawnSync(["gh", "release", "view", tag, "--json", "tagName"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  if (result.exitCode === 0) return true;
+  if (result.stderr.toString().includes("release not found")) return false;
+  throw new Error(`gh release view ${tag} failed: ${result.stderr.toString().trim()}`);
+}
+
+async function releaseFacts(
+  pkg: NpmPackage,
+  version: string,
+): Promise<Pick<PackageFacts, "releaseVerified" | "changedSinceTag" | "publishedDependencies">> {
+  const { fetchAndVerifySdkProvenance } = await import("./sdk-release-verification.ts");
+  const { verifySdkPackageSignatures } = await import("./verify-sdk-package-signatures.ts");
+  const tag = releaseTag(pkg, version);
+  const tagCommit = remoteTagCommit(tag);
   if (!tagCommit) return { releaseVerified: false };
-  let provenanceCommit: string;
   try {
-    provenanceCommit = (await fetchAndVerifySdkProvenance(version, undefined, undefined, pkg))
-      .commit;
+    const provenance = await fetchAndVerifySdkProvenance(version, tagCommit, undefined, pkg);
+    await verifySdkPackageSignatures(version, pkg);
+    if (provenance.commit !== tagCommit || !githubReleaseExists(tag)) {
+      return { releaseVerified: false };
+    }
   } catch {
     return { releaseVerified: false };
   }
-  if (provenanceCommit !== tagCommit) return { releaseVerified: false };
-  const diff = Bun.spawnSync(["git", "diff", "--quiet", tagCommit, "HEAD", "--", pkg.dir]);
-  return { releaseVerified: true, changedSinceTag: diff.exitCode !== 0 };
+  const diff = Bun.spawnSync([
+    "git",
+    "diff",
+    "--quiet",
+    tagCommit,
+    "HEAD",
+    "--",
+    pkg.dir,
+    ...SHARED_BUILD_INPUTS,
+  ]);
+  const dependencies = npmViewJson(`${pkg.name}@${version}`, "dependencies");
+  return {
+    releaseVerified: true,
+    changedSinceTag: diff.exitCode !== 0,
+    publishedDependencies: (dependencies as Record<string, string> | undefined) ?? {},
+  };
+}
+
+async function packageFacts(pkg: NpmPackage): Promise<PackageFacts> {
+  const manifest = readManifest(pkg);
+  const published = publishedVersions(pkg.name);
+  const facts: PackageFacts = { manifest, published };
+  const base = baseVersionFor(pkg, manifest);
+  const candidate =
+    pkg.versionMode === "aztec-derived" ? resolvePublishVersion(base, published) : base;
+  if (published.includes(candidate)) {
+    Object.assign(facts, await releaseFacts(pkg, candidate));
+  } else {
+    const tag = releaseTag(pkg, candidate);
+    facts.recordsExist = remoteTagCommit(tag) !== undefined || githubReleaseExists(tag);
+  }
+  return facts;
 }
 
 async function gatherFacts(keys: PackageKey[]): Promise<Partial<Record<PackageKey, PackageFacts>>> {
@@ -230,16 +345,9 @@ async function gatherFacts(keys: PackageKey[]): Promise<Partial<Record<PackageKe
   while (pending.length) {
     const key = pending.shift() as PackageKey;
     if (facts[key]) continue;
-    const pkg: NpmPackage = NPM_PACKAGES[key];
-    const manifest = readManifest(pkg);
-    const published = publishedVersions(pkg.name);
-    const entry: PackageFacts = { manifest, published };
-    const base = baseVersionFor(pkg, manifest);
-    if (pkg.versionMode === "manifest" && published.includes(base)) {
-      Object.assign(entry, await releaseFacts(pkg, base));
-    }
+    const entry = await packageFacts(NPM_PACKAGES[key]);
     facts[key] = entry;
-    pending.push(...workspaceDependencies(manifest));
+    pending.push(...workspaceDependencies(entry.manifest));
   }
   return facts;
 }
@@ -263,23 +371,4 @@ if (import.meta.main) {
     const fs = await import("node:fs");
     fs.appendFileSync(output, workflowOutputs(plan, summary));
   }
-}
-
-/**
- * `$GITHUB_OUTPUT` lines: the plan, the summary, and per descriptor key `publish_<key>`,
- * `version_<key>`, `deps_<key>` (dashes as underscores) so job conditions need no JSON walking.
- */
-export function workflowOutputs(plan: ReleasePlan, summary: string): string {
-  const lines = [`plan=${JSON.stringify(plan)}`, `summary<<EOF`, summary, "EOF"];
-  for (const key of Object.keys(NPM_PACKAGES) as PackageKey[]) {
-    const entry = plan[key];
-    const slug = key.replace(/-/g, "_");
-    lines.push(`publish_${slug}=${entry?.action === "publish"}`);
-    lines.push(`version_${slug}=${entry?.version ?? ""}`);
-    const deps = Object.entries(entry?.dependencyVersions ?? {})
-      .map(([name, version]) => `${name}=${version}`)
-      .join(",");
-    lines.push(`deps_${slug}=${deps}`);
-  }
-  return `${lines.join("\n")}\n`;
 }

@@ -68,10 +68,13 @@ jobs:
     timeout-minutes: 5
     outputs:
       publish_presto: ${{ steps.plan.outputs.publish_presto }}
+      version_presto: ${{ steps.plan.outputs.version_presto }}
       deps_presto: ${{ steps.plan.outputs.deps_presto }}
       publish_presto_core: ${{ steps.plan.outputs.publish_presto_core }}
+      version_presto_core: ${{ steps.plan.outputs.version_presto_core }}
       deps_presto_core: ${{ steps.plan.outputs.deps_presto_core }}
       publish_presto_noir: ${{ steps.plan.outputs.publish_presto_noir }}
+      version_presto_noir: ${{ steps.plan.outputs.version_presto_noir }}
       deps_presto_noir: ${{ steps.plan.outputs.deps_presto_noir }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -101,7 +104,11 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           {
-            echo "## Release plan${DRY_RUN:+ (dry run: nothing is published)}"
+            if [ "$DRY_RUN" = "true" ]; then
+              echo "## Release plan (dry run: nothing is published)"
+            else
+              echo "## Release plan"
+            fi
             echo '```'
             printf '%s\n' "$SUMMARY"
             echo '```'
@@ -126,13 +133,14 @@ jobs:
   # the registry dependency) run inside their own publish job, after this one verified the artifact.
   publish-core:
     needs: [assert-main, plan, e2e, dependency-audit]
-    if: ${{ !cancelled() && !inputs.dry_run && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto_core == 'true' }}
+    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto_core == 'true' }}
     permissions:
       id-token: write
       contents: write
     uses: ./.github/workflows/_publish-npm.yml
     with:
       package: presto-core
+      version: ${{ needs.plan.outputs.version_presto_core }}
       dependency_versions: ${{ needs.plan.outputs.deps_presto_core }}
 
   publish-presto:
@@ -144,18 +152,20 @@ jobs:
     uses: ./.github/workflows/_publish-npm.yml
     with:
       package: presto
+      version: ${{ needs.plan.outputs.version_presto }}
       release_asset: packages/sdk/MIGRATION.md
       dependency_versions: ${{ needs.plan.outputs.deps_presto }}
 
   publish-noir:
     needs: [assert-main, plan, e2e, dependency-audit, publish-core]
-    if: ${{ !cancelled() && !inputs.dry_run && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto_noir == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') }}
+    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto_noir == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') }}
     permissions:
       id-token: write
       contents: write
     uses: ./.github/workflows/_publish-npm.yml
     with:
       package: presto-noir
+      version: ${{ needs.plan.outputs.version_presto_noir }}
       dependency_versions: ${{ needs.plan.outputs.deps_presto_noir }}
 
   deploy-app:
