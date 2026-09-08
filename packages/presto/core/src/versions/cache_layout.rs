@@ -15,6 +15,9 @@ use std::path::{Path, PathBuf};
 /// SELF-AUTHORED marker whose digest matches — and `verify_cached_bb` would accept it, bypassing the
 /// download-time verification entirely. No resolvable home ⇒ no trusted cache location ⇒ refuse.
 pub fn versions_base_dir() -> Option<PathBuf> {
+    if let Some(home) = crate::presto_home() {
+        return Some(home.join("versions"));
+    }
     dirs::home_dir().map(|h| h.join(".presto").join("versions"))
 }
 

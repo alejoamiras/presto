@@ -147,8 +147,11 @@ fn default_config_version() -> u32 {
     CONFIG_VERSION
 }
 
-/// Returns `~/.presto/config.json`.
+/// Returns `~/.presto/config.json`, or `$PRESTO_HOME/config.json` for an isolated instance.
 pub fn config_path() -> PathBuf {
+    if let Some(home) = crate::presto_home() {
+        return home.join("config.json");
+    }
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".presto")

@@ -22,6 +22,8 @@ const MAX_VK_BYTES: u64 = 64 * 1024;
 const MAX_PUBLIC_INPUT_BYTES: u64 = 4 * 1024 * 1024;
 
 /// bb's `--verifier_target` values. Parsed once at ingress so a client string never reaches argv.
+/// The list mirrors bb's own, which is wider than what it proves: bb 5.2.0 refuses the starknet
+/// pair as an invalid settings combination, surfaced to the caller as an ordinary `prove_failed`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum VerifierTarget {
     Evm,

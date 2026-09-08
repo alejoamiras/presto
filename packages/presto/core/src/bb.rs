@@ -473,7 +473,7 @@ fn require_success(
     }
     // Never return stderr to HTTP clients; it may contain paths or witness diagnostics.
     tracing::error!(exit_code = %status, "bb prove failed");
-    Err(format!("bb prove failed (exit {status})").into())
+    Err(format!("bb prove failed ({status})").into())
 }
 
 /// B3 (F5): read `path` in ONE open, at most `cap`+1 bytes (no metadata/read TOCTOU). Reading `cap`+1

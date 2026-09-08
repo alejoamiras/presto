@@ -264,6 +264,16 @@ impl AppState {
 }
 
 pub async fn start(state: AppState) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    start_on(state, PORT).await
+}
+
+/// [`start`] on an explicit port. Only for an isolated instance (`PRESTO_HOME` set): the sweep and
+/// reap below assume the port winner is the only process touching the cache and workspaces, which
+/// holds for the canonical port and for a private `PRESTO_HOME`, and for nothing in between.
+pub async fn start_on(
+    state: AppState,
+    port: u16,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // F-06 (round 3): the ONE place both binaries pass through on the way up, so the cache-size cap
     // gets a chance to bind even when the previous run left it over the limit — post-download
     // eviction cannot help a cache nothing is downloading into. Detached: never delay the listener.
@@ -276,8 +286,8 @@ pub async fn start(state: AppState) -> Result<(), Box<dyn std::error::Error + Se
         .clone()
         .unwrap_or_else(|| DEFAULT_BB_VERSION.to_string());
 
-    let app = router(state);
-    let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
+    let app = router_for_port(state, port);
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     let listener = bind_with_retry(addr).await?;
     tracing::info!("Presto server listening on {addr}");
 

@@ -1,0 +1,72 @@
+name: Start headless presto
+description: |
+  Launch an already-built presto-server in the background on a chosen port with a private
+  PRESTO_HOME, and wait until /health answers. The caller kills the printed pid in an
+  `if: always()` step; a composite action cannot register a post step of its own.
+
+inputs:
+  binary:
+    description: Path to the built presto-server binary.
+    required: true
+  port:
+    description: Loopback port to listen on. Non-default ports require presto-home.
+    required: false
+    default: "59833"
+  presto-home:
+    description: Private state directory (config, version cache, workspaces, logs). Created if absent.
+    required: true
+  allow-all:
+    description: Pass --allow-all so every origin reaches /prove without approval ("true"/"false").
+    required: false
+    default: "true"
+  aztec-bb-version:
+    description: Value for AZTEC_BB_VERSION, surfaced on /health.aztec_version.
+    required: false
+    default: ""
+
+outputs:
+  pid:
+    description: The server's process id (kill it when done).
+    value: ${{ steps.launch.outputs.pid }}
+  url:
+    description: The base URL the server answers on.
+    value: http://127.0.0.1:${{ inputs.port }}
+
+runs:
+  using: composite
+  steps:
+    - name: Launch and wait for /health
+      id: launch
+      shell: bash
+      env:
+        BINARY: ${{ inputs.binary }}
+        PORT: ${{ inputs.port }}
+        PRESTO_HOME: ${{ inputs.presto-home }}
+        ALLOW_ALL: ${{ inputs.allow-all }}
+        AZTEC_BB_VERSION: ${{ inputs.aztec-bb-version }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$PRESTO_HOME"
+        export PRESTO_HOME
+        if [ -z "$AZTEC_BB_VERSION" ]; then unset AZTEC_BB_VERSION; else export AZTEC_BB_VERSION; fi
+        args=(--port "$PORT")
+        if [ "$ALLOW_ALL" = "true" ]; then args+=(--allow-all); fi
+        "$BINARY" "${args[@]}" > "$PRESTO_HOME/server.log" 2>&1 &
+        pid=$!
+        echo "pid=$pid" >> "$GITHUB_OUTPUT"
+        for i in $(seq 1 60); do
+          if curl -sf "http://127.0.0.1:$PORT/health" > /dev/null 2>&1; then
+            echo "presto-server ready on :$PORT (pid $pid)"
+            exit 0
+          fi
+          if ! kill -0 "$pid" 2>/dev/null; then
+            echo "::error::presto-server exited during startup"
+            cat "$PRESTO_HOME/server.log"
+            exit 1
+          fi
+          sleep 0.5
+        done
+        echo "::error::presto-server not ready after 30s"
+        cat "$PRESTO_HOME/server.log"
+        kill "$pid" 2>/dev/null || true
+        exit 1
