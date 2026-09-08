@@ -4,7 +4,7 @@ name: _Publish npm package (reusable)
 # `.github/workflows/release-sdk.yml` workflow in the `npm-publish` environment; this workflow
 # declares the OIDC permission and the calling job in release-sdk.yml delegates it.
 #
-# The job holding the publish credentials installs nothing and runs only repository code: `pack`
+# The job holding the publish credentials executes no dependency lifecycle script, only repository code: `pack`
 # builds the candidate and records its digest, `consumer-test` runs the registry-resolved consumer
 # host with read-only permissions, `publish` re-asserts the digest before `npm publish`, and
 # `verify` does the post-publish registry install. The digest travels as a job output because an
