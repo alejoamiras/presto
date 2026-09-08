@@ -55,7 +55,8 @@ if (outcome.kind === "native") {
 browsers (pages and Workers), a working HTTPS endpoint is never downgraded to plaintext, and a
 witness is never sent to an endpoint that was not itself probed. Every condition the presto signals
 comes back as `{ kind: "fallback", reason }` — offline, denied, cooldown, version mismatch, an app
-that predates the route (`404`), capacity (`408`/`413`/`429`/`503`), a body over the cap. Only a
+that does not advertise the route's scheme (nothing is sent), a `404` from one that does, capacity
+(`408`/`413`/`429`/`503`), a body over the cap. Only a
 caller misconfiguration (`400`, an unrecognised `500`, an unexpected status) throws
 `PrestoHttpError`.
 

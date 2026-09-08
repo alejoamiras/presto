@@ -99,9 +99,10 @@ export function configureNoir(options: { fixture?: NoirFixture; api?: Barretenbe
 }
 
 /**
- * One backend for the page, seeded with the fixture's key and sharing the page's transport policy
- * (the `?httpsOnly=true` assertion knob, like the Aztec prover). WASM is only initialised when a
- * proof actually runs in the browser.
+ * One backend for the page, seeded with the fixture's key. It is an independent client: the
+ * browser's HTTPS-only default applies and the Aztec prover's HTTP-session consent does not
+ * reconfigure it; `?httpsOnly=true` is the same assertion knob the Aztec prover honours. WASM is
+ * only initialised when a proof actually runs in the browser.
  */
 async function getNoirBackend(): Promise<{
   backend: PrestoUltraHonkBackend;
@@ -112,9 +113,10 @@ async function getNoirBackend(): Promise<{
   if (!backend) {
     const params = new URLSearchParams(window.location.search);
     const httpsOnly = params.get("httpsOnly") === "true";
-    // Test-only: `?noirStub=true` answers the in-browser path with the fixture bytes instead of
-    // WASM, so the mocked e2e can assert the fallback UI without CRS or worker traffic.
-    if (params.get("noirStub") === "true") {
+    // Dev-server-only test hook (dead code in the production bundle): `?noirStub=true` answers the
+    // in-browser path with the fixture bytes instead of WASM, so the mocked e2e can assert the
+    // fallback UI without CRS or worker traffic.
+    if (import.meta.env.DEV && params.get("noirStub") === "true") {
       apiSource = async () => (await import("./noir-stub")).stubBarretenberg(fixture);
     }
     backend = new PrestoUltraHonkBackend(fixture.bytecode, apiSource, {
@@ -125,7 +127,6 @@ async function getNoirBackend(): Promise<{
   return { backend, fixture };
 }
 
-/** Prove the fixture in the chosen mode and compare the result with the committed reference. */
 export async function proveNoirFixture(
   mode: UiMode,
   log: LogFn,

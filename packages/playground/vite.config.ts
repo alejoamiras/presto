@@ -147,6 +147,12 @@ function noirFixturePlugin(): Plugin {
   };
 }
 
+// The deployed site sends these from `public/_headers`; bb.js's worker threads need the isolation.
+const crossOriginIsolation = {
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "credentialless",
+};
+
 export default defineConfig(({ mode, command }) => {
   const allEnv = loadEnv(mode, process.cwd(), "");
   const env = {
@@ -199,10 +205,7 @@ export default defineConfig(({ mode, command }) => {
       },
     },
     server: {
-      headers: {
-        "Cross-Origin-Opener-Policy": "same-origin",
-        "Cross-Origin-Embedder-Policy": "credentialless",
-      },
+      headers: crossOriginIsolation,
       proxy: {
         "/aztec": {
           target: env.AZTEC_NODE_URL || "http://localhost:8080",
@@ -213,6 +216,9 @@ export default defineConfig(({ mode, command }) => {
       fs: {
         allow: ["../.."],
       },
+    },
+    preview: {
+      headers: crossOriginIsolation,
     },
     build: {
       target: "esnext",

@@ -104,7 +104,8 @@ const { proof, publicInputs } = await backend.generateProof(witness, {
 ```
 
 Any circuit compiled with nargo, any bb verifier target, no Aztec node. Native proving needs
-Presto **1.1.0** or newer (an older app answers `404` and the backend proves in WASM); the transport
+Presto **1.1.0** or newer (an older app does not advertise the scheme, so the backend proves in
+WASM without sending anything); the transport
 rules above — HTTPS-only in browsers, origin approval, no automatic HTTP `/prove` — are the same.
 See the [presto-noir README](packages/sdk-noir/README.md).
 

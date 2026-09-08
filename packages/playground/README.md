@@ -24,7 +24,9 @@ best available diagnosis, and offers **Retry secure connection**. **Use HTTP for
 warns that private proving data may be exposed to another local user or process. On confirmation it
 sets `httpsOnly: false` and `allowInsecureDowngrade: true` only on the in-memory prover and
 force-refreshes status. The choice is not written to local storage, cookies, URL parameters, or
-desktop configuration and resets on reload. There is no production `?httpsOnly=false` switch.
+desktop configuration and resets on reload. There is no production `?httpsOnly=false` switch. The
+consent applies to the Aztec actions only: the Noir panel keeps the browser's HTTPS-only default
+and falls back to in-browser proving when HTTPS cannot connect.
 
 ## Development
 

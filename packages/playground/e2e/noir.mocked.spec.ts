@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { expect, type Page, test } from "@playwright/test";
+import { expect, type Page, type Route, test } from "@playwright/test";
 
 // The Noir panel over a mocked presto. The in-browser path uses `?noirStub=true` (the fixture
 // bytes instead of WASM), and every request that only real WASM proving would make — CRS points,
@@ -16,6 +16,9 @@ const fixture = {
   proof: readFileSync(resolve(fixtureDir, "proof")).toString("base64"),
   publicInputs: readFileSync(resolve(fixtureDir, "public_inputs")).toString("base64"),
 };
+
+const ORIGINS = ["http://127.0.0.1:59833", "https://127.0.0.1:59834"];
+const HTTPS_PROVE_URL = "https://127.0.0.1:59834/prove/ultra-honk";
 
 const HEALTHY = JSON.stringify({
   status: "ok",
@@ -33,7 +36,7 @@ async function mockServicesOffline(page: Page) {
 /** Block and record what only a real WASM prover would fetch. */
 async function forbidWasmTraffic(page: Page): Promise<string[]> {
   const seen: string[] = [];
-  const block = (route: import("@playwright/test").Route) => {
+  const block = (route: Route) => {
     seen.push(route.request().url());
     return route.abort();
   };
@@ -43,28 +46,41 @@ async function forbidWasmTraffic(page: Page): Promise<string[]> {
   return seen;
 }
 
-async function mockPresto(page: Page, jobs: Record<string, unknown>[]) {
-  for (const origin of ["http://127.0.0.1:59833", "https://127.0.0.1:59834"]) {
+/** A healthy presto on both loopback origins; `prove` answers every `/prove/ultra-honk` request. */
+async function mockPresto(page: Page, prove: (route: Route) => Promise<void>) {
+  for (const origin of ORIGINS) {
     await page.route(`${origin}/health`, (route) =>
       route.fulfill({ status: 200, contentType: "application/json", body: HEALTHY }),
     );
-    await page.route(`${origin}/prove/ultra-honk`, (route) => {
-      jobs.push(route.request().postDataJSON());
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        headers: { "x-prove-duration-ms": "42" },
-        body: JSON.stringify({ proof: fixture.proof, public_inputs: fixture.publicInputs }),
-      });
-    });
+    await page.route(`${origin}/prove/ultra-honk`, prove);
   }
 }
 
-async function proveAndWait(page: Page) {
+/** Records `{ url, job }` per proof request and answers with `body`. */
+function proveWith(
+  jobs: { url: string; job: Record<string, unknown> }[],
+  body: { proof: string; public_inputs: string },
+) {
+  return (route: Route) => {
+    jobs.push({ url: route.request().url(), job: route.request().postDataJSON() });
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      headers: { "x-prove-duration-ms": "42" },
+      body: JSON.stringify(body),
+    });
+  };
+}
+
+async function clickProve(page: Page) {
   await expect(page.locator("#noir-btn")).toBeEnabled({ timeout: 10_000 });
   await page.click("#noir-btn");
   await expect(page.locator("#noir-btn")).toHaveText("Proving...");
   await expect(page.locator("#noir-btn")).toHaveText("Prove Noir Circuit", { timeout: 20_000 });
+}
+
+async function proveAndWait(page: Page) {
+  await clickProve(page);
   await expect(page.locator("#noir-results")).not.toHaveClass(/hidden/);
 }
 
@@ -77,24 +93,31 @@ test.afterEach(() => {
   expect(jsErrors, "Unexpected JS runtime errors").toEqual([]);
 });
 
-test("Presto mode sends the fixture job with its seeded key and renders the native result", async ({
+test("Presto mode sends the fixture job with its seeded key over HTTPS and renders the native result", async ({
   page,
 }) => {
   await mockServicesOffline(page);
   const wasmTraffic = await forbidWasmTraffic(page);
-  const jobs: Record<string, unknown>[] = [];
-  await mockPresto(page, jobs);
+  const jobs: { url: string; job: Record<string, unknown> }[] = [];
+  await mockPresto(
+    page,
+    proveWith(jobs, { proof: fixture.proof, public_inputs: fixture.publicInputs }),
+  );
   await page.goto("/");
 
   await proveAndWait(page);
 
-  expect(jobs).toHaveLength(1);
-  expect(jobs[0]).toEqual({
-    bytecode: fixture.bytecode,
-    witness: fixture.witness,
-    verifier_target: "noir-recursive-no-zk",
-    vk: fixture.vk,
-  });
+  expect(jobs).toEqual([
+    {
+      url: HTTPS_PROVE_URL,
+      job: {
+        bytecode: fixture.bytecode,
+        witness: fixture.witness,
+        verifier_target: "noir-recursive-no-zk",
+        vk: fixture.vk,
+      },
+    },
+  ]);
   await expect(page.locator("#noir-time-accelerated")).toHaveText(/^\d+\.\d+s$/);
   await expect(page.locator("#noir-tag-accelerated")).toHaveText("identical to fixture");
   await expect(page.locator("#noir-result-accelerated")).toHaveClass(/result-filled/);
@@ -104,11 +127,56 @@ test("Presto mode sends the fixture job with its seeded key and renders the nati
   expect(wasmTraffic).toEqual([]);
 });
 
+test("a native answer that differs from the fixture is reported, not celebrated", async ({
+  page,
+}) => {
+  await mockServicesOffline(page);
+  const wasmTraffic = await forbidWasmTraffic(page);
+  const tampered = Buffer.from(fixture.proof, "base64");
+  tampered[0] ^= 1;
+  await mockPresto(
+    page,
+    proveWith([], { proof: tampered.toString("base64"), public_inputs: fixture.publicInputs }),
+  );
+  await page.goto("/");
+
+  await proveAndWait(page);
+
+  await expect(page.locator("#noir-tag-accelerated")).toHaveText("differs from fixture");
+  await expect(page.locator("#noir-tag-accelerated")).toHaveClass(/text-brand-danger/);
+  await expect(page.locator("#log")).toContainText("Proof differs from the bb.js WASM reference");
+  await expect(page.locator("#log")).not.toContainText("byte-identical");
+  expect(wasmTraffic).toEqual([]);
+});
+
+test("a failing Presto request surfaces the error and restores the button", async ({ page }) => {
+  await mockServicesOffline(page);
+  const wasmTraffic = await forbidWasmTraffic(page);
+  // An unrecognised 500 is a caller-facing error in the SDK's table, not a fallback.
+  await mockPresto(page, (route) =>
+    route.fulfill({ status: 500, contentType: "text/plain", body: "not_in_the_table" }),
+  );
+  await page.goto("/");
+
+  await clickProve(page);
+
+  await expect(page.locator("#log")).toContainText("Noir proof failed:");
+  await expect(page.locator("#noir-results")).toHaveClass(/hidden/);
+  await expect(page.locator("#noir-btn")).toBeEnabled();
+  await expect(page.locator("#progress")).toHaveClass(/hidden/);
+  expect(wasmTraffic).toEqual([]);
+});
+
 test("an offline Presto falls back to the browser and the UI says so", async ({ page }) => {
   await mockServicesOffline(page);
   const wasmTraffic = await forbidWasmTraffic(page);
-  for (const origin of ["http://127.0.0.1:59833", "https://127.0.0.1:59834"]) {
-    await page.route(`${origin}/**`, (route) => route.abort());
+  const proveAttempts: string[] = [];
+  for (const origin of ORIGINS) {
+    await page.route(`${origin}/prove/**`, (route) => {
+      proveAttempts.push(route.request().url());
+      return route.abort();
+    });
+    await page.route(`${origin}/health`, (route) => route.abort());
   }
   await page.goto("/?noirStub=true");
 
@@ -118,19 +186,18 @@ test("an offline Presto falls back to the browser and the UI says so", async ({ 
   await expect(page.locator("#noir-tag-local")).toHaveText("identical to fixture");
   await expect(page.locator("#noir-time-local")).toHaveText(/^\d+\.\d+s$/);
   await expect(page.locator("#noir-time-accelerated")).toHaveText("—");
+  expect(proveAttempts).toEqual([]);
   expect(wasmTraffic).toEqual([]);
 });
 
-test("in-browser mode never talks to Presto", async ({ page }) => {
+test("in-browser mode never talks to a healthy Presto", async ({ page }) => {
   await mockServicesOffline(page);
   const wasmTraffic = await forbidWasmTraffic(page);
-  const prestoRequests: string[] = [];
-  for (const origin of ["http://127.0.0.1:59833", "https://127.0.0.1:59834"]) {
-    await page.route(`${origin}/prove/**`, (route) => {
-      prestoRequests.push(route.request().url());
-      return route.abort();
-    });
-  }
+  const jobs: { url: string; job: Record<string, unknown> }[] = [];
+  await mockPresto(
+    page,
+    proveWith(jobs, { proof: fixture.proof, public_inputs: fixture.publicInputs }),
+  );
   await page.goto("/?noirStub=true");
   await page.click("#mode-local");
 
@@ -138,6 +205,6 @@ test("in-browser mode never talks to Presto", async ({ page }) => {
 
   await expect(page.locator("#noir-tag-local")).toHaveText("identical to fixture");
   await expect(page.locator("#log")).not.toContainText("proving in-browser for now");
-  expect(prestoRequests).toEqual([]);
+  expect(jobs).toEqual([]);
   expect(wasmTraffic).toEqual([]);
 });

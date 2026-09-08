@@ -163,7 +163,6 @@ function setActionButtonsDisabled(disabled: boolean): void {
 $("noir-btn").addEventListener("click", async () => {
   if (deploying) return;
   deploying = true;
-  const walletReady = !$btn("deploy-btn").disabled;
   setActionButtonsDisabled(true);
 
   const btn = $btn("noir-btn");
@@ -177,7 +176,10 @@ $("noir-btn").addEventListener("click", async () => {
     const result = await proveNoirFixture(state.uiMode, appendLog, (phase, data) =>
       handleProverPhase(ascii, phase, data),
     );
-    appendLog(`noir proof: ${formatDuration(result.durationMs)}`, "success");
+    appendLog(
+      `noir proof: ${formatDuration(result.durationMs)}`,
+      result.identical ? "success" : "error",
+    );
     showResult(
       "noir-",
       result.fellBack ? "local" : result.mode,
@@ -189,8 +191,9 @@ $("noir-btn").addEventListener("click", async () => {
   } finally {
     ascii.stop();
     deploying = false;
-    // The Aztec actions stay disabled until the wallet is ready; the Noir circuit needs no node.
-    setActionButtonsDisabled(!walletReady);
+    // The Aztec actions stay disabled until the wallet is ready (it may have become ready during
+    // this proof); the Noir circuit needs no node.
+    setActionButtonsDisabled(state.wallet === null);
     btn.disabled = false;
     btn.textContent = "Prove Noir Circuit";
     $("progress").classList.add("hidden");
@@ -298,7 +301,8 @@ async function initWallet(): Promise<void> {
     $("wallet-state").textContent = "ready";
     $("wallet-state").className = "text-brand-accent/80 ml-auto text-[10px] font-mono font-light";
     setStatus("wallet-dot", true);
-    setActionButtonsDisabled(false);
+    // A Noir proof in flight re-enables the actions itself when it finishes.
+    if (!deploying) setActionButtonsDisabled(false);
 
     const networkLabel = $("network-label");
     if (state.proofsRequired) {

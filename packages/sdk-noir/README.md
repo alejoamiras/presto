@@ -32,8 +32,9 @@ npm install @alejoamiras/presto-noir @aztec/bb.js@5.2.0
 `@aztec/bb.js` is a peer dependency pinned **exactly** to the release this adapter is tested against
 (`TESTED_BB_VERSION`, see [Compatibility](#compatibility)); a project already on that bb.js keeps
 its single copy. The transport comes from [`@alejoamiras/presto-core`](../sdk-core/README.md), an
-exact-pinned dependency. Native proving needs Presto **1.1.0** or newer; an older app has no
-`/prove/ultra-honk` and the backend proves in WASM (`route-missing`).
+exact-pinned dependency. Native proving needs Presto **1.1.0** or newer; an older app does not
+advertise `ultra_honk` in `/health.schemes`, so nothing is sent and the backend proves in WASM
+(`scheme-unsupported`).
 
 Browser bundling is whatever bb.js already needs (cross-origin isolation for its worker threads, its
 worker files served); the adapter adds no asset of its own. The
@@ -92,8 +93,8 @@ misconfiguration throws `PrestoHttpError` in both modes.
 |---|---|---|
 | `unavailable` | offline, blocked by the browser's local-network permission, misbehaving, or too old to speak the protocol | no usable `/health` |
 | `secure-connection-unavailable` | browser policy forbids plaintext and HTTPS could not connect | — |
-| `scheme-unsupported` | the app serves `/prove` but not `ultra_honk` | `/health.schemes` without it |
-| `route-missing` | the app predates the route | `404` |
+| `scheme-unsupported` | the app does not serve `ultra_honk` — every Presto before 1.1.0, or one built without the route | `/health.schemes` without it (or no `schemes` at all) |
+| `route-missing` | the app advertised the scheme but has no route | `404` |
 | `denied` / `cooldown` | the user denied this origin / a recent denial is cooling down | `403` |
 | `version-mismatch` | the presto refuses the requested `bbVersion` | `403 version_not_allowed` |
 | `transient` | capacity or a transient failure: the global queue, the per-origin cap of four jobs, timeouts, `prove_failed` | `408` / `413` / `429` / `503`, known `500`s |

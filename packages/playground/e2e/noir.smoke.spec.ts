@@ -1,9 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /**
- * One real-browser Noir proof: bb.js WASM workers in Chromium (CRS from the network), then Presto
- * when PRESTO_URL names one. Keeps browser worker packaging a release guarantee for the adapter.
- * No Aztec node or wallet is needed.
+ * Real-browser Noir proofs against the dev server: bb.js WASM workers in Chromium (CRS from the
+ * network), then Presto natively when PRESTO_URL is set — a presence flag, as in
+ * demo.smoke.spec.ts: the page talks to its default loopback endpoints (HTTPS in the browser), so
+ * the presto must serve the HTTPS listener. No Aztec node or wallet is needed. The production
+ * bundle's packaging is covered by noir.production-smoke.spec.ts.
  *
  * Usage: bun run --cwd packages/playground test:e2e:smoke
  */
