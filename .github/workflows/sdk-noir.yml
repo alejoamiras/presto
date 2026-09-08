@@ -1,26 +1,16 @@
-name: SDK
+name: SDK Noir
 
 on:
   workflow_dispatch:
-    inputs:
-      package:
-        description: "Descriptor key in scripts/npm-packages.ts to run the package pipeline for"
-        type: choice
-        options:
-          - presto
-          - presto-core
-          - presto-noir
-        default: presto
   pull_request:
     branches: [main, security-hardening]
 
 permissions:
   contents: read
 
-# Cancel a superseded in-flight run when a new commit is pushed to the same PR. The package is part
-# of the key so dispatching two packages on one ref runs both instead of cancelling the first.
+# Cancel a superseded in-flight run when a new commit is pushed to the same PR.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}-${{ inputs.package || 'presto' }}
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -37,43 +27,35 @@ jobs:
         with:
           filters: |
             relevant:
-              - 'packages/sdk/**'
-              # The SDK depends on core: a core change must re-run the SDK's consumer and e2e.
+              - 'packages/sdk-noir/**'
+              # The adapter depends on core.
               - 'packages/sdk-core/**'
+              - 'fixtures/noir/**'
               - 'scripts/**'
               - 'tsconfig.json'
               - 'tsconfig.scripts.json'
               - 'biome.json'
               - 'package.json'
               - 'bun.lock'
-              # bunfig.toml gates the @aztec min-age excludes parity test (scripts/
-              # bunfig-aztec-excludes.test.ts, runs in Unit Tests via test:scripts) — a
-              # bunfig-only exemption edit must not skip the guard that reviews it.
               - 'bunfig.toml'
               - '.bun-version'
-              - '.github/workflows/sdk.yml'
+              - '.github/workflows/sdk-noir.yml'
               - '.github/workflows/_ts-package-ci.yml'
-              - '.github/workflows/_e2e.yml'
-              - '.github/actions/setup-aztec/**'
-              - '.github/actions/start-services/**'
       - name: Override for manual dispatch
         if: github.event_name == 'workflow_dispatch'
         id: override
         run: echo "relevant=true" >> "$GITHUB_OUTPUT"
 
-  # A pull request runs the `presto` pipeline; a dispatch runs it for the chosen descriptor entry —
-  # the way a package whose own workflow is not yet registered on main gets CI on a feature ref.
   ci:
     name: CI
     needs: changes
     if: needs.changes.outputs.relevant == 'true'
     uses: ./.github/workflows/_ts-package-ci.yml
     with:
-      package: ${{ inputs.package || 'presto' }}
-      e2e_presto: ${{ (inputs.package || 'presto') == 'presto' }}
+      package: presto-noir
 
-  sdk-status:
-    name: SDK Status
+  sdk-noir-status:
+    name: SDK Noir Status
     if: always()
     needs: [changes, ci]
     runs-on: ubuntu-latest

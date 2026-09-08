@@ -4,6 +4,7 @@
   "workspaces": [
     "packages/sdk-core",
     "packages/sdk",
+    "packages/sdk-noir",
     "packages/banners",
     "packages/presto",
     "packages/playground",
@@ -30,8 +31,8 @@
     "test:all": "bun run test && bun run test:e2e",
     "test:e2e": "bun run --cwd packages/sdk test:e2e",
     "test:scripts": "bun test scripts/*.test.ts scripts/tarball-consumer/*.test.ts",
-    "test:typecheck": "bun run typecheck:scripts && bun run --cwd packages/sdk-core test:lint && bun run --cwd packages/sdk test:lint && bun run --cwd packages/banners typecheck && bun run --cwd packages/playground typecheck && bun run --cwd packages/playground typecheck:scripts && bun run --cwd packages/release-feed typecheck",
-    "test:unit": "bun run --cwd packages/sdk-core test:unit && bun run --cwd packages/sdk test:unit && bun run --cwd packages/banners test:unit && bun run --cwd packages/playground test:unit && bun run --cwd packages/presto test:unit && bun run --cwd packages/release-feed test && bun run test:scripts",
+    "test:typecheck": "bun run typecheck:scripts && bun run --cwd packages/sdk-core test:lint && bun run --cwd packages/sdk test:lint && bun run --cwd packages/sdk-noir test:lint && bun run --cwd packages/banners typecheck && bun run --cwd packages/playground typecheck && bun run --cwd packages/playground typecheck:scripts && bun run --cwd packages/release-feed typecheck",
+    "test:unit": "bun run --cwd packages/sdk-core test:unit && bun run --cwd packages/sdk test:unit && bun run --cwd packages/sdk-noir test:unit && bun run --cwd packages/banners test:unit && bun run --cwd packages/playground test:unit && bun run --cwd packages/presto test:unit && bun run --cwd packages/release-feed test && bun run test:scripts",
     "typecheck:scripts": "tsc --noEmit -p tsconfig.scripts.json"
   },
   "lint-staged": {

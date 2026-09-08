@@ -26,10 +26,13 @@ export function hostManifest(
   if (aztecVersion) dependencies["@aztec/stdlib"] = aztecVersion;
   for (const [dep, path] of Object.entries(local)) dependencies[dep] = `file:${path}`;
   dependencies[name] = `file:${tarball}`;
+  // ESM, like any consumer of these `type: module` packages: a CommonJS host would resolve a peer's
+  // `require` types while the packed dist resolves its `import` types — two declarations of one class.
   return {
     name: `host-${aztecVersion || "default"}`,
     version: "0.0.0",
     private: true,
+    type: "module",
     dependencies,
   };
 }

@@ -36,7 +36,7 @@ describe("npm package descriptor", () => {
 
   test("an unknown package is a hard failure that names the valid keys", () => {
     expect(() => resolvePackage("nope")).toThrow(
-      'unknown package "nope"; expected one of presto, presto-core',
+      'unknown package "nope"; expected one of presto, presto-core, presto-noir',
     );
     expect(() => packageFromArgs(["--package"])).toThrow("--package needs a value");
     expect(() => packageFromArgs(["--package", "--dry-run"])).toThrow("--package needs a value");

@@ -8,25 +8,10 @@ import {
   workflowOutputs,
 } from "./release-plan.ts";
 
-// The DAG is exercised with the `presto-noir` adapter, which is registered in a later arc; until
-// then the tests inject its entry.
 const core = NPM_PACKAGES["presto-core"];
-const noir = {
-  name: "@alejoamiras/presto-noir",
-  dir: "packages/sdk-noir",
-  versionMode: "manifest",
-  consumerProfile: "presto-noir",
-} as const;
-const registry = NPM_PACKAGES as unknown as Record<string, unknown>;
-const keys = (list: string[]) => list as unknown as PackageKey[];
-const withSiblings = <T>(fn: () => T): T => {
-  registry["presto-noir"] = noir;
-  try {
-    return fn();
-  } finally {
-    delete registry["presto-noir"];
-  }
-};
+const noir = NPM_PACKAGES["presto-noir"];
+const keys = (list: PackageKey[]) => list;
+const withSiblings = <T>(fn: () => T): T => fn();
 
 const verified = { releaseVerified: true, changedSinceTag: false };
 const presto = (deps: Record<string, string> = {}) => ({

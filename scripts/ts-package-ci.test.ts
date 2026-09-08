@@ -8,6 +8,7 @@ const read = (rel: string) => readFileSync(resolve(repository, rel), "utf8");
 const reusable = read(".github/workflows/_ts-package-ci.yml");
 const sdk = read(".github/workflows/sdk.yml");
 const sdkCore = read(".github/workflows/sdk-core.yml");
+const sdkNoir = read(".github/workflows/sdk-noir.yml");
 const app = read(".github/workflows/app.yml");
 const publish = read(".github/workflows/_publish-npm.yml");
 
@@ -48,12 +49,22 @@ describe("TypeScript package CI contract", () => {
     }
   });
 
-  test("per-package PR gates are thin callers of the reusable", () => {
-    expect(sdkCore).toContain("uses: ./.github/workflows/_ts-package-ci.yml");
-    expect(sdkCore).toContain("package: presto-core");
-    expect(sdkCore).toContain("'packages/sdk-core/**'");
-    expect(sdkCore).toContain("'.github/workflows/_ts-package-ci.yml'");
-    expect(sdkCore).not.toContain("e2e_presto");
+  test.each([
+    ["sdk-core.yml", sdkCore, "presto-core", ["'packages/sdk-core/**'"]],
+    [
+      "sdk-noir.yml",
+      sdkNoir,
+      "presto-noir",
+      ["'packages/sdk-noir/**'", "'packages/sdk-core/**'", "'fixtures/noir/**'"],
+    ],
+  ])("%s is a thin caller of the reusable", (_name, workflow, key, paths) => {
+    expect(workflow).toContain("uses: ./.github/workflows/_ts-package-ci.yml");
+    expect(workflow).toContain(`package: ${key}`);
+    for (const path of [...paths, "'.github/workflows/_ts-package-ci.yml'"]) {
+      expect(workflow).toContain(path);
+    }
+    expect(workflow).not.toContain("e2e_presto");
+    expect(workflow).not.toContain("id-token");
   });
 
   test("the app pipeline re-runs when core changes", () => {
