@@ -33,3 +33,17 @@ bb.js constructor.
 | # | Severity | Finding | Fix |
 |---|---|---|---|
 | 1 | Medium | Loading bb.js before the factory (round-1 #6) opened a window: `destroy()` during the peer import saw no API and returned, then the pending initialiser called the factory and created an API teardown missed (a component unmounting mid-initialisation leaks WASM workers) | `destroy()` first awaits a pending initialisation (result and rejection both absorbed), then releases the owned API; regression test: `getVerificationKey()` then immediate `destroy()` → factory called once, its API destroyed once, the pending call still resolves |
+
+Commit 8ccdaef. `sdk.yml package=presto-noir` on ee59714 (round-1 head): run 34193265919 green incl.
+WASM Identity + Live Presto.
+
+## Round 3 — 2026-09-08 (`response-2.md`) — converged
+
+> **Approve arc 4 at `8ccdaef`. No new material findings. Confidence: high.**
+
+Re-verified with executable probes: a pending initialisation creates one API and destroys it before
+teardown resolves; a rejected factory keeps the operation's error without making teardown reject;
+a second `destroy()` does not dispose twice; WASM use after teardown creates a fresh API; a
+caller-provided API is untouched.
+
+Three rounds. `sdk.yml package=presto-noir` on 8ccdaef: run 34193633780 (result below).
