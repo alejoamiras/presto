@@ -32,6 +32,8 @@ import { $, $btn, appendLog, formatDuration, setStatus, startClock } from "./ui"
 import { sameMajor } from "./version";
 
 let deploying = false;
+// `initializeWallet()` succeeded, FPC included; `state.wallet` alone is set before the FPC step.
+let walletReady = false;
 
 const prestoStatus = new PrestoStatusController({
   check: checkPrestoStatus,
@@ -193,7 +195,7 @@ $("noir-btn").addEventListener("click", async () => {
     deploying = false;
     // The Aztec actions stay disabled until the wallet is ready (it may have become ready during
     // this proof); the Noir circuit needs no node.
-    setActionButtonsDisabled(state.wallet === null);
+    setActionButtonsDisabled(!walletReady);
     btn.disabled = false;
     btn.textContent = "Prove Noir Circuit";
     $("progress").classList.add("hidden");
@@ -297,6 +299,7 @@ async function initWallet(): Promise<void> {
   setStatus("wallet-dot", null);
 
   const ok = await initializeWallet(appendLog);
+  walletReady = ok;
   if (ok) {
     $("wallet-state").textContent = "ready";
     $("wallet-state").className = "text-brand-accent/80 ml-auto text-[10px] font-mono font-light";

@@ -46,7 +46,6 @@ async function forbidWasmTraffic(page: Page): Promise<string[]> {
   return seen;
 }
 
-/** A healthy presto on both loopback origins; `prove` answers every `/prove/ultra-honk` request. */
 async function mockPresto(page: Page, prove: (route: Route) => Promise<void>) {
   for (const origin of ORIGINS) {
     await page.route(`${origin}/health`, (route) =>
@@ -56,7 +55,6 @@ async function mockPresto(page: Page, prove: (route: Route) => Promise<void>) {
   }
 }
 
-/** Records `{ url, job }` per proof request and answers with `body`. */
 function proveWith(
   jobs: { url: string; job: Record<string, unknown> }[],
   body: { proof: string; public_inputs: string },

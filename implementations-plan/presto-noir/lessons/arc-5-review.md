@@ -25,3 +25,18 @@ accepted except the two noted below.
 Gates after the fixes: playground typecheck (src, tests, e2e, scripts) ✓, unit 75 ✓, mocked
 project 18/18 ✓ (13 existing + 5 Noir), production smoke 3/3 ✓ (Noir WASM proof in the built
 bundle 7.0 s), `bun run test` exit 0.
+
+Commit fbc6369. `app.yml` dispatch 34196696329 on it (result recorded below).
+
+## Round 2 — 2026-09-08 (`response-1.md`)
+
+Seven of eight fixes accepted as resolved (incl. the `PRESTO_URL` pushback: "renaming it does not
+justify diverging from its sibling"; no conflict from `preview.headers` with the packaged-e2e gate).
+One new material finding, verified.
+
+| # | Severity | Finding | Fix |
+|---|---|---|---|
+| 1 | Medium | `state.wallet !== null` is not "initialised": `aztec.ts` assigns the wallet before `initializeFPC()`, and `initializeWallet()` can return `false` afterwards without clearing it — a Noir proof finishing in that window enabled Deploy with no fee payment method | `main.ts` keeps `walletReady`, assigned from the awaited `initializeWallet()` result (the same signal `initWallet` enables Deploy on); the Noir `finally` consults it. The suggested happy-dom unit test was not added: no unit test loads `main.ts` (an entry module that wires the DOM at import time over the whole `@aztec` graph), and the remaining logic is one boolean assignment read in one place |
+| 2 | Nit | Two JSDoc lines on the new mocked-spec helpers narrated their bodies | Removed |
+
+Gates: playground typecheck ✓, mocked 18/18 ✓, `bun run test` exit 0.
