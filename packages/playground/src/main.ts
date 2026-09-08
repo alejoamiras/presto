@@ -19,6 +19,7 @@ import {
   installWasmDiagnostics,
   installWorkerDiagnostics,
 } from "./diagnostics";
+import { proveNoirFixture } from "./noir";
 import {
   HttpSessionConsentController,
   PrestoStatusController,
@@ -31,6 +32,8 @@ import { $, $btn, appendLog, formatDuration, setStatus, startClock } from "./ui"
 import { sameMajor } from "./version";
 
 let deploying = false;
+// `initializeWallet()` succeeded, FPC included; `state.wallet` alone is set before the FPC step.
+let walletReady = false;
 
 const prestoStatus = new PrestoStatusController({
   check: checkPrestoStatus,
@@ -155,7 +158,49 @@ function setActionButtonsDisabled(disabled: boolean): void {
   // The token flow needs a session-deployed sender (see pickSessionSender) — an enabled
   // button must imply the action can succeed, so it stays disabled until one exists.
   $btn("token-flow-btn").disabled = disabled || state.sessionAddresses.length === 0;
+  $btn("noir-btn").disabled = disabled;
 }
+
+// ── Noir circuit ──
+$("noir-btn").addEventListener("click", async () => {
+  if (deploying) return;
+  deploying = true;
+  setActionButtonsDisabled(true);
+
+  const btn = $btn("noir-btn");
+  btn.textContent = "Proving...";
+  $("progress").classList.remove("hidden");
+
+  const ascii = new SparkOrbitController($("ascii-art"), document.getElementById("ascii-elapsed"));
+  ascii.start(state.uiMode);
+
+  try {
+    const result = await proveNoirFixture(state.uiMode, appendLog, (phase, data) =>
+      handleProverPhase(ascii, phase, data),
+    );
+    appendLog(
+      `noir proof: ${formatDuration(result.durationMs)}`,
+      result.identical ? "success" : "error",
+    );
+    showResult(
+      "noir-",
+      result.fellBack ? "local" : result.mode,
+      result.durationMs,
+      result.identical ? "identical to fixture" : "differs from fixture",
+    );
+  } catch (err) {
+    appendLog(`Noir proof failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+  } finally {
+    ascii.stop();
+    deploying = false;
+    // The Aztec actions stay disabled until the wallet is ready (it may have become ready during
+    // this proof); the Noir circuit needs no node.
+    setActionButtonsDisabled(!walletReady);
+    btn.disabled = false;
+    btn.textContent = "Prove Noir Circuit";
+    $("progress").classList.add("hidden");
+  }
+});
 
 // ── Deploy ──
 $("deploy-btn").addEventListener("click", async () => {
@@ -254,11 +299,13 @@ async function initWallet(): Promise<void> {
   setStatus("wallet-dot", null);
 
   const ok = await initializeWallet(appendLog);
+  walletReady = ok;
   if (ok) {
     $("wallet-state").textContent = "ready";
     $("wallet-state").className = "text-brand-accent/80 ml-auto text-[10px] font-mono font-light";
     setStatus("wallet-dot", true);
-    setActionButtonsDisabled(false);
+    // A Noir proof in flight re-enables the actions itself when it finishes.
+    if (!deploying) setActionButtonsDisabled(false);
 
     const networkLabel = $("network-label");
     if (state.proofsRequired) {
@@ -354,6 +401,8 @@ async function init(): Promise<void> {
 
   // Default mode UI
   updateModeUI("accelerated");
+  // The Noir circuit proves without an Aztec node or a wallet.
+  $btn("noir-btn").disabled = false;
 
   appendLog("Checking Aztec node...");
   const { reachable: aztec, nodeVersion } = await checkAztecNode();

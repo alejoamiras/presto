@@ -23,10 +23,12 @@
   },
   "dependencies": {
     "@alejoamiras/presto": "workspace:*",
+    "@alejoamiras/presto-noir": "workspace:*",
     "@aztec-foundation/aztec-standards": "5.2.0",
     "@aztec/accounts": "5.2.0",
     "@aztec/aztec.js": "5.2.0",
     "@aztec/bb-prover": "5.2.0",
+    "@aztec/bb.js": "5.2.0",
     "@aztec/foundation": "5.2.0",
     "@aztec/kv-store": "5.2.0",
     "@aztec/noir-acvm_js": "5.2.0",

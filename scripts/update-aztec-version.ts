@@ -8,7 +8,17 @@
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly\.\d{8}|rc\.\d+|aztecnr-rc\.\d+))?$/;
 const AZTEC_VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly|spartan|devnet|aztecnr-rc|rc)[\w.-]*)?$/;
 
-const PACKAGE_JSON_FILES = ["packages/sdk/package.json", "packages/playground/package.json"];
+// The Noir adapter's exact `@aztec/bb.js` peer (and its dev copy) move with every Aztec bump; its
+// `TESTED_BB_VERSIONS` constant is a separate, deliberate step — the adapter's tests fail loud
+// until the new pairing is declared tested.
+const PACKAGE_JSON_FILES = [
+  "packages/sdk/package.json",
+  "packages/playground/package.json",
+  "packages/sdk-noir/package.json",
+];
+const DEPENDENCY_SECTIONS = ["dependencies", "devDependencies", "peerDependencies"] as const;
+// The Noir consumer host installs the adapter's peer itself; a flat `{ name: version }` file.
+const HOST_DEPENDENCY_FILES = ["scripts/tarball-consumer/presto-noir/host-dependencies.json"];
 
 /**
  * Companion packages that must stay in version-lockstep with @aztec/*: their generated
@@ -26,36 +36,42 @@ export function validateVersion(version: string): boolean {
   return VERSION_PATTERN.test(version);
 }
 
+function bumpPins(deps: Record<string, unknown>, newVersion: string, skipPackages?: Set<string>) {
+  for (const [key, value] of Object.entries(deps)) {
+    if (isAztecManagedDep(key) && typeof value === "string" && AZTEC_VERSION_PATTERN.test(value)) {
+      if (skipPackages?.has(key)) continue;
+      deps[key] = newVersion;
+    }
+  }
+}
+
 export function updatePackageJson(
   content: string,
   newVersion: string,
   skipPackages?: Set<string>,
 ): string {
   const pkg = JSON.parse(content);
-
-  for (const section of ["dependencies", "devDependencies"] as const) {
-    const deps = pkg[section];
-    if (!deps) continue;
-    for (const [key, value] of Object.entries(deps)) {
-      if (
-        isAztecManagedDep(key) &&
-        typeof value === "string" &&
-        AZTEC_VERSION_PATTERN.test(value)
-      ) {
-        if (skipPackages?.has(key)) continue;
-        deps[key] = newVersion;
-      }
-    }
+  for (const section of DEPENDENCY_SECTIONS) {
+    if (pkg[section]) bumpPins(pkg[section], newVersion, skipPackages);
   }
-
   return `${JSON.stringify(pkg, null, 2)}\n`;
+}
+
+export function updateHostDependencies(
+  content: string,
+  newVersion: string,
+  skipPackages?: Set<string>,
+): string {
+  const deps = JSON.parse(content);
+  bumpPins(deps, newVersion, skipPackages);
+  return `${JSON.stringify(deps, null, 2)}\n`;
 }
 
 async function findMissingPackages(version: string, packageFiles: string[]): Promise<Set<string>> {
   const allAztecPackages = new Set<string>();
   for (const filePath of packageFiles) {
     const pkg = await Bun.file(filePath).json();
-    for (const section of ["dependencies", "devDependencies"] as const) {
+    for (const section of DEPENDENCY_SECTIONS) {
       const deps = pkg[section];
       if (!deps) continue;
       for (const [key, value] of Object.entries(deps)) {
@@ -136,10 +152,13 @@ async function main() {
 
   let updatedFiles = 0;
 
-  for (const filePath of PACKAGE_JSON_FILES) {
-    const file = Bun.file(filePath);
-    const original = await file.text();
-    const updated = updatePackageJson(original, newVersion, skipPackages);
+  const targets = [
+    ...PACKAGE_JSON_FILES.map((path) => [path, updatePackageJson] as const),
+    ...HOST_DEPENDENCY_FILES.map((path) => [path, updateHostDependencies] as const),
+  ];
+  for (const [filePath, update] of targets) {
+    const original = await Bun.file(filePath).text();
+    const updated = update(original, newVersion, skipPackages);
     if (updated !== original) {
       await Bun.write(filePath, updated);
       console.log(`Updated ${filePath}`);

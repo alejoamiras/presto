@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { updatePackageJson, validateVersion } from "./update-aztec-version";
+import { updateHostDependencies, updatePackageJson, validateVersion } from "./update-aztec-version";
 
 describe("validateVersion", () => {
   test("accepts nightly format", () => {
@@ -48,6 +48,16 @@ describe("updatePackageJson", () => {
     expect(pkg.devDependencies["@aztec/simulator"]).toBe("5.0.0-nightly.20260224");
   });
 
+  test("bumps an exact @aztec peer dependency too (the Noir adapter's bb.js peer)", () => {
+    const withPeer = JSON.stringify({
+      peerDependencies: { "@aztec/bb.js": "5.2.0" },
+      devDependencies: { "@aztec/bb.js": "5.2.0" },
+    });
+    const pkg = JSON.parse(updatePackageJson(withPeer, "5.3.0"));
+    expect(pkg.peerDependencies["@aztec/bb.js"]).toBe("5.3.0");
+    expect(pkg.devDependencies["@aztec/bb.js"]).toBe("5.3.0");
+  });
+
   test("does not touch non-@aztec dependencies", () => {
     const result = updatePackageJson(samplePkg, "5.0.0-nightly.20260224");
     const pkg = JSON.parse(result);
@@ -93,5 +103,24 @@ describe("updatePackageJson", () => {
     const result = updatePackageJson(stablePkg, "4.2.0-rc.1");
     const pkg = JSON.parse(result);
     expect(pkg.dependencies["@aztec/stdlib"]).toBe("4.2.0-rc.1");
+  });
+});
+
+describe("updateHostDependencies", () => {
+  test("bumps the Noir consumer host's bb.js pin like a manifest section", () => {
+    const updated = updateHostDependencies(
+      JSON.stringify({ "@aztec/bb.js": "5.2.0", left: "^1.0.0" }),
+      "5.3.0",
+    );
+    expect(JSON.parse(updated)).toEqual({ "@aztec/bb.js": "5.3.0", left: "^1.0.0" });
+  });
+
+  test("the committed host pin equals the adapter's peer pin", async () => {
+    const root = new URL("..", import.meta.url);
+    const host = await Bun.file(
+      new URL("scripts/tarball-consumer/presto-noir/host-dependencies.json", root),
+    ).json();
+    const adapter = await Bun.file(new URL("packages/sdk-noir/package.json", root)).json();
+    expect(host["@aztec/bb.js"]).toBe(adapter.peerDependencies["@aztec/bb.js"]);
   });
 });

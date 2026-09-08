@@ -105,6 +105,54 @@ function sqliteWasmAssetsPlugin(): Plugin {
   };
 }
 
+/**
+ * Vite plugin: `virtual:noir-fixture` embeds the committed `square` fixture as base64 at build
+ * time. Serving the raw files by path does not survive the dev server — extension-less bb outputs
+ * (`vk`, `proof`, `public_inputs`) are treated as JavaScript and `witness.gz` is inflated by
+ * content negotiation — and the bytes must reach the page exactly as committed.
+ */
+function noirFixturePlugin(): Plugin {
+  const id = "virtual:noir-fixture";
+  const resolvedId = `\0${id}`;
+  const dir = resolve(import.meta.dirname, "../../fixtures/noir/square");
+  return {
+    name: "noir-fixture",
+    resolveId(source) {
+      return source === id ? resolvedId : undefined;
+    },
+    load(moduleId) {
+      if (moduleId !== resolvedId) return undefined;
+      const file = (name: string) => resolve(dir, name);
+      for (const name of [
+        "circuit.json",
+        "manifest.json",
+        "witness.gz",
+        "vk",
+        "proof",
+        "public_inputs",
+      ]) {
+        this.addWatchFile(file(name));
+      }
+      const base64 = (name: string) => readFileSync(file(name)).toString("base64");
+      const fixture = {
+        bytecode: JSON.parse(readFileSync(file("circuit.json"), "utf8")).bytecode,
+        verifierTarget: JSON.parse(readFileSync(file("manifest.json"), "utf8")).verifierTarget,
+        witness: base64("witness.gz"),
+        vk: base64("vk"),
+        proof: base64("proof"),
+        publicInputs: base64("public_inputs"),
+      };
+      return `export default ${JSON.stringify(fixture)};`;
+    },
+  };
+}
+
+// The deployed site sends these from `public/_headers`; bb.js's worker threads need the isolation.
+const crossOriginIsolation = {
+  "Cross-Origin-Opener-Policy": "same-origin",
+  "Cross-Origin-Embedder-Policy": "credentialless",
+};
+
 export default defineConfig(({ mode, command }) => {
   const allEnv = loadEnv(mode, process.cwd(), "");
   const env = {
@@ -125,6 +173,7 @@ export default defineConfig(({ mode, command }) => {
       }),
       bbWorkerPlugin(),
       sqliteWasmAssetsPlugin(),
+      noirFixturePlugin(),
     ],
     optimizeDeps: {
       exclude: ["@aztec/noir-acvm_js", "@aztec/noir-noirc_abi"],
@@ -156,10 +205,7 @@ export default defineConfig(({ mode, command }) => {
       },
     },
     server: {
-      headers: {
-        "Cross-Origin-Opener-Policy": "same-origin",
-        "Cross-Origin-Embedder-Policy": "credentialless",
-      },
+      headers: crossOriginIsolation,
       proxy: {
         "/aztec": {
           target: env.AZTEC_NODE_URL || "http://localhost:8080",
@@ -170,6 +216,9 @@ export default defineConfig(({ mode, command }) => {
       fs: {
         allow: ["../.."],
       },
+    },
+    preview: {
+      headers: crossOriginIsolation,
     },
     build: {
       target: "esnext",
@@ -193,7 +242,9 @@ export default defineConfig(({ mode, command }) => {
           ),
         }),
       },
-      dedupe: ["@aztec/bb-prover"],
+      // One bb.js for the Aztec prover, the Noir adapter's peer, and the page's own import: two
+      // copies would mean two WASM runtimes and two `Barretenberg` types.
+      dedupe: ["@aztec/bb-prover", "@aztec/bb.js"],
     },
     define: {
       "process.env": JSON.stringify({

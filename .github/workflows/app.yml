@@ -28,6 +28,8 @@ jobs:
               - 'packages/playground/**'
               - 'packages/sdk/**'
               - 'packages/sdk-core/**'
+              - 'packages/sdk-noir/**'
+              - 'fixtures/noir/**'
               - 'tsconfig.json'
               - 'biome.json'
               - 'package.json'
@@ -46,6 +48,7 @@ jobs:
             lna_relevant:
               - 'packages/sdk/**'
               - 'packages/sdk-core/**'
+              - 'packages/sdk-noir/**'
               - 'packages/playground/**'
               - 'packages/landing/**'
               - 'tsconfig*.json'

@@ -154,7 +154,9 @@ export function showResult(
       ? "text-brand-accent/70"
       : tag === "cold"
         ? "text-brand-warning/70"
-        : "text-brand-accent/70"
+        : tag === "differs from fixture"
+          ? "text-brand-danger/70"
+          : "text-brand-accent/70"
   }`;
 
   $(`${prefix}result-${mode}`).classList.add("result-filled");

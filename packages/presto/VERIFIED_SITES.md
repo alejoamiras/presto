@@ -59,6 +59,21 @@ especially when origin strings are opaque (e.g. `chrome-extension://...`).
 4. PR-gate runs `cargo test verified_sites::tests::embedded_registry_loads`
    against the real embedded JSON. Malformed entries fail the gate.
 
+### Which origins qualify
+
+- **Production origins only** — the origin a user actually visits. A host
+  that redirects (`www.` → apex) is not an origin the popup will ever show,
+  so it gets no entry.
+- **No preview or branch deployments.** Per-branch and per-PR hosts
+  (`<branch>-<project>.<account>.workers.dev`, `*.pages.dev` previews,
+  staging subdomains) change hands and content freely; listing one would
+  let any preview build wear the badge. A `workers.dev` host qualifies only
+  when it *is* the site's canonical deployment (as for the playground).
+- **One entry per product**, listing every production origin of that product
+  (`origins` is an array). Add a second entry only for a distinct product.
+- The `description` is a curator note (what the site is, which Presto route
+  it uses); it is not rendered.
+
 ## Browser extensions
 
 | Browser | Scheme | Curatable? |

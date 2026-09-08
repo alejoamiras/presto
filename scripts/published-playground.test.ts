@@ -1,5 +1,11 @@
 import { expect, test } from "bun:test";
-import { assertPeerPin, assertPublishedSdkManifest, sharedCorePin } from "./published-playground";
+import { resolve } from "node:path";
+import {
+  assertPeerPin,
+  assertPublishedSdkManifest,
+  packageRoot,
+  sharedCorePin,
+} from "./published-playground";
 
 test("playground requires the exact published SDK identity and matching Aztec dependency graph", () => {
   const dependencies = { "@aztec/stdlib": "5.2.0", "@aztec/bb-prover": "5.2.0", ms: "^2.1.3" };
@@ -62,4 +68,12 @@ test("a published adapter's peer pin must be the peer the playground installs", 
     "pins peer @aztec/bb.js@5.2.0",
   );
   expect(() => assertPeerPin({ name: "x" }, "@aztec/bb.js", "5.2.0")).toThrow("(none)");
+});
+
+test("packageRoot finds the copy the playground resolves, not a nested one", async () => {
+  const playground = resolve(import.meta.dir, "../packages/playground");
+  const dir = packageRoot("@aztec/bb.js", playground);
+  expect(dir.endsWith("/node_modules/@aztec/bb.js")).toBe(true);
+  expect((await Bun.file(`${dir}/package.json`).json()).name).toBe("@aztec/bb.js");
+  expect(() => packageRoot("@alejoamiras/no-such-package", playground)).toThrow();
 });

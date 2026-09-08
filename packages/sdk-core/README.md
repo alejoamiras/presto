@@ -5,12 +5,18 @@ The transport and policy layer every Presto SDK adapter shares: how to find the 
 native and when it must fall back, and the status a UI can show. It has no `@aztec/*` dependency, so
 adapters for different proof systems can build on it without pulling in each other's toolchains.
 
+[![SDK Core](https://github.com/alejoamiras/presto/actions/workflows/sdk-core.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/sdk-core.yml)
+[![npm version](https://img.shields.io/npm/v/@alejoamiras/presto-core)](https://www.npmjs.com/package/@alejoamiras/presto-core)
+[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
+
 You normally do not install this package directly:
 
 - Aztec transactions: [`@alejoamiras/presto`](../sdk/README.md) (`PrestoProver`).
-- Any Noir circuit: `@alejoamiras/presto-noir` (`PrestoUltraHonkBackend`).
+- Any Noir circuit: [`@alejoamiras/presto-noir`](../sdk-noir/README.md) (`PrestoUltraHonkBackend`).
 
-Both depend on this package at an exact version.
+Both depend on this package at an exact version, so a project that installs either gets exactly the
+core its adapter was tested with; two adapters in one project share a single copy when their pins
+agree. The version is plain semver from `package.json` — it does not track an Aztec release.
 
 ## Installation
 
@@ -49,7 +55,8 @@ if (outcome.kind === "native") {
 browsers (pages and Workers), a working HTTPS endpoint is never downgraded to plaintext, and a
 witness is never sent to an endpoint that was not itself probed. Every condition the presto signals
 comes back as `{ kind: "fallback", reason }` — offline, denied, cooldown, version mismatch, an app
-that predates the route (`404`), capacity (`408`/`413`/`429`/`503`), a body over the cap. Only a
+that does not advertise the route's scheme (nothing is sent), a `404` from one that does, capacity
+(`408`/`413`/`429`/`503`), a body over the cap. Only a
 caller misconfiguration (`400`, an unrecognised `500`, an unexpected status) throws
 `PrestoHttpError`.
 
@@ -74,3 +81,18 @@ local-proving phases.
 `PrestoStatus` is documented in the [`@alejoamiras/presto` README](../sdk/README.md#prestostatus);
 an available status also carries `schemes` and `versions` (`{ aztecVersion, bbVersion }[]`) when
 the presto reports them.
+
+## Development
+
+```bash
+bun run --cwd packages/sdk-core build       # Build
+bun run --cwd packages/sdk-core test:unit   # Unit tests
+bun run --cwd packages/sdk-core test:lint   # Typecheck
+```
+
+CI (`sdk-core.yml`, through the reusable `_ts-package-ci.yml`) lints, typechecks, runs the unit
+tests, and installs the packed tarball into a clean consumer host.
+
+## License
+
+[AGPL-3.0](../../LICENSE)

@@ -233,7 +233,36 @@ export function workflowOutputs(plan: ReleasePlan, summary: string): string {
 // ── fact gathering (registry, git, GitHub) ──
 
 /** Build inputs of a package beyond its own directory; a change here can change the artifact. */
-const SHARED_BUILD_INPUTS = ["bun.lock", "tsconfig.json"];
+const SHARED_BUILD_INPUTS = ["tsconfig.json"];
+
+/**
+ * The part of `bun.lock` that can change a package's artifact: its workspace entry, the resolutions
+ * of its runtime dependencies, and the compiler (the `typescript` wrapper and the platform packages
+ * that carry the actual binary, listed as its optional dependencies). Another workspace's
+ * dependency moving must not demand a version bump, or an adapter-only release needs a core bump
+ * first.
+ */
+export function lockfileSlice(lockText: string, dir: string): string {
+  // bun.lock is JSONC with trailing commas.
+  const lock = JSON.parse(lockText.replace(/,(\s*[}\]])/g, "$1"));
+  const workspace = lock.workspaces?.[dir] ?? {};
+  const names = new Set<string>(["typescript"]);
+  for (const field of ["dependencies", "peerDependencies", "optionalDependencies"]) {
+    for (const name of Object.keys(workspace[field] ?? {})) names.add(name);
+  }
+  const packages: Record<string, unknown> = {};
+  const include = (key: string) => {
+    const entry = lock.packages?.[key];
+    if (!entry || packages[key]) return;
+    packages[key] = entry;
+    for (const dep of Object.keys(entry[2]?.optionalDependencies ?? {})) include(dep);
+  };
+  for (const name of [...names].sort()) {
+    include(name);
+    include(`${workspace.name}/${name}`);
+  }
+  return JSON.stringify({ workspace, packages });
+}
 
 function run(command: string[]): string {
   const result = Bun.spawnSync(command, { stdout: "pipe", stderr: "pipe" });
@@ -315,9 +344,12 @@ async function releaseFacts(
     pkg.dir,
     ...SHARED_BUILD_INPUTS,
   ]);
+  const lockChanged =
+    lockfileSlice(run(["git", "show", `${tagCommit}:bun.lock`]), pkg.dir) !==
+    lockfileSlice(await Bun.file("bun.lock").text(), pkg.dir);
   return {
     releaseVerified: true,
-    changedSinceTag: diff.exitCode !== 0,
+    changedSinceTag: diff.exitCode !== 0 || lockChanged,
     publishedDependencies: publishedPins(`${pkg.name}@${version}`),
   };
 }

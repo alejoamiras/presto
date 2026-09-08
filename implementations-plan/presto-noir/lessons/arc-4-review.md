@@ -46,4 +46,5 @@ teardown resolves; a rejected factory keeps the operation's error without making
 a second `destroy()` does not dispose twice; WASM use after teardown creates a fresh API; a
 caller-provided API is untouched.
 
-Three rounds. `sdk.yml package=presto-noir` on 8ccdaef: run 34193633780 (result below).
+Three rounds. `sdk.yml package=presto-noir` on 8ccdaef: run 34193633780 green (Lint, Typecheck,
+Unit Tests, Tarball Consumer, WASM Identity, Live Presto).

@@ -1,8 +1,10 @@
 # Presto
 
-Native prover for Aztec transactions. Bypasses browser WASM throttling by running the `bb` proving binary natively on your machine.
+Native prover for Aztec transactions and any Noir circuit. Bypasses browser WASM throttling by running the `bb` proving binary natively on your machine.
 
 [![SDK](https://github.com/alejoamiras/presto/actions/workflows/sdk.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/sdk.yml)
+[![SDK Core](https://github.com/alejoamiras/presto/actions/workflows/sdk-core.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/sdk-core.yml)
+[![SDK Noir](https://github.com/alejoamiras/presto/actions/workflows/sdk-noir.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/sdk-noir.yml)
 [![Presto](https://github.com/alejoamiras/presto/actions/workflows/presto.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/presto.yml)
 [![App](https://github.com/alejoamiras/presto/actions/workflows/app.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/app.yml)
 [![npm version](https://img.shields.io/npm/v/@alejoamiras/presto)](https://www.npmjs.com/package/@alejoamiras/presto)
@@ -12,40 +14,42 @@ Native prover for Aztec transactions. Bypasses browser WASM throttling by runnin
 
 | Package | Description | Status |
 |---------|-------------|--------|
-| [`@alejoamiras/presto`](packages/sdk) | SDK — drop-in `PrestoProver` for dApp integration | [![npm](https://img.shields.io/npm/v/@alejoamiras/presto?label=npm)](https://www.npmjs.com/package/@alejoamiras/presto) |
-| [`packages/presto`](packages/presto) | Desktop tray app (macOS/Linux/Windows) + headless server for CI test acceleration | [![Presto](https://github.com/alejoamiras/presto/actions/workflows/presto.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/presto.yml) |
-| [`packages/playground`](packages/playground) | [Live demo](https://playground.presto.build) — WASM vs accelerated comparison | [![App](https://github.com/alejoamiras/presto/actions/workflows/app.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/app.yml) |
+| [`@alejoamiras/presto`](packages/sdk) | SDK — drop-in `PrestoProver` for Aztec dApps | [![npm](https://img.shields.io/npm/v/@alejoamiras/presto?label=npm)](https://www.npmjs.com/package/@alejoamiras/presto) |
+| [`@alejoamiras/presto-noir`](packages/sdk-noir) | SDK — drop-in `UltraHonkBackend` for any Noir circuit, native through Presto with WASM fallback | [![npm](https://img.shields.io/npm/v/@alejoamiras/presto-noir?label=npm)](https://www.npmjs.com/package/@alejoamiras/presto-noir) |
+| [`@alejoamiras/presto-core`](packages/sdk-core) | Transport and policy both SDKs share — loopback discovery, HTTPS-first pinning, fallback reasons | [![npm](https://img.shields.io/npm/v/@alejoamiras/presto-core?label=npm)](https://www.npmjs.com/package/@alejoamiras/presto-core) |
+| [`packages/presto`](packages/presto) | Desktop tray app (macOS/Linux/Windows) + headless server for CI test acceleration; `/prove` (Aztec) and `/prove/ultra-honk` (Noir) | [![Presto](https://github.com/alejoamiras/presto/actions/workflows/presto.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/presto.yml) |
+| [`packages/playground`](packages/playground) | [Live demo](https://playground.presto.build) — WASM vs accelerated comparison, Aztec transfer and Noir circuit | [![App](https://github.com/alejoamiras/presto/actions/workflows/app.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/app.yml) |
 | [`packages/landing`](packages/landing) | Landing page at [presto.build](https://presto.build) | |
 | [`@alejoamiras/presto-banners`](packages/banners) | `<presto-banner>` install banners for integrating dApps, keyed to `PrestoStatus` | [![Banners](https://github.com/alejoamiras/presto/actions/workflows/banners.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/banners.yml) |
 
 ## Architecture
 
 ```
-Browser (dApp)
-    │
-    │  import { PrestoProver } from "@alejoamiras/presto"
-    │
-    ▼
-┌─────────────────────────────────────────────────────────┐
-│  SDK (PrestoProver)                                │
-│  Browser: probe loopback HTTPS → healthy? ─────────┐    │
-│                            │ no                    │yes │
-│                            ▼                       ▼    │
-│  witness-free HTTP diagnosis → WASM       HTTPS /prove │
-└─────────────────────────────────────────────────────────┘
-                                                │
-                                                ▼
-                                    ┌───────────────────┐
-                                    │  Presto App  │
-                                    │  (system tray)    │
-                                    │       │           │
-                                    │       ▼           │
-                                    │   bb binary       │
-                                    │   (native)        │
-                                    │       │           │
-                                    │       ▼           │
-                                    │     proof         │
-                                    └───────────────────┘
+Aztec dApp                                   Noir dApp
+    │  PrestoProver                              │  PrestoUltraHonkBackend
+    │  (@alejoamiras/presto)                     │  (@alejoamiras/presto-noir)
+    ▼                                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│  @alejoamiras/presto-core (PrestoClient)                            │
+│  Browser: probe loopback HTTPS → healthy and scheme served? ───┐    │
+│                            │ no                                │yes │
+│                            ▼                                   ▼    │
+│  witness-free HTTP diagnosis → WASM fallback      HTTPS POST /prove │
+│                                                   or /prove/ultra-honk
+└─────────────────────────────────────────────────────────────────────┘
+                                                            │
+                                                            ▼
+                                                ┌───────────────────┐
+                                                │  Presto App       │
+                                                │  (system tray)    │
+                                                │       │           │
+                                                │       ▼           │
+                                                │   bb binary       │
+                                                │   chonk | ultra_honk
+                                                │       │           │
+                                                │       ▼           │
+                                                │     proof         │
+                                                └───────────────────┘
 ```
 
 ## Quick Start
@@ -79,7 +83,31 @@ confirmed, current-tab-only HTTP escape hatch by setting both `httpsOnly: false`
 > `unconfirmed` diagnosis. The SDK's loopback annotation does not bypass permission, and HTTPS is subject to the
 > same address-space gate.
 
-> **Versioning / dist-tags.** SDK `X.Y.Z` targets Aztec `X.Y.Z` — the published version is derived from the pinned `@aztec/stdlib` dependency. The standard release path publishes on npm's **`testnet`** dist-tag; **`latest`** is moved to it in a separate, deliberate step, so the two usually match and differ only while a newer line is being validated or after a rollback. The presto downloads the matching `bb` binary **at runtime**, so an Aztec version bump ships **SDK-only** — already-installed prestos need no re-release. See the [release runbook](docs/RELEASE_RUNBOOK.md).
+> **Versioning / dist-tags.** SDK `X.Y.Z` targets Aztec `X.Y.Z` — the published version is derived from the pinned `@aztec/stdlib` dependency. The standard release path publishes on npm's **`testnet`** dist-tag; **`latest`** is moved to it in a separate, deliberate step, so the two usually match and differ only while a newer line is being validated or after a rollback. The presto downloads the matching `bb` binary **at runtime**, so an Aztec version bump ships **SDK-only** — already-installed prestos need no re-release. `@alejoamiras/presto-core` and `@alejoamiras/presto-noir` carry their own semver (their `package.json` version, published once) and follow the same `testnet` → `latest` path. See the [release runbook](docs/RELEASE_RUNBOOK.md).
+
+### For Noir circuits (`@alejoamiras/presto-noir`)
+
+```bash
+npm install @alejoamiras/presto-noir @aztec/bb.js@5.2.0
+```
+
+```typescript
+import { Barretenberg } from "@aztec/bb.js";
+import { PrestoUltraHonkBackend } from "@alejoamiras/presto-noir";
+import circuit from "./target/circuit.json";
+
+// Same surface as bb.js's UltraHonkBackend — native via Presto, WASM otherwise
+const backend = new PrestoUltraHonkBackend(circuit.bytecode, () => Barretenberg.new());
+const { proof, publicInputs } = await backend.generateProof(witness, {
+  verifierTarget: "noir-recursive-no-zk",
+});
+```
+
+Any circuit compiled with nargo, any bb verifier target, no Aztec node. Native proving needs
+Presto **1.1.0** or newer (an older app does not advertise the scheme, so the backend proves in
+WASM without sending anything); the transport
+rules above — HTTPS-only in browsers, origin approval, no automatic HTTP `/prove` — are the same.
+See the [presto-noir README](packages/sdk-noir/README.md).
 
 ### For users (Desktop App)
 
@@ -96,7 +124,9 @@ bun run audit:dependencies               # npm + Rust security policy
 bun run lint                             # Linting only (biome + pkg + rust)
 bun run lint:fix                         # Auto-fix lint/format issues
 bun run --cwd packages/playground dev    # Start playground dev server
-bun run --cwd packages/sdk build         # Build SDK
+bun run --cwd packages/sdk-core build     # Build the shared core
+bun run --cwd packages/sdk build         # Build the Aztec SDK
+bun run --cwd packages/sdk-noir build     # Build the Noir SDK
 ```
 
 Fork deployments use Cloudflare Workers Static Assets plus KV; see the

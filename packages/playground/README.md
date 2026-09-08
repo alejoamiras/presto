@@ -1,6 +1,6 @@
 # Presto Playground
 
-Interactive web app for comparing in-browser WASM proving against native accelerated proving on Aztec. Deploy a token contract, transfer tokens, and see the speed difference side by side.
+Interactive web app for comparing in-browser WASM proving against native accelerated proving on Aztec. Deploy a token contract, transfer tokens, and see the speed difference side by side — or prove a Noir circuit with UltraHonk, no Aztec node needed.
 
 [![App](https://github.com/alejoamiras/presto/actions/workflows/app.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/app.yml)
 
@@ -13,6 +13,7 @@ Interactive web app for comparing in-browser WASM proving against native acceler
 - Side-by-side comparison of WASM vs accelerated proving
 - Embedded wallet with in-browser PXE — no extensions required
 - Token deploy and private transfer flow
+- **Prove Noir Circuit**: the committed `square` fixture (`fixtures/noir/square`) proven with bb.js's UltraHonk in the browser or natively through Presto's `/prove/ultra-honk` (`@alejoamiras/presto-noir`), timed and checked byte-for-byte against the committed proof
 - ASCII terminal animation showing proof phases in real time
 - HTTPS recovery with diagnosis-specific guidance and a confirmed, current-tab-only HTTP escape hatch
 - Diagnostics export for debugging
@@ -23,7 +24,9 @@ best available diagnosis, and offers **Retry secure connection**. **Use HTTP for
 warns that private proving data may be exposed to another local user or process. On confirmation it
 sets `httpsOnly: false` and `allowInsecureDowngrade: true` only on the in-memory prover and
 force-refreshes status. The choice is not written to local storage, cookies, URL parameters, or
-desktop configuration and resets on reload. There is no production `?httpsOnly=false` switch.
+desktop configuration and resets on reload. There is no production `?httpsOnly=false` switch. The
+consent applies to the Aztec actions only: the Noir panel keeps the browser's HTTPS-only default
+and falls back to in-browser proving when HTTPS cannot connect.
 
 ## Development
 
@@ -57,7 +60,11 @@ bun run test:e2e:local-network # E2E tests against local Aztec sandbox
 bun run test:e2e:smoke         # Smoke tests against deployed environment
 ```
 
-E2E tests use [Playwright](https://playwright.dev).
+E2E tests use [Playwright](https://playwright.dev). The mocked project stays network-free: the Noir
+specs mock `/health` and `/prove/ultra-honk`, and the offline-Presto case selects a stub WASM
+source with `?noirStub=true` (a test-only URL parameter; it never proves) while blocking any CRS or
+worker download. The smoke project proves the fixture with real bb.js WASM in Chromium and, with
+`PRESTO_URL` set, natively.
 
 ## Build and Deployment
 
