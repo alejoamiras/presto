@@ -25,3 +25,24 @@ verified (codex reproduced the blocker and the planning counterexamples) and all
 Codex's moderate-confidence concern — package-directory-only equality may miss shared build
 inputs — is taken: `changedSinceTag` now covers the package directory plus `bun.lock` and the root
 `tsconfig.json`; arcs 3–4 add anything else their builds read.
+
+Commit 906db58. `sdk.yml` run 34186307541 on it: green (tarball consumer included).
+
+## Round 2 — 2026-09-08 (`response-1.md`)
+
+| # | Severity | Finding | Fix |
+|---|---|---|---|
+| 1 | Blocker | The plan job ran `gh release view` without a token (reproduced: exit 4) | `GH_TOKEN: ${{ github.token }}` on the planning step, read-only; contract test |
+| 2 | High | Reuse runs npm's signature audit, which needs npm ≥ 11, but the plan job installed only Bun | The plan job gets the same pinned `setup-node` (24.20.0) as publishing and deployment; contract test |
+| 3 | Medium | `isValidVersion` accepted `1.0.0-alpha..x`, `01.0.0`, `1.0.0-01` | `EXACT_SEMVER` AND the mode pattern; planner test over malformed candidates |
+| 4 | Medium | Published pins were read from `dependencies` only, so a peer-only sibling pin forced a bump on reuse | `publishedPins` merges `dependencies`, `peerDependencies`, `optionalDependencies` (inconsistent pins throw); peer-only reuse test |
+| 5 | Low | `test:scripts` excluded `scripts/tarball-consumer/*.test.ts` | Glob extended (157 tests) |
+
+Commit 3498895.
+
+## Round 3 — 2026-09-08 (`response-2.md`) — converged
+
+> **Approve arc 2 at `3498895`. Confidence: high.** No material findings remain. … The review loop
+> can close; the newly dispatched CI run remains pending verification.
+
+Three rounds. `sdk.yml` run 34186590063 on 3498895 is the arc's final CI evidence.
