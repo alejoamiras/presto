@@ -1,0 +1,159 @@
+name: _TS package CI (reusable)
+
+# The PR gate every publishable TypeScript package shares (scripts/npm-packages.ts): lint,
+# typecheck, unit tests, and the packed-artifact consumer. Per-package workflows (sdk.yml,
+# sdk-core.yml, ...) are thin callers; `sdk.yml`'s `package` dispatch input runs this for any
+# descriptor entry on a feature ref before that entry's own workflow is registered on main.
+on:
+  workflow_call:
+    inputs:
+      package:
+        description: "Descriptor key in scripts/npm-packages.ts"
+        required: true
+        type: string
+      e2e_presto:
+        description: "Run the SDK e2e against the sandbox with a headless presto (the chonk parity gate)"
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    name: Resolve ${{ inputs.package }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    outputs:
+      dir: ${{ steps.pkg.outputs.dir }}
+    env:
+      PACKAGE: ${{ inputs.package }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - name: Resolve the package from the descriptor
+        id: pkg
+        run: |
+          # shellcheck disable=SC2016  # single quotes are deliberate: the JS must not shell-expand
+          bun -e '
+            import { resolvePackage } from "./scripts/npm-packages.ts";
+            const pkg = resolvePackage(process.argv[1]);
+            require("fs").appendFileSync(process.env.GITHUB_OUTPUT, `dir=${pkg.dir}\n`);
+          ' "$PACKAGE"
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+      - run: bun run lint
+
+  typecheck:
+    name: Typecheck
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+      - run: bun run --cwd "${{ needs.resolve.outputs.dir }}" test:lint
+
+  unit-tests:
+    name: Unit Tests
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+      - run: bun run --cwd "${{ needs.resolve.outputs.dir }}" test:unit
+      # Release tooling (bump/publish-version scripts) rides every package pipeline.
+      # Typecheck too: Bun's test transpile accepts type errors tsc rejects.
+      - run: bun run test:scripts
+      - run: bun run typecheck:scripts
+
+  # Nothing else validates the PUBLISHED artifact: workspace consumers use the source `exports`, so a
+  # broken `dist` `main`/`types`/`exports` rewrite, a missing dist, or a peers-vs-deps resolution
+  # surprise would ship undetected. This job packs the real tarball (via the same
+  # `prepare-sdk-publish.ts` the publish workflow runs), installs it the way a real consumer does —
+  # DEFAULT `npm install` on a fresh Node — and typechecks against it. Workspace dependencies are
+  # installed from their PACKED candidates (bootstrap mode): a core + adapter change is validated
+  # before either is on npm. The release rerun in _publish-npm.yml resolves them from the registry.
+  tarball-consumer:
+    name: Tarball Consumer
+    needs: resolve
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PACKAGE: ${{ inputs.package }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      # Node 24 pins the npm the consumers resolve with (recorded in the log) so the peer evidence is
+      # reproducible; a real consumer uses npm, not Bun.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "24.20.0"
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - run: bun install --frozen-lockfile
+      - name: Build + pack the candidate and its workspace dependencies
+        id: pack
+        run: |
+          echo "npm $(npm --version), node $(node --version)"
+          bun scripts/pack-candidate.ts --package "$PACKAGE" --version 0.0.1-tarball-ci --out "$RUNNER_TEMP/candidate"
+      - name: Consume the tarball (exact host, default npm) — packed dependencies, bootstrap mode
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+          WITH: ${{ steps.pack.outputs.with }}
+        run: |
+          with=()
+          IFS=',' read -ra pairs <<< "$WITH"
+          for pair in "${pairs[@]}"; do
+            [ -n "$pair" ] && with+=(--with "$pair")
+          done
+          bash scripts/sdk-tarball-consumer.sh "$TARBALL" "$PACKAGE" "${with[@]}"
+
+  e2e:
+    name: E2E Tests
+    if: inputs.e2e_presto
+    uses: ./.github/workflows/_e2e.yml
+    with:
+      # Build + run the headless presto on :59833 so the e2e exercises the NATIVE proving path
+      # against the local sandbox — not just the WASM fallback. This is the standing parity gate that
+      # the SDK-only release relies on (proves the deployed presto handles the pinned bb version).
+      build_presto: true
