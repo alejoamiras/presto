@@ -193,3 +193,19 @@ closes the race — codex concurred); no injectable seam in `verifyPromotionCand
 unsigned-vs-signed test (source-contract test instead — codex concurred); activity mark only after a
 completed proof rather than at resolve or execution start (codex's round-1 finding, accepted);
 bounded twelve-pass cleanup retry rather than a perpetual loop (codex accepted the bound).
+
+## Final state (2026-09-08, after the owner lifted the classifier holds)
+
+- Core 1.0.1 record repaired: tag `@alejoamiras/presto-core@1.0.1` at eaa6288 (annotated, signed
+  per this machine's config; the workflow itself writes lightweight tags) and its GitHub release.
+- #35 merged (attestation wait 60 s → 10 min). The redispatch after it, run 34286357275, was
+  cancelled: its dependency-audit gate failed on three npm advisories published after the last
+  green audit (extract-zip GHSA-7pqw-9j4j-h8q3, js-yaml GHSA-2883-xcg3-v3hh, sharp
+  GHSA-rgj7-g3m4-5g8c — all dev/CI tooling). Accepted until 2026-11-30 in #38.
+- Run 34287696426 then published noir 1.0.1 and presto 5.2.0-revision.2 (core reused), both with
+  signed provenance for f025d78, and deployed the playground. The split `_publish-npm.yml` ran
+  end to end for the first time here: pack → consume → publish → verify, on both packages.
+- Bump PR #36 (1.1.2-rc.1) needed #38 first; its Windows launch smoke then timed out once on the
+  runner (the smoke's own caveat) and passed on a single rerun.
+- Promotion to `latest` (owner OTP) is the only step left: core 1.0.1, noir 1.0.1, presto
+  5.2.0-revision.2, dry run first.
