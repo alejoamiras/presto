@@ -40,5 +40,10 @@ Date: 2026-09-08. Branch `presto-noir/sdk-core` (arc 3).
 ## Gate
 
 `bun run lint:actions` ✓ · `bun run test:scripts` 170 ✓ · `bun run test` exit 0 ·
-`sdk.yml` dispatched on `presto-noir/sdk-core` with `package=presto-core` and `package=presto`:
-run ids and results recorded below once they settle.
+`sdk.yml` dispatched on `presto-noir/sdk-core`:
+
+| Head | `package=presto` | `package=presto-core` |
+|---|---|---|
+| ca9a1c8 | 34188806696 — SDK E2E failed (legacy tarball lost `ms`; fixed in the arc-3 loop), all else green | 34189058843 green (first dispatch 34188800186 was cancelled by the shared concurrency group; fixed in the loop) |
+| 8647117 | 34190048536 green (E2E included) | 34190050406 green, concurrent with the presto lane |
+| 8dc7ac0 (arc head) | 34190787712 | 34190789910 |

@@ -44,3 +44,19 @@ Commit 8647117. `sdk.yml` on it: `package=presto` run 34190048536 green (SDK E2E
 The legacy installer passed its adversarial look (archive hashed against the committed SHA-512
 before extraction, identity + Aztec-version checks, `dist` entry only, dependencies confined to the
 two workspace graphs).
+
+Commit 8dc7ac0.
+
+## Round 3 — 2026-09-08 (`response-2.md`) — converged
+
+> **Approve arc 3 at `8dc7ac0`. No new material findings. Confidence: high.**
+
+Re-verified: the snapshot covers all five request properties and every later read is from it (an
+extra mutation probe kept URL, headers, payload, and cap); the integrity binding hashes the supplied
+archive and requires exactly one lockfile entry; duplicate `--with` names fail before installation.
+One qualification, accepted as stated: the hidden lockfile is installation metadata under the trust
+the consumer already places in executed dependency code (lifecycle scripts), not a tamper-proof
+boundary — the check detects resolution drift under that model.
+
+Three rounds. `sdk.yml` on 8dc7ac0: `package=presto` run 34190787712, `package=presto-core` run
+34190789910 (results recorded in `phase-12.md`).
