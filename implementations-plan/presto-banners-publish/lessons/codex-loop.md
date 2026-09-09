@@ -18,3 +18,15 @@ not restart the morph; removing `.hidden` is right (the element owns `hidden`); 
 `lib`/`types` configuration.
 
 ## Round 2 — verdict: **approve, clean** (all five fixes verified against the repo; codex reran the 28 contract/rewrite tests and the scripts typecheck).
+
+## Release record — 2026-09-09
+
+- Owner bootstrapped `0.0.0-bootstrap.0` (tag `bootstrap`) and registered the trusted publisher from the
+  CLI: `npm trust github @alejoamiras/presto-banners --file release-sdk.yml --repo alejoamiras/presto
+  --env npm-publish --allow-publish --yes --otp=<code>` (npm 11.16; `--otp <code>` as two tokens is
+  parsed as a positional — the `=` form is required). Trust id `31f14fd3-fb00-4312-9e0e-fcd93a4a0d6d`.
+- `release-sdk.yml` run 34365289824 (`sdk-and-playground`, `packages=presto-banners`): plan → e2e +
+  audit → pack → consume → OIDC publish → verify → deploy. Provenance commit 24bebcb.
+- `bun run sdk:promote -- --package presto-banners 1.0.0 --yes --otp=<code>` (#43): uncached
+  read-back verified `latest -> 1.0.0` while `npm view dist-tags` still showed the cached bootstrap.
+  The bootstrap was deprecated with the same code in the same window.

@@ -4,7 +4,7 @@ tier: light (owner-lightened: self-written plan, one codex argument, codex fix l
 driver: claude-code
 code_review: off
 eli5_mode: skipped (owner)
-status: IMPLEMENTED 2026-09-09 — codex loop clean after 2 rounds (lessons/codex-loop.md); PR open, owner steps pending
+status: COMPLETED 2026-09-09 — PRs #42 (banners) and #43 (sdk:promote --yes/--otp=) merged; @alejoamiras/presto-banners@1.0.0 published with provenance (run 34365289824), promoted to latest, bootstrap deprecated; ribbon live on playground.presto.build
 worktree: .claude/worktrees/presto-banners-publish (branch worktree-presto-banners-publish, off main @ bc25102)
 ---
 
