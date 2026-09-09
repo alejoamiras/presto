@@ -192,4 +192,16 @@ describe("playground deployment", () => {
     );
     expect(deploy).not.toContain("needs.plan.outputs.version_presto");
   });
+
+  test("the deployed bundle targets the public testnet node when no secret overrides it", () => {
+    const deploy = job(release, "deploy-app");
+    expect(deploy).toMatch(
+      /AZTEC_NODE_URL: \$\{\{ secrets\.TESTNET_AZTEC_NODE_URL \|\| 'https:\/\/v5\.testnet\.rpc\.aztec-labs\.com' \}\}/,
+    );
+    const vite = readFileSync(resolve(repository, "packages/playground/vite.config.ts"), "utf8");
+    expect(vite).toContain(
+      'const TESTNET_AZTEC_NODE_URL = "https://v5.testnet.rpc.aztec-labs.com"',
+    );
+    expect(vite).toContain('command === "build" ? TESTNET_AZTEC_NODE_URL : undefined');
+  });
 });

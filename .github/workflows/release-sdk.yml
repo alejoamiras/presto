@@ -228,7 +228,8 @@ jobs:
 
       - name: Build playground
         env:
-          AZTEC_NODE_URL: ${{ secrets.TESTNET_AZTEC_NODE_URL }}
+          # Deployed assets have no dev proxy; the optional secret overrides the public node.
+          AZTEC_NODE_URL: ${{ secrets.TESTNET_AZTEC_NODE_URL || 'https://v5.testnet.rpc.aztec-labs.com' }}
         run: bun run --cwd packages/playground build
 
       - name: Deploy playground Worker

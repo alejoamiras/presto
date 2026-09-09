@@ -106,7 +106,7 @@ function sqliteWasmAssetsPlugin(): Plugin {
 }
 
 /**
- * Vite plugin: `virtual:noir-fixture` embeds the committed `square` fixture as base64 at build
+ * Vite plugin: `virtual:noir-fixture` embeds the committed `hashchain` fixture as base64 at build
  * time. Serving the raw files by path does not survive the dev server — extension-less bb outputs
  * (`vk`, `proof`, `public_inputs`) are treated as JavaScript and `witness.gz` is inflated by
  * content negotiation — and the bytes must reach the page exactly as committed.
@@ -114,7 +114,7 @@ function sqliteWasmAssetsPlugin(): Plugin {
 function noirFixturePlugin(): Plugin {
   const id = "virtual:noir-fixture";
   const resolvedId = `\0${id}`;
-  const dir = resolve(import.meta.dirname, "../../fixtures/noir/square");
+  const dir = resolve(import.meta.dirname, "../../fixtures/noir/hashchain");
   return {
     name: "noir-fixture",
     resolveId(source) {
@@ -153,10 +153,14 @@ const crossOriginIsolation = {
   "Cross-Origin-Embedder-Policy": "credentialless",
 };
 
+const TESTNET_AZTEC_NODE_URL = "https://v5.testnet.rpc.aztec-labs.com";
+
 export default defineConfig(({ mode, command }) => {
   const allEnv = loadEnv(mode, process.cwd(), "");
   const env = {
-    AZTEC_NODE_URL: allEnv.AZTEC_NODE_URL,
+    // Dev keeps the `/aztec` proxy below; deployed assets have none, so builds default to testnet.
+    AZTEC_NODE_URL:
+      allEnv.AZTEC_NODE_URL || (command === "build" ? TESTNET_AZTEC_NODE_URL : undefined),
   };
 
   // Read @aztec/stdlib version from SDK package.json at build time

@@ -126,7 +126,7 @@ fn bb_verifies(proof: &[u8], public_inputs: &[u8], vk: &[u8], target: &str) -> b
 #[tokio::test]
 #[ignore = "needs a real bb binary and the CRS; run in the ultra-honk-real-bb CI lane"]
 async fn native_proofs_match_the_wasm_reference_and_verify() {
-    for name in ["square", "nopub"] {
+    for name in ["square", "nopub", "hashchain"] {
         let fx = fixture(name);
         let with_key = prove(&fx, &fx.target, Some(&fx.vk)).await;
         assert_eq!(

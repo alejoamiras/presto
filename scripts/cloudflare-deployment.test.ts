@@ -10,7 +10,9 @@ describe("Cloudflare deployment contract", () => {
     const landing = read(".github/workflows/deploy-landing.yml");
     const sdk = read(".github/workflows/release-sdk.yml");
     expect(landing).toContain("wrangler deploy --config packages/landing/wrangler.jsonc");
-    expect(sdk).toContain(`AZTEC_NODE_URL: \${{ secrets.TESTNET_AZTEC_NODE_URL }}`);
+    expect(sdk).toContain(
+      `AZTEC_NODE_URL: \${{ secrets.TESTNET_AZTEC_NODE_URL || 'https://v5.testnet.rpc.aztec-labs.com' }}`,
+    );
     expect(sdk).toContain("wrangler deploy --config packages/playground/wrangler.jsonc");
     expect(`${landing}\n${sdk}`).not.toMatch(/aws-actions|aws s3|cloudfront/i);
 
