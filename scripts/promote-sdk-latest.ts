@@ -103,6 +103,10 @@ interface PromotionOptions {
   version: string;
   dryRun: boolean;
   rollback: boolean;
+  /** Skip the interactive confirmation: the only way to run from a shell without a TTY. */
+  yes: boolean;
+  /** One-time 2FA code handed to `npm dist-tag add`; npm prompts for it otherwise, which needs a TTY. */
+  otp?: string;
 }
 
 interface PromotionCandidate {
@@ -111,18 +115,35 @@ interface PromotionCandidate {
   releaseUrl: string;
 }
 
+const USAGE =
+  "usage: bun run sdk:promote -- [--package <key>] <version> [--dry-run] [--rollback] [--yes] [--otp=<code>]";
+
 export function parsePromotionOptions(args: string[]): PromotionOptions {
   const { pkg, rest } = packageFromArgs(args);
-  const dryRun = rest.includes("--dry-run");
-  const rollback = rest.includes("--rollback");
-  const positional = rest.filter((arg) => arg !== "--dry-run" && arg !== "--rollback");
+  const flags = new Set(["--dry-run", "--rollback", "--yes"]);
+  let otp: string | undefined;
+  const positional: string[] = [];
+  for (const arg of rest) {
+    if (flags.has(arg)) continue;
+    if (arg.startsWith("--otp=")) {
+      otp = arg.slice("--otp=".length);
+      if (!/^\d{6,8}$/.test(otp)) throw new Error("--otp must be the 6-8 digit code");
+      continue;
+    }
+    positional.push(arg);
+  }
   const version = positional[0];
   if (!version || positional.length !== 1 || !isValidVersion(pkg, version)) {
-    throw new Error(
-      "usage: bun run sdk:promote -- [--package <key>] <version> [--dry-run] [--rollback]",
-    );
+    throw new Error(USAGE);
   }
-  return { pkg, version, dryRun, rollback };
+  return {
+    pkg,
+    version,
+    dryRun: rest.includes("--dry-run"),
+    rollback: rest.includes("--rollback"),
+    yes: rest.includes("--yes"),
+    otp,
+  };
 }
 
 async function verifyPromotionCandidate(
@@ -235,7 +256,8 @@ async function promoteLatest(
   assertNoActiveReleaseRuns();
   assertFreshPromotionState(initialTags, await fetchUncachedDistTags(pkg), version, rollback);
 
-  run(["npm", "dist-tag", "add", `${pkg.name}@${version}`, "latest"], { inherit: true });
+  const otp = options.otp ? ["--otp", options.otp] : [];
+  run(["npm", "dist-tag", "add", `${pkg.name}@${version}`, "latest", ...otp], { inherit: true });
   const readBack = await readBackLatest(pkg, version);
   if (readBack.latest !== version) {
     const previousLatest = initialTags.latest;
@@ -259,7 +281,9 @@ async function main() {
     console.log("Dry run complete; npm latest was not changed.");
     return;
   }
-  if (!confirmPromotion(options.version, candidate.tags.latest, options.rollback)) return;
+  if (!options.yes && !confirmPromotion(options.version, candidate.tags.latest, options.rollback)) {
+    return;
+  }
   await promoteLatest(options, candidate.tags);
 }
 

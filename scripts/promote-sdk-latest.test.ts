@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   assertFreshPromotionState,
   isActiveWorkflowStatus,
+  parsePromotionOptions,
   resolveRemoteTagCommit,
 } from "./promote-sdk-latest.ts";
 
@@ -23,6 +24,20 @@ describe("SDK latest promotion", () => {
       expect(isActiveWorkflowStatus(status)).toBe(true);
     }
     expect(isActiveWorkflowStatus("completed")).toBe(false);
+  });
+
+  test("--yes and --otp=<code> make a promotion runnable without a TTY", () => {
+    const options = parsePromotionOptions([
+      "--package",
+      "presto-core",
+      "1.0.1",
+      "--yes",
+      "--otp=123456",
+    ]);
+    expect(options).toMatchObject({ version: "1.0.1", yes: true, otp: "123456", dryRun: false });
+    expect(parsePromotionOptions(["5.2.0"])).toMatchObject({ yes: false, otp: undefined });
+    expect(() => parsePromotionOptions(["5.2.0", "--otp=abc"])).toThrow("6-8 digit");
+    expect(() => parsePromotionOptions(["5.2.0", "--otp"])).toThrow("usage");
   });
 
   test("refuses stale latest or a candidate that moved off testnet", () => {

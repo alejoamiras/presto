@@ -346,13 +346,20 @@ bun run sdk:promote -- <VERSION>
 ```
 
 Every package publishes under `testnet` and is promoted on its own with `--package <key>`
-(`presto`, the default, `presto-core`, `presto-noir`); one command moves one package's tag:
+(`presto`, the default, `presto-core`, `presto-noir`, `presto-banners`); one command moves one package's tag:
 
 ```bash
 bun run sdk:promote -- --package presto-core <CORE_VERSION> --dry-run
 bun run sdk:promote -- --package presto-core <CORE_VERSION>
 bun run sdk:promote -- --package presto-noir <NOIR_VERSION>
 bun run sdk:promote -- <SDK_VERSION>
+```
+
+The script asks for confirmation and npm asks for the one-time 2FA code, both on a TTY. From a
+shell without one (an agent session's `!` prefix), pass both up front:
+
+```bash
+bun run sdk:promote -- --package presto-core <CORE_VERSION> --yes --otp=<CODE>
 ```
 
 Promote in dependency order — core, then the adapters — so `latest` reads coherently. Installs do
