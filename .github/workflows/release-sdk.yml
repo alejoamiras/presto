@@ -228,7 +228,9 @@ jobs:
 
       - name: Build playground
         env:
-          AZTEC_NODE_URL: ${{ secrets.TESTNET_AZTEC_NODE_URL }}
+          # The public testnet node unless the (optional) secret points elsewhere; an empty value
+          # once shipped a bundle pointing at the dev proxy path.
+          AZTEC_NODE_URL: ${{ secrets.TESTNET_AZTEC_NODE_URL || 'https://v5.testnet.rpc.aztec-labs.com' }}
         run: bun run --cwd packages/playground build
 
       - name: Deploy playground Worker
