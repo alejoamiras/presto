@@ -20,6 +20,7 @@ on:
           - presto
           - presto-core
           - presto-noir
+          - presto-banners
           - all
         default: presto
       dry_run:
@@ -76,6 +77,9 @@ jobs:
       publish_presto_noir: ${{ steps.plan.outputs.publish_presto_noir }}
       version_presto_noir: ${{ steps.plan.outputs.version_presto_noir }}
       deps_presto_noir: ${{ steps.plan.outputs.deps_presto_noir }}
+      publish_presto_banners: ${{ steps.plan.outputs.publish_presto_banners }}
+      version_presto_banners: ${{ steps.plan.outputs.version_presto_banners }}
+      deps_presto_banners: ${{ steps.plan.outputs.deps_presto_banners }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -191,13 +195,27 @@ jobs:
       version: ${{ needs.plan.outputs.version_presto_noir }}
       dependency_versions: ${{ needs.plan.outputs.deps_presto_noir }}
 
+  # The banner kit has no workspace dependencies and no proving path: the shared gates are its only
+  # preconditions, and it needs no ordering against the SDK packages.
+  publish-banners:
+    needs: [assert-main, plan, e2e, dependency-audit]
+    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto_banners == 'true' }}
+    permissions:
+      id-token: write
+      contents: write
+    uses: ./.github/workflows/_publish-npm.yml
+    with:
+      package: presto-banners
+      version: ${{ needs.plan.outputs.version_presto_banners }}
+      dependency_versions: ${{ needs.plan.outputs.deps_presto_banners }}
+
   # The deployment consumes every package the playground depends on at its verified published
   # version: the ones published in this run, and for a package not selected (or reused) the version
   # already on the registry — the presto from `testnet` when no version is passed. A selected
   # publication that failed or was gated out blocks it.
   deploy-app:
-    needs: [assert-main, plan, e2e, dependency-audit, publish-core, publish-noir, publish-presto]
-    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'sdk-only' && needs.assert-main.result == 'success' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && (inputs.mode == 'playground-only' || ((needs.publish-core.result == 'success' || (needs.publish-core.result == 'skipped' && needs.plan.outputs.publish_presto_core != 'true')) && (needs.publish-noir.result == 'success' || (needs.publish-noir.result == 'skipped' && needs.plan.outputs.publish_presto_noir != 'true')) && (needs.publish-presto.result == 'success' || (needs.publish-presto.result == 'skipped' && needs.plan.outputs.publish_presto != 'true')))) }}
+    needs: [assert-main, plan, e2e, dependency-audit, publish-core, publish-noir, publish-presto, publish-banners]
+    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'sdk-only' && needs.assert-main.result == 'success' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && (inputs.mode == 'playground-only' || ((needs.publish-core.result == 'success' || (needs.publish-core.result == 'skipped' && needs.plan.outputs.publish_presto_core != 'true')) && (needs.publish-noir.result == 'success' || (needs.publish-noir.result == 'skipped' && needs.plan.outputs.publish_presto_noir != 'true')) && (needs.publish-presto.result == 'success' || (needs.publish-presto.result == 'skipped' && needs.plan.outputs.publish_presto != 'true')) && (needs.publish-banners.result == 'success' || (needs.publish-banners.result == 'skipped' && needs.plan.outputs.publish_presto_banners != 'true')))) }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:

@@ -24,7 +24,7 @@ describe("npm release workflow contract", () => {
     expect(publish).toContain(
       'npm publish "$TARBALL" --provenance --access public --tag "$DIST_TAG" --workspaces=false',
     );
-    const publishJobs = ["publish-core", "publish-presto", "publish-noir"];
+    const publishJobs = ["publish-core", "publish-presto", "publish-noir", "publish-banners"];
     for (const name of publishJobs) {
       const block = job(release, name);
       expect(block).toContain("uses: ./.github/workflows/_publish-npm.yml");
@@ -49,7 +49,7 @@ describe("npm release workflow contract", () => {
 
   test("dependency audit, e2e, and the plan gate every publish; adapters wait for core", () => {
     expect(release).toContain("uses: ./.github/workflows/dependency-audit.yml");
-    for (const name of ["publish-core", "publish-presto", "publish-noir"]) {
+    for (const name of ["publish-core", "publish-presto", "publish-noir", "publish-banners"]) {
       const block = job(release, name);
       expect(block).toContain("needs: [assert-main, plan, e2e, dependency-audit");
       expect(block).toContain("!inputs.dry_run");
@@ -173,12 +173,13 @@ describe("playground deployment", () => {
   test("waits for every selected publication and tolerates unselected ones", () => {
     const deploy = job(release, "deploy-app");
     expect(deploy).toContain(
-      "needs: [assert-main, plan, e2e, dependency-audit, publish-core, publish-noir, publish-presto]",
+      "needs: [assert-main, plan, e2e, dependency-audit, publish-core, publish-noir, publish-presto, publish-banners]",
     );
     for (const [jobName, slug] of [
       ["publish-core", "presto_core"],
       ["publish-noir", "presto_noir"],
       ["publish-presto", "presto"],
+      ["publish-banners", "presto_banners"],
     ]) {
       expect(deploy).toContain(
         `(needs.${jobName}.result == 'success' || (needs.${jobName}.result == 'skipped' && needs.plan.outputs.publish_${slug} != 'true'))`,

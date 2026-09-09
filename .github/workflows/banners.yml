@@ -5,13 +5,13 @@ on:
   pull_request:
     branches: [main]
 
+permissions:
+  contents: read
+
 # Cancel a superseded in-flight run when a new commit is pushed to the same PR.
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
-
-permissions:
-  contents: read
 
 jobs:
   changes:
@@ -30,51 +30,39 @@ jobs:
               - 'packages/banners/**'
               # status.test.ts pins SDK PrestoStatus ⊆ PrestoStatusLike; an SDK type change must re-run it.
               - 'packages/sdk-core/src/lib/types.ts'
+              - 'scripts/**'
               - 'tsconfig.json'
+              - 'tsconfig.scripts.json'
               - 'biome.json'
               - 'package.json'
               - 'bun.lock'
               - 'bunfig.toml'
               - '.bun-version'
               - '.github/workflows/banners.yml'
+              - '.github/workflows/_ts-package-ci.yml'
       - name: Override for manual dispatch
         if: github.event_name == 'workflow_dispatch'
         id: override
         run: echo "relevant=true" >> "$GITHUB_OUTPUT"
 
-  build-test:
-    name: Lint + Typecheck + Test
+  ci:
+    name: CI
     needs: changes
     if: needs.changes.outputs.relevant == 'true'
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
-        with:
-          bun-version-file: .bun-version
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-          restore-keys: ${{ runner.os }}-bun-
-      - run: bun install --frozen-lockfile
-      - run: bunx biome check packages/banners
-      - run: bun run --cwd packages/banners typecheck
-      - run: bun run --cwd packages/banners test:unit
-      # The publishable build must compile on its own (no test types, DOM lib only).
-      - run: bun run --cwd packages/banners build
+    uses: ./.github/workflows/_ts-package-ci.yml
+    with:
+      package: presto-banners
 
   banners-status:
     name: Banners Status
     if: always()
-    needs: [changes, build-test]
+    needs: [changes, ci]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Check results
         run: |
-          results="${{ needs.changes.result }} ${{ needs.build-test.result }}"
+          results="${{ needs.changes.result }} ${{ needs.ci.result }}"
           for r in $results; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
               echo "Job failed or was cancelled: $r"
