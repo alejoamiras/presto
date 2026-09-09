@@ -4,7 +4,7 @@ tier: light (owner-lightened: self-written plan, one codex argument, codex fix l
 driver: claude-code
 code_review: off
 eli5_mode: skipped (owner)
-status: APPROVED 2026-09-09 (codex conditional approve, all five findings folded in — lessons/plan-argument.md)
+status: IMPLEMENTED 2026-09-09 — codex loop clean after 2 rounds (lessons/codex-loop.md); PR open, owner steps pending
 worktree: .claude/worktrees/presto-banners-publish (branch worktree-presto-banners-publish, off main @ bc25102)
 ---
 

@@ -16,3 +16,5 @@ change consumer installs even though `presto`'s declarations reference `@aztec/s
 `playground-only` bypass and the output names; the playground has no poller, equal state writes do
 not restart the morph; removing `.hidden` is right (the element owns `hidden`); the profile's
 `lib`/`types` configuration.
+
+## Round 2 — verdict: **approve, clean** (all five fixes verified against the repo; codex reran the 28 contract/rewrite tests and the scripts typecheck).
