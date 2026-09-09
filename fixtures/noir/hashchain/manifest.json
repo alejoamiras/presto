@@ -17,12 +17,12 @@
       "bytes": 16
     },
     "src/main.nr": {
-      "sha256": "efbf1fd75b237dd8beb970f7b3e01cc2ac84dba56dbaa7f3a8491f20a1e8fb73",
-      "bytes": 367
+      "sha256": "57f50bdb8c7d4ed8d2d3c53ad08a438a68fa36ad2c29cf6e0c3cb2054c8d0440",
+      "bytes": 298
     },
     "circuit.json": {
-      "sha256": "4a1a937b432bb1058bb2dfea25f7162d2b763df0ccdfc9762a94cf8bb86cf622",
-      "bytes": 225955
+      "sha256": "0362d21963c38d22b7c0be6d83a1259faa41dfea0f9312bc437e2051995df112",
+      "bytes": 225830
     },
     "witness.gz": {
       "sha256": "fa50fb0b464395f6ea3393a861157f1145acfb9cee1abdc1220da2531afdb075",

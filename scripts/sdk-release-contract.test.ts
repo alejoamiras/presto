@@ -199,6 +199,9 @@ describe("playground deployment", () => {
       /AZTEC_NODE_URL: \$\{\{ secrets\.TESTNET_AZTEC_NODE_URL \|\| 'https:\/\/v5\.testnet\.rpc\.aztec-labs\.com' \}\}/,
     );
     const vite = readFileSync(resolve(repository, "packages/playground/vite.config.ts"), "utf8");
+    expect(vite).toContain(
+      'const TESTNET_AZTEC_NODE_URL = "https://v5.testnet.rpc.aztec-labs.com"',
+    );
     expect(vite).toContain('command === "build" ? TESTNET_AZTEC_NODE_URL : undefined');
   });
 });

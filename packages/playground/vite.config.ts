@@ -153,14 +153,12 @@ const crossOriginIsolation = {
   "Cross-Origin-Embedder-Policy": "credentialless",
 };
 
-/** The public Aztec testnet node a production bundle targets unless `AZTEC_NODE_URL` overrides it. */
 const TESTNET_AZTEC_NODE_URL = "https://v5.testnet.rpc.aztec-labs.com";
 
 export default defineConfig(({ mode, command }) => {
   const allEnv = loadEnv(mode, process.cwd(), "");
   const env = {
-    // Unset in `dev` keeps the `/aztec` proxy below; unset in `build` must never bake that proxy
-    // path (nothing serves it once deployed), so the production bundle defaults to testnet.
+    // Dev keeps the `/aztec` proxy below; deployed assets have none, so builds default to testnet.
     AZTEC_NODE_URL:
       allEnv.AZTEC_NODE_URL || (command === "build" ? TESTNET_AZTEC_NODE_URL : undefined),
   };

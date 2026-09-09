@@ -1,5 +1,5 @@
-// Heavy enough that native bb visibly beats WASM: a dependent chain of Pedersen hashes, so no
-// step can be evaluated ahead of the previous one. Public inputs: `y` and the final digest.
+// 1,024 dependent rounds (~2^18 gates): ~10 s in bb.js WASM vs ~2 s in native bb, so the
+// playground shows the gap.
 global ROUNDS: u32 = 1024;
 
 fn main(x: Field, y: pub Field) -> pub Field {

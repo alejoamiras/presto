@@ -14,7 +14,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { resolveAztecBb } from "../packages/presto/scripts/copy-bb.ts";
 
 export const FIXTURE_SCHEMA = "presto/noir-fixture@1";
@@ -271,6 +271,13 @@ async function proveWithWasm(
   }
 }
 
+/** nargo records absolute source paths in `file_map`; the committed artifact must not name a checkout. */
+function portableCircuit(circuit: Buffer, root: string): Uint8Array {
+  const text = circuit.toString("utf8").replaceAll(`${resolve(root)}/`, "");
+  if (text.includes(resolve(root))) throw new Error("circuit.json still names the local checkout");
+  return new TextEncoder().encode(text);
+}
+
 async function regenerate(
   root: string,
   name: string,
@@ -281,7 +288,8 @@ async function regenerate(
   const dir = fixtureDir(root, name);
   run([nargo, "compile", "--program-dir", dir]);
   run([nargo, "execute", "--program-dir", dir]);
-  const circuit = new Uint8Array(readFileSync(join(dir, "target", `${name}.json`)));
+  const compiled = readFileSync(join(dir, "target", `${name}.json`));
+  const circuit = portableCircuit(compiled, root);
   const witness = new Uint8Array(readFileSync(join(dir, "target", `${name}.gz`)));
   const bytecode: string = JSON.parse(new TextDecoder().decode(circuit)).bytecode;
   const { vk, proof, publicInputs } = await proveWithWasm(bbJs, bytecode, witness, FIXTURE_TARGET);

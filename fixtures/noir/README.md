@@ -17,4 +17,4 @@ are randomized and never byte-comparable), and the toolchain that produced the a
 - Verify (CI): `bun scripts/noir-fixture.ts --verify` — also fails when the installed `@aztec/bb.js`
   no longer matches the manifest, so an Aztec bump forces a regeneration.
 - Regenerate (dev box, needs `aztec-nargo` on PATH or `AZTEC_NARGO`):
-  `bun scripts/noir-fixture.ts --regenerate [square nopub]`.
+  `bun scripts/noir-fixture.ts --regenerate [square nopub hashchain]`.
