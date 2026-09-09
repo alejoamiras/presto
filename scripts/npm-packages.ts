@@ -45,6 +45,12 @@ export const NPM_PACKAGES = {
     versionMode: "manifest",
     consumerProfile: "presto-noir",
   },
+  "presto-banners": {
+    name: "@alejoamiras/presto-banners",
+    dir: "packages/banners",
+    versionMode: "manifest",
+    consumerProfile: "presto-banners",
+  },
 } as const satisfies Record<string, NpmPackage>;
 
 export type PackageKey = keyof typeof NPM_PACKAGES;

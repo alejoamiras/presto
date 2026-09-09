@@ -96,13 +96,12 @@ both themes by design.
 
 ```bash
 bun test                       # bun:test + happy-dom
-bun run typecheck
+bun run test:lint
 bun run dev                    # demo page for manual review
 bun run build                  # tsc → dist (publish artifact)
 ```
 
-`exports` point at TypeScript source for workspace consumers, like the SDK. Publishing to npm is a
-follow-up: register the package in `scripts/npm-packages.ts` (which also switches CI to the shared
-`_ts-package-ci.yml` and adds the tarball-consumer gate), add its consumer profile, teach
-`prepare-sdk-publish.ts` to rewrite the two-entry `exports` map, wire a release job, and configure
-the npm trusted publisher.
+`exports` point at TypeScript source for workspace consumers, like the SDK; the published package
+(`npm install @alejoamiras/presto-banners`) maps `.` and `./register` to `dist/` with `types` +
+`default` conditions and carries no dependencies. Releases go through `release-sdk.yml`
+(`packages=presto-banners`) with npm provenance; see `docs/RELEASE_RUNBOOK.md`.
