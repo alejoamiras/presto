@@ -96,7 +96,7 @@ both themes by design.
 
 ```bash
 bun test                       # bun:test + happy-dom
-bun run typecheck
+bun run test:lint
 bun run dev                    # demo page for manual review
 bun run build                  # tsc → dist (publish artifact)
 ```

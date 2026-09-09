@@ -5,8 +5,11 @@
 
 import { EXACT_SEMVER } from "./npm-packages.ts";
 
-/** A source export entry: TypeScript under `src/`, which `build` emits to the same path under `dist/`. */
-const SOURCE_ENTRY = /^\.\/src\/([A-Za-z0-9_./-]+)\.ts$/;
+/**
+ * A source export entry: TypeScript under `src/`, which `build` emits to the same path under `dist/`.
+ * Segments are plain names, so `..`, `node_modules` and `.d.ts` inputs (a dead `.d.js` target) fail.
+ */
+const SOURCE_ENTRY = /^\.\/src\/((?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+)\.ts$/;
 
 export type PublishedExports = Record<string, { types: string; default: string }>;
 
@@ -22,8 +25,11 @@ export function publishedExports(source: unknown): PublishedExports {
   }
   const out: PublishedExports = {};
   for (const [subpath, target] of Object.entries(entries)) {
+    if (subpath !== "." && !subpath.startsWith("./")) {
+      throw new Error(`exports subpath ${JSON.stringify(subpath)} must be "." or start with "./"`);
+    }
     const match = typeof target === "string" ? SOURCE_ENTRY.exec(target) : null;
-    if (!match) {
+    if (!match || match[1]?.split("/").includes("node_modules")) {
       throw new Error(
         `exports[${JSON.stringify(subpath)}] must be a ./src/<name>.ts path, got ${JSON.stringify(target)}`,
       );
@@ -37,11 +43,10 @@ export function publishedExports(source: unknown): PublishedExports {
 const DEPENDENCY_FIELDS = ["dependencies", "peerDependencies", "optionalDependencies"] as const;
 
 /**
- * Sets `version`, `main`, `types`, `exports` (dist-based, every source subpath), drops any
- * `publishConfig.exports` override so the top-level `exports` wins, drops `devDependencies` (consumers
- * never install them and ours carry `workspace:` ranges), and replaces every `workspace:` range with
- * the sibling's exact version. Everything else — `files`, `publishConfig.access`, non-workspace
- * dependencies — is preserved verbatim.
+ * Every `workspace:` range becomes the sibling's exact publish version; `publishConfig.exports` and
+ * `devDependencies` are discarded (the override would shadow the dist map, and ours carry
+ * `workspace:` ranges). Other metadata — `files`, `publishConfig.access`, registry dependencies — is
+ * preserved verbatim.
  */
 export function preparePublishManifest(
   pkg: Record<string, unknown>,

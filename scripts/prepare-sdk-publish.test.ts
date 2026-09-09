@@ -58,6 +58,10 @@ describe("preparePublishManifest (SDK publish rewrite)", () => {
     for (const bad of [
       { ".": "./dist/index.js" },
       { ".": "./src/index.ts", "./x": { default: "./src/x.ts" } },
+      { ".": "./src/../index.ts" },
+      { ".": "./src/node_modules/x.ts" },
+      { ".": "./src/index.d.ts" },
+      { ".": "./src/index.ts", register: "./src/register.ts" },
       { "./register": "./src/register.ts" },
       undefined,
     ]) {
