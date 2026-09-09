@@ -13,21 +13,24 @@ const fixture = (name: string, file: string) =>
   );
 
 describe("proof data", () => {
-  test.each(["square", "nopub"])("the fixture %s converts exactly as bb.js would", (name) => {
-    const proof = fixture(name, "proof");
-    const publicInputs = fixture(name, "public_inputs");
-    const response = decodeUltraHonkResponse({
-      proof: toBase64(proof),
-      public_inputs: toBase64(publicInputs),
-      vk: toBase64(fixture(name, "vk")),
-    });
-    expect(response.proof).toEqual(proof);
-    expect(response.vk).toEqual(fixture(name, "vk"));
-    const data = toProofData(response);
-    expect(data.proof).toEqual(proof);
-    expect(data.publicInputs).toEqual(deflattenFields(publicInputs));
-    if (name === "nopub") expect(data.publicInputs).toEqual([]);
-  });
+  test.each(["square", "nopub", "hashchain"])(
+    "the fixture %s converts exactly as bb.js would",
+    (name) => {
+      const proof = fixture(name, "proof");
+      const publicInputs = fixture(name, "public_inputs");
+      const response = decodeUltraHonkResponse({
+        proof: toBase64(proof),
+        public_inputs: toBase64(publicInputs),
+        vk: toBase64(fixture(name, "vk")),
+      });
+      expect(response.proof).toEqual(proof);
+      expect(response.vk).toEqual(fixture(name, "vk"));
+      const data = toProofData(response);
+      expect(data.proof).toEqual(proof);
+      expect(data.publicInputs).toEqual(deflattenFields(publicInputs));
+      if (name === "nopub") expect(data.publicInputs).toEqual([]);
+    },
+  );
 
   test("fields become 0x + 64 lowercase hex digits, one per 32 bytes", () => {
     const one = new Uint8Array(32);

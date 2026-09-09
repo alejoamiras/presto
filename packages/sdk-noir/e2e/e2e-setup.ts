@@ -16,7 +16,7 @@ await configure({
   ],
 });
 
-export const FIXTURE_NAMES = ["square", "nopub"] as const;
+export const FIXTURE_NAMES = ["square", "nopub", "hashchain"] as const;
 
 export interface NoirFixture {
   name: string;

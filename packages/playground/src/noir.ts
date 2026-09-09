@@ -7,7 +7,7 @@ import {
 } from "@alejoamiras/presto-noir";
 import type { LogFn, UiMode } from "./aztec";
 
-/** The committed `square` circuit: `assert(x * x == y); pedersen_hash([x, y])`, two public inputs. */
+/** The committed `hashchain` circuit: 1,024 dependent Pedersen hashes (`h = pedersen_hash([h, y])`), two public inputs. */
 export interface NoirFixture {
   bytecode: string;
   witness: Uint8Array;

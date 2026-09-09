@@ -7,7 +7,7 @@ import { expect, type Page, type Route, test } from "@playwright/test";
 // bb.js workers, `.wasm` — is blocked AND recorded, so a silent WASM run fails this suite instead
 // of downloading its way to a pass. Network-free, like the rest of the mocked project.
 
-const fixtureDir = resolve(import.meta.dirname, "../../../fixtures/noir/square");
+const fixtureDir = resolve(import.meta.dirname, "../../../fixtures/noir/hashchain");
 const fixture = {
   bytecode: JSON.parse(readFileSync(resolve(fixtureDir, "circuit.json"), "utf8"))
     .bytecode as string,

@@ -13,7 +13,7 @@ Interactive web app for comparing in-browser WASM proving against native acceler
 - Side-by-side comparison of WASM vs accelerated proving
 - Embedded wallet with in-browser PXE — no extensions required
 - Token deploy and private transfer flow
-- **Prove Noir Circuit**: the committed `square` fixture (`fixtures/noir/square`) proven with bb.js's UltraHonk in the browser or natively through Presto's `/prove/ultra-honk` (`@alejoamiras/presto-noir`), timed and checked byte-for-byte against the committed proof
+- **Prove Noir Circuit**: the committed `hashchain` fixture (`fixtures/noir/hashchain`, 1,024 chained Pedersen hashes — about 10 s in WASM, about 2 s natively) proven with bb.js's UltraHonk in the browser or natively through Presto's `/prove/ultra-honk` (`@alejoamiras/presto-noir`), timed and checked byte-for-byte against the committed proof
 - ASCII terminal animation showing proof phases in real time
 - HTTPS recovery with diagnosis-specific guidance and a confirmed, current-tab-only HTTP escape hatch
 - Diagnostics export for debugging

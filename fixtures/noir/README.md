@@ -8,6 +8,7 @@ must reproduce byte for byte:
 |---|---|---|
 | `square` | `assert(x * x == y); pedersen_hash([x, y])` | 2 (`y` and the returned hash) |
 | `nopub` | `assert(x * y == 42)` | 0 (bb writes an empty `public_inputs`) |
+| `hashchain` | 1,024 dependent `pedersen_hash([h, y])` rounds (~176k gates): the playground's demo, heavy enough that native bb visibly beats WASM (~2 s vs ~10 s) | 2 (`y` and the final digest) |
 
 `manifest.json` records sha256 and size for every file, the field counts of `proof` and
 `public_inputs`, the verifier target (`noir-recursive-no-zk`, the deterministic family; ZK targets
