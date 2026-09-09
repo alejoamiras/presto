@@ -173,6 +173,9 @@ h1, h2, h3 {
   transition: color 0.15s;
 }
 .nav-links a:hover { color: var(--text); }
+/* The pill sits inside `.nav-links`, whose muted link colour would otherwise outrank `.btn-nav`. */
+.nav-links .btn-nav, .nav-links .btn-nav:hover { color: var(--accent-on); }
+.nav-links .btn-nav:hover { background: var(--accent-dim); }
 .nav-toggle {
   display: none;
   background: var(--surface);
