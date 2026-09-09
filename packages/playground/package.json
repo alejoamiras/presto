@@ -23,6 +23,7 @@
   },
   "dependencies": {
     "@alejoamiras/presto": "workspace:*",
+    "@alejoamiras/presto-banners": "workspace:*",
     "@alejoamiras/presto-noir": "workspace:*",
     "@aztec-foundation/aztec-standards": "5.2.0",
     "@aztec/accounts": "5.2.0",

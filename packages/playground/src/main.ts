@@ -1,3 +1,5 @@
+import type { PrestoBanner } from "@alejoamiras/presto-banners";
+import "@alejoamiras/presto-banners/register";
 import "./style.css";
 import {
   AZTEC_DISPLAY_URL,
@@ -48,8 +50,12 @@ const prestoStatus = new PrestoStatusController({
     $("presto-secure-message").textContent = view.secureConnectionMessage ?? "";
     if (!view.showSecureConnectionHelp) httpSessionConsent.cancel();
 
-    const showInstallBanner = view.showInstall && !localStorage.getItem("accel-banner-dismissed");
-    $("accel-banner").classList.toggle("hidden", !showInstallBanner);
+    // The ribbon is the install pitch only; the panels above own the warn-state recovery flows.
+    ($("accel-banner") as PrestoBanner).state = view.showInstall
+      ? "offline"
+      : view.connected
+        ? "available"
+        : null;
     appendLog(view.log, view.logLevel);
   },
   setPending: (pending) => {
@@ -343,12 +349,6 @@ async function init(): Promise<void> {
 
   // Wire diagnostics export
   $("export-diagnostics-btn").addEventListener("click", downloadDiagnostics);
-
-  // Wire presto banner dismiss
-  $("accel-banner-dismiss").addEventListener("click", () => {
-    $("accel-banner").classList.add("hidden");
-    localStorage.setItem("accel-banner-dismissed", "1");
-  });
 
   $btn("presto-permission-retry").addEventListener("click", () => {
     void prestoStatus.refresh({ forceRefresh: true }).catch(() => {

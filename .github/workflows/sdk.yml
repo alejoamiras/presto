@@ -10,6 +10,7 @@ on:
           - presto
           - presto-core
           - presto-noir
+          - presto-banners
         default: presto
   pull_request:
     branches: [main, security-hardening]

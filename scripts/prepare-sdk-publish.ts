@@ -5,30 +5,62 @@
 
 import { EXACT_SEMVER } from "./npm-packages.ts";
 
-/** The published `exports` map — dist-based, dual types/default condition. */
-export const PUBLISHED_EXPORTS = {
-  ".": { types: "./dist/index.d.ts", default: "./dist/index.js" },
-} as const;
+/**
+ * A source export entry: TypeScript under `src/`, which `build` emits to the same path under `dist/`.
+ * Segments are plain names, so `..`, `node_modules` and `.d.ts` inputs (a dead `.d.js` target) fail.
+ */
+const SOURCE_ENTRY = /^\.\/src\/((?:[A-Za-z0-9_-]+\/)*[A-Za-z0-9_-]+)\.ts$/;
+
+export type PublishedExports = Record<string, { types: string; default: string }>;
+
+/**
+ * The published `exports` map for a source map: each `./src/<name>.ts` becomes the dist pair
+ * `{ types: ./dist/<name>.d.ts, default: ./dist/<name>.js }`; a bare string is the `"."` entry.
+ * Anything else fails closed — a subpath the build does not emit would publish a dead entry.
+ */
+export function publishedExports(source: unknown): PublishedExports {
+  const entries = typeof source === "string" ? { ".": source } : source;
+  if (!entries || typeof entries !== "object" || Array.isArray(entries)) {
+    throw new Error("exports must be a ./src/<name>.ts path or a subpath map of them");
+  }
+  const out: PublishedExports = {};
+  for (const [subpath, target] of Object.entries(entries)) {
+    if (subpath !== "." && !subpath.startsWith("./")) {
+      throw new Error(`exports subpath ${JSON.stringify(subpath)} must be "." or start with "./"`);
+    }
+    const match = typeof target === "string" ? SOURCE_ENTRY.exec(target) : null;
+    if (!match || match[1]?.split("/").includes("node_modules")) {
+      throw new Error(
+        `exports[${JSON.stringify(subpath)}] must be a ./src/<name>.ts path, got ${JSON.stringify(target)}`,
+      );
+    }
+    out[subpath] = { types: `./dist/${match[1]}.d.ts`, default: `./dist/${match[1]}.js` };
+  }
+  if (!out["."]) throw new Error('exports must include the "." entry');
+  return out;
+}
 
 const DEPENDENCY_FIELDS = ["dependencies", "peerDependencies", "optionalDependencies"] as const;
 
 /**
- * Sets `version`, `main`, `types`, `exports` (dist-based), drops any `publishConfig.exports` override
- * so the top-level `exports` wins, and replaces every `workspace:` range with the sibling's exact
- * version. Everything else — `files`, `publishConfig.access`, non-workspace dependencies — is preserved
- * verbatim.
+ * Every `workspace:` range becomes the sibling's exact publish version; `publishConfig.exports` and
+ * `devDependencies` are discarded (the override would shadow the dist map, and ours carry
+ * `workspace:` ranges). Other metadata — `files`, `publishConfig.access`, registry dependencies — is
+ * preserved verbatim.
  */
 export function preparePublishManifest(
   pkg: Record<string, unknown>,
   version: string,
   workspaceVersions: Record<string, string> = {},
 ): Record<string, unknown> {
+  const { devDependencies: _dev, ...published } = pkg;
+  const exports = publishedExports(pkg.exports);
   const next: Record<string, unknown> = {
-    ...pkg,
+    ...published,
     version,
-    main: "./dist/index.js",
-    types: "./dist/index.d.ts",
-    exports: PUBLISHED_EXPORTS,
+    main: exports["."]?.default,
+    types: exports["."]?.types,
+    exports,
   };
   const publishConfig = pkg.publishConfig;
   if (publishConfig && typeof publishConfig === "object") {

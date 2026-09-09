@@ -9,6 +9,7 @@ const reusable = read(".github/workflows/_ts-package-ci.yml");
 const sdk = read(".github/workflows/sdk.yml");
 const sdkCore = read(".github/workflows/sdk-core.yml");
 const sdkNoir = read(".github/workflows/sdk-noir.yml");
+const banners = read(".github/workflows/banners.yml");
 const app = read(".github/workflows/app.yml");
 const publish = read(".github/workflows/_publish-npm.yml");
 
@@ -69,7 +70,7 @@ describe("TypeScript package CI contract", () => {
     }
     expect(sdk).toMatch(/identity: \$\{\{ inputs\.package == 'presto-noir' \}\}/);
     expect(sdk).toMatch(/live: \$\{\{ inputs\.package == 'presto-noir' \}\}/);
-    expect(sdkCore).not.toMatch(/identity|live:/);
+    for (const caller of [sdkCore, banners]) expect(caller).not.toMatch(/identity|live:/);
   });
 
   test.each([
@@ -79,6 +80,12 @@ describe("TypeScript package CI contract", () => {
       sdkNoir,
       "presto-noir",
       ["'packages/sdk-noir/**'", "'packages/sdk-core/**'", "'fixtures/noir/**'"],
+    ],
+    [
+      "banners.yml",
+      banners,
+      "presto-banners",
+      ["'packages/banners/**'", "'packages/sdk-core/src/lib/types.ts'"],
     ],
   ])("%s is a thin caller of the reusable", (_name, workflow, key, paths) => {
     expect(workflow).toContain("uses: ./.github/workflows/_ts-package-ci.yml");

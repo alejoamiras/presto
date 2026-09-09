@@ -38,7 +38,6 @@ export function setupDOM(): void {
     <span id="log-count"></span>
     <button id="export-diagnostics-btn"></button>
     <div id="embedded-ui" class="hidden"></div>
-    <div id="accel-banner" class="hidden"></div>
-    <button id="accel-banner-dismiss"></button>
+    <presto-banner id="accel-banner" variant="ribbon" fonts="none"></presto-banner>
   `;
 }
