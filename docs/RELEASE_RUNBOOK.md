@@ -76,7 +76,7 @@ release; resolve future failures under the ordinary append-only release rules.
 
 ### `npm-publish` GitHub environment and npm trusted publisher
 
-The environment has no npm secret. Configure each package's [npm GitHub Actions trusted publisher](https://docs.npmjs.com/trusted-publishers/) exactly as follows — one registration per npm name in `scripts/npm-packages.ts` (`@alejoamiras/presto`, and `@alejoamiras/presto-core` / `@alejoamiras/presto-noir` before their first publish; registering a new name is an owner action, never a workflow step):
+The environment has no npm secret. Configure each package's [npm GitHub Actions trusted publisher](https://docs.npmjs.com/trusted-publishers/) exactly as follows — one registration per npm name in `scripts/npm-packages.ts` (`@alejoamiras/presto`, `@alejoamiras/presto-core`, `@alejoamiras/presto-noir`, and `@alejoamiras/presto-banners`, each before its first publish; registering a new name is an owner action, never a workflow step):
 
 | Field | Value |
 |---|---|
