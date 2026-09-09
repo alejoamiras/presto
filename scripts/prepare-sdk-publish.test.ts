@@ -3,11 +3,13 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
-  PUBLISHED_EXPORTS,
   parseCliArgs,
   parseDependencyPins,
   preparePublishManifest,
+  publishedExports,
 } from "./prepare-sdk-publish.ts";
+
+const PUBLISHED_EXPORTS = { ".": { types: "./dist/index.d.ts", default: "./dist/index.js" } };
 
 const src = {
   name: "@alejoamiras/presto",
@@ -34,6 +36,33 @@ describe("preparePublishManifest (SDK publish rewrite)", () => {
     // files (incl. MIGRATION.md) and deps must survive verbatim — the tarball's contents depend on it.
     expect(out.files).toEqual(src.files);
     expect(out.dependencies).toEqual(src.dependencies);
+  });
+
+  test("every source subpath publishes as its dist pair; devDependencies never ship", () => {
+    const banners = {
+      ...src,
+      exports: { ".": "./src/index.ts", "./register": "./src/register.ts" },
+      devDependencies: { "@alejoamiras/presto": "workspace:*" },
+    };
+    const out = preparePublishManifest(banners, "1.0.0");
+    expect(out.exports).toEqual({
+      ...PUBLISHED_EXPORTS,
+      "./register": { types: "./dist/register.d.ts", default: "./dist/register.js" },
+    });
+    expect(out.main).toBe("./dist/index.js");
+    expect(out.devDependencies).toBeUndefined();
+    expect(publishedExports("./src/index.ts")).toEqual(PUBLISHED_EXPORTS);
+  });
+
+  test("an export the build cannot emit fails closed", () => {
+    for (const bad of [
+      { ".": "./dist/index.js" },
+      { ".": "./src/index.ts", "./x": { default: "./src/x.ts" } },
+      { "./register": "./src/register.ts" },
+      undefined,
+    ]) {
+      expect(() => preparePublishManifest({ ...src, exports: bad }, "1.0.0")).toThrow(/exports/);
+    }
   });
 
   test("does not mutate the input manifest", () => {
