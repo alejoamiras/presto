@@ -27,9 +27,11 @@ pub(crate) fn http_client() -> reqwest::Client {
 /// `reqwest` strips a sensitive header only when the next hop differs from the one before it, while
 /// every hop is rebuilt from the ORIGINAL header map — so a chain that leaves `api.github.com` and
 /// then redirects again inside the new host restores the token and hands it over. (Upstream fixed
-/// the replay in `tower-http` 0.7; `reqwest` 0.13 still pins 0.6.) The endpoint does not redirect,
-/// so refusing costs nothing and a 3xx surfaces as a refusal carrying its status. Errors rather than
-/// falling back to a default client, which would follow redirects and reinstate the leak.
+/// the replay in `tower-http` 0.7; `reqwest` 0.13 still pins 0.6.) Release-by-tag answers 200, but
+/// GitHub does redirect legitimately — a moved repository, say — and such a lookup now stops with an
+/// explicit status instead of proceeding: the conservative trade, deliberately taken, because the
+/// request carries a credential. Errors rather than falling back to a default client, which would
+/// follow redirects and reinstate the leak.
 fn metadata_client() -> reqwest::Result<reqwest::Client> {
     client_builder()
         .redirect(reqwest::redirect::Policy::none())
