@@ -195,9 +195,10 @@ export function sha256File(path: string): string {
 
 /**
  * Fetch the expected SHA-256 for a release asset from the GitHub API. Mirrors
- * release_metadata.rs::fetch_github_asset_digest, but FAIL-CLOSED at the call site: a non-2xx, a
- * missing asset/digest, or a malformed digest THROWS (the Rust helper returns Ok(None) and its caller
- * throws — same net behavior). Honors GITHUB_TOKEN to dodge the 60/hr unauth rate limit.
+ * release_metadata.rs::fetch_github_asset_digest: a non-2xx, a missing asset/digest, or a malformed
+ * digest THROWS. The Rust helper likewise errors on a non-2xx and reserves Ok(None) — which its
+ * caller turns into an error — for a release that answered without a usable digest. Both honor
+ * GITHUB_TOKEN to dodge the 60/hr unauth rate limit.
  */
 export async function fetchAssetDigest(version: string, asset: string): Promise<string> {
   const apiUrl = `https://api.github.com/repos/AztecProtocol/aztec-packages/releases/tags/v${version}`;
