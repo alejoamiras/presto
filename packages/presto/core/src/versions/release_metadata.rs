@@ -65,10 +65,47 @@ pub(crate) fn sha256_hex(data: &[u8]) -> String {
     hex::encode(Sha256::digest(data))
 }
 
+/// The GitHub API token to authenticate the digest lookup with, when the environment carries one.
+///
+/// Anonymous callers share a 60-request-per-hour budget per source address, which CI runners
+/// exhaust between them; the lookup then fails and no proof can be produced. An authenticated call
+/// is billed to the token's own, far larger quota instead. `download-bb.ts` reads the same
+/// variable for the same reason — keep the two in step.
+fn github_api_token() -> Option<String> {
+    normalize_token(std::env::var("GITHUB_TOKEN").ok())
+}
+
+/// A set-but-blank variable counts as absent, so an empty export cannot send a `Bearer` with no
+/// credential after it (GitHub answers that with 401, which reads as a broken token, not an unset one).
+fn normalize_token(raw: Option<String>) -> Option<String> {
+    let token = raw?;
+    let token = token.trim();
+    (!token.is_empty()).then(|| token.to_string())
+}
+
+/// Why a release-metadata request was refused, phrased for whoever reads the failure. The anonymous
+/// rate limit is the likeliest cause of a 403 or 429 here and is invisible in the status alone, so
+/// name it and name the way out.
+fn refusal_reason(status: reqwest::StatusCode, authenticated: bool) -> String {
+    let throttled = status == reqwest::StatusCode::FORBIDDEN
+        || status == reqwest::StatusCode::TOO_MANY_REQUESTS;
+    let hint = if throttled && !authenticated {
+        " (anonymous GitHub API calls are capped at 60/hour per address — set GITHUB_TOKEN)"
+    } else {
+        ""
+    };
+    format!("GitHub API returned {status}{hint}")
+}
+
 /// Fetch the expected SHA-256 digest for a release asset from the GitHub API.
 ///
 /// GitHub stores a `digest` field (e.g. `"sha256:abcd..."`) on every release asset. This catches
 /// download corruption and CDN issues.
+///
+/// `Ok(None)` means the release answered but lists no such asset, or lists it without a usable
+/// digest. A refused request is an `Err` carrying the status instead. The caller rejects both, so
+/// the distinction is diagnostic, not behavioural: only `Ok(None)` is a claim about what the release
+/// publishes, and reporting a throttled lookup as one points debugging at the wrong system.
 ///
 /// SECURITY (SEC-02, deferred — circular trust): the digest is fetched from the SAME GitHub control
 /// plane (`api.github.com`) that serves the binary, so an attacker who compromises the upstream
@@ -87,19 +124,23 @@ pub(crate) async fn fetch_github_asset_digest(
     let api_url = format!(
         "https://api.github.com/repos/AztecProtocol/aztec-packages/releases/tags/v{version}"
     );
-    let response = http_client()
+    let token = github_api_token();
+    let mut request = http_client()
         .get(&api_url)
-        .header("accept", "application/vnd.github+json")
-        .send()
-        .await?;
+        .header("accept", "application/vnd.github+json");
+    if let Some(token) = token.as_deref() {
+        request = request.bearer_auth(token);
+    }
+    let response = request.send().await?;
 
     if !response.status().is_success() {
         tracing::warn!(
             version,
             status = %response.status(),
-            "Failed to fetch release metadata for digest verification"
+            authenticated = token.is_some(),
+            "Release metadata request refused"
         );
-        return Ok(None);
+        return Err(refusal_reason(response.status(), token.is_some()).into());
     }
 
     let release: serde_json::Value = response.json().await?;
@@ -121,6 +162,36 @@ pub(crate) async fn fetch_github_asset_digest(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn blank_github_token_reads_as_absent() {
+        assert_eq!(normalize_token(None), None);
+        assert_eq!(normalize_token(Some(String::new())), None);
+        assert_eq!(normalize_token(Some("   ".into())), None);
+        assert_eq!(
+            normalize_token(Some("  ghp_tok  ".into())),
+            Some("ghp_tok".into())
+        );
+    }
+
+    #[test]
+    fn an_anonymous_throttle_names_the_way_out() {
+        let anon = refusal_reason(reqwest::StatusCode::FORBIDDEN, false);
+        assert!(anon.contains("403"), "{anon}");
+        assert!(anon.contains("GITHUB_TOKEN"), "{anon}");
+        assert!(
+            refusal_reason(reqwest::StatusCode::TOO_MANY_REQUESTS, false).contains("GITHUB_TOKEN")
+        );
+    }
+
+    #[test]
+    fn a_token_already_set_is_not_told_to_set_one() {
+        // A 403 while authenticated is a permission or abuse-detection answer, not the anon cap.
+        assert!(!refusal_reason(reqwest::StatusCode::FORBIDDEN, true).contains("GITHUB_TOKEN"));
+        // A missing release is never a throttle, with or without a token.
+        assert!(!refusal_reason(reqwest::StatusCode::NOT_FOUND, false).contains("GITHUB_TOKEN"));
+        assert!(refusal_reason(reqwest::StatusCode::NOT_FOUND, false).contains("404"));
+    }
 
     #[test]
     fn download_url_format() {
