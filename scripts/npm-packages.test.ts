@@ -34,19 +34,30 @@ describe("npm package descriptor", () => {
     expect(resolvePackage()).toBe(NPM_PACKAGES[DEFAULT_PACKAGE]);
   });
 
-  test("every published package is MIT and ships its own licence text", () => {
-    // The split is the product decision: these four are bundled into consumers' applications, so
-    // copyleft here would propagate into their dApps. The repository root stays AGPL for the app.
+  test("every published package is MIT and ships the identical, complete licence text", () => {
+    // The split is the product decision: these four are bundled into consumers' applications, where
+    // AGPL can reach the combined work. The repository root stays AGPL for the app.
+    // A LICENSE in the package dir is the only one npm puts in the tarball — the root one never
+    // travels with a workspace package, which is why each of the four carries its own copy.
+    const texts = new Set<string>();
     for (const pkg of Object.values(NPM_PACKAGES)) {
       expect(readManifest(pkg, root).license).toBe("MIT");
-      // npm always includes a package-dir LICENSE in the tarball; the root one never travels.
-      const licensePath = join(root, pkg.dir, "LICENSE");
-      expect(existsSync(licensePath)).toBe(true);
-      expect(readFileSync(licensePath, "utf8").startsWith("MIT License")).toBe(true);
+      const text = readFileSync(join(root, pkg.dir, "LICENSE"), "utf8");
+      // Both notices are load-bearing: MIT's sole condition is that they travel with the code.
+      expect(text).toContain("MIT License");
+      expect(text).toContain("Copyright (c)");
+      expect(text).toContain(
+        "The above copyright notice and this permission notice shall be included in all",
+      );
+      expect(text).toContain("WITHOUT WARRANTY OF ANY KIND");
+      texts.add(text);
     }
+    expect(texts.size).toBe(1);
+
     const rootManifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
     expect(rootManifest.license).toBe("AGPL-3.0-only");
     expect(rootManifest.private).toBe(true);
+    expect(existsSync(join(root, "LICENSE"))).toBe(true);
   });
 
   test("an unknown package is a hard failure that names the valid keys", () => {

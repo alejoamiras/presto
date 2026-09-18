@@ -159,4 +159,4 @@ Fixtures are regenerated with `bun scripts/noir-fixture.ts --regenerate` from th
 
 ## License
 
-[MIT](LICENSE) — this package only. The Presto desktop app and the rest of the repository are [AGPL-3.0](../../LICENSE).
+[MIT](LICENSE). All four `@alejoamiras/presto*` npm packages are MIT. The Presto desktop app and the rest of the repository are AGPL-3.0-only; the [repository README](https://github.com/alejoamiras/presto#license) explains the split.

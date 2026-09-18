@@ -157,13 +157,19 @@ Split, deliberately.
 
 **The four npm packages are [MIT](packages/sdk-core/LICENSE)** — `@alejoamiras/presto`,
 `@alejoamiras/presto-core`, `@alejoamiras/presto-noir`, `@alejoamiras/presto-banners`. Each carries
-its own `LICENSE`. They are client libraries: integrating them means bundling and shipping them
-inside your dApp, and a copyleft licence there would propagate to your application. MIT imposes
-nothing on you beyond keeping the copyright notice. Use them in closed-source products.
+its own `LICENSE`. They are client libraries: integrating one means bundling it and shipping that
+bundle to your users, which is conveying a copy of it, and under AGPL that can require your combined
+application to be AGPL-licensed too. MIT asks only that you keep the copyright and permission notice
+with the code. Use them in closed-source products.
 
 **Everything else is [AGPL-3.0-only](LICENSE)** — the desktop app, the headless server, the
 playground, the landing site, and the build and release tooling. That is the part users run rather
-than ship, so copyleft costs integrators nothing and keeps modifications to the prover itself in the
-open.
+than ship, so the copyleft falls on whoever distributes a modified prover or offers one over a
+network, not on the dApps that call it. Two carve-outs: third-party components keep their own terms
+(the desktop app's vendored fonts are SIL OFL 1.1, see
+[`packages/presto/src-tauri/frontend/fonts/LICENSES.md`](packages/presto/src-tauri/frontend/fonts/LICENSES.md)),
+and `@aztec/*` dependencies are Apache-2.0 upstream.
 
 A contribution is accepted under the licence of the directory it lands in.
+
+None of this is legal advice — if the boundary matters to your product, have counsel read it.
