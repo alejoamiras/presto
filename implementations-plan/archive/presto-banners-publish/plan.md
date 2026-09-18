@@ -8,6 +8,16 @@ status: COMPLETED 2026-09-09 — PRs #42 (banners) and #43 (sdk:promote --yes/--
 worktree: .claude/worktrees/presto-banners-publish (branch worktree-presto-banners-publish, off main @ bc25102)
 ---
 
+## Outcome
+
+**Closed 2026-09-09.** PRs #42 (banners) and #43 (`sdk:promote --yes` / `--otp=`) merged.
+`@alejoamiras/presto-banners@1.0.0` is on npm with verified provenance, promoted to `latest`, the
+bootstrap version deprecated; `banners.yml` is a thin caller of `_ts-package-ci.yml`; the playground's
+install pitch is `<presto-banner variant="ribbon">` on playground.presto.build.
+
+**This plan is closed. Its `/goal` and `/loop` seeds are retired — do not run them.** Read what
+follows as a historical record of what was decided and why, never as a task list.
+
 # Publish `@alejoamiras/presto-banners` and dogfood it in the playground
 
 ## Goal
