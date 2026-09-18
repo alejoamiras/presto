@@ -42,7 +42,7 @@ only as an ephemeral, single-tenant CI accelerator, not as a shared or long-runn
 - [Platform support](docs/PLATFORM_SUPPORT.md)
 - [Security model](docs/SECURITY_MODEL.md) — the accepted trust boundaries, worth checking before
   reporting behavior that looks like a weakness
-- [Migrating from Aztec Accelerator](packages/sdk/MIGRATION.md)
+- [Migrating from the project's former name](packages/sdk/MIGRATION.md)
 
 General Aztec protocol, node, wallet, or `bb` questions belong with the corresponding Aztec project
 unless Presto is what introduced the problem.
