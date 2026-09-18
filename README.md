@@ -8,7 +8,8 @@ Native prover for Aztec transactions and any Noir circuit. Bypasses browser WASM
 [![Presto](https://github.com/alejoamiras/presto/actions/workflows/presto.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/presto.yml)
 [![App](https://github.com/alejoamiras/presto/actions/workflows/app.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/app.yml)
 [![npm version](https://img.shields.io/npm/v/@alejoamiras/presto)](https://www.npmjs.com/package/@alejoamiras/presto)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![SDKs: MIT](https://img.shields.io/badge/SDKs-MIT-green.svg)](packages/sdk-core/LICENSE)
+[![App: AGPL-3.0](https://img.shields.io/badge/App-AGPL--3.0-blue.svg)](LICENSE)
 
 ## Packages
 
@@ -152,4 +153,25 @@ bun run lint:actions     # Lint GitHub Actions workflows
 
 ## License
 
-[AGPL-3.0](LICENSE)
+Split, deliberately.
+
+**The four npm packages are [MIT](packages/sdk-core/LICENSE)** — `@alejoamiras/presto`,
+`@alejoamiras/presto-core`, `@alejoamiras/presto-noir`, `@alejoamiras/presto-banners`. Each carries
+its own `LICENSE`. They are client libraries: integrating one means bundling it and shipping that
+bundle to your users, which is conveying a copy of it, and under AGPL that can require your combined
+application to be AGPL-licensed too. MIT asks only that you keep the copyright and permission notice
+with the code. Use them in closed-source products.
+
+**Everything else is [AGPL-3.0-only](LICENSE)** — the desktop app, the headless server, the
+playground, the landing site, and the build and release tooling. That is the part users run rather
+than ship, so the copyleft falls on whoever distributes a modified prover or offers one over a
+network, not on the dApps that call it. Third-party components keep their own terms regardless: the
+desktop app's vendored fonts are SIL OFL 1.1 (see
+[`packages/presto/src-tauri/frontend/fonts/LICENSES.md`](packages/presto/src-tauri/frontend/fonts/LICENSES.md)),
+`@aztec/bb.js` and `@aztec/noir-acvm_js` are MIT, `@aztec/noir-noirc_abi` is MIT OR Apache-2.0, and
+`@aztec/bb-prover`, `@aztec/foundation` and `@aztec/stdlib` ship no licence metadata but are
+Apache-2.0 in the upstream `aztec-packages` repository at the pinned tag.
+
+A contribution is accepted under the licence of the directory it lands in.
+
+None of this is legal advice — if the boundary matters to your product, have counsel read it.

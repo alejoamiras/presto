@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import {
   CONSUMER_PROFILE_ROOT,
@@ -32,6 +32,27 @@ describe("npm package descriptor", () => {
       expect(resolvePackage(key)).toBe(pkg);
     }
     expect(resolvePackage()).toBe(NPM_PACKAGES[DEFAULT_PACKAGE]);
+  });
+
+  test("every published package is MIT and ships the identical, complete licence text", () => {
+    // The split is the product decision: these four are bundled into consumers' applications, where
+    // AGPL can reach the combined work. The repository root stays AGPL for the app.
+    // Only a LICENSE in the package dir reaches the tarball; the root one never travels with a
+    // workspace package, which is why each of the four carries its own copy.
+    // Pinned by digest rather than phrase matching, because a file that merely mentions "MIT
+    // License" and the permission notice can still be missing the grant. Any change to the text,
+    // the copyright year included, should be deliberate enough to update this constant.
+    const MIT_TEXT_SHA256 = "06dab1993dfad57124e7ddcda6e20209f3078565cda119c0f972ae5ed0583c1b";
+    for (const pkg of Object.values(NPM_PACKAGES)) {
+      expect(readManifest(pkg, root).license).toBe("MIT");
+      const bytes = readFileSync(join(root, pkg.dir, "LICENSE"));
+      expect(new Bun.CryptoHasher("sha256").update(bytes).digest("hex")).toBe(MIT_TEXT_SHA256);
+    }
+
+    const rootManifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
+    expect(rootManifest.license).toBe("AGPL-3.0-only");
+    expect(rootManifest.private).toBe(true);
+    expect(existsSync(join(root, "LICENSE"))).toBe(true);
   });
 
   test("an unknown package is a hard failure that names the valid keys", () => {

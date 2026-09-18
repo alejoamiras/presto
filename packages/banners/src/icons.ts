@@ -14,7 +14,11 @@ export const CHECK =
 export const CLOSE =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
 
-/** The landing's hero drawing: dotted cloud, bolt, twinkling spark and mote. */
+/**
+ * The landing's hero drawing: dotted cloud, bolt, twinkling spark and mote. First-party artwork,
+ * granted under both licences it lives under — MIT here, AGPL in `packages/landing`. Copying it back
+ * the other way is fine; copying anything else out of the AGPL tree into this package is not.
+ */
 export const HERO =
   '<svg class="illo" viewBox="0 0 120 120" fill="none" aria-hidden="true">' +
   '<path class="illo-cloud" d="M34 78 a16 16 0 0 1 -2 -31 a20 20 0 0 1 38 -8 a15 15 0 0 1 18 22 a14 14 0 0 1 -6 17" stroke-linecap="round" stroke-dasharray="1 7"/>' +
