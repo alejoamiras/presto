@@ -41,6 +41,16 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   `cargo check --target x86_64-pc-windows-gnu` regenerates it and dirties the worktree. Called out as
   "worth a one-line hygiene commit on main" and never made.
   `archive/presto-noir/lessons/phase-5.md`. **Verified 2026-09-18.**
+- **The playground ships Apache-2.0 code with no third-party licence file.** Its bundle contains
+  `@aztec/*` packages, three of which (`bb-prover`, `foundation`, `stdlib` at 5.2.0) publish no
+  licence metadata at all and rely on the Apache-2.0 `LICENSE` in upstream `aztec-packages`.
+  Apache-2.0 §4(a) requires giving recipients the full licence text when distributing in object
+  form, which a minified web bundle is; §4(d) additionally requires reproducing an upstream `NOTICE`
+  where one is supplied. Nothing in `packages/playground/public/` or its build config does either.
+  The fix is a deployed, linked `third-party-licenses.txt`, not a README sentence. Separately worth
+  reporting upstream: the three packages' missing `license` field is a packaging bug, and Alejo is
+  inside Aztec. **Verified 2026-09-18** (manifests and build config; the deployed bundle was not
+  inspected).
 - **The playground is held on Vite 7 while the landing site runs Vite 8.** `packages/playground`
   pins `^7.3.6`, `packages/landing` `^8.2.2`. Vite 8's Rolldown production build miscompiles the
   playground's Aztec sqlite-opfs ordered-key path; the upstream bug is unfixed and was never filed.
