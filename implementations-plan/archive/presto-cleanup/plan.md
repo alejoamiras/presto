@@ -5,6 +5,19 @@ code_review: off
 baseline: ae1cb9c8d0e2ac6ecb2290811522fd529db4eca5
 ---
 
+## Outcome
+
+**Closed 2026-09-07.** Delivered as stacked PRs #16, #17 and #18: the spent `1.0.0-rc.1` first-release
+exception is gone from the updater baseline resolver, eligible dependencies were refreshed under the
+seven-day publication-age policy, and complexity limits are enforced in the PR gate through readable
+refactoring rather than metric-driven compression.
+
+Dropped at close-out: the audit transcript and the ELI5 source file (verdicts are inline below;
+the ELI5 was a throwaway explainer).
+
+**This plan is closed. Its `/goal` and `/loop` seeds are retired — do not run them.** Read what
+follows as a historical record of what was decided and why, never as a task list.
+
 # Presto cleanup
 
 Three reviewable stacked arcs retire the spent first-release exception, refresh dependencies under a
@@ -170,7 +183,12 @@ PRs, write accurate PR bodies, run `gh pr checks --watch`, and do not merge auto
 Delivered as stacked PRs #16, #17, and #18. Claude approved the cumulative implementation and its
 targeted fix pass before the stack was opened.
 
-## Seed
+## Seed — RETIRED, DO NOT RUN
+
+This plan closed on 2026-09-07 and lives under `implementations-plan/archive/`. The seed below is
+kept as a record of how the work was driven; the path it names no longer exists. Pasting it will
+drive an agent against a plan that is already delivered.
+
 
 ```text
 /goal Complete implementations-plan/presto-cleanup/plan.md: all four Status items marked complete,

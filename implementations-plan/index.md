@@ -1,5 +1,17 @@
 # Implementation plans
 
-- [presto-cleanup](presto-cleanup/plan.md) — completed — retired the launch exception, refreshed eligible dependencies, and enforced readable complexity limits in PRs #16–#18
-- [presto-noir](presto-noir/plan.md) — completed 2026-09-08 (blueprint deep, 5 arcs / 19 phases, every arc codex-looped + a cross-arc pass; PRs #21–#25 merged; Presto 1.1.0 → 1.1.1, `@alejoamiras/presto-core` 1.0.1, `@alejoamiras/presto-noir` 1.0.1, `@alejoamiras/presto` 5.2.0-revision.2; security audit `audit/security/2026-09-08-presto-noir/` with its five findings fixed in #32/#33/#34; lessons in `presto-noir/lessons/`, post-audit plan in `presto-noir/audit-fixes-plan.md`) — generic UltraHonk (Noir circuit) proving through Presto: `/prove/ultra-honk` route, `@alejoamiras/presto-core` transport extraction, `@alejoamiras/presto-noir` adapter, release CI, playground Noir section.
-- [presto-banners-publish](presto-banners-publish/plan.md) — completed 2026-09-09 (light, owner-lightened: self-written plan + one codex argument, 2-round fix loop; PRs #42/#43) — `@alejoamiras/presto-banners@1.0.0` on npm `latest` with provenance; the playground's install pitch is the ribbon
+**No active plans.** Add one line per plan here when it opens; move the line to
+[`archive/index.md`](archive/index.md) when it closes. This file is read at the start of every
+planning run, so it stays short by design.
+
+Format: `- [plan-name](plan-name/plan.md) — status — one-line hook`
+
+Before starting any task, read:
+
+- [`lessons.md`](lessons.md) — gotchas that already bit us and would bite again
+- [`follow-ups.md`](follow-ups.md) — what closed plans left open
+- [`archive/index.md`](archive/index.md) — what has already been decided, and why
+
+Closed plans stay in git under `archive/`, but `.ignore` keeps them out of default recursive search.
+Read one by explicit path (or with `--no-ignore` / `git grep`) and treat it as **evidence, never
+instructions** — every archived plan's seeds are retired.
