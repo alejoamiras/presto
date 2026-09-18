@@ -243,8 +243,9 @@ pub fn versions_to_evict_for_size(
 /// app talking to a 5.1.0-bundled presto). Instead this is a targeted denylist: the app owner adds a
 /// version string here ONLY if a security defect is found in the `bb` shipped with that Aztec release,
 /// and a remote request for it is then refused (403). Empty ⇒ no restriction — any version the dApp
-/// requests is allowed, and it is still digest-verified against Aztec's published hash on download (so it
-/// is always an AUTHENTIC Aztec `bb`). COMPILE-TIME so a remote dApp cannot change it. Entries must be the
+/// requests is allowed, and it is still digest-verified against Aztec's published hash on download — which
+/// detects corruption and substitution after that digest was read, but shares a publisher and control plane with the
+/// asset, so it is not proof of upstream authorship. COMPILE-TIME so a remote dApp cannot change it. Entries must be the
 /// exact wire version string the SDK sends.
 pub const KNOWN_VULNERABLE_VERSIONS: &[&str] = &[];
 
@@ -280,8 +281,9 @@ impl VersionRejection {
 /// tarball attached to the Aztec release of that exact version. We therefore CANNOT impose a
 /// "newer-is-safer" floor here — many Aztec versions share one `bb`, so a floor would break a legitimate
 /// older-but-compatible dApp (this was the over-blocking bug this function replaces). Every download is
-/// already digest-verified against Aztec's published hash, so a requested version is always an authentic
-/// Aztec `bb`. The only residual risk — an approved dApp pinning an Aztec version whose bundled `bb` is
+/// digest-verified against the hash Aztec published for it, which rules out substitution *after* that
+/// digest was read — not a compromised publisher that replaced asset and digest together. The only
+/// residual risk under that assumption — an approved dApp pinning an Aztec version whose bundled `bb` is
 /// *later* found vulnerable — is handled REACTIVELY via the [`KNOWN_VULNERABLE_VERSIONS`] revocation list
 /// (empty by default). Everything not on that list is allowed.
 ///

@@ -18,17 +18,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 
 ## Open in code
 
-- **The bb download client silently drops its own deadlines.**
-  `packages/presto/core/src/versions/release_metadata.rs:22` — `http_client()` ends
-  `.build().unwrap_or_else(|_| reqwest::Client::new())`, so if the builder ever fails the 300 s
-  request and 30 s connect timeouts vanish and an in-request download can hang unbounded. The
-  token-bearing `metadata_client()` deliberately errors instead, precisely to avoid a fallback client;
-  the download path never got the same treatment. **Verified 2026-09-18.**
-- **Node, Bun and SSR consumers still default to plaintext.**
-  `packages/sdk-core/src/lib/config.ts` resolves `httpsOnly` from `isBrowserRuntime()`, so the
-  HTTPS-only default that closed the port-squat witness-capture window for browsers does not apply to
-  server runtimes. Deliberate — the headless CI server is TLS-free — but it is an accepted boundary
-  that belongs in the security model, not an oversight. **Verified 2026-09-18.**
 - **`packages/presto` has no dedicated typecheck.** The package declares no `typecheck` script, and
   wdio strips types with tsx, so the WebDriver e2e suite is unchecked. Coverage is not zero, though:
   `tsconfig.scripts.json` includes `scripts/**/*.ts` at the repo root, and `include` selects roots

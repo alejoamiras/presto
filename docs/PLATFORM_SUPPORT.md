@@ -90,15 +90,32 @@ prompt.
 
 ## Security Model
 
+The authoritative record of trust boundaries and accepted project decisions is
+[docs/SECURITY_MODEL.md](SECURITY_MODEL.md). What follows summarizes the platform-facing parts.
+
 ### Localhost Authorization
 
-The presto runs an HTTP server on `127.0.0.1:59833` (localhost only — not exposed to the network).
+Presto binds HTTP on `127.0.0.1:59833` and, when Encrypted Connection is enabled, HTTPS on
+`127.0.0.1:59834` — loopback only, neither exposed to the network. Each listener enforces a `Host`
+allowlist for its own port, so a `:59834` authority cannot pass on the `:59833` listener.
 
-**Browser requests** (cross-origin): The `Origin` header is checked against the approved origins list. Unknown origins trigger a MetaMask-style authorization popup. Approved origins are persisted in `~/.presto/config.json`.
+**Browser requests** (cross-origin): the `Origin` header is checked against the approved-origins
+list, which is deny-by-default. An unapproved origin gets only a minimal `/health` body; its first
+`/prove` raises a MetaMask-style authorization popup. Approvals persist in
+`~/.presto/config.json` and are revocable from Settings → Approved Sites.
 
-**Non-browser requests** (curl, scripts): No `Origin` header is sent, so requests are auto-approved. This is by design — `Origin` is a browser-only mechanism. The binding to `127.0.0.1` is the security boundary for non-browser access.
+**Non-browser requests** (curl, scripts): no `Origin` header is sent, so the request is admitted.
+This is by design — `Origin` is a browser control, not general client authentication. The loopback
+binding is the access boundary for non-browser callers, and such callers are also exempt from the
+per-origin admission cap.
 
-**Localhost origins** (`http://localhost`, `http://127.0.0.1`, `http://[::1]`): Always auto-approved.
+**Localhost origins** (`http://localhost`, `http://127.0.0.1`, `http://[::1]`): the **desktop app
+prompts once** and remembers the answer like any other origin — a localhost page is not silently
+trusted. The **headless server auto-approves** localhost, because it has no approval UI. A dotted
+`localhost.` and lookalikes such as `evil.localhost.com` are not treated as localhost.
+
+Origin approval authenticates a *website to the genuine Presto*. It does not authenticate the
+*server to the SDK* — see the [accepted boundary](SECURITY_MODEL.md#2-accept-unauthenticated-loopback-discovery-and-explicit-plaintext-proving).
 
 ### Auto-Update Security
 
@@ -106,4 +123,17 @@ Updates are signed with Ed25519 (minisign format). The public key is embedded in
 
 ### Binary Download Verification
 
-When downloading `bb` binaries for version mismatches, the presto verifies the download against a SHA-256 digest from the GitHub API. If the digest is unavailable or verification fails, the download is rejected (fail-closed). The bundled `bb` sidecar does not require verification.
+When downloading `bb` binaries for version mismatches, Presto fetches the release digest from the
+GitHub API *before* the tarball and verifies the downloaded bytes against it. If the digest is
+unavailable or verification fails, the download is rejected (fail-closed), and a cached version is
+re-hashed before every execution. Downloads are also budgeted — an origin may start 3 downloads of
+uncached versions per 10 minutes and the app 6, one at a time — so a request cannot drive unbounded
+fetch churn. The bundled sidecar is part of the installed application rather than a runtime cache
+entry, and is not re-verified through that marker path.
+
+The digest and the asset come from the same GitHub publisher and control plane, so this detects
+corruption, truncation, cache tampering and a release asset that changed after its digest was
+recorded. It does **not** independently authenticate the upstream publisher. The project depends on
+AztecProtocol to provide signatures or attestations and will adopt them through a reviewed
+fail-closed change when they exist — see the
+[recorded decision](SECURITY_MODEL.md#1-depend-on-upstream-bb-publisher-security).

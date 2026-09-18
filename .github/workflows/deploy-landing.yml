@@ -19,8 +19,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # F-005: the ci-landing role trusts only refs/heads/main; a workflow_dispatch from another ref would
-      # fail at AssumeRole anyway, but assert early so it fails before build with a clear message.
+      # The Cloudflare API token is not ref-scoped — nothing downstream would stop a dispatch from
+      # another ref deploying it to production. This assertion is the only gate, so it runs first.
       - name: Assert main ref
         run: |
           if [ "$GITHUB_REF" != "refs/heads/main" ]; then

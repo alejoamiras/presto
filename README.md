@@ -116,6 +116,22 @@ Download the latest release from [GitHub Releases](https://github.com/alejoamira
 
 See the [Presto README](packages/presto/README.md) for installation and configuration.
 
+## Security and privacy
+
+Proving happens on your machine. A private witness goes to a loopback endpoint or to WASM in the
+page — never to a server this project operates. [PRIVACY.md](PRIVACY.md) is the full account of what
+is stored locally and what the software contacts over the network.
+
+The [security model](docs/SECURITY_MODEL.md) records the trust boundaries and the trade-offs
+consciously accepted at each one, including what the upstream `bb` digest check does and does not
+prove, why browser proving is HTTPS-only by default while server runtimes are not, and why the
+headless server is supported for single-tenant CI only. Read it before reporting something that
+looks like a weakness.
+
+Report vulnerabilities privately under [SECURITY.md](SECURITY.md). For installation help and bug
+reports, see [SUPPORT.md](SUPPORT.md). Participation is governed by
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+
 ## Development
 
 ```bash
@@ -135,7 +151,9 @@ Fork deployments use Cloudflare Workers Static Assets plus KV; see the
 
 ## Contributing
 
-This project uses [conventional commits](https://www.conventionalcommits.org/) enforced by commitlint. Husky + lint-staged run linting on pre-commit.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the repository map, setup, testing, and pull-request
+guidance. This project uses [conventional commits](https://www.conventionalcommits.org/) enforced by
+commitlint; Husky + lint-staged run linting on pre-commit.
 
 ```bash
 # Before pushing

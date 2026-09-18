@@ -1,8 +1,8 @@
 # Presto
 
-Native prover for Aztec transactions. Bypasses browser WASM throttling by running the `bb` proving binary natively on your machine, exposed via a localhost HTTP server that the SDK auto-detects.
+Native prover for Aztec transactions and any Noir circuit. Bypasses browser WASM throttling by running the `bb` proving binary natively on your machine, exposed through loopback HTTP/HTTPS endpoints that the SDK auto-detects.
 
-If every dApp in the ecosystem uses `PrestoProver` with accelerated mode, a single install of this app gives users native-speed proving across all of them — no per-app setup, no downside.
+If dApps integrate the SDK, a single desktop install can provide native-speed proving across all of them, with no per-app setup. What that costs in trust is written down in the [security model](../../docs/SECURITY_MODEL.md).
 
 [![Presto](https://github.com/alejoamiras/presto/actions/workflows/presto.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/presto.yml)
 
@@ -52,11 +52,12 @@ For a tray-only app with no visible window, X11 mode has zero downsides.
 
 The presto runs as a **menu bar / system tray app** with no window — just a tray icon with a status menu.
 
-When running, it listens on `http://127.0.0.1:59833` for proving requests from the SDK. The flow:
+When running, it listens on `http://127.0.0.1:59833` and, when Encrypted Connection is enabled,
+`https://127.0.0.1:59834` for proving requests from the SDK. The flow:
 
 ```
-Browser (SDK)  →  HTTP POST /prove  →  Presto  →  bb binary  →  proof
-                  (localhost:59833)     (Tauri app)     (native)
+Browser (SDK)  →  loopback POST /prove  →  Presto  →  bb binary  →  proof
+                  HTTPS :59834 or HTTP :59833   (Tauri app)   (native)
 ```
 
 Browser SDK instances probe HTTPS for private proving by default and pin it after success. If HTTPS
@@ -89,9 +90,9 @@ Errors are `text/plain` like `/prove`: `400 invalid_request` (shape, base64, gzi
 
 ## Configuration
 
-### Port
+### Ports
 
-The default port is `59833`. The SDK reads `PRESTO_PORT` to override the client-side target. The desktop app always binds `127.0.0.1:59833`. The headless server accepts `--port <n>` for parallel instances, but only together with a private `PRESTO_HOME` (see [headless configuration](#configuration-1)) — two instances must never share one config or version cache.
+The defaults are `59833` for HTTP and `59834` for the desktop HTTPS listener. The SDK reads `PRESTO_PORT` and `PRESTO_HTTPS_PORT` to override its client-side targets. The desktop app always binds `127.0.0.1:59833` (plus `:59834` when Encrypted Connection is on) and those server ports are fixed. The headless server accepts `--port <n>` for parallel instances, but only together with a private `PRESTO_HOME` (see [headless configuration](#configuration-1)) — two instances must never share one config or version cache.
 
 ### Automatic Version Management
 
@@ -134,7 +135,7 @@ Every cached `bb` is verified end-to-end. On download (both the runtime and `bun
 
 ### Windows bb.exe pin provenance (F-008)
 
-Windows has no npm `bb`, so `bb.exe` ships as a sidecar fetched from a GitHub release and pinned by SHA-256 in `scripts/copy-bb.ts` (`WINDOWS_BB_CHECKSUMS`). Pins are **never auto-generated** — auto-downloading and recording the hash is circular ("trust whatever arrived"). Each pin is a structured `{ sha256, provenance, note }`; the resolver only accepts `provenance: "manual-review"` (a human reviewed the release + recorded the hash) and fails closed on anything else. A new bb version with no pin leaves the `@aztec` bump PR **open** (`merge_mode: none`) with a red Windows gate until a human adds a reviewed pin. `manual-review` is a **change-detector**, not cryptographic proof — AztecProtocol does not yet sign/attest bb releases (the same upstream-signing gap as F-007); `attestation` provenance is reserved for when they do. See `implementations-plan/security-hardening/clusters/C7-runbook.md` for how to add a pin + the ruleset-bypass readback the fail-closed guarantee depends on.
+Windows has no npm `bb`, so `bb.exe` ships as a sidecar fetched from a GitHub release and pinned by SHA-256 in `scripts/copy-bb.ts` (`WINDOWS_BB_CHECKSUMS`). Pins are **never auto-generated** — auto-downloading and recording the hash is circular ("trust whatever arrived"). Each pin is a structured `{ sha256, provenance, note }`; the resolver only accepts `provenance: "manual-review"` (a human reviewed the release + recorded the hash) and fails closed on anything else. A new bb version with no pin leaves the `@aztec` bump PR **open** (`merge_mode: none`) with a red Windows gate until a human adds a reviewed pin. `manual-review` is a **change-detector**, not cryptographic proof — AztecProtocol does not yet sign/attest bb releases (the same upstream-signing gap as F-007); `attestation` provenance is reserved for when they do — see [the recorded decision](../../docs/SECURITY_MODEL.md#1-depend-on-upstream-bb-publisher-security). Adding a pin means reviewing the upstream release, recording the hash by hand in `WINDOWS_BB_CHECKSUMS`, and confirming the branch ruleset still blocks a bypass of the Windows gate.
 
 ## Site Authorization
 
@@ -147,9 +148,9 @@ The presto uses a MetaMask-style approval flow. When a new website calls `/prove
 - **Timeout** (60s): auto-denied if the user doesn't respond
 
 There is deliberately no "allow once". The option that existed until 1.0.8 persisted *nothing at
-all* — not a session, not a TTL — so it re-prompted on the very next proof; see
-`implementations-plan/pre-release-polish/decision-allow-once.md` for why it was removed and what
-replaced it.
+all* — not a session, not a TTL — so it re-prompted on the very next proof, training users to click
+through the prompt. Approve-and-remember plus a visible revocation list is the honest version of the
+same choice.
 
 Approved sites can be reviewed and removed from the Settings window.
 
@@ -187,7 +188,7 @@ Each has a matching `.sha256` sidecar file.
 ```yaml
 - name: Install presto headless server
   env:
-    PRESTO_VERSION: "1.0.6"
+    PRESTO_VERSION: "1.1.1" # replace with the release you have reviewed
   run: |
     BASE_URL="https://github.com/alejoamiras/presto/releases/download/presto-v${PRESTO_VERSION}"
     TARBALL="presto-server-${PRESTO_VERSION}-linux-x86_64.tar.gz"
@@ -244,7 +245,7 @@ The tray menu adapts based on the build profile:
 ```
 Settings
 ─────────────
-v1.1.0 · Aztec 5.0.0-nightly.20260309
+v<app-version> · Aztec <bundled-bb-version>
 GitHub
 Quit
 ```
@@ -256,7 +257,7 @@ Status: Idle
   Show Logs
   Settings
 ─────────────
-v1.1.0 · Aztec 5.0.0-nightly.20260309
+v<app-version> · Aztec <bundled-bb-version>
 GitHub
 Quit
 ```
@@ -341,11 +342,11 @@ The presto supports multiple Aztec versions simultaneously. The `/health` endpoi
   "status": "ok",
   "api_version": 1,
   "schemes": ["chonk", "ultra_honk"],
-  "version": "1.1.0",
-  "aztec_version": "5.0.0-nightly.20260309",
-  "available_versions": ["5.0.0-nightly.20260309", "5.0.0-nightly.20260308"],
+  "version": "<app-version>",
+  "aztec_version": "<bundled-bb-version>",
+  "available_versions": ["<bundled-bb-version>", "<another-cached-version>"],
   "bb_available": true,
-  "versions": [{ "aztec_version": "5.0.0-nightly.20260309", "bb_version": "5.0.0-nightly.20260309" }]
+  "versions": [{ "aztec_version": "<bundled-bb-version>", "bb_version": "<bundled-bb-version>" }]
 }
 ```
 
@@ -407,7 +408,7 @@ cargo run --release
 
 ## Testing
 
-### Rust tests (~445 across `core`, `server`, `src-tauri`)
+### Rust tests (`core`, `server`, `src-tauri`)
 ```bash
 cargo test --locked --manifest-path packages/presto/core/Cargo.toml
 cargo test --locked --manifest-path packages/presto/server/Cargo.toml
@@ -416,7 +417,7 @@ cargo test --locked --manifest-path packages/presto/src-tauri/Cargo.toml
 BB_BINARY_PATH=... cargo test --locked --manifest-path packages/presto/core/Cargo.toml --test ultra_honk_real_bb -- --ignored
 ```
 
-### Playwright UI mock tests (28)
+### Playwright UI mock tests
 Tests the Settings, Authorization, and Update Prompt windows with mocked Tauri IPC:
 ```bash
 bun run --cwd packages/presto test:e2e:ui

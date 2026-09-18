@@ -32,8 +32,8 @@ pub async fn download_bb(version: &AztecVersion) -> Result<PathBuf, Box<dyn Erro
         return Ok(bb_path);
     }
 
-    // The digest comes first: once the unauthenticated GitHub API is rate-limited, every request for
-    // an uncached version would otherwise stream the full tarball only to discard it.
+    // The digest comes first: when the metadata lookup fails or is throttled, every request for an
+    // uncached version would otherwise stream the full tarball only to discard it.
     let expected_digest = expected_digest(version_str).await?;
     let bytes = download_tarball(version).await?;
     let archive_digest = sha256_hex(&bytes);
@@ -126,7 +126,7 @@ async fn download_tarball(version: &AztecVersion) -> Result<Vec<u8>, Box<dyn Err
     let url = download_url(version);
     tracing::info!(version = %version, %url, "Downloading bb");
 
-    let response = http_client().get(&url).send().await?;
+    let response = http_client()?.get(&url).send().await?;
     if !response.status().is_success() {
         return Err(format!(
             "Failed to download bb v{version}: HTTP {}",
