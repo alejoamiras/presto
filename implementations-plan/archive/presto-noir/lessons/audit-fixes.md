@@ -1,6 +1,6 @@
 # Lessons — post-audit fixes (2026-09-08)
 
-Plan: `../audit-fixes-plan.md`. Findings: `audit/security/2026-09-08-presto-noir/report.md`.
+Plan: `../post-audit-plan.md`. Findings: `audit/security/2026-09-08-presto-noir/report.md`.
 
 ## Step 1 — #28 was never green on Windows
 

@@ -7,7 +7,7 @@ adapters for different proof systems can build on it without pulling in each oth
 
 [![SDK Core](https://github.com/alejoamiras/presto/actions/workflows/sdk-core.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/sdk-core.yml)
 [![npm version](https://img.shields.io/npm/v/@alejoamiras/presto-core)](https://www.npmjs.com/package/@alejoamiras/presto-core)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 You normally do not install this package directly:
 
@@ -97,4 +97,4 @@ tests, and installs the packed tarball into a clean consumer host.
 
 ## License
 
-[AGPL-3.0](../../LICENSE)
+[MIT](LICENSE). All four `@alejoamiras/presto*` npm packages are MIT. The Presto desktop app and the rest of the repository are AGPL-3.0-only; the [repository README](https://github.com/alejoamiras/presto#license) explains the split.

@@ -9,7 +9,7 @@ has private fields, so code typed to the class itself should type against its me
 
 [![SDK Noir](https://github.com/alejoamiras/presto/actions/workflows/sdk-noir.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/sdk-noir.yml)
 [![npm version](https://img.shields.io/npm/v/@alejoamiras/presto-noir)](https://www.npmjs.com/package/@alejoamiras/presto-noir)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ```ts
 import { Barretenberg } from "@aztec/bb.js";
@@ -126,6 +126,7 @@ adapter must prove natively against a headless presto built with the real `bb`):
 
 | `@alejoamiras/presto-noir` | `@aztec/bb.js` (peer, exact) | `bbVersion` (default) | Presto |
 |---|---|---|---|
+| 1.1.0 | 5.2.0 | 5.2.0 | ≥ 1.1.0 |
 | 1.0.1 | 5.2.0 | 5.2.0 | ≥ 1.1.0 |
 | 1.0.0 | 5.2.0 | 5.2.0 | ≥ 1.1.0 |
 
@@ -159,4 +160,4 @@ Fixtures are regenerated with `bun scripts/noir-fixture.ts --regenerate` from th
 
 ## License
 
-[AGPL-3.0](../../LICENSE)
+[MIT](LICENSE). All four `@alejoamiras/presto*` npm packages are MIT. The Presto desktop app and the rest of the repository are AGPL-3.0-only; the [repository README](https://github.com/alejoamiras/presto#license) explains the split.
