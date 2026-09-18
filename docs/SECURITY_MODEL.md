@@ -103,12 +103,13 @@ Three further consequences follow from trusting the publisher, and none of them 
 - **Revocation is reactive and ships in an app release.** `KNOWN_VULNERABLE_VERSIONS` is a
   compile-time list and is currently **empty**. Withdrawing a version that is later found vulnerable
   requires publishing a new Presto, not a server-side flip.
-- **Digest verification covers the version cache only.** A request that names a version is served
-  from the marker-verified cache and nowhere else. A request that names none walks a trusted,
-  unverified search chain (`packages/presto/core/src/bb.rs`): the `BB_BINARY_PATH` operator
-  override, the bundled sidecar next to the executable, `~/.bb/bb`, and on Unix `bb` on `$PATH`
-  (deliberately skipped on Windows, where a planted `bb.exe` could hijack it). Anyone who can write
-  to those locations already runs as the user.
+- **Digest verification covers the version cache only.** A request for a *non-bundled* version
+  executes a marker-verified cache entry and nothing else. A versionless request, or one naming the
+  bundled version, walks a trusted, unverified search chain (`packages/presto/core/src/bb.rs`): the
+  sidecar next to the executable, `~/.bb/bb`, and on Unix `bb` on `$PATH` (deliberately skipped on
+  Windows, where a planted `bb.exe` could hijack it). An existing `BB_BINARY_PATH` operator override
+  takes precedence over all of it, versioned requests included. Anyone who can write to those
+  locations or set that variable already runs as the user.
 
 For the same reason, the child-process controls above are **containment of a trusted binary, not a
 sandbox**. A malicious `bb` running as the user can already reach the user's files; escapes available
