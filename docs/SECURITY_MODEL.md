@@ -103,9 +103,12 @@ Three further consequences follow from trusting the publisher, and none of them 
 - **Revocation is reactive and ships in an app release.** `KNOWN_VULNERABLE_VERSIONS` is a
   compile-time list and is currently **empty**. Withdrawing a version that is later found vulnerable
   requires publishing a new Presto, not a server-side flip.
-- **`BB_BINARY_PATH` is a trusted, unversioned operator override** — the one documented exception to
-  "no unverified execution" (`packages/presto/core/src/bb.rs`). Whoever sets the process environment
-  already owns the process.
+- **Digest verification covers the version cache only.** A request that names a version is served
+  from the marker-verified cache and nowhere else. A request that names none walks a trusted,
+  unverified search chain (`packages/presto/core/src/bb.rs`): the `BB_BINARY_PATH` operator
+  override, the bundled sidecar next to the executable, `~/.bb/bb`, and on Unix `bb` on `$PATH`
+  (deliberately skipped on Windows, where a planted `bb.exe` could hijack it). Anyone who can write
+  to those locations already runs as the user.
 
 For the same reason, the child-process controls above are **containment of a trusted binary, not a
 sandbox**. A malicious `bb` running as the user can already reach the user's files; escapes available
@@ -153,8 +156,8 @@ changes nothing.
 
 The equivalent on the shared client is `PrestoClient.configure()`.
 `@alejoamiras/presto-noir` has no setter, but it accepts the same settings through its constructor's
-`options.presto`, so a Noir circuit falls back to WASM only when the integrator leaves that default
-alone.
+`options.presto`, so a Noir integrator can opt into plaintext the same way. When Presto is
+unavailable the backend proves in WASM, or throws under `fallback: "none"`.
 
 In either plaintext mode, if proving is attempted while the real Presto is stopped, a hostile local
 process — including one running as another user on a multi-user machine — can imitate `/health` on

@@ -101,7 +101,7 @@ in:
 | Directory | Licence | Why |
 |---|---|---|
 | `packages/sdk`, `packages/sdk-core`, `packages/sdk-noir`, `packages/banners` | [MIT](packages/sdk-core/LICENSE) | These ship *inside* integrators' applications. Copyleft here would propagate into their dApps. |
-| Everything else | [AGPL-3.0-only](LICENSE) | The desktop app, headless server, playground, landing site and release tooling are run, not bundled. |
+| Everything else first-party | [AGPL-3.0-only](LICENSE) | The desktop app, headless server, playground, landing site and release tooling are run, not bundled. Vendored third-party files keep their own terms, e.g. the SIL OFL fonts under `packages/presto/src-tauri/frontend/fonts/`. |
 
 By contributing you agree to those terms. Do not move code from an AGPL directory into an MIT
 package — that relicenses it, and it needs a deliberate decision rather than a refactor.

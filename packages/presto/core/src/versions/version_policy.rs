@@ -244,7 +244,7 @@ pub fn versions_to_evict_for_size(
 /// version string here ONLY if a security defect is found in the `bb` shipped with that Aztec release,
 /// and a remote request for it is then refused (403). Empty ⇒ no restriction — any version the dApp
 /// requests is allowed, and it is still digest-verified against Aztec's published hash on download — which
-/// detects corruption and post-publication substitution, but shares a publisher and control plane with the
+/// detects corruption and substitution after that digest was read, but shares a publisher and control plane with the
 /// asset, so it is not proof of upstream authorship. COMPILE-TIME so a remote dApp cannot change it. Entries must be the
 /// exact wire version string the SDK sends.
 pub const KNOWN_VULNERABLE_VERSIONS: &[&str] = &[];

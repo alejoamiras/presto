@@ -37,11 +37,12 @@ deliberately **never** swept, because prefix-matching in a shared `/tmp` could d
 directory.
 
 Presto never logs the witness itself, and never returns it in an HTTP error body. It does capture
-`bb`'s own stderr and keep it in the logs on failure, and that output is not redacted — `bb` is a
-third-party binary and can print whatever it wants, including paths and witness diagnostics
-(`packages/presto/core/src/bb.rs` says so at the call site). No witness leak through that channel has
-been observed; what is accurate is that it is *not a guarantee we enforce*. Browser
-prover instances are HTTPS-only by default: no proving payload and no `/prove` request goes over
+`bb`'s own stderr and keep it in the logs after every run, successful or not, and that output is
+not redacted. `bb` is a third-party binary and can print whatever it wants, including paths and
+witness diagnostics (`packages/presto/core/src/bb.rs` says so at the call site). No witness leak
+through that channel has been observed; what is accurate is that it is *not a guarantee we enforce*.
+
+Browser prover instances are HTTPS-only by default: no proving payload and no `/prove` request goes over
 HTTP. After an HTTPS connection failure the SDK may make one bounded, witness-free HTTP
 `GET /health` request purely to improve recovery guidance; its response cannot make HTTP eligible
 for proving.
@@ -51,7 +52,8 @@ offer HTTP after an informed, current-session confirmation. In either plaintext 
 process can impersonate a stopped Presto on the fixed HTTP port and receive a witness — the
 [accepted boundary](docs/SECURITY_MODEL.md#2-accept-unauthenticated-loopback-discovery-and-explicit-plaintext-proving)
 explains why. **That consent is never persisted**, anywhere: not in storage, the URL, or desktop
-configuration. Reloading restores HTTPS-only.
+configuration. A reload puts the client back to whatever the dApp's own constructor options and
+environment say, which is HTTPS-only unless the dApp passes the opt-out in again.
 
 ## Data stored on your device
 
@@ -69,7 +71,8 @@ Two roots, and they do not move together.
 
 **`~/.bb-crs/`** is a third root, outside both of the above. `bb` itself creates it in your home
 directory to cache the proving reference string, and Presto neither places nor cleans it. It is
-downloaded from Aztec's public CRS host on first use and can reach a few hundred MiB.
+downloaded from Aztec's public CRS host on first use and grows with the circuits proved: a few
+hundred MiB for small Noir circuits, several GiB after Aztec transaction proving.
 
 **`~/.presto/certs/`**, the updater state, and the various lock and update-marker files also live
 under `~/.presto`, but they resolve from your home directory **directly and ignore `PRESTO_HOME`** —
@@ -189,12 +192,13 @@ the certificate removal, it leaves a file with manual instructions.
 leaves everything behind — **including the trusted CA in your certificate store**. Run
 `Presto --prepare-uninstall` first. It removes the autostart entry, the crash-recovery task, and —
 only if this install owns them — the certificate trust and `~/.presto/certs/`. Ownership is decided
-from the autostart entry, so a second copy that registered one is left intact.
+from the autostart entry and the crash-recovery task, so a second copy that registered either is
+left intact.
 
-**One documented gap:** a second install that never enabled start-on-login is invisible to that
-check. Uninstalling the first copy will then remove the shared CA trust the second one was relying
-on, and that copy has to re-enable HTTPS from its own Settings. Nothing is lost beyond the trust
-entry.
+**One documented gap:** a second install that registered neither is invisible to that check.
+Uninstalling the first copy will then remove the shared CA trust and the whole `~/.presto/certs/`
+directory the second one was relying on, and that copy has to re-enable HTTPS from its own
+Settings, which regenerates both. Configuration and approved origins are untouched.
 
 `Presto --remove-ca-trust` removes the trust alone.
 
