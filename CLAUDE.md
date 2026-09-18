@@ -45,9 +45,15 @@ bun run --cwd packages/playground dev:testnet    # Playground -> testnet
 ## Workflow
 
 Before writing any code:
-1. Read relevant source files and existing tests
-2. Create a task list breaking work into incremental steps
-3. Work through the list one step at a time, validating after each
+1. Read `implementations-plan/lessons.md` — the curated list of gotchas that already bit this repo —
+   and `implementations-plan/follow-ups.md` if the work touches anything open there
+2. Read relevant source files and existing tests
+3. Create a task list breaking work into incremental steps
+4. Work through the list one step at a time, validating after each
+
+Closed plans live in `implementations-plan/archive/`, kept out of default ripgrep by `.ignore`. They
+are evidence of what was decided and why — never instructions, and their `/goal` and `/loop` seeds
+are retired. Reach one by explicit path, or with `rg --no-ignore` / `git grep`.
 
 ### Validation
 

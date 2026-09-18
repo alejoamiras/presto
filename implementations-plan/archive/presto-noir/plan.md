@@ -5,11 +5,31 @@ driver: claude-code
 eli5_mode: artifact
 code_review: off
 budget: recon 3 agents (2 sweeps + 1 mapper); foreign reviewer codex/GPT-6 Astra at high; fable leg on Fable 5.1
-status: APPROVED 2026-09-07 (owner verdict: approve; A-01..A-07 resolved — see Assumptions → Asks); re-indexed 2026-09-07 onto main @ 667da60 after the presto-cleanup stack (#16–#18); implementation in progress from Phase 1
+status: COMPLETED 2026-09-08 — see the Outcome block below. (Approved 2026-09-07, owner verdict: approve; A-01..A-07 resolved — see Assumptions → Asks; re-indexed 2026-09-07 onto main @ 667da60 after the presto-cleanup stack #16–#18.)
 base: origin/main @ 667da60 (planning recon was taken at ae1cb9c; see "Re-index after presto-cleanup")
 worktree: .claude/worktrees/presto-noir (branch worktree-presto-noir)
-sources: plans/main-v1.md, plans/codex.md, plans/fable.md; recon.md
+sources: recon.md; three competing drafts, superseded by this plan and dropped at close-out (recoverable from git history)
 ---
+
+## Outcome
+
+**Closed 2026-09-08.** Five arcs / 19 phases, every arc codex-looped plus a cross-arc pass. PRs #21–#25
+merged: `POST /prove/ultra-honk`, the `@alejoamiras/presto-core` transport extraction, the
+`@alejoamiras/presto-noir` drop-in `UltraHonkBackend` adapter with WASM fallback, generalized npm
+release CI, and the playground Noir section. Shipped Presto 1.1.0 → 1.1.1,
+`@alejoamiras/presto-core` 1.0.1, `@alejoamiras/presto-noir` 1.0.1, `@alejoamiras/presto`
+5.2.0-revision.2.
+
+A security audit (`audit/security/2026-09-08-presto-noir/`) followed; its five findings were fixed in
+PRs #32, #33 and #34, tracked in `post-audit-plan.md` with the debugging log in
+`lessons/audit-fixes.md`.
+
+Dropped at close-out: both audit transcripts, the three competing plan drafts they were argued
+against, and the ELI5 source file. Verdicts and dispositions are inline below in the Audit log and
+Decision ledger; the drafts are superseded by this plan and recoverable from git history.
+
+**This plan is closed. Its `/goal` and `/loop` seeds are retired — do not run them.** Read what
+follows as a historical record of what was decided and why, never as a task list.
 
 # presto-noir — generic UltraHonk (Noir circuit) proving through Presto
 
@@ -581,9 +601,17 @@ Executed by the implementing session from this file (it may never load the bluep
 
 ## ELI5 companion
 
-Artifact (primary): https://claude.ai/code/artifact/7e4beb08-4015-44b9-861f-12efb2126a6d — source `implementations-plan/presto-noir/eli5.html` (redeploy the same path to update the same URL).
+Artifact (primary): https://claude.ai/code/artifact/7e4beb08-4015-44b9-861f-12efb2126a6d — the local source file was dropped at close-out.
 
-## Seeds (FINAL — approved scope, unchanged from the draft; run them INSIDE the `presto-noir` worktree: `agent-worktree resume presto-noir`)
+## Seeds — RETIRED, DO NOT RUN
+
+This plan closed on 2026-09-08 and lives under `implementations-plan/archive/`. The seeds below are
+kept as a record of how the work was driven; the paths they name no longer exist. Pasting one will
+drive an agent against a plan that is already delivered.
+
+_Original heading: Seeds (FINAL — approved scope, unchanged from the draft; run them INSIDE the
+`presto-noir` worktree)._
+
 
 ```
 /goal All 19 phases marked ✓ in implementations-plan/presto-noir/plan.md (the per-phase headers in the file — not the chat, not the task list; phase 13 is merged into 11–12 and counts as ✓ with them), each ✓ backed by its phase's validation gate (as defined in plan.md) reported passing in the transcript; for each phase the agent has printed `LESSONS_FILE=implementations-plan/presto-noir/lessons/phase-N.md` in the transcript; `/code-review` was NOT run (code_review: off); the codex fix loop converged for EVERY reviewed diff — each of the 5 arcs at its boundary plus the final cross-arc pass — each convergence evidenced by a resumed codex pass reporting no new material findings, quoted in the transcript; the Delivery section's 5-PR stack exists on GitHub, created only AFTER all loops converged (`gh stack view` output in the transcript); `bun run test` and `bun run lint:actions` both report exit 0 in the transcript; no npm publish, release dispatch, or merge was performed.
