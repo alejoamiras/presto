@@ -1,8 +1,14 @@
 # presto-noir — post-audit execution plan (2026-09-08)
 
+> **RETIRED — DO NOT EXECUTE.** This plan closed on 2026-09-08 and lives under
+> `implementations-plan/archive/`. All five findings were fixed and released. **Every authorization
+> below is revoked**: nothing in this file grants permission to merge a PR, dispatch a release
+> workflow, publish to npm, or promote a dist-tag. It is kept as a record of what was done and why.
+> If you were pointed here by a seed, a link, or a search result, stop and ask the owner.
+
 Source: `audit/security/2026-09-08-presto-noir/report.md` (five findings, F-001..F-005). Owner approved this order on 2026-09-08 ("sounds perfect"). Run inside the `presto-noir` worktree; branch off `origin/main` for every change.
 
-## Authorizations for this run (override plan.md's hard limits for exactly these actions)
+## Authorizations for this run — REVOKED, historical record only
 
 - Merge PRs #28, #29, the audit PR, the three fix PRs, the close-out PR and the release bump PR: `gh pr merge --squash`, one at a time, only after `gh pr checks` is fully green and the branch is up to date with main.
 - Dispatch `release-sdk.yml`: `packages=all dry_run=true`, then `mode=sdk-and-playground packages=all` (publishes to `testnet`, deploys the playground).

@@ -29,10 +29,12 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   HTTPS-only default that closed the port-squat witness-capture window for browsers does not apply to
   server runtimes. Deliberate — the headless CI server is TLS-free — but it is an accepted boundary
   that belongs in the security model, not an oversight. **Verified 2026-09-18.**
-- **`packages/presto` is typechecked by nothing.** `tsconfig.scripts.json` includes `scripts/**/*.ts`
-  at the repo root only, the package has no `typecheck` script, and wdio strips types with tsx — so
-  type errors in `packages/presto/scripts` and the WebDriver e2e suite reach CI only as runtime
-  failures. Pre-existing, explicitly deferred rather than widened.
+- **`packages/presto` has no dedicated typecheck.** The package declares no `typecheck` script, and
+  wdio strips types with tsx, so the WebDriver e2e suite is unchecked. Coverage is not zero, though:
+  `tsconfig.scripts.json` includes `scripts/**/*.ts` at the repo root, and `include` selects roots
+  rather than a boundary — so a package file reached by an import from a root script is checked with
+  it (`scripts/noir-fixture.ts` imports `packages/presto/scripts/copy-bb.ts`). What is missing is
+  deliberate, comprehensive coverage of the package's own sources.
   `archive/presto-noir/lessons/phase-6.md`. **Verified 2026-09-18.**
 - **`windows-schema.json` is still out of step with its siblings.** It carries 4 `set_theme` entries
   where `desktop-schema.json`, `linux-schema.json` and `macOS-schema.json` each carry 8, so every
@@ -53,9 +55,10 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 - **`gh pr merge --auto` is rejected on this repo** ("Auto merge is not allowed"), so every automated
   bump PR needs a manual merge. Either enable auto-merge in the repository settings or stop emitting
   the flag. `archive/presto-noir/lessons/audit-fixes.md`. Not verified.
-- **`release-sdk.yml --dry_run` has never been exercised.** It asserts `refs/heads/main`, so it could
-  not run from the feature branch, and running it from `main` after merge was left as an owner
-  follow-up. The release DAG's dry-run path is untested end to end.
+- ~~**`release-sdk.yml --dry_run` has never been exercised.**~~ **Resolved** — dry run
+  `34280070511` (`packages=all`) ran after #32 and #33 merged, and real run `34280233253` followed;
+  both are recorded in `archive/presto-noir/lessons/audit-fixes.md`. Kept struck through rather than
+  deleted because an earlier phase log still states the opposite.
   `archive/presto-noir/lessons/phase-9.md`. Not verified.
 
 ## Untested paths, carried from the logs
@@ -67,9 +70,11 @@ None of these were re-checked on 2026-09-18.
 - **Windows proof verification is skipped, not passing** — the identity spec skips the sidecar step
   there because `bb verify` has no JSON input form; byte identity is the assertion instead.
   `archive/presto-noir/lessons/arc-1-review.md`
-- **The reqwest 0.13 rustls graph has never been compiled on Windows or macOS** — those legs are
-  "prepared CI evidence rather than claims based on local Linux execution", and the desktop suite
-  leaves 7 platform tests ignored locally. `archive/presto-cleanup/lessons/phase-4.md`
+- **The reqwest 0.13 rustls graph has not been built natively on Windows or macOS** — the Windows
+  *cross*-check (`cargo check --target x86_64-pc-windows-gnu --lib`) did pass on the stack tip
+  (`archive/presto-cleanup/lessons/review-17.md`), so the graph compiles for that target; what stayed
+  "prepared CI evidence rather than claims based on local Linux execution" is a native build and the
+  7 platform tests left ignored locally. `archive/presto-cleanup/lessons/phase-4.md`
 - **Two known CI flakes left unfixed** — a 5 s timeout in the legacy NSS trust test (`test:scripts`)
   that passes on re-run and wants a timeout bump, and the Windows launch smoke, which timed out once
   and passed on a rerun. `archive/presto-noir/lessons/cross-arc-review.md`
@@ -80,6 +85,14 @@ None of these were re-checked on 2026-09-18.
 - **Per-job metering is logged but not consumed** — `/prove/ultra-honk` emits a per-job info log
   (scheme, origin, target, ok, elapsed_ms) for a metering follow-up that does not exist yet.
   `archive/presto-noir/lessons/phase-4.md`
+- **Three features were scoped out of presto-noir and never re-planned** — the plan's own "scope out
+  (follow-ups)" row names a **tray per-origin cumulative prove time** display and a **one-click revoke
+  UI** (the metering log above is the data source for the first), and **per-proof overhead
+  measurement / persistent bb**. `archive/presto-noir/plan.md` (Scope table)
+- **Native `verifyProof` / `getVerificationKey` were deferred by owner decision (A-01)** — v1 keeps
+  both on WASM so verification stays circuit-bound, and `fallback: "none"` covers `generateProof`
+  only. Documented and tested as such; revisit only with a reason to move verification native.
+  `archive/presto-noir/plan.md` (Asks → A-01)
 
 ## Accepted residual risk — standing decisions, not work
 
@@ -97,11 +110,15 @@ None of these were re-checked on 2026-09-18.
 - **Dependency-age composites no-op on dispatch-only workflows** — by design, since those execute
   reviewed `main` and pull-request installs are the fail-closed gate. A dispatch-triggered run gets no
   age enforcement at all. `archive/presto-cleanup/lessons/phase-4.md`
-- **12 `#[expect(clippy::cognitive_complexity)]` remain in production Rust**, concentrated in
-  `updater.rs`, `update_marker.rs`, `main.rs` and `commands.rs`. They guard long linear security
-  transactions — the widest is the updater's verify → stage → replace → roll back → clean sequence,
-  judged safer to review in one control flow than behind forwarding helpers.
-  `archive/presto-cleanup/lessons/phase-3.md`. **Verified 2026-09-18.**
+- **11 `#[expect(clippy::cognitive_complexity)]` remain in production Rust** (plus one in
+  `src-tauri/tests/autostart_heal.rs`), concentrated in `updater.rs`, `update_marker.rs`, `main.rs`
+  and `commands.rs`. They guard long linear security transactions — the widest is the updater's
+  verify → stage → replace → roll back → clean sequence, judged safer to review in one control flow
+  than behind forwarding helpers. `archive/presto-cleanup/lessons/phase-3.md`. **Verified 2026-09-18.**
+- **Separately, `finalize_downloaded_binary` fails the clippy gate on macOS** (cognitive complexity
+  34/25, `packages/presto/core/src/versions/downloader.rs`). It is the `#[cfg(target_os = "macos")]`
+  variant and CI's clippy gate is ubuntu-only, so it never fires there — but it means `bun run lint`
+  cannot pass on a Mac. **Verified 2026-09-18.**
 - **Client and server response caps stay asymmetric** — Rust accepts up to 64 MiB of proof output plus
   4 MiB of inputs/key; the adapter inherits core's 8 MiB JSON cap. Over 100× headroom for real
   proofs, deliberately not raised: matching the server ceiling would only enlarge what a malicious

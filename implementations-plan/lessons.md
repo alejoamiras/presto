@@ -97,9 +97,11 @@ _Seeded 2026-09-18 from the three plans in `archive/`._
   identified `E404` proves absence, and a post-promote `npm view` can return the old tag. Verify a
   promotion through an uncached read. `archive/presto-noir/lessons/arc-2-review.md`,
   `archive/presto-banners-publish/lessons/codex-loop.md`
-- **Every npm write demands an OTP and only `--otp=<code>` parses** — the space form binds as a
-  positional, and the web flow cannot complete non-interactively.
-  `archive/presto-banners-publish/lessons/codex-loop.md`
+- **An OTP-requiring npm command can mis-bind `--otp <code>` written as two shell words** — npm 11.16
+  read the space form as a positional. Not universal: an OIDC trusted-publisher `npm publish` needs no
+  OTP at all, and passing `["--otp", code]` as separate argv entries (no shell) works. When a scripted
+  npm write fails on auth, suspect the quoting before the credential, and note the web OTP flow cannot
+  complete from a non-interactive shell. `archive/presto-banners-publish/lessons/codex-loop.md`
 
 ## Windows
 
