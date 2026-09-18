@@ -281,8 +281,9 @@ impl VersionRejection {
 /// tarball attached to the Aztec release of that exact version. We therefore CANNOT impose a
 /// "newer-is-safer" floor here — many Aztec versions share one `bb`, so a floor would break a legitimate
 /// older-but-compatible dApp (this was the over-blocking bug this function replaces). Every download is
-/// already digest-verified against Aztec's published hash, so a requested version is always an authentic
-/// Aztec `bb`. The only residual risk — an approved dApp pinning an Aztec version whose bundled `bb` is
+/// digest-verified against the hash Aztec published for it, which rules out substitution *after* that
+/// digest was read — not a compromised publisher that replaced asset and digest together. The only
+/// residual risk under that assumption — an approved dApp pinning an Aztec version whose bundled `bb` is
 /// *later* found vulnerable — is handled REACTIVELY via the [`KNOWN_VULNERABLE_VERSIONS`] revocation list
 /// (empty by default). Everything not on that list is allowed.
 ///

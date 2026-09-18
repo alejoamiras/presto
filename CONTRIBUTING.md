@@ -86,7 +86,10 @@ Two traps worth knowing before they cost you an afternoon:
 - Use [Conventional Commits](https://www.conventionalcommits.org/) for commit subjects; commitlint
   enforces it, and Husky + lint-staged run on pre-commit.
 - Keep lockfile changes intentional and explain any new production dependency. New dependencies are
-  subject to the seven-day publication-age gate in `bunfig.toml`.
+  subject to the seven-day publication-age gate in `bunfig.toml`. `@aztec/*` is the one exemption —
+  those releases are consumed same-day by design, and the exempt packages are listed there by exact
+  name, because a glob is silently ignored. Adding a name to that list is an explicit trust decision,
+  not a workaround for a red gate.
 - Update user-facing documentation and migration notes in the same pull request.
 - Do not weaken a required CI gate or fail-closed release behavior to make a change pass.
 

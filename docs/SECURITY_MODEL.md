@@ -20,8 +20,9 @@ dApp → adapter SDK → presto-core → loopback HTTP/HTTPS → local bb proces
 - **The SDKs are application code**, running in the dApp's browser page, Web Worker, or Node/Bun
   process. `@alejoamiras/presto` (Aztec, `chonk` scheme) and `@alejoamiras/presto-noir` (any Noir
   circuit, `ultra_honk` scheme) are thin adapters over the shared transport in
-  `@alejoamiras/presto-core`. `@alejoamiras/presto-banners` is presentational and talks to no
-  endpoint.
+  `@alejoamiras/presto-core`. `@alejoamiras/presto-banners` is presentational and reaches no Presto
+  endpoint, but it does inject a Google Fonts stylesheet into the host page unless `fonts="none"`
+  (`packages/banners/src/fonts.ts`).
 - **The desktop app owns** the loopback listeners, the approval UI, the local `bb` cache, the
   certificate material, and the updater.
 - **The headless server** reuses the same proving core but is a CI-only operator tool with no
@@ -48,13 +49,16 @@ The project is designed to:
 - require a remembered user approval before a browser origin may prove — deny-by-default, and on the
   desktop that includes localhost origins, which are prompted once rather than silently trusted
   (`packages/presto/core/src/authorization.rs`);
-- re-check approval *after* the admission queue, so an origin revoked in Settings while its job was
-  waiting is denied rather than served;
+- re-check approval *after* the admission queue **on `/prove/ultra-honk`**, so an origin revoked in
+  Settings while its job was waiting is denied rather than served. The older `/prove` route has no
+  equivalent re-check and proves on the approval it was admitted with
+  (`packages/presto/core/src/server/prove.rs`);
 - keep witness workspaces and sensitive state owner-only, clean them after proving, and reap
   abandoned ones conservatively on a later successful start;
 - contain the `bb` child: timeout, kill-tree, inputs passed only as files and never as arguments,
   `verifier_target` parsed into a closed enum at ingress, and decoded-input size caps enforced
-  before proving starts;
+  before proving starts. This is resource containment of a **trusted** binary, not a sandbox — see
+  decision 1;
 - hold admission seats until a killed `bb` is confirmed reaped, so a cancelled request cannot let a
   new one start beside a process that is still dying;
 - default browser proving to HTTPS, pin HTTPS after it succeeds, and never send an HTTP `/prove` or
@@ -64,10 +68,16 @@ The project is designed to:
   downloads so a request cannot drive unbounded fetch churn;
 - accept only correctly signed updater payloads, reject rollback and artifact confusion, and enforce
   an artifact size ceiling taken from the **signed envelope** rather than the feed's advertised
-  value, before the plugin buffers anything.
+  value, before the download is accepted.
 
 These controls reduce risk within the boundaries below. They do not turn those boundaries into
 cryptographic guarantees.
+
+Two buffering residuals are accepted rather than fixed, and both are availability-only — neither can
+make an unsigned payload install. The feed JSON is buffered before its signature is verified, and the
+signed-size precheck bounds what the feed *advertises*, not what the server actually sends, so an
+oversized real response is still read (`packages/presto/src-tauri/src/updater.rs`, documented at the
+call sites).
 
 ## Accepted decisions
 
@@ -83,6 +93,24 @@ The same reasoning governs the Windows `bb.exe` sidecar, which is pinned by SHA-
 `scripts/copy-bb.ts`. Pins are never auto-generated — downloading and recording whatever arrived is
 circular — so each carries `provenance: "manual-review"` and the resolver fails closed on anything
 else. `provenance: "attestation"` is reserved for when upstream signs.
+
+Three further consequences follow from trusting the publisher, and none of them is a bug to report:
+
+- **There is no minimum-safe-version floor.** The `x-aztec-version` header names an *Aztec* release,
+  and many Aztec versions share one `bb`, so a "newer is safer" floor would break legitimate older
+  dApps. Any well-formed version upstream published is accepted
+  (`packages/presto/core/src/versions/version_policy.rs`).
+- **Revocation is reactive and ships in an app release.** `KNOWN_VULNERABLE_VERSIONS` is a
+  compile-time list and is currently **empty**. Withdrawing a version that is later found vulnerable
+  requires publishing a new Presto, not a server-side flip.
+- **`BB_BINARY_PATH` is a trusted, unversioned operator override** — the one documented exception to
+  "no unverified execution" (`packages/presto/core/src/bb.rs`). Whoever sets the process environment
+  already owns the process.
+
+For the same reason, the child-process controls above are **containment of a trusted binary, not a
+sandbox**. A malicious `bb` running as the user can already reach the user's files; escapes available
+only to a malicious child are explicitly out of scope, as the audit records
+([`audit/security/2026-09-08-presto-noir/report.md`](../audit/security/2026-09-08-presto-noir/report.md)).
 
 The project deliberately depends on AztecProtocol to introduce a publisher signature or attestation.
 It will not maintain a parallel private signing scheme, a binary mirror, or claim that manual digest
@@ -108,18 +136,25 @@ fixed port and answer it, its output is best-effort repair guidance only.
 
 **Node, Bun and SSR clients keep an HTTP-compatible default**, because the single-tenant headless CI
 server is TLS-free. This is decided by runtime detection in `packages/sdk-core/src/lib/config.ts`,
-not by the caller. A browser dApp may additionally expose an explicit, current-session escape hatch,
-setting **both** flags on the one prover instance:
+not by the caller. A browser dApp may additionally expose an explicit, current-session escape hatch
+on the one prover instance:
 
 ```ts
 prover.setPrestoConfig({ httpsOnly: false, allowInsecureDowngrade: true });
 await prover.checkPrestoStatus({ forceRefresh: true });
 ```
 
-Both must be real booleans — `"false"` is a truthy string, so coercing would switch the opt-out *on*
-through a value that reads as off. A rejected setting throws and changes nothing. The equivalent on
-the shared client is `PrestoClient.configure()`; `@alejoamiras/presto-noir` exposes neither, so a
-Noir circuit falls back to WASM rather than following a page's plaintext consent.
+`allowInsecureDowngrade` is what re-opens HTTP after HTTPS has already worked — it clears the pin.
+**Before HTTPS has ever succeeded in that client, `httpsOnly: false` is sufficient on its own**
+(`packages/sdk-core/src/lib/presto-transport.ts`), so treat the pair as the correct thing to write,
+not as two independent locks. Both must be real booleans — `"false"` is a truthy string, so coercing
+would switch the opt-out *on* through a value that reads as off. A rejected setting throws and
+changes nothing.
+
+The equivalent on the shared client is `PrestoClient.configure()`.
+`@alejoamiras/presto-noir` has no setter, but it accepts the same settings through its constructor's
+`options.presto`, so a Noir circuit falls back to WASM only when the integrator leaves that default
+alone.
 
 In either plaintext mode, if proving is attempted while the real Presto is stopped, a hostile local
 process — including one running as another user on a multi-user machine — can imitate `/health` on
@@ -127,8 +162,10 @@ the fixed HTTP port and receive the witness sent to `/prove`. Origin approval pr
 service from browser sites; it cannot make an impostor enforce the same policy. A same-user
 compromise can already reach the user's processes and files and is outside this threat model.
 
-The SDK does not persist that choice. A reload or a new client restores HTTPS-only, and integrating
-dApps must not copy it into local storage, cookies, URL parameters, or desktop configuration.
+The SDK does not persist that choice. A reload or a new client is back to whatever the constructor
+and the environment say — HTTPS-only unless the dApp itself passes the opt-out in again — and
+integrating dApps must not copy it into local storage, cookies, URL parameters, or desktop
+configuration.
 
 ### 3. Ship an unsigned Windows first installer
 
@@ -149,10 +186,22 @@ alongside `--port`, so two instances never share one config or version cache.
 
 ### 5. Per-origin admission is fairness, not protection from an approved attacker
 
-A single origin may hold at most 4 UltraHonk jobs in flight, on top of the global inflight cap.
-That bound exists so one busy dApp cannot starve another, **not** to defend against an origin the
-user has already approved. Callers that send no `Origin` header, and any caller under `--allow-all`,
-are exempt from the per-origin cap and bounded only by the global one — documented as a dev/CI mode.
+A single origin may hold at most 4 `/prove/ultra-honk` jobs in flight, on top of the global inflight
+cap. That bound exists so one busy dApp cannot monopolise the UltraHonk route, **not** to defend
+against an origin the user has already approved.
+
+It is narrower than it sounds, in three ways:
+
+- **It is UltraHonk-only.** The Aztec `/prove` route admits with no per-origin cap at all
+  (`packages/presto/core/src/server/prove.rs`), so an approved origin can occupy the global inflight
+  capacity through that route alone.
+- **Callers that send no `Origin` header are exempt**, and that is not only a dev/CI shape: the
+  desktop app applies the same exemption (`packages/presto/core/src/server/auth.rs`). A non-browser
+  local process is bounded only by the global cap.
+- **`--allow-all` on the headless server** removes the origin dimension entirely.
+
+So the honest claim is fairness between *browser* origins on *one* route. Availability against a
+local process running as the user is not something this design provides.
 
 ## Not accepted
 

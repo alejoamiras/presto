@@ -36,7 +36,11 @@ directory can be resolved, Presto falls back to the OS temp directory; residue l
 deliberately **never** swept, because prefix-matching in a shared `/tmp` could delete someone else's
 directory.
 
-Witness content is never written to the logs and never returned in an HTTP error body. Browser
+Presto never logs the witness itself, and never returns it in an HTTP error body. It does capture
+`bb`'s own stderr and keep it in the logs on failure, and that output is not redacted — `bb` is a
+third-party binary and can print whatever it wants, including paths and witness diagnostics
+(`packages/presto/core/src/bb.rs` says so at the call site). No witness leak through that channel has
+been observed; what is accurate is that it is *not a guarantee we enforce*. Browser
 prover instances are HTTPS-only by default: no proving payload and no `/prove` request goes over
 HTTP. After an HTTPS connection failure the SDK may make one bounded, witness-free HTTP
 `GET /health` request purely to improve recovery guidance; its response cannot make HTTP eligible
@@ -59,15 +63,25 @@ Two roots, and they do not move together.
   directory;
 - `versions/<version>/` — a verified `bb` binary, its integrity marker recording the archive and
   binary SHA-256, and a `.last-used` touch file. Retention is per release tier, under a 2 GiB cap.
+  The cap is enforced by a cleanup pass that will not evict a recently active version, so a burst of
+  downloads can transiently sit above it until the next pass; deleting a binary another request is
+  about to execute would be the worse failure.
+
+**`~/.bb-crs/`** is a third root, outside both of the above. `bb` itself creates it in your home
+directory to cache the proving reference string, and Presto neither places nor cleans it. It is
+downloaded from Aztec's public CRS host on first use and can reach a few hundred MiB.
 
 **`~/.presto/certs/`**, the updater state, and the various lock and update-marker files also live
 under `~/.presto`, but they resolve from your home directory **directly and ignore `PRESTO_HOME`** —
 they are desktop-only concerns, and the headless server has neither TLS nor an updater.
 
 **The local Certificate Authority is keyless.** Its signing key is generated in memory, signs one
-`localhost` leaf, and is discarded — it is never written to disk, so the trusted anchor can mint
-nothing else. It is also name-constrained to `127.0.0.1`, `::1` and `localhost`. If an older install
-left a `ca.key` on disk, it is deleted on start, and HTTPS refuses to run if that deletion fails.
+`localhost` leaf, and is discarded: the application never deliberately persists it. It is also
+name-constrained to `127.0.0.1`, `::1` and `localhost`. If an older install left a `ca.key` on disk,
+it is deleted on start, and HTTPS refuses to run if that deletion fails. Zeroization is best effort
+and stops at the language boundary — copies held inside the crypto backend, in temporaries, or paged
+out to swap or a core dump are explicitly out of scope
+(`packages/presto/src-tauri/src/certs.rs`).
 
 **The application data directory** holds the logs and the proving workspaces. It is
 `$PRESTO_HOME/data/` when set, otherwise:
@@ -127,12 +141,22 @@ This is published package behaviour, so it is your users' privacy, not just ours
 **On use:**
 
 - **GitHub** — release assets and their published digests, when Presto downloads a `bb` version it
-  does not have cached (rate-limited to 3 new versions per origin and 6 overall per 10 minutes). The
-  updater request carries no version or platform in its URL, and polls 5 seconds after launch and
-  then every 12 hours; `PRESTO_NO_UPDATE=1` disables it.
+  does not have cached (rate-limited to 3 new versions per origin and 6 overall per 10 minutes). If
+  the process environment carries a `GITHUB_TOKEN`, the digest lookup is sent with it as a `Bearer`
+  credential, because anonymous callers share a 60-request-per-hour budget per source address that CI
+  runners exhaust between them. On a developer machine that environment variable is usually absent
+  and the call goes out anonymously. The updater request carries no version or platform in its URL,
+  and polls 5 seconds after launch and then every 12 hours; `PRESTO_NO_UPDATE=1` disables it.
+- **A proving reference string (CRS)** — `bb` and `@aztec/bb.js` both download one on first use, from
+  Aztec's public CRS host, and cache it (`~/.bb-crs/` natively, IndexedDB in the browser). This is
+  `bb`'s own network behaviour, not something Presto initiates or proxies; it happens whether you
+  prove natively or in WASM.
 - **An Aztec node** — the playground ships a public testnet RPC endpoint as its default; an
   integrating dApp uses whatever node it configures.
 - **A block explorer** — only when you click a transaction link in the playground.
+- **Microsoft** — on Windows only, and only at install time: the installer is configured with
+  `downloadBootstrapper`, so it fetches the WebView2 runtime from Microsoft if the machine does not
+  already have it.
 
 The npm registry is a development-time destination only; installing the SDK is not something the
 running software does.
@@ -164,12 +188,18 @@ the certificate removal, it leaves a file with manual instructions.
 **macOS and Linux have no uninstall hook.** Dragging the app to the trash, or `apt-get remove`,
 leaves everything behind — **including the trusted CA in your certificate store**. Run
 `Presto --prepare-uninstall` first. It removes the autostart entry, the crash-recovery task, and —
-only if this install owns them — the certificate trust and `~/.presto/certs/`. It is
-ownership-checked, so a second copy sharing your account's state is left intact.
+only if this install owns them — the certificate trust and `~/.presto/certs/`. Ownership is decided
+from the autostart entry, so a second copy that registered one is left intact.
+
+**One documented gap:** a second install that never enabled start-on-login is invisible to that
+check. Uninstalling the first copy will then remove the shared CA trust the second one was relying
+on, and that copy has to re-enable HTTPS from its own Settings. Nothing is lost beyond the trust
+entry.
+
 `Presto --remove-ca-trust` removes the trust alone.
 
 **No uninstall path removes** `~/.presto/config.json` and your approved origins, the `bb` version
-cache, the updater state, the logs, or the proving-workspace directory. That is deliberate — a
+cache, `~/.bb-crs/`, the updater state, the logs, or the proving-workspace directory. That is deliberate — a
 reinstall keeps your choices — so delete those by hand if you want the state gone. Inside the app you
 can remove an approved site or remove certificate trust from Settings; there is no single "clear all
 data" control.
@@ -181,8 +211,9 @@ and retained only as long as that or a legal obligation requires.
 
 **Review logs before sharing them.** They contain the origin of every dApp that has used Presto —
 effectively a list of the Presto-enabled sites you visit — as well as local filesystem paths that
-reveal your username and folder layout, `bb`'s own diagnostic output, Aztec version strings and
-download URLs, and, on Linux, the paths of your Firefox profiles. A private witness is never logged.
-Never send a real witness, wallet material, or credentials.
+reveal your username and folder layout, `bb`'s own unredacted diagnostic output, Aztec version
+strings and download URLs, and, on Linux, the paths of your Firefox profiles. Presto never writes a
+witness to the log itself, but it does not filter what `bb` prints. Never send a real witness, wallet
+material, or credentials.
 
 Questions about this notice: [alejo@aztec.foundation](mailto:alejo@aztec.foundation).

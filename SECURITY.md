@@ -7,6 +7,7 @@ Security fixes are provided on a fix-forward basis for:
 | Component | Supported line |
 |---|---|
 | Presto desktop app | Current stable GitHub release |
+| Headless CI server | Built from the current stable release tag |
 | `@alejoamiras/presto` | Version on npm's `latest` dist-tag |
 | `@alejoamiras/presto-core` | Version on npm's `latest` dist-tag |
 | `@alejoamiras/presto-noir` | Version on npm's `latest` dist-tag |
