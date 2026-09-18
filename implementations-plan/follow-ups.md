@@ -80,11 +80,12 @@ None of these were re-checked on 2026-09-18.
 - **Windows proof verification is skipped, not passing** — the identity spec skips the sidecar step
   there because `bb verify` has no JSON input form; byte identity is the assertion instead.
   `archive/presto-noir/lessons/arc-1-review.md`
-- **The reqwest 0.13 rustls graph has not been built natively on Windows or macOS** — the Windows
-  *cross*-check (`cargo check --target x86_64-pc-windows-gnu --lib`) did pass on the stack tip
-  (`archive/presto-cleanup/lessons/review-17.md`), so the graph compiles for that target; what stayed
-  "prepared CI evidence rather than claims based on local Linux execution" is a native build and the
-  7 platform tests left ignored locally. `archive/presto-cleanup/lessons/phase-4.md`
+- **The presto-cleanup session never validated the reqwest 0.13 rustls graph natively** — it ran on
+  Linux, passed the Windows *cross*-check (`archive/presto-cleanup/lessons/review-17.md`), and left 7
+  platform tests ignored locally (`archive/presto-cleanup/lessons/phase-4.md`). Release 1.1.1 later
+  built and smoke-tested all three platforms natively
+  (`archive/presto-noir/lessons/audit-fixes.md`), so what remains open is only whether those 7
+  ignored tests run in a CI lane.
 - **Two known CI flakes left unfixed** — a 5 s timeout in the legacy NSS trust test (`test:scripts`)
   that passes on re-run and wants a timeout bump, and the Windows launch smoke, which timed out once
   and passed on a rerun. `archive/presto-noir/lessons/cross-arc-review.md`
@@ -117,9 +118,6 @@ None of these were re-checked on 2026-09-18.
   remains is bunfig's npm-resolution-time floor plus a 7-day cooldown on the github-actions Dependabot
   entry; Cargo and Action age enforcement is manual sweeps only. Phase-2 and phase-4 evidence in the
   archive describes code that no longer exists. `archive/presto-cleanup/lessons/review-17.md`
-- **Dependency-age composites no-op on dispatch-only workflows** — by design, since those execute
-  reviewed `main` and pull-request installs are the fail-closed gate. A dispatch-triggered run gets no
-  age enforcement at all. `archive/presto-cleanup/lessons/phase-4.md`
 - **11 `#[expect(clippy::cognitive_complexity)]` remain in production Rust** (plus one in
   `src-tauri/tests/autostart_heal.rs`), concentrated in `updater.rs`, `update_marker.rs`, `main.rs`
   and `commands.rs`. They guard long linear security transactions — the widest is the updater's
@@ -127,8 +125,8 @@ None of these were re-checked on 2026-09-18.
   than behind forwarding helpers. `archive/presto-cleanup/lessons/phase-3.md`. **Verified 2026-09-18.**
 - **Separately, `finalize_downloaded_binary` fails the clippy gate on macOS** (cognitive complexity
   34/25, `packages/presto/core/src/versions/downloader.rs`). It is the `#[cfg(target_os = "macos")]`
-  variant and CI's clippy gate is ubuntu-only, so it never fires there — but it means `bun run lint`
-  cannot pass on a Mac. **Verified 2026-09-18.**
+  variant and CI's clippy gate is ubuntu-only, so it never fires there — but it means
+  `bun run lint:clippy` cannot pass on a Mac (`bun run lint` does not invoke Clippy). **Verified 2026-09-18.**
 - **Client and server response caps stay asymmetric** — Rust accepts up to 64 MiB of proof output plus
   4 MiB of inputs/key; the adapter inherits core's 8 MiB JSON cap. Over 100× headroom for real
   proofs, deliberately not raised: matching the server ceiling would only enlarge what a malicious
