@@ -8,7 +8,8 @@ Native prover for Aztec transactions and any Noir circuit. Bypasses browser WASM
 [![Presto](https://github.com/alejoamiras/presto/actions/workflows/presto.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/presto.yml)
 [![App](https://github.com/alejoamiras/presto/actions/workflows/app.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/app.yml)
 [![npm version](https://img.shields.io/npm/v/@alejoamiras/presto)](https://www.npmjs.com/package/@alejoamiras/presto)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](LICENSE)
+[![SDKs: MIT](https://img.shields.io/badge/SDKs-MIT-green.svg)](packages/sdk-core/LICENSE)
+[![App: AGPL-3.0](https://img.shields.io/badge/App-AGPL--3.0-blue.svg)](LICENSE)
 
 ## Packages
 
@@ -152,4 +153,17 @@ bun run lint:actions     # Lint GitHub Actions workflows
 
 ## License
 
-[AGPL-3.0](LICENSE)
+Split, deliberately.
+
+**The four npm packages are [MIT](packages/sdk-core/LICENSE)** — `@alejoamiras/presto`,
+`@alejoamiras/presto-core`, `@alejoamiras/presto-noir`, `@alejoamiras/presto-banners`. Each carries
+its own `LICENSE`. They are client libraries: integrating them means bundling and shipping them
+inside your dApp, and a copyleft licence there would propagate to your application. MIT imposes
+nothing on you beyond keeping the copyright notice. Use them in closed-source products.
+
+**Everything else is [AGPL-3.0-only](LICENSE)** — the desktop app, the headless server, the
+playground, the landing site, and the build and release tooling. That is the part users run rather
+than ship, so copyleft costs integrators nothing and keeps modifications to the prover itself in the
+open.
+
+A contribution is accepted under the licence of the directory it lands in.

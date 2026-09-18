@@ -6,7 +6,7 @@
     "url": "https://github.com/alejoamiras/presto",
     "directory": "packages/sdk"
   },
-  "license": "AGPL-3.0-only",
+  "license": "MIT",
   "type": "module",
   "exports": "./src/index.ts",
   "files": [

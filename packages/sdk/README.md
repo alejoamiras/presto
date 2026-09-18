@@ -5,7 +5,7 @@ TypeScript SDK that routes Aztec private kernel proving to a local native presto
 [![SDK](https://github.com/alejoamiras/presto/actions/workflows/sdk.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/sdk.yml)
 [![npm version](https://img.shields.io/npm/v/@alejoamiras/presto)](https://www.npmjs.com/package/@alejoamiras/presto)
 [![npm downloads](https://img.shields.io/npm/dm/@alejoamiras/presto)](https://www.npmjs.com/package/@alejoamiras/presto)
-[![License: AGPL-3.0](https://img.shields.io/badge/License-AGPL--3.0-blue.svg)](../../LICENSE)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ## Installation
 
@@ -433,4 +433,4 @@ bun run --cwd packages/sdk test:e2e    # Run e2e tests (requires local Aztec san
 
 ## License
 
-[AGPL-3.0](../../LICENSE)
+[MIT](LICENSE) — this package only. The Presto desktop app and the rest of the repository are [AGPL-3.0](../../LICENSE).

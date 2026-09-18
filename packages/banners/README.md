@@ -105,3 +105,7 @@ bun run build                  # tsc → dist (publish artifact)
 (`npm install @alejoamiras/presto-banners`) maps `.` and `./register` to `dist/` with `types` +
 `default` conditions and carries no dependencies. Releases go through `release-sdk.yml`
 (`packages=presto-banners`) with npm provenance; see `docs/RELEASE_RUNBOOK.md`.
+
+## License
+
+[MIT](LICENSE) — this package only. The Presto desktop app and the rest of the repository are [AGPL-3.0](../../LICENSE).
