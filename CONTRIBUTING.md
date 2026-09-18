@@ -93,6 +93,18 @@ Two traps worth knowing before they cost you an afternoon:
 - Update user-facing documentation and migration notes in the same pull request.
 - Do not weaken a required CI gate or fail-closed release behavior to make a change pass.
 
-By contributing, you agree that your contribution is licensed under the repository's
-[AGPL-3.0-only license](LICENSE). Report vulnerabilities privately under
-[SECURITY.md](SECURITY.md), and follow [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
+## Licensing
+
+The repository is split, and a contribution is licensed under the licence of the directory it lands
+in:
+
+| Directory | Licence | Why |
+|---|---|---|
+| `packages/sdk`, `packages/sdk-core`, `packages/sdk-noir`, `packages/banners` | [MIT](packages/sdk-core/LICENSE) | These ship *inside* integrators' applications. Copyleft here would propagate into their dApps. |
+| Everything else | [AGPL-3.0-only](LICENSE) | The desktop app, headless server, playground, landing site and release tooling are run, not bundled. |
+
+By contributing you agree to those terms. Do not move code from an AGPL directory into an MIT
+package — that relicenses it, and it needs a deliberate decision rather than a refactor.
+
+Report vulnerabilities privately under [SECURITY.md](SECURITY.md), and follow
+[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
