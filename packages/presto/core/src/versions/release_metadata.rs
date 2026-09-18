@@ -16,10 +16,12 @@ fn client_builder() -> reqwest::ClientBuilder {
 
 /// HTTP client with reasonable timeouts for downloading bb binaries. Follows redirects: a release
 /// asset URL is answered with one, to the CDN that actually holds the bytes.
-pub(crate) fn http_client() -> reqwest::Client {
-    client_builder()
-        .build()
-        .unwrap_or_else(|_| reqwest::Client::new())
+///
+/// Errors rather than falling back to a default client: the fallback silently drops the deadlines in
+/// [`client_builder`], and this download runs inside a `/prove` request, so an untimed one hangs the
+/// caller's proof rather than failing it.
+pub(crate) fn http_client() -> reqwest::Result<reqwest::Client> {
+    client_builder().build()
 }
 
 /// Client for the API lookup, which carries a bearer token: redirects are REFUSED, not followed.

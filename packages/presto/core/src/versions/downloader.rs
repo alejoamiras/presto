@@ -126,7 +126,7 @@ async fn download_tarball(version: &AztecVersion) -> Result<Vec<u8>, Box<dyn Err
     let url = download_url(version);
     tracing::info!(version = %version, %url, "Downloading bb");
 
-    let response = http_client().get(&url).send().await?;
+    let response = http_client()?.get(&url).send().await?;
     if !response.status().is_success() {
         return Err(format!(
             "Failed to download bb v{version}: HTTP {}",
