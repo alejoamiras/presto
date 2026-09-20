@@ -18,18 +18,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 
 ## Open in code
 
-- **`packages/presto` has no dedicated typecheck.** The package declares no `typecheck` script, and
-  wdio strips types with tsx, so the WebDriver e2e suite is unchecked. Coverage is not zero, though:
-  `tsconfig.scripts.json` includes `scripts/**/*.ts` at the repo root, and `include` selects roots
-  rather than a boundary — so a package file reached by an import from a root script is checked with
-  it (`scripts/noir-fixture.ts` imports `packages/presto/scripts/copy-bb.ts`). What is missing is
-  deliberate, comprehensive coverage of the package's own sources.
-  `archive/presto-noir/lessons/phase-6.md`. **Verified 2026-09-18.**
-- **`windows-schema.json` is still out of step with its siblings.** It carries 4 `set_theme` entries
-  where `desktop-schema.json`, `linux-schema.json` and `macOS-schema.json` each carry 8, so every
-  `cargo check --target x86_64-pc-windows-gnu` regenerates it and dirties the worktree. Called out as
-  "worth a one-line hygiene commit on main" and never made.
-  `archive/presto-noir/lessons/phase-5.md`. **Verified 2026-09-18.**
 - **The playground ships Apache-2.0 code with no third-party licence file.** Its bundle contains
   `@aztec/*` packages, three of which (`bb-prover`, `foundation`, `stdlib` at 5.2.0) publish no
   licence metadata at all and rely on the Apache-2.0 `LICENSE` in upstream `aztec-packages`.
@@ -40,10 +28,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   reporting upstream: the three packages' missing `license` field is a packaging bug, and Alejo is
   inside Aztec. **Verified 2026-09-18** (manifests and build config; the deployed bundle was not
   inspected).
-- **The playground is held on Vite 7 while the landing site runs Vite 8.** `packages/playground`
-  pins `^7.3.6`, `packages/landing` `^8.2.2`. Vite 8's Rolldown production build miscompiles the
-  playground's Aztec sqlite-opfs ordered-key path; the upstream bug is unfixed and was never filed.
-  `archive/presto-cleanup/lessons/phase-2.md`. **Verified 2026-09-18.**
 
 ## Owner actions
 
@@ -112,10 +96,6 @@ None of these were re-checked on 2026-09-18.
   and `commands.rs`. They guard long linear security transactions — the widest is the updater's
   verify → stage → replace → roll back → clean sequence, judged safer to review in one control flow
   than behind forwarding helpers. `archive/presto-cleanup/lessons/phase-3.md`. **Verified 2026-09-18.**
-- **Separately, `finalize_downloaded_binary` fails the clippy gate on macOS** (cognitive complexity
-  34/25, `packages/presto/core/src/versions/downloader.rs`). It is the `#[cfg(target_os = "macos")]`
-  variant and CI's clippy gate is ubuntu-only, so it never fires there — but it means
-  `bun run lint:clippy` cannot pass on a Mac (`bun run lint` does not invoke Clippy). **Verified 2026-09-18.**
 - **Client and server response caps stay asymmetric** — Rust accepts up to 64 MiB of proof output plus
   4 MiB of inputs/key; the adapter inherits core's 8 MiB JSON cap. Over 100× headroom for real
   proofs, deliberately not raised: matching the server ceiling would only enlarge what a malicious
