@@ -25,7 +25,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
-import { getTargetTriple } from "./target-triple.ts";
+import { getTargetTriple } from "./copy-bb-target-triple.ts";
 
 // Lives in its own module so the Node-run WebDriver suite can import it without loading this Bun script.
 export { getTargetTriple };

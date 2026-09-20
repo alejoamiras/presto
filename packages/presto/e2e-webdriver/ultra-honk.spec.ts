@@ -6,14 +6,14 @@
  */
 import * as path from "node:path";
 
-import { getTargetTriple } from "../scripts/target-triple.ts";
+import { getTargetTriple } from "../scripts/copy-bb-target-triple.ts";
 import {
   buildJob,
   checkOutputs,
   loadFixture,
   type ProveResponse,
   verifyNatively,
-} from "../scripts/ultra-honk-smoke.ts";
+} from "../scripts/ultra-honk-smoke-checks.ts";
 import {
   clickBy,
   closeExtraWindows,

@@ -1,18 +1,25 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 
 const require = createRequire(import.meta.url);
 
 /**
- * The ESM entry of a dual package. `require.resolve` would pick the `require` condition, and Rolldown
- * gives a CJS module imported from ESM Node-mode interop: `.default` is the whole `exports` object, so
- * the injected `Buffer` becomes a plain object and msgpackr dies reading `.prototype.utf8Write`.
+ * The ESM entry of a dual package, read from its own `exports` map. `require.resolve` alone picks the
+ * `require` condition, and Rolldown gives a CJS module imported from ESM Node-mode interop: `.default`
+ * is the whole `exports` object, so the injected `Buffer` becomes a plain object and msgpackr dies
+ * reading `.prototype.utf8Write`. Not `import.meta.resolve`: Vite's config bundler rewrites it to a
+ * virtual module that Bun cannot load, which breaks `bunx --bun vite build`.
  */
-const esmEntry = (specifier: string) => fileURLToPath(import.meta.resolve(specifier));
+function esmEntry(specifier: string): string {
+  let dir = dirname(require.resolve(specifier));
+  while (!existsSync(join(dir, "package.json"))) dir = dirname(dir);
+  const entry = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")).exports?.["."]?.import;
+  if (typeof entry !== "string") throw new Error(`${specifier} declares no ESM entry`);
+  return join(dir, entry);
+}
 
 /**
  * Vite plugin: redirect dependency worker file requests to their real location.

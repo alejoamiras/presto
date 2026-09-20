@@ -162,7 +162,7 @@ describe("F-012 P2 — CSP + global flag drift guards", () => {
 // The authoritative per-window (window → snake_case command) matrix. Every command a window's frontend
 // invokes MUST be here, and NOTHING more (least privilege). has_app_acl is all-or-nothing: a command absent
 // from a window's capability is default-DENIED for that window.
-const WINDOW_MATRIX: Record<string, string[]> = {
+const WINDOW_MATRIX = {
   settings: [
     "get_config",
     "get_autostart_enabled",
@@ -181,7 +181,9 @@ const WINDOW_MATRIX: Record<string, string[]> = {
   "update-prompt": ["respond_update_prompt"],
   onboarding: ["get_onboarding_state", "complete_onboarding"],
   renewal: ["renew_cert", "record_renewal_prompt"],
-};
+  // `satisfies`, not an annotation: literal keys keep `WINDOW_MATRIX.settings` non-optional, so deleting
+  // a window here is a compile error instead of a loop that silently checks nothing.
+} satisfies Record<string, string[]>;
 const snakeToPerm = (cmd: string) => `allow-${cmd.replace(/_/g, "-")}`;
 
 describe("F-012 P3 — per-window capability ACL", () => {
@@ -231,7 +233,7 @@ describe("F-012 P3 — per-window capability ACL", () => {
   test("the authorization popup canNOT reach any settings mutator (least-privilege drift guard)", async () => {
     const files = await capFiles();
     const authorize = Object.values(files).find((c) => c.identifier === "authorize");
-    for (const settingsCmd of WINDOW_MATRIX.settings ?? []) {
+    for (const settingsCmd of WINDOW_MATRIX.settings) {
       expect(authorize.permissions, `auth must not grant ${settingsCmd}`).not.toContain(
         snakeToPerm(settingsCmd),
       );
