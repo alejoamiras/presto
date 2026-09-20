@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { join } from "node:path";
-import { buildJob, checkOutputs, type Fixture, loadFixture } from "./ultra-honk-smoke";
+import { buildJob, checkOutputs, type Fixture, loadFixture } from "./ultra-honk-smoke-checks";
 
 const root = join(import.meta.dirname, "..", "..", "..");
 const b64 = (bytes: Uint8Array) => Buffer.from(bytes).toString("base64");

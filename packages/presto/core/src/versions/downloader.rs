@@ -76,17 +76,7 @@ fn finalize_downloaded_binary(
     version_dir: &std::path::Path,
     version: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let xattr_out = std::process::Command::new("xattr")
-        .args(["-cr"])
-        .arg(final_path)
-        .output();
-    if let Err(e) = &xattr_out {
-        tracing::warn!(version, error = %e, "Failed to clear quarantine xattrs");
-    } else if let Ok(out) = &xattr_out {
-        if !out.status.success() {
-            tracing::warn!(version, "xattr -cr failed with status {}", out.status);
-        }
-    }
+    clear_quarantine_xattrs(final_path, version);
 
     let codesign_out = std::process::Command::new("codesign")
         .args(["--force", "--sign", "-"])
@@ -106,6 +96,23 @@ fn finalize_downloaded_binary(
             Err(format!("codesign failed for bb v{version}: {}", out.status).into())
         }
         Ok(_) => Ok(()),
+    }
+}
+
+/// Best effort: a binary that keeps its quarantine xattr but signs cleanly still runs, so a failure
+/// here is logged and never blocks the install.
+#[cfg(target_os = "macos")]
+fn clear_quarantine_xattrs(final_path: &std::path::Path, version: &str) {
+    match std::process::Command::new("xattr")
+        .args(["-cr"])
+        .arg(final_path)
+        .output()
+    {
+        Err(e) => tracing::warn!(version, error = %e, "Failed to clear quarantine xattrs"),
+        Ok(out) if !out.status.success() => {
+            tracing::warn!(version, "xattr -cr failed with status {}", out.status);
+        }
+        Ok(_) => {}
     }
 }
 

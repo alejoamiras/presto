@@ -92,9 +92,29 @@ fn keychain_anchor() -> Anchor {
         .args(["find-certificate", "-Z", "-c", "Presto Local CA"])
         .arg(login_keychain())
         .output();
-    // Bound the borrow before the match: a `&out` temporary in a match SCRUTINEE lives until the end
-    // of the match, which would forbid reading `out` in an arm.
-    let mut probe = Probe::from_query(&out, None);
+    let probe = probe_anchor(&out);
+    let stdout = match out {
+        Ok(o) => o.stdout,
+        Err(_) => Vec::new(),
+    };
+    match probe {
+        Probe::Absent => Anchor::Absent,
+        Probe::Unknown => Anchor::Unknown,
+        // It found something; if we cannot read the hash back we cannot delete it either.
+        Probe::Present => match parse_anchor_sha1(&stdout) {
+            Some(sha1) => Anchor::Found(sha1),
+            None => {
+                tracing::warn!("security find-certificate succeeded but no SHA-1 could be parsed");
+                Anchor::Unknown
+            }
+        },
+    }
+}
+
+/// Classify the `find-certificate` result, downgrading a provisional `Absent` to `Unknown` when the
+/// keychain itself cannot be read.
+fn probe_anchor(out: &std::io::Result<std::process::Output>) -> Probe {
+    let mut probe = Probe::from_query(out, None);
     if probe == Probe::Unknown {
         tracing::warn!("could not run security find-certificate; keychain state unknown");
     }
@@ -108,26 +128,15 @@ fn keychain_anchor() -> Anchor {
         tracing::warn!("the login keychain could not be read; its contents are unknown");
         probe = Probe::Unknown;
     }
-    let stdout = match out {
-        Ok(o) => o.stdout,
-        Err(_) => Vec::new(),
-    };
-    match probe {
-        Probe::Absent => Anchor::Absent,
-        Probe::Unknown => Anchor::Unknown,
-        // It found something; if we cannot read the hash back we cannot delete it either.
-        Probe::Present => match String::from_utf8_lossy(&stdout)
-            .lines()
-            .find_map(|l| l.trim().strip_prefix("SHA-1 hash:"))
-            .map(|h| h.trim().to_string())
-        {
-            Some(sha1) => Anchor::Found(sha1),
-            None => {
-                tracing::warn!("security find-certificate succeeded but no SHA-1 could be parsed");
-                Anchor::Unknown
-            }
-        },
-    }
+    probe
+}
+
+/// The first `SHA-1 hash:` value in `security find-certificate -Z` output.
+fn parse_anchor_sha1(stdout: &[u8]) -> Option<String> {
+    String::from_utf8_lossy(stdout)
+        .lines()
+        .find_map(|l| l.trim().strip_prefix("SHA-1 hash:"))
+        .map(|h| h.trim().to_string())
 }
 
 /// Can `security` actually QUERY the login keychain? Both signals must agree.
@@ -290,5 +299,18 @@ pub fn trust_new_anchor(staged_ca: &Path) -> Result<(), String> {
 pub fn remove_anchor(old: AnchorRef) {
     if let Some(sha1) = old.0 {
         let _ = delete_by_sha1(&sha1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_anchor_sha1;
+
+    #[test]
+    fn parses_the_first_sha1_and_nothing_else() {
+        let two = b"keychain: \"login.keychain-db\"\n   SHA-1 hash: AAAA1111  \nattributes:\nSHA-1 hash: BBBB2222\n";
+        assert_eq!(parse_anchor_sha1(two).as_deref(), Some("AAAA1111"));
+        assert_eq!(parse_anchor_sha1(b"SHA-256 hash: CCCC\nlabel: x\n"), None);
+        assert_eq!(parse_anchor_sha1(b""), None);
     }
 }

@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.scripts.json",
+  "compilerOptions": {
+    // Node-run, so no "bun" here: a spec that reaches for a Bun API must fail the typecheck rather
+    // than crash under wdio. Shared helpers it imports from scripts/ therefore stay runtime-neutral.
+    "types": ["node", "mocha", "@wdio/globals/types", "expect-webdriverio"]
+  },
+  "include": ["e2e-webdriver/**/*.ts", "wdio.conf.ts"],
+  "exclude": []
+}

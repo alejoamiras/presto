@@ -1785,9 +1785,13 @@ pub(crate) fn gated_enable_crash_recovery() -> Result<(), String> {
 
 /// Rearm crash recovery from current autostart intent. Windows holds `autostart.lock` across a
 /// marker re-check; this stays sequential with the heal because the lock is not reentrant.
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "platform-specific intent and ownership gates are clearer as one startup policy"
+// macOS compiles only the short branch, where the expectation would be unfulfilled.
+#[cfg_attr(
+    not(target_os = "macos"),
+    expect(
+        clippy::cognitive_complexity,
+        reason = "platform-specific intent and ownership gates are clearer as one startup policy"
+    )
 )]
 pub fn startup_rearm(app: &tauri::AppHandle) {
     #[cfg(windows)]

@@ -36,6 +36,11 @@ _Seeded 2026-09-18 from the three plans in `archive/`._
 - **Vite's dev server treats extension-less files as JS and inflates `.gz`** — a binary fetch returns
   `export default "/@fs/…"` and `assetsInclude` does not apply to `/@fs/`. Embed binary fixtures at
   build time. `archive/presto-noir/lessons/phase-18.md`
+- **`require.resolve` on a dual package picks its CJS entry, and Rolldown gives that Node-mode
+  interop** — `.default` becomes the whole `exports` object. An injected `Buffer` turned into a plain
+  object and msgpackr died on `.prototype.utf8Write`; Rollup had tolerated it, so it was misread as a
+  Vite 8 miscompile for a month. Read the ESM entry from the package's `exports` map; in a Vite
+  config `import.meta.resolve` is rewritten to a virtual module Bun cannot load. (2026-09, Vite 8.3)
 - **reqwest 0.12→0.13 swaps the TLS backend and the CI toolchain** — rustls drops `libssl-dev`, adds
   AWS-LC/CMake, and pulls `tokio-rustls`, tripping deny-lists written for cert-*serving* crates.
   `archive/presto-cleanup/lessons/phase-2.md`

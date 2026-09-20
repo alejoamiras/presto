@@ -385,6 +385,8 @@ jobs:
           restore-keys: ${{ runner.os }}-bun-
       - run: bun install --frozen-lockfile
       - run: bun run lint
+      - name: Typecheck build scripts and both e2e suites (wdio strips types, so nothing else checks them)
+        run: bun run --cwd packages/presto typecheck
       - name: Unit-test build scripts (copy-bb supply-chain gate)
         run: bun run --cwd packages/presto test:unit
       - name: Unit-test root scripts (download-bb cache-integrity gate)

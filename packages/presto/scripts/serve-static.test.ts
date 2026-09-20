@@ -17,7 +17,9 @@ const server = Bun.serve({
   hostname: "127.0.0.1",
   routes: { "/*": { dir } },
 });
-const base = `http://127.0.0.1:${server.port}`;
+const port = server.port;
+if (port === undefined) throw new Error("serve-static test server has no TCP port");
+const base = `http://127.0.0.1:${port}`;
 
 afterAll(() => server.stop(true));
 
@@ -48,7 +50,7 @@ describe("serve-static contract", () => {
       const chunks: string[] = [];
       Bun.connect({
         hostname: "127.0.0.1",
-        port: server.port,
+        port,
         socket: {
           open(s) {
             s.write(
