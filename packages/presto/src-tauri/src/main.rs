@@ -110,9 +110,13 @@ fn classify_launch_https(
 /// against the enable and renewal paths, or launch can observe a MIXED new-leaf/old-key set mid-swap
 /// and then reset `https_enabled` over an enable that just succeeded.
 /// `None` ⇒ don't start a listener.
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "the launch gate, optional rotation, and TLS load are one fail-closed certificate decision"
+// Only the Linux build carries the per-browser trust branches that push this over the limit.
+#[cfg_attr(
+    target_os = "linux",
+    expect(
+        clippy::cognitive_complexity,
+        reason = "the launch gate, optional rotation, and TLS load are one fail-closed certificate decision"
+    )
 )]
 fn prepare_launch_https(
     state: &AppState,
