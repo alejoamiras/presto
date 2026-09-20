@@ -24,8 +24,8 @@ export function pngInfo(bytes: Uint8Array): PngInfo {
   return {
     width: dv.getUint32(16),
     height: dv.getUint32(20),
-    bitDepth: bytes[24],
-    colorType: bytes[25],
+    bitDepth: dv.getUint8(24),
+    colorType: dv.getUint8(25),
   };
 }
 
@@ -74,21 +74,29 @@ function unfilterByte(
   }
 }
 
+/** A truncated IDAT stream is an error, not a run of zero bytes. */
+function byteAt(bytes: Uint8Array, index: number): number {
+  const byte = bytes[index];
+  if (byte === undefined) throw new Error("truncated image data");
+  return byte;
+}
+
 function unfilterRgba(raw: Uint8Array, info: PngInfo): Uint8Array {
   const bytesPerPixel = 4;
   const stride = info.width * bytesPerPixel;
   const rgba = new Uint8Array(info.height * stride);
   let inputOffset = 0;
   for (let rowIndex = 0; rowIndex < info.height; rowIndex++) {
-    const filter = raw[inputOffset++];
+    const filter = byteAt(raw, inputOffset++);
     const row = rgba.subarray(rowIndex * stride, (rowIndex + 1) * stride);
     const previous =
       rowIndex > 0 ? rgba.subarray((rowIndex - 1) * stride, rowIndex * stride) : null;
     for (let column = 0; column < stride; column++) {
-      const left = column >= bytesPerPixel ? row[column - bytesPerPixel] : 0;
+      const left = column >= bytesPerPixel ? (row[column - bytesPerPixel] ?? 0) : 0;
       const above = previous?.[column] ?? 0;
       const upperLeft = column >= bytesPerPixel ? (previous?.[column - bytesPerPixel] ?? 0) : 0;
-      row[column] = unfilterByte(filter, raw[inputOffset++], left, above, upperLeft) & 0xff;
+      const byte = byteAt(raw, inputOffset++);
+      row[column] = unfilterByte(filter, byte, left, above, upperLeft) & 0xff;
     }
   }
   return rgba;
@@ -138,8 +146,9 @@ export function icoEntries(
   for (let i = 0; i < count; i++) {
     const e = 6 + i * 16;
     out.push({
-      width: bytes[e] === 0 ? 256 : bytes[e],
-      height: bytes[e + 1] === 0 ? 256 : bytes[e + 1],
+      // DataView reads throw on a truncated directory instead of yielding `undefined`.
+      width: dv.getUint8(e) || 256,
+      height: dv.getUint8(e + 1) || 256,
       bpp: dv.getUint16(e + 6, true),
     });
   }

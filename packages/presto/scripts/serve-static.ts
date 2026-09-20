@@ -14,3 +14,6 @@ const server = Bun.serve({
 });
 
 console.log(`serving ${dir} at ${server.url}`);
+
+// A module, so its top-level bindings do not collide with other scripts in the same TS project.
+export {};

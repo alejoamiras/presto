@@ -80,11 +80,11 @@ function readStoredProgram(): string {
   const raw = fs.readFileSync(artifactPath(), "utf-8");
   if (PLATFORM === "darwin") {
     const m = raw.match(/<key>ProgramArguments<\/key>\s*<array>\s*<string>([^<]*)<\/string>/);
-    if (!m) throw new Error(`no ProgramArguments in healed plist:\n${raw}`);
+    if (!m?.[1]) throw new Error(`no ProgramArguments in healed plist:\n${raw}`);
     return m[1];
   }
   const m = raw.match(/^Exec=(.*)$/m);
-  if (!m) throw new Error(`no Exec in healed .desktop:\n${raw}`);
+  if (!m?.[1]) throw new Error(`no Exec in healed .desktop:\n${raw}`);
   const value = m[1].trim();
   if (!value.startsWith('"')) throw new Error(`healed Exec must be QUOTED, got: ${value}`);
   // Our owned quoting: unwrap + unescape \" \` \$ \\ and undo %%.

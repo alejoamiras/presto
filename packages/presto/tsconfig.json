@@ -1,0 +1,7 @@
+{
+  "extends": "../../tsconfig.scripts.json",
+  // Bun-run build scripts and the Playwright UI suite. The WebdriverIO suite runs under Node with
+  // ambient Mocha and wdio globals, so it has its own project (tsconfig.webdriver.json).
+  "include": ["scripts/**/*.ts", "e2e/**/*.ts"],
+  "exclude": []
+}

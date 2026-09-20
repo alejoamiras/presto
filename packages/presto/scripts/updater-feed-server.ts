@@ -19,7 +19,8 @@
 
 function arg(name: string, fallback?: string): string {
   const i = process.argv.indexOf(`--${name}`);
-  if (i !== -1 && process.argv[i + 1]) return process.argv[i + 1];
+  const value = i === -1 ? undefined : process.argv[i + 1];
+  if (value) return value;
   if (fallback !== undefined) return fallback;
   throw new Error(`missing required --${name}`);
 }
@@ -71,3 +72,6 @@ const server = Bun.serve({
 });
 
 console.log(`updater feed server listening on https://localhost:${server.port}`);
+
+// A module, so its top-level bindings do not collide with other scripts in the same TS project.
+export {};

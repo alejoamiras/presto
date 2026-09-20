@@ -22,9 +22,13 @@ async function parseThemes(cssPath: string, prefix: string): Promise<Themes> {
   if (darkStart < 0) throw new Error(`${cssPath}: no dark theme block`);
   const light: Record<string, string> = {};
   const dark: Record<string, string> = {};
-  for (const m of css.slice(0, darkStart).matchAll(varRe)) light[m[1]] = m[2].toLowerCase();
+  for (const [, name, hex] of css.slice(0, darkStart).matchAll(varRe)) {
+    if (name && hex) light[name] = hex.toLowerCase();
+  }
   const darkEnd = css.indexOf("}", css.indexOf("}", darkStart) + 1) + 1;
-  for (const m of css.slice(darkStart, darkEnd).matchAll(varRe)) dark[m[1]] = m[2].toLowerCase();
+  for (const [, name, hex] of css.slice(darkStart, darkEnd).matchAll(varRe)) {
+    if (name && hex) dark[name] = hex.toLowerCase();
+  }
   return { light, dark };
 }
 
@@ -37,8 +41,8 @@ function luminance(hex: string): number {
 }
 
 function contrast(a: string, b: string): number {
-  const [l1, l2] = [luminance(a), luminance(b)].sort((x, y) => y - x);
-  return (l1 + 0.05) / (l2 + 0.05);
+  const [la, lb] = [luminance(a), luminance(b)];
+  return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
 function assertPairs(themes: Themes, pairs: Array<[fg: string, bg: string]>, label: string): void {

@@ -6,7 +6,7 @@
  */
 import * as path from "node:path";
 
-import { getTargetTriple } from "../scripts/copy-bb.ts";
+import { getTargetTriple } from "../scripts/target-triple.ts";
 import {
   buildJob,
   checkOutputs,

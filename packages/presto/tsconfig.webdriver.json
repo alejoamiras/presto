@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.scripts.json",
+  "compilerOptions": {
+    // The suite runs under Node. "bun" is here only because the specs import runtime-neutral helpers
+    // from scripts/ultra-honk-smoke.ts, whose Bun-only entrypoint comes along for the typecheck.
+    "types": ["node", "bun", "mocha", "@wdio/globals/types", "expect-webdriverio"]
+  },
+  "include": ["e2e-webdriver/**/*.ts", "wdio.conf.ts"],
+  "exclude": []
+}

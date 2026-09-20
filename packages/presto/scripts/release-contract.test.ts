@@ -297,7 +297,7 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
       ["darwin-x86_64", `Presto-${VER}-macOS-Intel.app.tar.gz`],
       ["linux-x86_64", `Presto-${VER}-Linux-x86_64.AppImage`],
       ["windows-x86_64", `Presto-${VER}-Windows-x86_64-setup.nsis.zip`],
-    ]) {
+    ] as const) {
       const esc = file.replace(/[.$^{}()|[\]\\]/g, "\\$&");
       expect(WF, `${key} must be bound to ${file}`).toMatch(
         new RegExp(`assert_url ${key}\\s+"${esc}"`),

@@ -25,25 +25,10 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { getTargetTriple } from "./target-triple.ts";
 
-// --- Map to Tauri target triple ---
-
-export function getTargetTriple(): string {
-  const platform = process.platform;
-  const nodeArch = process.arch;
-
-  if (platform === "darwin") {
-    return nodeArch === "arm64" ? "aarch64-apple-darwin" : "x86_64-apple-darwin";
-  }
-  if (platform === "linux") {
-    return nodeArch === "arm64" ? "aarch64-unknown-linux-gnu" : "x86_64-unknown-linux-gnu";
-  }
-  if (platform === "win32") {
-    // x64 only (locked scope). bb.exe is x86_64; arm64-windows is not shipped.
-    return "x86_64-pc-windows-msvc";
-  }
-  throw new Error(`Unsupported platform: ${platform}`);
-}
+// Lives in its own module so the Node-run WebDriver suite can import it without loading this Bun script.
+export { getTargetTriple };
 
 // --- Windows bb.exe supply chain ---
 // The Windows bb.exe is fetched from the aztec-packages release whose tag matches the

@@ -111,8 +111,8 @@ describe("F-012 P2 — CSP + global flag drift guards", () => {
     // Parse "name a b c; name2 …" into a directive → sources map.
     const directives = new Map<string, string>();
     for (const chunk of csp.split(";")) {
-      const parts = chunk.trim().split(/\s+/);
-      if (parts.length) directives.set(parts[0], parts.slice(1).join(" "));
+      const [name, ...sources] = chunk.trim().split(/\s+/);
+      if (name) directives.set(name, sources.join(" "));
     }
     for (const [name, sources] of Object.entries(REQUIRED_CSP)) {
       expect(directives.get(name), `csp ${name}`).toBe(sources);
@@ -139,7 +139,7 @@ describe("F-012 P2 — CSP + global flag drift guards", () => {
         ),
       ];
       expect(policies.length, `${page}: exactly one CSP meta tag`).toBe(1);
-      expect(policies[0][1], `${page}: dev CSP matches tauri.conf.json`).toBe(csp);
+      expect(policies[0]?.[1], `${page}: dev CSP matches tauri.conf.json`).toBe(csp);
     }
     // The asset-CSP nonce augmentation must stay on (never disable it).
     expect(c.app?.security?.dangerousDisableAssetCspModification ?? false).toBe(false);
@@ -231,7 +231,7 @@ describe("F-012 P3 — per-window capability ACL", () => {
   test("the authorization popup canNOT reach any settings mutator (least-privilege drift guard)", async () => {
     const files = await capFiles();
     const authorize = Object.values(files).find((c) => c.identifier === "authorize");
-    for (const settingsCmd of WINDOW_MATRIX.settings) {
+    for (const settingsCmd of WINDOW_MATRIX.settings ?? []) {
       expect(authorize.permissions, `auth must not grant ${settingsCmd}`).not.toContain(
         snakeToPerm(settingsCmd),
       );
@@ -245,15 +245,17 @@ describe("F-012 P3 — per-window capability ACL", () => {
     // build.rs: the string list passed to AppManifest.commands().
     const commandsBlock = buildRs.match(/let commands: &\[&str\] = &\[([\s\S]*?)\];/);
     expect(commandsBlock, "build.rs COMMANDS block").toBeTruthy();
-    const buildCommands = [...commandsBlock![1].matchAll(/"([a-z_]+)"/g)].map((m) => m[1]).sort();
+    const buildCommands = [...(commandsBlock?.[1] ?? "").matchAll(/"([a-z_]+)"/g)]
+      .flatMap((m) => (m[1] ? [m[1]] : []))
+      .sort();
 
     // main.rs: the generate_handler! command list. Every entry is `commands::<name>,` today, but a
     // command defined in main.rs itself would appear bare — so match an optional `commands::` prefix
     // and require the trailing comma every entry has.
     const handlerBlock = mainRs.match(/generate_handler!\[([\s\S]*?)\]/);
     expect(handlerBlock, "main.rs generate_handler!").toBeTruthy();
-    const handlers = [...handlerBlock![1].matchAll(/(?:commands::)?([a-z_]+)\s*,/g)]
-      .map((m) => m[1])
+    const handlers = [...(handlerBlock?.[1] ?? "").matchAll(/(?:commands::)?([a-z_]+)\s*,/g)]
+      .flatMap((m) => (m[1] ? [m[1]] : []))
       .sort();
 
     // union of every capability's granted commands (perm → snake).
