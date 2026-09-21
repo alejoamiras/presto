@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
-import { LICENSE_FALLBACKS } from "./licensing/license-fallbacks.ts";
+import { LICENSE_POLICY } from "./licensing/license-fallbacks.ts";
 import { thirdPartyLicenses } from "./licensing/third-party-licenses.ts";
 
 const require = createRequire(import.meta.url);
@@ -186,7 +186,7 @@ export default defineConfig(({ mode, command }) => {
   );
   const aztecSdkVersion: string = sdkPkg.dependencies["@aztec/stdlib"] ?? "unknown";
 
-  const licenses = thirdPartyLicenses(LICENSE_FALLBACKS);
+  const licenses = thirdPartyLicenses(LICENSE_POLICY);
 
   return {
     plugins: [

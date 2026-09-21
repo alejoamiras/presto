@@ -155,7 +155,7 @@ jobs:
       - run: cargo test --test autostart_heal -- --ignored --nocapture --test-threads=1
       # The two `linux_hermetic_*` tests self-skip without AZTEC_AUTOSTART_HERMETIC, so the run above
       # only reports them green. Give each the environment it actually asserts against: divergent
-      # HOME/XDG dirs, then a uid with NO passwd entry and HOME/XDG scrubbed (`dirs` falls back to
+      # HOME/XDG dirs, then a uid with NO passwd entry (setpriv) and HOME/XDG scrubbed (`dirs` falls back to
       # getpwuid, so unsetting HOME alone still resolves a home). Locally this is `test:autostart`.
       - name: Hermetic autostart env proofs (divergent XDG, unresolvable home)
         if: matrix.platform == 'linux'
@@ -177,8 +177,9 @@ jobs:
             exit 1
           fi
 
-          # `env -i` drops HOME/XDG; TMPDIR keeps the test's tempdir off the runner's own.
-          sudo -u '#12345' -g '#12345' env -i PATH="$PATH" TMPDIR=/tmp AZTEC_AUTOSTART_HERMETIC=1 \
+          # setpriv, not `sudo -u '#12345'`: sudo refuses a uid with no passwd entry by default
+          # (runas_allow_unknown_id). `env -i` drops HOME/XDG; TMPDIR keeps the tempdir world-writable.
+          sudo setpriv --reuid=12345 --regid=12345 --clear-groups env -i PATH="$PATH" TMPDIR=/tmp AZTEC_AUTOSTART_HERMETIC=1 \
             "$stage/autostart_heal" --ignored --exact --nocapture linux_hermetic_no_home_is_graceful
       # B5: real-OS uninstall ownership. Linux exercises the copied-install foreign skip (a foreign
       # .desktop + certs LEFT) and the CARGO_BIN_EXE owned+idempotent teardown; Windows round-trips
@@ -777,11 +778,13 @@ jobs:
             $p = Start-Process -FilePath $exe.FullName -PassThru
             $healthy = $false
             # 180s, not 60: a cold runner's FIRST launch provisions the WebView2 user-data folder
-            # and has timed out at 60s while later launches answer in seconds.
-            for ($i = 0; $i -lt 90; $i++) {
+            # and has timed out at 60s while later launches answer in seconds. A wall-clock
+            # deadline, because each refused probe can itself burn its 3s timeout.
+            $clock = [System.Diagnostics.Stopwatch]::StartNew()
+            while ($clock.Elapsed.TotalSeconds -lt 180) {
               try {
                 $h = Invoke-RestMethod -Uri "http://127.0.0.1:59833/health" -TimeoutSec 3
-                if ($h.status -eq "ok") { Write-Host "/health after $($i * 2)s: $($h | ConvertTo-Json -Compress)"; $healthy = $true; break }
+                if ($h.status -eq "ok") { Write-Host "/health after $([int]$clock.Elapsed.TotalSeconds)s: $($h | ConvertTo-Json -Compress)"; $healthy = $true; break }
               } catch { }
               # A dead process is a crash, not slowness — say so instead of burning the budget.
               if ($p.HasExited) {

@@ -19,7 +19,8 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 ## Owner actions
 
 - **`@aztec/*` packaging is broader than the three packages already reported upstream.** Every
-  `@aztec/*` package the playground bundles (23 at 5.2.0) ships no licence file, about twenty declare
+  `@aztec/*` package the playground bundles from aztec-packages or noir (23 at 5.2.0; `@aztec/viem`
+  is the exception) ships no licence file, about twenty declare
   no `license` field, and `@aztec/bb.js` declares MIT while `barretenberg/` publishes only an
   Apache-2.0 text. The playground now vendors the upstream texts
   (`packages/playground/licensing/license-fallbacks.ts`); each rule there can go once upstream ships

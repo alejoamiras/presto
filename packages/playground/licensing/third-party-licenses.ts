@@ -11,10 +11,43 @@ export interface LicenseFallback {
   /** SPDX id of `texts`; shown only when the manifest declares no `license` itself. */
   license: string;
   /** Where each text was taken from, printed so a reader can check it. */
-  source: (version: string) => string;
+  source: string;
   texts: readonly string[];
   /** Printed above the texts; for discrepancies a reader should know about. */
   note?: string;
+}
+
+/** Terms a package's own licence file leaves out, e.g. the second half of an `A AND B` expression. */
+export interface LicenseSupplement {
+  match: (name: string) => boolean;
+  source: string;
+  texts: readonly string[];
+}
+
+/** A package inlined into a host's prebuilt output, so no module id ever names it. */
+export interface EmbeddedComponent {
+  name: string;
+  version: string;
+  license: string;
+  source: string;
+  texts: readonly string[];
+}
+
+/**
+ * The reviewed inventory of what a host inlines. `sourceMaps` (relative to the host) are the
+ * evidence: the `name@version` pairs their `sources` name must equal `components`, so a host upgrade
+ * that embeds something new or different fails the build instead of shipping a stale notice.
+ */
+export interface EmbeddedComponents {
+  host: string;
+  sourceMaps: readonly string[];
+  components: readonly EmbeddedComponent[];
+}
+
+export interface LicensePolicy {
+  fallbacks?: readonly LicenseFallback[];
+  supplements?: readonly LicenseSupplement[];
+  embedded?: readonly EmbeddedComponents[];
 }
 
 export interface PackageNotice {
@@ -26,7 +59,10 @@ export interface PackageNotice {
   texts: { file: string; text: string }[];
 }
 
-const LICENSE_FILE = /^(licen[cs]e|copying|notice)([-.].*)?$/i;
+const LICENSE_FILE = /^(licen[cs]e|copying)([-.].*)?$/i;
+const NOTICE_FILE = /^notice([-.].*)?$/i;
+// Shorter than any real licence: rejects an empty file or a bare SPDX id posing as the terms.
+const MIN_LICENSE_TEXT = 100;
 const NODE_MODULES = "/node_modules/";
 
 /**
@@ -50,42 +86,91 @@ const UNDECLARED = "UNDECLARED (see the text below)";
 
 class MissingLicenseText extends Error {}
 
-function readNotice(root: string, fallbacks: readonly LicenseFallback[]): PackageNotice {
+function readNotice(root: string, policy: LicensePolicy): PackageNotice {
   const manifest = JSON.parse(readFileSync(join(root, "package.json"), "utf8")) as {
     name: string;
     version: string;
     license?: unknown;
   };
-  const texts = readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && LICENSE_FILE.test(entry.name))
-    .map((entry) => entry.name)
-    .sort()
-    .map((file) => ({ file, text: readFileSync(join(root, file), "utf8").trim() }));
+  const read = (pattern: RegExp) =>
+    readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && pattern.test(entry.name))
+      .map((entry) => entry.name)
+      .sort()
+      .map((file) => ({ file, text: readFileSync(join(root, file), "utf8").trim() }));
+  // A NOTICE is attribution, not terms: it is always reproduced but never satisfies the requirement.
+  const notices = read(NOTICE_FILE);
+  const licenses = read(LICENSE_FILE).filter(({ text }) => text.length >= MIN_LICENSE_TEXT);
   const declared = typeof manifest.license === "string" ? manifest.license : undefined;
-  if (texts.length > 0) {
-    return {
-      name: manifest.name,
-      version: manifest.version,
-      license: declared ?? UNDECLARED,
-      texts,
-    };
+  const base = { name: manifest.name, version: manifest.version };
+  const extra = (policy.supplements ?? [])
+    .filter((rule) => rule.match(manifest.name))
+    .flatMap((rule) =>
+      rule.texts.map((text) => ({ file: `(from ${rule.source})`, text: text.trim() })),
+    );
+  if (licenses.length > 0) {
+    // One licence file cannot be assumed to carry both halves of a conjunction (pako: MIT file,
+    // zlib terms only in source comments), so an `AND` needs a reviewed supplement.
+    if (declared && /\bAND\b/.test(declared) && extra.length === 0) {
+      throw new MissingLicenseText(`${manifest.name}@${manifest.version} (${declared})`);
+    }
+    return { ...base, license: declared ?? UNDECLARED, texts: [...licenses, ...extra, ...notices] };
   }
-  const fallback = fallbacks.find((rule) => rule.match(manifest.name));
+  const fallback = (policy.fallbacks ?? []).find((rule) => rule.match(manifest.name));
   if (!fallback) throw new MissingLicenseText(`${manifest.name}@${manifest.version}`);
-  const file = `(not shipped in the package; from ${fallback.source(manifest.version)})`;
+  const file = `(not shipped in the package; from ${fallback.source})`;
   return {
-    name: manifest.name,
-    version: manifest.version,
+    ...base,
     license: declared ?? fallback.license,
     note: fallback.note,
-    texts: fallback.texts.map((text) => ({ file, text: text.trim() })),
+    texts: [...fallback.texts.map((text) => ({ file, text: text.trim() })), ...extra, ...notices],
   };
+}
+
+// pnpm/Bun store segment: `<name>@<version>[_peer-or-patch suffix]/node_modules/<name>/`.
+const STORE_ENTRY = /\/((?:@[^/@]+\+)?[^/@]+)@(\d[^/_]*)[^/]*\/node_modules\//g;
+
+function embeddedNotices(hostRoot: string, inventory: EmbeddedComponents): PackageNotice[] {
+  const found = new Set<string>();
+  for (const map of inventory.sourceMaps) {
+    const { sources } = JSON.parse(readFileSync(join(hostRoot, map), "utf8")) as {
+      sources: string[];
+    };
+    for (const source of sources) {
+      for (const [, name, version] of source.matchAll(STORE_ENTRY)) {
+        found.add(`${name.replace("+", "/")}@${version}`);
+      }
+    }
+  }
+  const declared = new Set(inventory.components.map(({ name, version }) => `${name}@${version}`));
+  const drift = [...found.symmetricDifference(declared)].sort();
+  if (drift.length > 0) {
+    throw new Error(
+      `${inventory.host} no longer embeds what licensing/license-fallbacks.ts reviewed; re-check: ${drift.join(", ")}`,
+    );
+  }
+  return inventory.components.map(({ name, version, license, source, texts }) => ({
+    name,
+    version,
+    license,
+    note: `inlined into ${inventory.host}'s prebuilt output.`,
+    texts: texts.map((text) => ({ file: `(from ${source})`, text: text.trim() })),
+  }));
+}
+
+/** The package at `root`, followed by whatever the policy says it inlines. */
+function noticesAt(root: string, policy: LicensePolicy): PackageNotice[] {
+  const notice = readNotice(root, policy);
+  const inlined = (policy.embedded ?? [])
+    .filter(({ host }) => host === notice.name)
+    .flatMap((inventory) => embeddedNotices(root, inventory));
+  return [notice, ...inlined];
 }
 
 /** One notice per distinct `name@version` among the bundled modules, sorted for a stable diff. */
 export function collectNotices(
   moduleIds: Iterable<string>,
-  fallbacks: readonly LicenseFallback[] = [],
+  policy: LicensePolicy = {},
 ): PackageNotice[] {
   const roots = new Set<string>();
   for (const id of moduleIds) {
@@ -96,8 +181,9 @@ export function collectNotices(
   const missing: string[] = [];
   for (const root of roots) {
     try {
-      const notice = readNotice(root, fallbacks);
-      byKey.set(`${notice.name}@${notice.version}`, notice);
+      for (const notice of noticesAt(root, policy)) {
+        byKey.set(`${notice.name}@${notice.version}`, notice);
+      }
     } catch (error) {
       if (!(error instanceof MissingLicenseText)) throw error;
       missing.push(error.message);
@@ -107,7 +193,7 @@ export function collectNotices(
   // to prevent, so a new one must be resolved by a human, not skipped.
   if (missing.length > 0) {
     throw new Error(
-      `bundled packages ship no licence file; add a reviewed rule to licensing/license-fallbacks.ts for each: ${missing.sort().join(", ")}`,
+      `bundled packages whose terms are not fully reproduced; add a reviewed rule to licensing/license-fallbacks.ts for each: ${missing.sort().join(", ")}`,
     );
   }
   return [...byKey.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, notice]) => notice);
@@ -120,8 +206,9 @@ export function renderNotices(notices: readonly PackageNotice[]): string {
     "THIRD-PARTY SOFTWARE NOTICES",
     "",
     "This site's JavaScript and WebAssembly bundle contains the third-party packages listed below.",
-    "Each is reproduced with the licence text and notices it ships with. The list is generated from",
-    "the modules the bundler actually included, so it describes this build exactly.",
+    "Each is reproduced with the licence text and notices it ships with, or with its upstream text",
+    "where the package publishes none. The list is generated from the modules the bundler included,",
+    "plus the components known to be embedded inside them.",
     "",
     `Packages: ${notices.length}`,
     "",
@@ -145,7 +232,7 @@ export function renderNotices(notices: readonly PackageNotice[]): string {
  * pipeline, so `collect()` goes in `worker.plugins` and feeds the same set that `emit()` writes
  * from the main bundle — Vite finishes every worker bundle before the main `generateBundle`.
  */
-export function thirdPartyLicenses(fallbacks: readonly LicenseFallback[] = []): {
+export function thirdPartyLicenses(policy: LicensePolicy = {}): {
   collect: () => Plugin;
   emit: () => Plugin;
 } {
@@ -169,7 +256,7 @@ export function thirdPartyLicenses(fallbacks: readonly LicenseFallback[] = []): 
         this.emitFile({
           type: "asset",
           fileName: THIRD_PARTY_LICENSES_FILE,
-          source: renderNotices(collectNotices(moduleIds, fallbacks)),
+          source: renderNotices(collectNotices(moduleIds, policy)),
         });
       },
     }),
