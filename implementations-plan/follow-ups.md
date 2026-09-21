@@ -16,28 +16,23 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   clear plus a lockfile refresh, and sharp 0.35.4 needs wrangler's miniflare to move. The rest are
   pinned by Aztec 5.2 or the WebdriverIO stack. **Verified 2026-09-18.**
 
-## Open in code
-
-- **The playground ships Apache-2.0 code with no third-party licence file.** Its bundle contains
-  `@aztec/*` packages, three of which (`bb-prover`, `foundation`, `stdlib` at 5.2.0) publish no
-  licence metadata at all and rely on the Apache-2.0 `LICENSE` in upstream `aztec-packages`.
-  Apache-2.0 §4(a) requires giving recipients the full licence text when distributing in object
-  form, which a minified web bundle is; §4(d) additionally requires reproducing an upstream `NOTICE`
-  where one is supplied. Nothing in `packages/playground/public/` or its build config does either.
-  The fix is a deployed, linked `third-party-licenses.txt`, not a README sentence. Separately worth
-  reporting upstream: the three packages' missing `license` field is a packaging bug, and Alejo is
-  inside Aztec. **Verified 2026-09-18** (manifests and build config; the deployed bundle was not
-  inspected).
-
 ## Owner actions
 
+- **`@aztec/*` packaging is broader than the three packages already reported upstream.** Every
+  `@aztec/*` package the playground bundles from aztec-packages or noir (23 at 5.2.0; `@aztec/viem`
+  is the exception) ships no licence file, about twenty declare
+  no `license` field, and `@aztec/bb.js` declares MIT while `barretenberg/` publishes only an
+  Apache-2.0 text. The playground now vendors the upstream texts
+  (`packages/playground/licensing/license-fallbacks.ts`); each rule there can go once upstream ships
+  the file itself. **Verified 2026-09-21.**
+- **The three Cloudflare API tokens versus Workers Builds.** `CLOUDFLARE_DEPLOY_API_TOKEN` and
+  `CLOUDFLARE_RELEASE_FEED_DEPLOY_API_TOKEN` are long-lived deploy tokens in repository secrets that
+  connecting the repo to Workers Builds would retire; `CLOUDFLARE_RELEASE_FEED_API_TOKEN` writes the
+  updater feed's KV from the promote job and has to stay. Not verified.
 - **The `bb.exe` text-mode I/O bug was never reported upstream.** Barretenberg reads and writes binary
   files in text mode on Windows, so key reads truncate at the first 0x1A and proof writes expand every
   0x0A. Presto routes around it with `--output_format json`; every other consumer on Windows silently
   gets corrupt reads. `archive/presto-noir/lessons/arc-1-review.md`. Not verified against upstream.
-- **`gh pr merge --auto` is rejected on this repo** ("Auto merge is not allowed"), so every automated
-  bump PR needs a manual merge. Either enable auto-merge in the repository settings or stop emitting
-  the flag. `archive/presto-noir/lessons/audit-fixes.md`. Not verified.
 - ~~**`release-sdk.yml --dry_run` has never been exercised.**~~ **Resolved** — dry run
   `34280070511` (`packages=all`) ran after #32 and #33 merged, and real run `34280233253` followed;
   both are recorded in `archive/presto-noir/lessons/audit-fixes.md`. Kept struck through rather than
@@ -53,15 +48,6 @@ None of these were re-checked on 2026-09-18.
 - **Windows proof verification is skipped, not passing** — the identity spec skips the sidecar step
   there because `bb verify` has no JSON input form; byte identity is the assertion instead.
   `archive/presto-noir/lessons/arc-1-review.md`
-- **The presto-cleanup session never validated the reqwest 0.13 rustls graph natively** — it ran on
-  Linux, passed the Windows *cross*-check (`archive/presto-cleanup/lessons/review-17.md`), and left 7
-  platform tests ignored locally (`archive/presto-cleanup/lessons/phase-4.md`). Release 1.1.1 later
-  built and smoke-tested all three platforms natively
-  (`archive/presto-noir/lessons/audit-fixes.md`), so what remains open is only whether those 7
-  ignored tests run in a CI lane.
-- **Two known CI flakes left unfixed** — a 5 s timeout in the legacy NSS trust test (`test:scripts`)
-  that passes on re-run and wants a timeout bump, and the Windows launch smoke, which timed out once
-  and passed on a rerun. `archive/presto-noir/lessons/cross-arc-review.md`
 - **The playground's Noir action ignores the page's HTTP-session consent** — the adapter exposes no
   `setPrestoConfig`, so under `secure-connection-unavailable` it falls back to the browser. As a
   consequence core's `endpoint-changed` reason is documented as reserved rather than reachable.

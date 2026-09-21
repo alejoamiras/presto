@@ -64,6 +64,9 @@ _Seeded 2026-09-18 from the three plans in `archive/`._
 - **wdio 9 wraps every worker in `xvfb-run` when `DISPLAY` is unset**, destroying the IPC channel
   (`write EINVAL`) before any test runs — it reads as a harness bug. It also runs under Node, not
   Bun, so shared helpers must be runtime-neutral. `archive/presto-noir/lessons/phase-6.md`
+- **A test that self-skips with `return` reports `ok`** — two `#[ignore]`d hermetic tests ran in an
+  `--ignored` CI lane for months asserting nothing. A lane listing a test proves it was invoked, not
+  that its precondition held; grep the log for the skip message.
 - **"Green" without a run ID is not green** — a PR with a failing Windows lane was treated as
   merged-clean. Assume any platform with no lane was never exercised.
   `archive/presto-noir/lessons/audit-fixes.md`

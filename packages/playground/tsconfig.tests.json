@@ -1,7 +1,8 @@
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
-    "types": ["bun", "vite/client"]
+    "types": ["bun", "vite/client"],
+    "allowImportingTsExtensions": true
   },
   "include": ["src/**/*.test.ts", "src/happydom.ts", "src/virtual-modules.d.ts"],
   "exclude": []

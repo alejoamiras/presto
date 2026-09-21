@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
-# L4 — hermetic autostart env proofs, in Docker (plan §6). Local-only, like test:nsis; NOT a CI job.
+# L4 — hermetic autostart env proofs, in Docker. The local form of the two legs; CI runs the same
+# tests natively on the Linux platform leg of presto.yml (divergent dirs, then `setpriv` to a passwd-less uid).
 #
-# What only a container can prove (the dev host can't — HOME and XDG_CONFIG_HOME coincide there):
+# What needs an environment a dev host lacks (there HOME and XDG_CONFIG_HOME coincide, and the uid
+# has a passwd entry), which a container gives locally and the CI runner gives natively:
 #   1. D9: the owned autostart module watches XDG_CONFIG_HOME, not a hardcoded $HOME/.config — the
 #      harness passes DIVERGENT dirs and the test asserts the decoy stays untouched.
 #   2. C8: with home resolution UNAVAILABLE, every operation degrades to Err/Skip — the removed

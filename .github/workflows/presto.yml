@@ -153,6 +153,34 @@ jobs:
       # OS by design (Windows mutates the real HKCU behind an RAII restore; --test-threads=1 makes
       # the serialization explicit rather than incidental).
       - run: cargo test --test autostart_heal -- --ignored --nocapture --test-threads=1
+      # The two `linux_hermetic_*` tests self-skip without AZTEC_AUTOSTART_HERMETIC, so the run above
+      # only reports them green. Give each the environment it actually asserts against: divergent
+      # HOME/XDG dirs, then a uid with NO passwd entry (setpriv) and HOME/XDG scrubbed (`dirs` falls back to
+      # getpwuid, so unsetting HOME alone still resolves a home). Locally this is `test:autostart`.
+      - name: Hermetic autostart env proofs (divergent XDG, unresolvable home)
+        if: matrix.platform == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          bin=$(cargo test --test autostart_heal --no-run --message-format=json \
+            | jq -r 'select(.executable != null and .target.name == "autostart_heal") | .executable')
+          [ -x "$bin" ] || { echo "::error::no autostart_heal test binary"; exit 1; }
+          stage=$(mktemp -d)
+          install -m 0755 "$bin" "$stage/autostart_heal"
+          chmod 0755 "$stage"
+          mkdir -p "$stage/h" "$stage/xdg"
+
+          env AZTEC_AUTOSTART_HERMETIC=1 HOME="$stage/h" XDG_CONFIG_HOME="$stage/xdg" \
+            "$stage/autostart_heal" --ignored --exact --nocapture linux_hermetic_xdg_divergence
+          if find "$stage/h" -name '*.desktop' | grep -q .; then
+            echo "::error::a .desktop landed under the \$HOME decoy — the module is not honouring XDG"
+            exit 1
+          fi
+
+          # setpriv, not `sudo -u '#12345'`: sudo refuses a uid with no passwd entry by default
+          # (runas_allow_unknown_id). `env -i` drops HOME/XDG; TMPDIR keeps the tempdir world-writable.
+          sudo setpriv --reuid=12345 --regid=12345 --clear-groups env -i PATH="$PATH" TMPDIR=/tmp AZTEC_AUTOSTART_HERMETIC=1 \
+            "$stage/autostart_heal" --ignored --exact --nocapture linux_hermetic_no_home_is_graceful
       # B5: real-OS uninstall ownership. Linux exercises the copied-install foreign skip (a foreign
       # .desktop + certs LEFT) and the CARGO_BIN_EXE owned+idempotent teardown; Windows round-trips
       # crash-recovery ownership against a REAL scheduled task (schtasks /XML + UTF-16 — the layer the
@@ -749,15 +777,29 @@ jobs:
           function Start-AndProbe {
             $p = Start-Process -FilePath $exe.FullName -PassThru
             $healthy = $false
-            for ($i = 0; $i -lt 30; $i++) {
+            # 180s, not 60: a cold runner's FIRST launch provisions the WebView2 user-data folder
+            # and has timed out at 60s while later launches answer in seconds. A wall-clock
+            # deadline, because each refused probe can itself burn its 3s timeout.
+            $clock = [System.Diagnostics.Stopwatch]::StartNew()
+            while ($clock.Elapsed.TotalSeconds -lt 180) {
               try {
                 $h = Invoke-RestMethod -Uri "http://127.0.0.1:59833/health" -TimeoutSec 3
-                if ($h.status -eq "ok") { Write-Host "/health: $($h | ConvertTo-Json -Compress)"; $healthy = $true; break }
+                if ($h.status -eq "ok") { Write-Host "/health after $([int]$clock.Elapsed.TotalSeconds)s: $($h | ConvertTo-Json -Compress)"; $healthy = $true; break }
               } catch { }
+              # A dead process is a crash, not slowness — say so instead of burning the budget.
+              if ($p.HasExited) {
+                Write-Error "Presto.exe exited with code $($p.ExitCode) before serving /health"
+                exit 1
+              }
               Start-Sleep -Seconds 2
             }
             if (-not $healthy) {
-              Write-Error "app did not serve /health within 60s — the tray/WebView2 app may not run on a windows-latest runner (risk #1)"
+              Write-Host "── diagnostics: the process is alive but /health never answered ──"
+              Get-Process -Name "Presto", "msedgewebview2" -ErrorAction SilentlyContinue |
+                Select-Object Name, Id, StartTime, CPU, WorkingSet64 | Format-Table -AutoSize | Out-String | Write-Host
+              Get-NetTCPConnection -LocalPort 59833, 59834 -ErrorAction SilentlyContinue |
+                Select-Object LocalAddress, LocalPort, State, OwningProcess | Format-Table -AutoSize | Out-String | Write-Host
+              Write-Error "app did not serve /health within 180s — the tray/WebView2 app may not run on a windows-latest runner (risk #1)"
               exit 1
             }
             return $p

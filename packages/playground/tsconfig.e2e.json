@@ -2,6 +2,7 @@
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "types": ["node"],
+    "allowImportingTsExtensions": true,
     // Vite's plugin packages resolve their `vite` peer from the isolated store
     // (node_modules/.bun/vite@…) while this graph's own imports resolve the playground's
     // package-level copy — same version, two file trees, so tsc sees two declarations and
