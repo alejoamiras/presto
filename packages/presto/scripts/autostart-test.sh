@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# L4 — hermetic autostart env proofs, in Docker (plan §6). Local-only, like test:nsis; NOT a CI job.
+# L4 — hermetic autostart env proofs, in Docker. The local form of the two legs; CI runs the same
+# tests natively on the Linux platform leg of presto.yml (divergent dirs, then `sudo -u '#12345'`).
 #
 # What only a container can prove (the dev host can't — HOME and XDG_CONFIG_HOME coincide there):
 #   1. D9: the owned autostart module watches XDG_CONFIG_HOME, not a hardcoded $HOME/.config — the
