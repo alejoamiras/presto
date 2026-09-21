@@ -127,8 +127,9 @@ function readNotice(root: string, policy: LicensePolicy): PackageNotice {
   };
 }
 
-// pnpm/Bun store segment: `<name>@<version>[_peer-or-patch suffix]/node_modules/<name>/`.
-const STORE_ENTRY = /\/((?:@[^/@]+\+)?[^/@]+)@(\d[^/_]*)[^/]*\/node_modules\//g;
+// pnpm/Bun store segment: `<name>@<version><suffix>/node_modules/`, where the suffix is a patch
+// hash (`_…`), a Bun build hash (`+…`) or a peer set (`(…)`), none of them part of the version.
+const STORE_ENTRY = /\/((?:@[^/@]+\+)?[^/@]+)@(\d[^/_+(]*)[^/]*\/node_modules\//g;
 
 function embeddedNotices(hostRoot: string, inventory: EmbeddedComponents): PackageNotice[] {
   const found = new Set<string>();
@@ -137,9 +138,12 @@ function embeddedNotices(hostRoot: string, inventory: EmbeddedComponents): Packa
       sources: string[];
     };
     for (const source of sources) {
-      for (const [, name, version] of source.matchAll(STORE_ENTRY)) {
-        found.add(`${name.replace("+", "/")}@${version}`);
+      const entries = [...source.matchAll(STORE_ENTRY)];
+      // A dependency path this cannot identify would slip past the comparison below.
+      if (entries.length === 0 && source.includes("node_modules")) {
+        throw new Error(`${inventory.host} inlines ${source}, which names no package@version`);
       }
+      for (const [, name, version] of entries) found.add(`${name.replace("+", "/")}@${version}`);
     }
   }
   const declared = new Set(inventory.components.map(({ name, version }) => `${name}@${version}`));
@@ -158,32 +162,22 @@ function embeddedNotices(hostRoot: string, inventory: EmbeddedComponents): Packa
   }));
 }
 
-/** The package at `root`, followed by whatever the policy says it inlines. */
-function noticesAt(root: string, policy: LicensePolicy): PackageNotice[] {
-  const notice = readNotice(root, policy);
-  const inlined = (policy.embedded ?? [])
-    .filter(({ host }) => host === notice.name)
-    .flatMap((inventory) => embeddedNotices(root, inventory));
-  return [notice, ...inlined];
-}
-
-/** One notice per distinct `name@version` among the bundled modules, sorted for a stable diff. */
-export function collectNotices(
-  moduleIds: Iterable<string>,
-  policy: LicensePolicy = {},
-): PackageNotice[] {
+function bundledRoots(moduleIds: Iterable<string>): Set<string> {
   const roots = new Set<string>();
   for (const id of moduleIds) {
     const root = packageRootOf(id);
     if (root && existsSync(join(root, "package.json"))) roots.add(root);
   }
-  const byKey = new Map<string, PackageNotice>();
+  return roots;
+}
+
+/** Reads every root, collecting the unreproducible ones instead of stopping at the first. */
+function readAll(roots: Iterable<string>, policy: LicensePolicy) {
+  const read: { root: string; notice: PackageNotice }[] = [];
   const missing: string[] = [];
   for (const root of roots) {
     try {
-      for (const notice of noticesAt(root, policy)) {
-        byKey.set(`${notice.name}@${notice.version}`, notice);
-      }
+      read.push({ root, notice: readNotice(root, policy) });
     } catch (error) {
       if (!(error instanceof MissingLicenseText)) throw error;
       missing.push(error.message);
@@ -195,6 +189,27 @@ export function collectNotices(
     throw new Error(
       `bundled packages whose terms are not fully reproduced; add a reviewed rule to licensing/license-fallbacks.ts for each: ${missing.sort().join(", ")}`,
     );
+  }
+  return read;
+}
+
+/** One notice per distinct `name@version` among the bundled modules, sorted for a stable diff. */
+export function collectNotices(
+  moduleIds: Iterable<string>,
+  policy: LicensePolicy = {},
+): PackageNotice[] {
+  const read = readAll(bundledRoots(moduleIds), policy);
+  const byKey = new Map(read.map(({ notice }) => [`${notice.name}@${notice.version}`, notice]));
+  // After every real package, and only where absent: a package's own files (NOTICE, supplements)
+  // outrank the vendored text of the same name@version, whatever order the roots arrived in.
+  for (const { root, notice } of read) {
+    const inlined = (policy.embedded ?? [])
+      .filter(({ host }) => host === notice.name)
+      .flatMap((inventory) => embeddedNotices(root, inventory));
+    for (const item of inlined) {
+      const key = `${item.name}@${item.version}`;
+      if (!byKey.has(key)) byKey.set(key, item);
+    }
   }
   return [...byKey.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([, notice]) => notice);
 }

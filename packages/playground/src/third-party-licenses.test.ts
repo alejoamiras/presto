@@ -66,11 +66,18 @@ describe("collectNotices", () => {
   });
 });
 
+const pnpm = (name: string, version: string) =>
+  `../../../node_modules/.pnpm/${name}@${version}/node_modules/${name}/index.js`;
+
+/** Writes one of the polyfill host's shim source maps. */
+function write(shim: string, sources: string[]): void {
+  const dist = join(tree, "node_modules/vite-plugin-node-polyfills/shims", shim, "dist");
+  mkdirSync(dist, { recursive: true });
+  writeFileSync(join(dist, "index.js.map"), JSON.stringify({ sources }));
+}
+
 describe("licence policy", () => {
   test("adds a host's reviewed inlined packages, and fails when its source maps disagree", () => {
-    const map = (sources: string[]) => JSON.stringify({ sources });
-    const pnpm = (name: string, version: string) =>
-      `../../../node_modules/.pnpm/${name}@${version}/node_modules/${name}/index.js`;
     const reviewed = [
       pnpm("base64-js", "1.5.1"),
       pnpm("ieee754", "1.2.1"),
@@ -82,11 +89,6 @@ describe("licence policy", () => {
       { name: "vite-plugin-node-polyfills", version: "0.28.0", license: "MIT" },
       { LICENSE: TERMS },
     );
-    const shims = join(tree, "node_modules/vite-plugin-node-polyfills/shims");
-    const write = (shim: string, sources: string[]) => {
-      mkdirSync(join(shims, shim, "dist"), { recursive: true });
-      writeFileSync(join(shims, shim, "dist/index.js.map"), map(sources));
-    };
     write("buffer", reviewed);
     write("global", ["../index.ts"]);
     write("process", [pnpm("process", "0.11.10")]);
@@ -99,6 +101,32 @@ describe("licence policy", () => {
       "process@0.11.10 MIT",
       "vite-plugin-node-polyfills@0.28.0 MIT",
     ]);
+
+    // Bun's store appends a build hash, and a peer set may follow: neither is part of the version.
+    write("process", [
+      "../../node_modules/.bun/process@0.11.10+ff0372d108591aba/node_modules/process/browser.js",
+    ]);
+    expect(collectNotices([host], LICENSE_POLICY)).toHaveLength(5);
+
+    // A directly bundled copy keeps its own files over the vendored text.
+    const own = install(
+      "ieee754",
+      { name: "ieee754", version: "1.2.1", license: "BSD-3-Clause" },
+      { LICENSE: `own ${TERMS}` },
+    );
+    for (const ids of [
+      [host, own],
+      [own, host],
+    ]) {
+      const ieee = collectNotices(ids, LICENSE_POLICY).find((n) => n.name === "ieee754");
+      expect(ieee?.texts[0].file).toBe("LICENSE");
+    }
+
+    write("global", ["../../../node_modules/unreviewed-extra/index.js"]);
+    expect(() => collectNotices([host], LICENSE_POLICY)).toThrow(
+      /unreviewed-extra.*names no package@version/,
+    );
+    write("global", ["../index.ts"]);
 
     write("process", [pnpm("process", "0.12.0"), pnpm("@scope+extra", "2.0.0")]);
     expect(() => collectNotices([host], LICENSE_POLICY)).toThrow(
