@@ -48,3 +48,17 @@ test("production build serves all static assets", async ({ page }) => {
 
   expect(failedResources).toEqual([]);
 });
+
+test("production build ships the third-party licence notices it links to", async ({ page }) => {
+  await page.goto("/");
+  const href = await page.locator("#third-party-licenses").getAttribute("href");
+  expect(href).toBe("/third-party-licenses.txt");
+
+  // A missing file would still answer 200 with index.html (SPA fallback), so check the body.
+  const response = await page.request.get(href as string);
+  expect(response.headers()["content-type"]).toContain("text/plain");
+  const body = await response.text();
+  expect(body.startsWith("THIRD-PARTY SOFTWARE NOTICES")).toBe(true);
+  expect(body).toContain("@aztec/stdlib ");
+  expect(body).toContain("Apache License");
+});
