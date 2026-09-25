@@ -29,3 +29,7 @@ The first draft of the regression test built the prover before replacing `fetch`
 kept the passing stub and the test passed against the old example as well. Stubbing `fetch` first
 fixed that: the test now fails against round 1's example ("stuck") and passes against the fix.
 Gates: docs suite 10 pass; `bun run test` exit 0 on arc 1.
+
+## Round 3 — converged
+
+"No new material findings." (resumed session, `response-2.md`).
