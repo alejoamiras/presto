@@ -18,3 +18,14 @@ while the probe retries. The test fails against the previous example (`stuck`) a
 the fix; the README and the skill copies were re-synced from the example.
 
 Gates after the fixes: `bun run test` exit 0 on arc 1; playground unit tests 109 pass on arc 2.
+
+## Round 2 — "Changes requested", 1 finding, verified
+
+| # | Sev | Finding | Verdict |
+|---|---|---|---|
+| 1 | Med | a check's own read after a failed probe could be the first to see a grant: `apply()` recorded it and its "new grant" answer was dropped, so the change event or `beforeProving()` that followed found the grant already seen and never probed (reproduced by Codex with the real `PrestoClient`; outside A5, since every read is in order) | accepted: a check that reads a new grant after a failed probe probes once more (the second read sees the grant as seen, so it cannot repeat) |
+
+The first draft of the regression test built the prover before replacing `fetch`, so the prover
+kept the passing stub and the test passed against the old example as well. Stubbing `fetch` first
+fixed that: the test now fails against round 1's example ("stuck") and passes against the fix.
+Gates: docs suite 10 pass; `bun run test` exit 0 on arc 1.
