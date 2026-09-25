@@ -17,22 +17,37 @@ the same on every site. Six surfaces, one state model, keyed to the SDK's `Prest
 
 ```html
 <script type="module">
-  import { PrestoProver } from "@alejoamiras/presto";
+  import { loopbackPermission, PrestoProver } from "@alejoamiras/presto";
   import "@alejoamiras/presto-banners/register"; // defines <presto-banner>
 
   const prover = new PrestoProver();
+  prover.setForceLocal(true); // nothing reaches Presto until the visitor connects
   const banner = document.querySelector("presto-banner");
-  banner.status = await prover.checkPrestoStatus(); // maps to a banner state
-  banner.addEventListener("presto-banner:retry", async () => {
-    banner.status = await prover.checkPrestoStatus({ forceRefresh: true });
-  });
+
+  async function connect() {
+    prover.setForceLocal(false);
+    banner.status = await prover.checkPrestoStatus({ forceRefresh: true }); // after the user connects
+  }
+
+  const permission = await loopbackPermission(); // never prompts, never contacts Presto
+  if (permission === "granted") await connect();
+  else banner.state = permission === "denied" ? "permission-blocked" : "connect";
+  banner.addEventListener("presto-banner:connect", connect);
+  banner.addEventListener("presto-banner:retry", connect);
 </script>
 
 <presto-banner variant="ribbon"></presto-banner>
 ```
 
+**Do not check status on page load.** In Chrome 142+ and Firefox 153+ the first request to Presto
+makes the browser ask the visitor to let this site reach apps on their device. The `connect` state
+explains that question before the browser asks, and its button emits `presto-banner:connect`; only
+a visitor who already allowed it connects without a click. The
+[`@alejoamiras/presto` README](../sdk/README.md#ask-before-you-probe) adds the watcher that handles a
+late answer or a reset.
+
 The banner renders **nothing until `state` is set** (the static Tile is the one exception), so an
-installed user never sees a flash of the install pitch. Set it from the status check, not on page load.
+installed user never sees a flash of the install pitch.
 
 ### Attributes
 

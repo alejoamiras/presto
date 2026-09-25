@@ -455,7 +455,7 @@ new names; `sdk-core/README.md`; core and noir to `1.2.0`.
 - Pass: exit 0; new tests pass; the three consumers install, typecheck and load with the new imports.
 - Layers: lint, typecheck, unit, packed artifact.
 
-### Phase 2 — docs, examples and agent pointer
+### Phase 2 — docs, examples and agent pointer ✓
 
 SKILL.md (description; "Ask before you probe"; steps 2–3 examples build one prover with
 `setForceLocal(true)` and pass that instance to the wallet; step 5's example gated the same way; step
@@ -468,18 +468,19 @@ README and `docs/PLATFORM_SUPPORT.md`; `sdk/public-contract.test.ts` pins the se
 
 The consent wiring is one real module, `packages/sdk/examples/consent.ts` (in the package's
 typecheck, not in `files`). It takes the one prover instance the app uses, forces it local, and
-returns `resumePresto()` for page load (connects only on `granted`), `connectPresto()` for the
-explained click (refuses on `denied`), and a watcher that forces local again on any non-`granted`
-change. The README's "Ask before you probe" block and the SKILL's step are that file's body
+exports `askBeforeConnecting(prover, onStatus)`: on load it connects only when the decision reads
+`granted`, and it returns `connect()` for the explained click (reports `"blocked"` on `denied`),
+`beforeProving()` (forces local again on `denied`, or on `prompt` after a grant, for browsers without
+change events) and `stop()`; its watcher connects on `granted` and forces local on any other change. The README's "Ask before you probe" block and the SKILL's step are that file's body
 verbatim, and every other example that proves or builds a wallet uses the same gated instance.
 `docs-examples.test.ts` then does two things:
 - **Executes** the module on the stubbed prover `presto-prover.test.ts` already uses (fake step,
   WASM stub) under a stubbed `navigator.permissions` and a recording `fetch`, calling both status
   and `createChonkProof` through that instance: before consent (`prompt`, `unsupported`, `denied`)
-  neither `resumePresto()` nor a proof sends anything; `connectPresto()` sends with `prompt` and
-  `granted` and sends nothing with `denied`; after connection a proof reaches `/prove`; after a
-  watcher change to `prompt` a proof sends nothing again; with `granted` at load, `resumePresto()`
-  connects. It also asserts the two docs contain the file's body verbatim.
+  neither load nor a proof sends anything; `connect()` sends with `prompt` and sends nothing with
+  `denied`; after connection a proof reaches `/prove`; after a
+  watcher change to `prompt` a proof sends nothing again, and so does an unreported reset after
+  `beforeProving()`; with `granted` at load, the module connects with no click. It also asserts the two docs contain the file's body verbatim.
 - **Lints** every other fenced `ts`/`typescript`/`js` block, and the `<script>` of every `html` block,
   in `README.md`, `packages/sdk/README.md`, `packages/sdk-noir/README.md`, SKILL.md and
   `packages/banners/README.md`: a block that calls `generateProof(`, `EmbeddedWallet.create(` or
@@ -488,8 +489,8 @@ verbatim, and every other example that proves or builds a wallet uses the same g
   (never an inline `new PrestoProver(`); a block that calls `checkPrestoStatus(` (force-local does
   not gate it, `presto-prover.ts:149`) must carry the marker comment `// after the user connects`.
   The lint and marker are review aids that stop regressions; the behavioural evidence is the executed
-  module. The banners README Usage is rewritten around `resumePresto` / `connectPresto` and the
-  `presto-banner:connect` event.
+  module. The banners README Usage is rewritten around `loopbackPermission()`, a click-driven
+  `connect()` and the `presto-banner:connect` event.
 
 **Validation gate**
 - Commands: `bun run test` (includes `docs-examples.test.ts`; its lint half must fail against the

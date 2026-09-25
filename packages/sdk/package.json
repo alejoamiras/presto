@@ -13,6 +13,7 @@
     "src",
     "dist",
     ".claude",
+    "AGENTS.md",
     "MIGRATION.md"
   ],
   "scripts": {
@@ -21,7 +22,7 @@
     "prepublishOnly": "bun run test:lint && bun run build",
     "test:e2e": "bun test --preload ./e2e/e2e-setup.ts e2e/",
     "test:e2e:remote": "AZTEC_NODE_URL=https://v5.testnet.rpc.aztec-labs.com bun test --preload ./e2e/e2e-setup.ts e2e/remote-network.test.ts",
-    "test:lint": "tsc --noEmit --emitDeclarationOnly false",
+    "test:lint": "tsc --noEmit --emitDeclarationOnly false && tsc -p examples",
     "test:unit": "bun test --parallel src/"
   },
   "dependencies": {

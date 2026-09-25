@@ -64,8 +64,8 @@ npm install @alejoamiras/presto
 ```typescript
 import { PrestoProver } from "@alejoamiras/presto";
 
-// Zero-config — auto-detects presto, falls back to WASM
-const prover = new PrestoProver();
+const prover = new PrestoProver(); // zero-config; constructing it sends nothing
+prover.setForceLocal(true); // proves in WASM until the visitor connects Presto
 ```
 
 See the [SDK README](packages/sdk/README.md) for full API reference.
@@ -78,7 +78,9 @@ confirmed, current-tab-only HTTP escape hatch by setting both `httpsOnly: false`
 `allowInsecureDowngrade: true` on that prover instance.
 
 > **Browser Local Network Access.** Public sites need permission in current Chrome and Firefox to
-> reach the loopback presto. An explicit denial is surfaced as `permission-blocked` so an app
+> reach the loopback presto, and the first request raises the prompt. Never check or prove on page
+> load: read `loopbackPermission()` (it never prompts) and connect from an explained click, as in
+> [Ask before you probe](packages/sdk/README.md#ask-before-you-probe). An explicit denial is surfaced as `permission-blocked` so an app
 > can show site-permission guidance and Retry; under the browser HTTPS-only default, an
 > unresolved/dismissed prompt normally appears as `secure-connection-unavailable` with an
 > `unconfirmed` diagnosis. The SDK's loopback annotation does not bypass permission, and HTTPS is subject to the
@@ -99,6 +101,7 @@ import circuit from "./target/circuit.json";
 
 // Same surface as bb.js's UltraHonkBackend — native via Presto, WASM otherwise
 const backend = new PrestoUltraHonkBackend(circuit.bytecode, () => Barretenberg.new());
+backend.setForceLocal(true); // until the visitor connects Presto
 const { proof, publicInputs } = await backend.generateProof(witness, {
   verifierTarget: "noir-recursive-no-zk",
 });

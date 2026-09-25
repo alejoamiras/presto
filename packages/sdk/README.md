@@ -29,11 +29,11 @@ Nothing from core needs importing for Aztec proving; this package re-exports the
 ```typescript
 import { PrestoProver } from "@alejoamiras/presto";
 
-// Zero-config — auto-detects the presto, falls back to WASM.
-const prover = new PrestoProver();
+const prover = new PrestoProver(); // zero-config; constructing it sends nothing
+prover.setForceLocal(true); // proves in WASM until the visitor connects Presto
 ```
 
-Inject `prover` into your wallet through the PXE `proverOrOptions` option — see [Embedded Wallet](#embedded-wallet-browser-dapps) below. Every transaction then proves natively when the [Presto](https://github.com/alejoamiras/presto/releases) desktop app is running, and falls back to in-browser WASM automatically. No other code changes.
+Inject `prover` into your wallet through the PXE `proverOrOptions` option — see [Embedded Wallet](#embedded-wallet-browser-dapps) below. In a browser, the first request to Presto makes Chrome and Firefox ask the visitor for permission, so connect only when the visitor asks to, as shown in [Ask before you probe](#ask-before-you-probe). From then on every transaction proves natively when the [Presto](https://github.com/alejoamiras/presto/releases) desktop app is running, and falls back to in-browser WASM automatically.
 
 ### Embedded Wallet (Browser dApps)
 
@@ -43,15 +43,109 @@ For browser-based dApps using Aztec's embedded wallet, inject the prover via the
 import { PrestoProver } from "@alejoamiras/presto";
 import { EmbeddedWallet } from "@aztec/wallets/embedded";
 
+const prover = new PrestoProver();
+prover.setForceLocal(true); // until the visitor connects, see "Ask before you probe"
+
 const wallet = await EmbeddedWallet.create("http://localhost:8080", {
   pxe: {
     proverEnabled: true,
-    proverOrOptions: new PrestoProver(),
+    proverOrOptions: prover,
   },
 });
 ```
 
-Every transaction sent through this wallet will automatically use native proving when the presto is available, and fall back to WASM otherwise.
+Once the visitor has connected Presto, every transaction sent through this wallet proves natively when the presto is available, and falls back to WASM otherwise.
+
+## Ask before you probe
+
+Chrome 142+ and Firefox 153+ ask the visitor before a public site first reaches an app on their
+device ("Access other apps and services on this device"). `checkPrestoStatus()` and every proof are
+such requests. A page that checks on load therefore shows that prompt before the visitor has done
+anything, and a site asking to reach your computer the moment it opens is exactly what a careful
+visitor should refuse. Ask first:
+
+1. **Keep the prover local.** `setForceLocal(true)` proves in WASM and sends nothing to Presto.
+   Constructing a prover sends nothing either.
+2. **Read the stored decision on load.** `loopbackPermission()` never prompts and never contacts
+   Presto. It returns `"granted" | "prompt" | "denied" | "unsupported"`. Only `granted` may connect
+   without a click.
+3. **Offer a Connect button that explains the prompt before the browser shows it.** Suggested copy:
+   > **Connect Presto?** Presto proves on your computer, much faster than this tab can. To reach it,
+   > your browser will ask for permission to connect to apps on this device. This site only uses that
+   > permission to talk to Presto, and you can turn it off in your browser's site settings.
+
+   Use "may ask" when the decision reads `unsupported` (Safari, older browsers): the browser may not
+   prompt at all.
+4. **On the click**, turn force-local off and check status. The browser may prompt now.
+5. **Watch the decision.** `watchLoopbackPermission()` reports a late answer to the prompt, a
+   site-settings edit, or a decision made in another tab. On anything but `granted`, force local again.
+6. **Re-read before each proof** where the browser cannot report changes.
+
+[`examples/consent.ts`](https://github.com/alejoamiras/presto/blob/main/packages/sdk/examples/consent.ts)
+does all six; the SDK's tests run it, and this block is that file:
+
+```typescript
+import {
+  loopbackPermission,
+  type PrestoProver,
+  type PrestoStatus,
+  watchLoopbackPermission,
+} from "@alejoamiras/presto";
+
+/**
+ * Keeps `prover` away from Presto until the visitor opts in. Call `connect()` only from a click
+ * that first says the browser may ask to let this site reach apps on this device.
+ */
+export async function askBeforeConnecting(
+  prover: PrestoProver,
+  onStatus: (status: PrestoStatus | "blocked") => void,
+) {
+  prover.setForceLocal(true); // proofs stay in the browser until the visitor connects
+  let allowed = false; // the browser has reported "granted" at least once
+
+  async function read() {
+    const state = await loopbackPermission(); // never prompts, never contacts Presto
+    if (state === "granted") allowed = true;
+    return state;
+  }
+
+  async function connect() {
+    if ((await read()) === "denied") return onStatus("blocked"); // explain how to allow it again
+    prover.setForceLocal(false);
+    onStatus(await prover.checkPrestoStatus({ forceRefresh: true })); // the browser may ask now
+  }
+
+  /** Before each proof: catches a reset in browsers that never report changes. */
+  async function beforeProving() {
+    const state = await read();
+    if (state === "denied" || (state === "prompt" && allowed)) prover.setForceLocal(true);
+  }
+
+  // Allowed late, in site settings or in another tab: connect. Blocked or reset: local again.
+  const stop = await watchLoopbackPermission((state) => {
+    if (state === "granted") void connect();
+    else prover.setForceLocal(true);
+  });
+
+  // A returning visitor who already allowed it connects with no click, and no prompt is possible.
+  if ((await read()) === "granted") await connect();
+  return { connect, beforeProving, stop };
+}
+```
+
+Wire it to your UI:
+
+```typescript
+const prover = new PrestoProver(); // pass this same instance to your wallet
+const presto = await askBeforeConnecting(prover, renderPrestoStatus);
+connectButton.addEventListener("click", () => presto.connect()); // after your explanation
+// Before sending each transaction:
+await presto.beforeProving();
+```
+
+`denied` means the visitor blocked this site: show how to allow it again in site settings (Chrome
+calls the toggle **Apps on device**), then call `connect()`. The
+[`@alejoamiras/presto-banners`](../banners/README.md) `connect` state renders this ask for you.
 
 ## API Reference
 
@@ -69,7 +163,7 @@ const prover = new PrestoProver(options?: PrestoProverOptions);
 | `setPrestoConfig(config)` | `void` | Update connection and transport policy. Resets cached protocol/status. |
 | `setOnPhase(callback)` | `void` | Register a phase transition callback for UI animation. |
 | `createChonkProof(steps)` | `Promise<ChonkProofWithPublicInputs>` | Generate a proof — routes to presto or falls back to WASM. |
-| `setForceLocal(force)` | `void` | Force WASM proving, bypassing presto detection (testing). |
+| `setForceLocal(force)` | `void` | Prove in WASM and send nothing to Presto. Use it until the visitor connects ([Ask before you probe](#ask-before-you-probe)). Does not gate `checkPrestoStatus()`. |
 
 ### `PrestoProverOptions`
 
@@ -145,7 +239,7 @@ is denied; it does **not** mean the presto is installed or healthy. It has no `p
 neither endpoint answered. Use a forced refresh after the user changes the site permission:
 
 ```typescript
-const status = await prover.checkPrestoStatus({ forceRefresh: true });
+const status = await prover.checkPrestoStatus({ forceRefresh: true }); // after the user connects
 ```
 
 The refresh preserves the endpoint configuration, protocol pin, HTTPS history, and an existing
@@ -218,6 +312,7 @@ If the user denies your site at step 3 (or authorization times out), the SDK emi
 
 ```ts
 import { PrestoHttpError } from "@alejoamiras/presto";
+// after the user connects
 try { await prover.createChonkProof(steps); }
 catch (e) { if (e instanceof PrestoHttpError) { /* e.status, e.code */ } }
 ```
@@ -324,7 +419,7 @@ prover.setPrestoConfig({
   httpsOnly: false,
   allowInsecureDowngrade: true,
 });
-await prover.checkPrestoStatus({ forceRefresh: true });
+await prover.checkPrestoStatus({ forceRefresh: true }); // after the user connects
 ```
 
 Use a warning such as: “HTTP can expose private proving data to another local user or process. Use
@@ -378,6 +473,9 @@ Current Chrome and Firefox gate requests from a public website to loopback addre
 - If the user **allows**, the HTTPS path can proceed.
 - If the browser's permission state is explicitly **denied**, status is `{ available: false, reason: "permission-blocked" }`; proving still falls back to WASM. Under the browser HTTPS-only default, a prompt that remains open, is dismissed without a persisted denial, or cannot be queried is inconclusive and normally appears as `secure-connection-unavailable` with `diagnosis: "unconfirmed"`.
 - The usual recovery is to open the site's permissions beside the address bar, allow local network or device access, then call `checkPrestoStatus({ forceRefresh: true })`. This is not guaranteed: managed policy may require an administrator, and an iframe may need top-level access or an appropriate Permissions Policy delegation.
+
+Because the first request prompts, never check status or prove on page load before the visitor
+asks to connect; see [Ask before you probe](#ask-before-you-probe).
 
 The SDK adds `targetAddressSpace: "loopback"` to supported plaintext Fetch requests. That declares
 intent so supporting browsers can apply their mixed-content/LNA flow; it does **not** grant or bypass permission.
