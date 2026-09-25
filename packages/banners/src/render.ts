@@ -55,7 +55,6 @@ export function detectedContent(): string {
   return `${CHECK}<span>${CONNECTED_TITLE} ${SPARK_GLYPH} ${CONNECTED_SUPPORT}</span>`;
 }
 
-/** The Sheet's install link text, naming the platform when it is known. */
 export function sheetCtaLabel(state: BannerState, platform: BannerPlatform | null): string {
   const c = VARIANT_COPY.sheet;
   if (state === "connect") return platform ? `${c.connect.getFor} ${platform}` : c.connect.get;

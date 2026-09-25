@@ -1,46 +1,60 @@
 import {
+  type LoopbackPermissionState,
   loopbackPermission,
   type PrestoProver,
   type PrestoStatus,
   watchLoopbackPermission,
 } from "@alejoamiras/presto";
 
-/**
- * Keeps `prover` away from Presto until the visitor opts in. Call `connect()` only from a click
- * that first says the browser may ask to let this site reach apps on this device.
- */
-export async function askBeforeConnecting(
-  prover: PrestoProver,
-  onStatus: (status: PrestoStatus | "blocked") => void,
-) {
-  prover.setForceLocal(true); // proofs stay in the browser until the visitor connects
-  let allowed = false; // the browser has reported "granted" at least once
+/** "ask": offer Connect. "blocked": explain how to allow this site again. Otherwise a status check. */
+export type PrestoView = "ask" | "blocked" | PrestoStatus;
 
-  async function read() {
-    const state = await loopbackPermission(); // never prompts, never contacts Presto
-    if (state === "granted") allowed = true;
-    return state;
+/**
+ * Keeps `prover` away from Presto until the visitor opts in, and reports what to show. Call
+ * `connect()` only from a click that first says the browser may ask to let this site reach apps on
+ * this device, and `beforeProving()` before each proof.
+ */
+export async function askBeforeConnecting(prover: PrestoProver, show: (view: PrestoView) => void) {
+  let consented = false; // the visitor clicked Connect, or the browser reports "granted"
+  let granted = false; // "granted" seen since then, so a later "prompt" means it was reset
+  let epoch = 0; // bumped on revocation: a check that started earlier is never shown
+
+  /** Follows the browser's decision. Returns true for a grant not seen before, which needs a check. */
+  function apply(state: LoopbackPermissionState): boolean {
+    const newGrant = state === "granted" && !granted;
+    if (state === "granted") consented = granted = true;
+    else if (state === "denied" || (state === "prompt" && granted)) {
+      if (consented) epoch++;
+      consented = granted = false;
+    }
+    prover.setForceLocal(!consented);
+    if (!consented) show(state === "denied" ? "blocked" : "ask");
+    return newGrant;
+  }
+
+  async function check() {
+    const started = epoch;
+    const status = await prover.checkPrestoStatus({ forceRefresh: true }); // the browser may ask now
+    apply(await loopbackPermission()); // records the answer given at the prompt
+    if (epoch === started && consented) show(status);
+  }
+
+  async function sync(state: LoopbackPermissionState) {
+    if (apply(state)) await check(); // allowed earlier, in site settings, or in another tab
   }
 
   async function connect() {
-    if ((await read()) === "denied") return onStatus("blocked"); // explain how to allow it again
-    prover.setForceLocal(false);
-    onStatus(await prover.checkPrestoStatus({ forceRefresh: true })); // the browser may ask now
+    const state = await loopbackPermission(); // never prompts, never contacts Presto
+    if (state === "denied") return void apply(state);
+    consented = true;
+    granted = state === "granted";
+    await check();
   }
 
-  /** Before each proof: catches a reset in browsers that never report changes. */
-  async function beforeProving() {
-    const state = await read();
-    if (state === "denied" || (state === "prompt" && allowed)) prover.setForceLocal(true);
-  }
+  /** Catches a reset or a grant in browsers that report no changes. */
+  const beforeProving = async () => sync(await loopbackPermission());
 
-  // Allowed late, in site settings or in another tab: connect. Blocked or reset: local again.
-  const stop = await watchLoopbackPermission((state) => {
-    if (state === "granted") void connect();
-    else prover.setForceLocal(true);
-  });
-
-  // A returning visitor who already allowed it connects with no click, and no prompt is possible.
-  if ((await read()) === "granted") await connect();
+  const stop = await watchLoopbackPermission((state) => void sync(state));
+  await sync(await loopbackPermission());
   return { connect, beforeProving, stop };
 }

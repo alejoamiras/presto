@@ -199,7 +199,7 @@ export class PrestoBanner extends Base {
     const { href, state } = this;
     const links = this.#shadow.querySelectorAll<HTMLAnchorElement>('[data-action="cta"]');
     for (const link of links) link.setAttribute("href", href);
-    // The Sheet has one install link, and its label names the platform.
+    // A Sheet has exactly one install link.
     if (this.variant === "sheet" && state && links[0]) {
       links[0].textContent = sheetCtaLabel(state, this.platform);
     }

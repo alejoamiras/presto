@@ -35,6 +35,7 @@ const client = new PrestoClient({
   onPhase: (phase) => console.log(phase),
 });
 
+// after the user connects (browsers: see "Ask before the first request")
 const status = await client.checkStatus(); // PrestoStatus, cached 10 s, single-flight
 const outcome = await client.prove({
   path: "/prove/ultra-honk",
@@ -81,7 +82,7 @@ prompts or contacts Presto:
 import { loopbackPermission, watchLoopbackPermission } from "@alejoamiras/presto-core";
 
 // "granted" | "prompt" | "denied" | "unsupported" (the browser exposes no decision)
-if ((await loopbackPermission()) === "granted") await client.checkStatus(); // cannot prompt
+if ((await loopbackPermission()) === "granted") await client.checkStatus(); // after the user connects, or already allowed
 // Otherwise call checkStatus() from a click that first explains the browser's question.
 
 const stop = await watchLoopbackPermission((state) => {

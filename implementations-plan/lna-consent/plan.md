@@ -468,10 +468,11 @@ README and `docs/PLATFORM_SUPPORT.md`; `sdk/public-contract.test.ts` pins the se
 
 The consent wiring is one real module, `packages/sdk/examples/consent.ts` (in the package's
 typecheck, not in `files`). It takes the one prover instance the app uses, forces it local, and
-exports `askBeforeConnecting(prover, onStatus)`: on load it connects only when the decision reads
-`granted`, and it returns `connect()` for the explained click (reports `"blocked"` on `denied`),
-`beforeProving()` (forces local again on `denied`, or on `prompt` after a grant, for browsers without
-change events) and `stop()`; its watcher connects on `granted` and forces local on any other change. The README's "Ask before you probe" block and the SKILL's step are that file's body
+exports `askBeforeConnecting(prover, show)`, where `show` receives `"ask"`, `"blocked"` or a
+`PrestoStatus`. Consent is a click or a reported `granted`; `denied`, or `prompt` after a grant (a
+reset), revokes it and discards any check in flight. It connects with no click only on a `granted`
+read, and returns `connect()` for the explained click, `beforeProving()` (recomputes force-local per
+proof for browsers without change events) and `stop()`. The README's "Ask before you probe" block and the SKILL's step are that file's body
 verbatim, and every other example that proves or builds a wallet uses the same gated instance.
 `docs-examples.test.ts` then does two things:
 - **Executes** the module on the stubbed prover `presto-prover.test.ts` already uses (fake step,

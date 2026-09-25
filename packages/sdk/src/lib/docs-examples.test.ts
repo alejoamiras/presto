@@ -57,20 +57,41 @@ function restorePermissions() {
   else delete (navigator as { permissions?: unknown }).permissions;
 }
 
-describe("examples/consent.ts, executed", () => {
-  let originalFetch: typeof globalThis.fetch;
-  let fetched: string[];
+let fetched: string[] = [];
+/** Runs while `/health` is in flight: the moment a real browser shows its prompt. */
+let duringHealth: () => void = () => {};
+const originalFetch = globalThis.fetch;
 
+function stubFetch() {
+  fetched = [];
+  duringHealth = () => {};
+  globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+    const url = input instanceof Request ? input.url : String(input);
+    fetched.push(new URL(url).pathname);
+    if (!url.includes("/health")) return new Response("busy", { status: 503 });
+    duringHealth();
+    return Response.json({ status: "ok", api_version: 1 });
+  }) as typeof fetch;
+}
+
+async function setup() {
+  const prover = new PrestoProver({ simulator: new WASMSimulator() });
+  const views: unknown[] = [];
+  const presto = await askBeforeConnecting(prover, (view) => views.push(view));
+  const wasm = BBLazyPrivateKernelProver.prototype.createChonkProof as ReturnType<typeof spyOn>;
+  /** Every proof here ends in the WASM stub's rejection, native attempt or not; anything else fails. */
+  const prove = async () => {
+    const calls = wasm.mock.calls.length;
+    await expect(prover.createChonkProof([fakeStep])).rejects.toThrow("wasm");
+    expect(wasm.mock.calls.length).toBe(calls + 1);
+  };
+  return { presto, views, prove };
+}
+
+describe("examples/consent.ts, executed", () => {
   beforeEach(() => {
-    originalFetch = globalThis.fetch;
     stubPermissions();
-    fetched = [];
-    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
-      const url = input instanceof Request ? input.url : String(input);
-      fetched.push(new URL(url).pathname);
-      if (url.includes("/health")) return Response.json({ status: "ok", api_version: 1 });
-      return new Response("busy", { status: 503 });
-    }) as typeof fetch;
+    stubFetch();
     spyOn(stdlibKernel, "serializePrivateExecutionSteps").mockReturnValue(Buffer.from([1]));
     spyOn(BBLazyPrivateKernelProver.prototype, "createChonkProof").mockRejectedValue(
       new Error("wasm"),
@@ -83,32 +104,27 @@ describe("examples/consent.ts, executed", () => {
     mock.restore();
   });
 
-  const setup = async () => {
-    const prover = new PrestoProver({ simulator: new WASMSimulator() });
-    const statuses: unknown[] = [];
-    const presto = await askBeforeConnecting(prover, (s) => statuses.push(s));
-    const prove = () => prover.createChonkProof([fakeStep]).catch(() => undefined);
-    return { presto, statuses, prove };
-  };
-
   test("before consent nothing reaches Presto, status checks and proofs alike", async () => {
-    for (const state of ["prompt", "denied", "unsupported"]) {
+    for (const [state, view] of [
+      ["prompt", "ask"],
+      ["denied", "blocked"],
+      ["unsupported", "ask"],
+    ] as const) {
       permission.state = state;
-      const { statuses, prove } = await setup();
+      const { views, prove } = await setup();
       await prove();
-      expect(statuses).toEqual([]);
+      expect(views).toEqual([view]);
     }
     delete (navigator as { permissions?: unknown }).permissions;
-    const { prove } = await setup();
-    await prove();
+    await (await setup()).prove();
     expect(fetched).toEqual([]);
   });
 
   test("connect() checks from the click, then proofs go to Presto; a block sends nothing", async () => {
-    const { presto, statuses, prove } = await setup();
+    const { presto, views, prove } = await setup();
     await presto.connect();
-    expect(fetched.some((p) => p === "/health")).toBe(true);
-    expect(statuses[0]).toMatchObject({ available: true });
+    expect(fetched).toContain("/health");
+    expect(views.at(-1)).toMatchObject({ available: true });
     await prove();
     expect(fetched).toContain("/prove");
 
@@ -116,33 +132,59 @@ describe("examples/consent.ts, executed", () => {
     permission.state = "denied";
     const blocked = await setup();
     await blocked.presto.connect();
-    expect(blocked.statuses).toEqual(["blocked"]);
+    expect(blocked.views.at(-1)).toBe("blocked");
     expect(fetched).toEqual([]);
   });
 
   test("a returning visitor who allowed it connects with no click", async () => {
     permission.state = "granted";
-    const { statuses } = await setup();
+    const { views } = await setup();
     expect(fetched).toContain("/health");
-    expect(statuses[0]).toMatchObject({ available: true });
+    expect(views.at(-1)).toMatchObject({ available: true });
   });
 
-  test("a reset forces proofs local again, reported or not", async () => {
+  test("a reset forces proofs local, reported or not; a later grant or click restores Presto", async () => {
     permission.state = "granted";
     const watched = await setup();
     setPermission("prompt");
     fetched.length = 0;
     await watched.prove();
     expect(fetched).toEqual([]);
+    expect(watched.views.at(-1)).toBe("ask");
 
+    // No change events: the grant made at the prompt is only visible to a later read.
     permission.observable = false;
-    permission.state = "granted";
+    permission.state = "prompt";
     const silent = await setup();
-    permission.state = "prompt"; // no change event in this browser
+    duringHealth = () => {
+      permission.state = "granted";
+    };
+    await silent.presto.connect();
+    permission.state = "prompt";
     await silent.presto.beforeProving();
     fetched.length = 0;
     await silent.prove();
     expect(fetched).toEqual([]);
+
+    permission.state = "granted"; // allowed again in site settings
+    await silent.presto.beforeProving();
+    await silent.prove();
+    expect(fetched).toContain("/prove");
+
+    permission.state = "prompt"; // reset again, then the visitor clicks Connect
+    await silent.presto.beforeProving();
+    await silent.presto.connect();
+    fetched.length = 0;
+    await silent.prove();
+    expect(fetched).toContain("/prove");
+  });
+
+  test("a block during a check hides its result and says so", async () => {
+    const { presto, views } = await setup();
+    duringHealth = () => setPermission("denied");
+    await presto.connect();
+    expect(views.some((view) => typeof view === "object")).toBe(false);
+    expect(views.at(-1)).toBe("blocked");
   });
 });
 
@@ -166,17 +208,19 @@ const DOCS = [
   "../../../sdk-noir/README.md",
   "../../.claude/skills/presto/SKILL.md",
   "../../../banners/README.md",
+  "../../../sdk-core/README.md",
 ];
-const PROVES = /\.(generateProof|createChonkProof)\(|EmbeddedWallet\.create\(|getSchnorrAccount\(/;
+const PROVES =
+  /\.(generateProof|createChonkProof|prove)\(|EmbeddedWallet\.create\(|getSchnorrAccount\(/;
 const CONSTRUCTS = /new (PrestoProver|PrestoUltraHonkBackend)\(/g;
+/** `checkPrestoStatus()` (SDK) and `checkStatus()` (core) send whatever force-local says. */
+const CHECKS = /\.check(Presto)?Status\(/;
 const MARKER = "// after the user connects";
 
 /** Why a block could reach Presto before consent, or null when it cannot. */
 function violation(block: string): string | null {
   if (block.includes("export async function askBeforeConnecting")) return null;
-  if (block.includes("checkPrestoStatus(") && !block.includes(MARKER)) {
-    return `checkPrestoStatus() without "${MARKER}"`;
-  }
+  if (CHECKS.test(block) && !block.includes(MARKER)) return `status check without "${MARKER}"`;
   const proves = block.search(PROVES);
   if (proves === -1) return null;
   const constructed = [...block.matchAll(CONSTRUCTS)];

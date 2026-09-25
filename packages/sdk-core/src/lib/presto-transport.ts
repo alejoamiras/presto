@@ -164,7 +164,6 @@ export function supportsLoopbackTargetAddressSpace(): boolean {
   }
 }
 
-/** Only an explicit `denied` blocks; `prompt`, `granted` and an unreadable decision stay inconclusive. */
 async function isLoopbackPermissionExplicitlyDenied(): Promise<boolean> {
   return (await loopbackPermission()) === "denied";
 }
