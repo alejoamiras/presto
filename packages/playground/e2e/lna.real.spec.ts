@@ -137,6 +137,25 @@ test("harness proves a real denied and granted public-to-loopback fetch", async 
   await context.close();
 });
 
+/** The Local Network Access verdict Chromium gave each failed Presto request, by URL. */
+async function recordLnaFailures(
+  context: BrowserContext,
+  page: Page,
+): Promise<Map<string, string>> {
+  const cdp = await context.newCDPSession(page);
+  await cdp.send("Network.enable");
+  const urls = new Map<string, string>();
+  const failures = new Map<string, string>();
+  cdp.on("Network.requestWillBeSent", (event) => urls.set(event.requestId, event.request.url));
+  cdp.on("Network.loadingFailed", (event) => {
+    const url = urls.get(event.requestId);
+    if (url && PRESTO_PORTS.has(new URL(url).port)) {
+      failures.set(url, event.corsErrorStatus?.corsError ?? event.errorText);
+    }
+  });
+  return failures;
+}
+
 test("the SDK reads a real block, reports it with nothing reaching Presto, and sees the grant", async ({
   browser,
 }) => {
@@ -145,10 +164,12 @@ test("the SDK reads a real block, reports it with nothing reaching Presto, and s
   const page = await context.newPage();
   await mockPlaygroundNode(page);
   const requests = recordPrestoRequests(page);
+  const failures = await recordLnaFailures(context, page);
   await page.goto(PLAYGROUND_ORIGIN);
   await expect(page.locator("#presto-label")).toHaveText("blocked by your browser");
 
-  // The page's own gate never checks under a block, so the SDK's transport is driven directly.
+  // The page's own gate never checks under a block, so the SDK's transport is driven directly. The
+  // harness has no TLS listener, so plaintext is allowed: only the live HTTP port can show the block.
   const blocked = await page.evaluate(async (url) => {
     const core = await import(url);
     const target = window as unknown as { __sdkChanges: string[] };
@@ -156,16 +177,17 @@ test("the SDK reads a real block, reports it with nothing reaching Presto, and s
     await core.watchLoopbackPermission((state: string) => target.__sdkChanges.push(state));
     return {
       permission: await core.loopbackPermission(),
-      status: await new core.PrestoClient().checkStatus(),
+      status: await new core.PrestoClient({ presto: { httpsOnly: false } }).checkStatus(),
     };
   }, SDK_CORE_URL);
   expect(blocked).toEqual({
     permission: "denied",
     status: { available: false, reason: "permission-blocked" },
   });
-  // One attempt, classified by the permission once it fails: no retry, no plaintext diagnosis, and
-  // the browser stops it before it leaves the page.
-  expect(requests).toEqual(["https://127.0.0.1:59834/health"]);
+  // One round, no retry: the browser refused the live port for this permission, and the server saw
+  // nothing.
+  expect(requests.toSorted()).toEqual([HEALTH_URL, "https://127.0.0.1:59834/health"]);
+  expect(failures.get(HEALTH_URL)).toBe("LocalNetworkAccessPermissionDenied");
   expect(await healthHits()).toBe(0);
 
   await grantLocalNetwork(context, PLAYGROUND_ORIGIN);

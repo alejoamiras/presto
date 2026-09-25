@@ -22,12 +22,15 @@ Evidence, with what each one proves:
    `public-contract` tests now also pin the new exports); `element.test.ts` only gained cases. All
    pass.
 4. **Real browser.** `lna.real.spec.ts` drives the workspace SDK core directly in Chromium's real
-   Local Network Access gate: under a block, `loopbackPermission()` is `denied` and
-   `PrestoClient.checkStatus()` returns `permission-blocked` after exactly one HTTPS attempt that the
-   browser stops (no retry, no plaintext diagnosis, zero server hits, the same order as 1.1.0);
-   `watchLoopbackPermission` reports the grant and the next read is `granted`. This restores SDK
+   Local Network Access gate. Under a block, `loopbackPermission()` is `denied`, and
+   `PrestoClient.checkStatus()` (plaintext allowed, since the harness has no TLS listener) returns
+   `permission-blocked` after one round and no retry; Chromium's CDP `loadingFailed` for the live HTTP
+   port carries `corsError: LocalNetworkAccessPermissionDenied`, and the server counts zero hits.
+   `watchLoopbackPermission` then reports the grant and the next read is `granted`. This restores SDK
    coverage the playground rewrite had removed (main's suite reached the transport through the old
-   load-time probe).
+   load-time probe). A first version only saw the HTTPS attempt, which fails as a refused connection
+   (nothing listens on 59834) and so proved nothing about the gate; Codex caught it and a probe
+   confirmed it (`net::ERR_CONNECTION_REFUSED` under a block, not an LNA error).
 5. **SDK CI lanes** (`sdk.yml` dispatched per package on `worktree-lna-consent`): at e772d86 runs
    36170213882 (presto: SDK E2E against the Aztec sandbox), 36170217051 (presto-core),
    36170220200 (presto-noir: WASM identity and Live Presto), 36170223520 (presto-banners); at
