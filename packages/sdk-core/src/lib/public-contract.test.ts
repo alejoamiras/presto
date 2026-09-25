@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { PrestoPhase, PrestoScheme, ProveOutcome, ProveRequest } from "../index.js";
+import type {
+  LoopbackPermissionState,
+  PrestoPhase,
+  PrestoScheme,
+  ProveOutcome,
+  ProveRequest,
+} from "../index.js";
 import * as core from "../index.js";
 
 // Doc-sync guard: the barrel, the README, and the manifest describe one package.
@@ -13,6 +19,8 @@ describe("public contract", () => {
     expect(typeof core.PrestoHttpError).toBe("function");
     expect(typeof core.toBase64).toBe("function");
     expect(typeof core.fromBase64).toBe("function");
+    expect(typeof core.loopbackPermission).toBe("function");
+    expect(typeof core.watchLoopbackPermission).toBe("function");
     expect(core.PRESTO_API_VERSION).toBe(1);
     expect(core.PRESTO_SCHEME_CHONK).toBe("chonk");
     expect(core.PRESTO_SCHEME_ULTRA_HONK).toBe("ultra_honk");
@@ -25,11 +33,13 @@ describe("public contract", () => {
       body: () => new Uint8Array(),
     };
     const outcome: ProveOutcome = { kind: "fallback", reason: "route-missing" };
-    expect([scheme, phase, request.path, outcome.kind]).toEqual([
+    const permission: LoopbackPermissionState = "unsupported";
+    expect([scheme, phase, request.path, outcome.kind, permission]).toEqual([
       "ultra_honk",
       "version-mismatch",
       "/prove",
       "fallback",
+      "unsupported",
     ]);
   });
 
@@ -40,6 +50,8 @@ describe("public contract", () => {
     expect(readme).toContain('kind: "fallback"');
     expect(readme).toContain("PRESTO_SCHEME_ULTRA_HONK");
     expect(readme).toContain("PrestoHttpError");
+    expect(readme).toContain("loopbackPermission");
+    expect(readme).toContain("watchLoopbackPermission");
   });
 
   test("the manifest is a plain-semver, publishable package with no @aztec dependency", () => {

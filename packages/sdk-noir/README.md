@@ -17,11 +17,19 @@ import { PrestoUltraHonkBackend } from "@alejoamiras/presto-noir";
 import circuit from "./target/circuit.json";
 
 const backend = new PrestoUltraHonkBackend(circuit.bytecode, () => Barretenberg.new());
+backend.setForceLocal(true); // proves in WASM until the visitor connects Presto
 const { proof, publicInputs } = await backend.generateProof(witness, {
   verifierTarget: "noir-recursive-no-zk",
 });
 const ok = await backend.verifyProof({ proof, publicInputs }, { verifierTarget: "noir-recursive-no-zk" });
 ```
+
+In a browser the first request to Presto makes Chrome and Firefox ask the visitor for permission, so
+keep the backend local until the visitor chooses to connect, then call `setForceLocal(false)` from
+that click. `loopbackPermission()` (exported here too) reads the stored decision without prompting;
+only `granted` may connect on page load. The
+[`@alejoamiras/presto` README](../sdk/README.md#ask-before-you-probe) has the full pattern and
+suggested copy.
 
 ## Installation
 
@@ -62,7 +70,9 @@ adapter and the page share one WASM runtime.
   `proved` → `receive`; a fallback emits `fallback` then the local `proving`/`proved`/`receive`;
   `secure-connection-unavailable`, `denied`, or `version-mismatch` may precede a fallback.
 
-Also: `checkPrestoStatus(options?)`, `setForceLocal(bool)`, `setOnPhase(cb)`, `destroy()`.
+Also: `checkPrestoStatus(options?)` (a request to Presto; call it only after the visitor connects),
+`setForceLocal(bool)` (`true` proves in WASM and sends nothing), `setOnPhase(cb)`, `destroy()`, and
+the prompt-free `loopbackPermission()` / `watchLoopbackPermission(onChange)` from core.
 
 ## What runs where
 
@@ -126,6 +136,7 @@ adapter must prove natively against a headless presto built with the real `bb`):
 
 | `@alejoamiras/presto-noir` | `@aztec/bb.js` (peer, exact) | `bbVersion` (default) | Presto |
 |---|---|---|---|
+| 1.2.0 | 5.2.0 | 5.2.0 | ≥ 1.1.0 |
 | 1.1.0 | 5.2.0 | 5.2.0 | ≥ 1.1.0 |
 | 1.0.1 | 5.2.0 | 5.2.0 | ≥ 1.1.0 |
 | 1.0.0 | 5.2.0 | 5.2.0 | ≥ 1.1.0 |

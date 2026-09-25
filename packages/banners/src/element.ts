@@ -1,9 +1,9 @@
 import { ensureFonts } from "./fonts.js";
 import { dismiss, isDismissed } from "./persistence.js";
 import { detectPlatform } from "./platform.js";
-import { detectedContent, render } from "./render.js";
+import { detectedContent, render, sheetCtaLabel } from "./render.js";
 import { stateFromStatus } from "./status.js";
-import { VARIANT_COPY, VARIANT_STATES } from "./strings.js";
+import { CONNECTING, VARIANT_STATES } from "./strings.js";
 import { STYLES } from "./styles.js";
 import {
   BANNER_EVENTS,
@@ -19,7 +19,7 @@ import {
 export const DEFAULT_HREF = "https://presto.build";
 export const DEFAULT_PERSIST_KEY = "presto:banner";
 const PLATFORMS: readonly BannerPlatform[] = ["macOS", "Windows", "Linux"];
-/** Attributes that only touch the CTA; patched in place so a re-render can't reset the Sheet. */
+/** Attributes that only touch the install links; patched in place so a re-render can't reset the Sheet. */
 const CTA_ATTRIBUTES = new Set(["href", "os"]);
 
 // Importing this module must be safe where there is no DOM (SSR, Node scripts): the class is only
@@ -44,7 +44,8 @@ function safeHref(raw: string | null, base: string | undefined): string {
  * never sees a flash of the install pitch. `available` never paints: if the banner was showing, it
  * plays the detected morph (crossfade → hold → collapse) and hides; otherwise it stays hidden.
  * Dismissals persist per variant and state under `persist-key` for `dismiss-days` (default 7), or
- * forever from the Sheet's checkbox.
+ * forever from the Sheet's checkbox. `connect` is host-set: its button emits `presto-banner:connect`
+ * and waits ("Connecting…") until the host assigns `state` again.
  */
 export class PrestoBanner extends Base {
   static readonly tagName = "presto-banner";
@@ -62,6 +63,8 @@ export class PrestoBanner extends Base {
   /** Hid itself after a morph; a later non-`available` state re-arms it. */
   #collapsed = false;
   #morphing = false;
+  /** The connect button's own label while it reads "Connecting…"; null when not waiting. */
+  #pendingLabel: string | null = null;
 
   constructor() {
     super();
@@ -124,7 +127,12 @@ export class PrestoBanner extends Base {
   }
 
   attributeChangedCallback(name: string, oldValue: string | null, newValue: string | null): void {
-    if (!this.#connected || oldValue === newValue) return;
+    if (!this.#connected) return;
+    if (oldValue === newValue) {
+      // A host answering Connect with the same state still ends the wait.
+      if (name === "state") this.#setPending(false);
+      return;
+    }
     if (name === "fonts") ensureFonts(newValue);
     else if (CTA_ATTRIBUTES.has(name) && this.#shown) this.#patchCta();
     else if (name === "persist-key" && this.#shown && !isDismissed(this.persistKey)) return;
@@ -154,6 +162,7 @@ export class PrestoBanner extends Base {
   #paint(variant: BannerVariant, state: BannerState): void {
     this.#clearTimers();
     this.#morphing = false;
+    this.#pendingLabel = null;
     const enter = !this.#shown;
     const { href, platform } = this;
     this.#shadow.innerHTML = `<style>${STYLES}</style>${render({ variant, state, href, platform, enter })}`;
@@ -182,22 +191,42 @@ export class PrestoBanner extends Base {
     });
     if (typeof dialog.showModal === "function") dialog.showModal();
     else dialog.setAttribute("open", "");
-    if (enter) this.#shadow.querySelector<HTMLElement>('[data-action="cta"]')?.focus();
+    const primary = this.state === "connect" ? "connect" : "cta";
+    if (enter) this.#shadow.querySelector<HTMLElement>(`[data-action="${primary}"]`)?.focus();
   }
 
   #patchCta(): void {
-    const cta = this.#shadow.querySelector<HTMLAnchorElement>('[data-action="cta"]');
-    if (!cta) return;
-    cta.setAttribute("href", this.href);
-    if (this.variant !== "sheet") return;
-    const { cta: plain, ctaFor } = VARIANT_COPY.sheet;
-    const { platform } = this;
-    cta.textContent = platform ? `${ctaFor} ${platform}` : plain;
+    const { href, state } = this;
+    const links = this.#shadow.querySelectorAll<HTMLAnchorElement>('[data-action="cta"]');
+    for (const link of links) link.setAttribute("href", href);
+    // A Sheet has exactly one install link.
+    if (this.variant === "sheet" && state && links[0]) {
+      links[0].textContent = sheetCtaLabel(state, this.platform);
+    }
+  }
+
+  /**
+   * Patched in place, never repainted, so the Sheet keeps its checkbox and focus; `aria-disabled`
+   * rather than `disabled` for the same reason (a disabled button drops focus).
+   */
+  #setPending(on: boolean): void {
+    const button = this.#shadow.querySelector<HTMLButtonElement>('[data-action="connect"]');
+    if (!button || on === (this.#pendingLabel !== null)) return;
+    if (on) {
+      this.#pendingLabel = button.textContent ?? "";
+      button.innerHTML = `<span class="spin" aria-hidden="true"></span>${CONNECTING}`;
+    } else {
+      button.textContent = this.#pendingLabel;
+      this.#pendingLabel = null;
+    }
+    button.setAttribute("aria-disabled", String(on));
+    button.setAttribute("aria-busy", String(on));
   }
 
   #hide(): void {
     this.#clearTimers();
     this.#morphing = false;
+    this.#pendingLabel = null;
     // Flags first: the dialog's `close` listener treats a close while shown as a user dismissal.
     this.#shown = false;
     this.hidden = true;
@@ -245,6 +274,12 @@ export class PrestoBanner extends Base {
     switch (control.getAttribute("data-action")) {
       case "cta":
         if (!this.#emit(BANNER_EVENTS.cta, {}, true)) event.preventDefault();
+        break;
+      case "connect":
+        if (this.#pendingLabel !== null) break;
+        // Before the event: a host that answers synchronously inside its listener repaints last.
+        this.#setPending(true);
+        this.#emit(BANNER_EVENTS.connect);
         break;
       case "retry":
         this.#emit(BANNER_EVENTS.retry);

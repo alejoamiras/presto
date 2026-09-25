@@ -2,13 +2,19 @@
 // runtime values and types, so a broken barrel, exports map, or types condition fails here. The
 // host installs the `@aztec/bb.js` peer, so the bb.js types the surface re-exports must resolve.
 
-import type { PrestoStatus, PrestoUltraHonkBackendOptions } from "@alejoamiras/presto-noir";
+import type {
+  LoopbackPermissionState,
+  PrestoStatus,
+  PrestoUltraHonkBackendOptions,
+} from "@alejoamiras/presto-noir";
 import {
+  loopbackPermission,
   PrestoHttpError,
   PrestoUltraHonkBackend,
   PrestoUnavailableError,
   resolveVerifierTarget,
   TESTED_BB_VERSION,
+  watchLoopbackPermission,
 } from "@alejoamiras/presto-noir";
 import type { Barretenberg, ProofData, VerifierTarget } from "@aztec/bb.js";
 
@@ -26,3 +32,7 @@ void _status;
 void _proof;
 void _target;
 void _errors;
+const _permission: Promise<LoopbackPermissionState> = loopbackPermission();
+const _stop: Promise<() => void> = watchLoopbackPermission(() => {});
+void _permission;
+void _stop;

@@ -3,13 +3,17 @@
 // nothing for an unresolved side-effect import — so a named import goes through it.
 
 import type { BannerState, PrestoStatusLike } from "@alejoamiras/presto-banners";
-import { BANNER_VARIANTS, stateFromStatus } from "@alejoamiras/presto-banners";
+import { BANNER_EVENTS, BANNER_VARIANTS, stateFromStatus } from "@alejoamiras/presto-banners";
 import { definePrestoBanner } from "@alejoamiras/presto-banners/register";
 
 const status: PrestoStatusLike = { available: false, reason: "offline" };
 const _state: BannerState = stateFromStatus(status);
 const _defined: boolean = definePrestoBanner();
 const _variants: readonly string[] = BANNER_VARIANTS;
+const _connect: BannerState = "connect";
+const _connectEvent: "presto-banner:connect" = BANNER_EVENTS.connect;
 void _state;
+void _connect;
+void _connectEvent;
 void _defined;
 void _variants;

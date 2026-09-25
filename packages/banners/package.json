@@ -1,6 +1,6 @@
 {
   "name": "@alejoamiras/presto-banners",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Presto install banners: a zero-dependency <presto-banner> web component keyed to the SDK's PrestoStatus",
   "repository": {
     "type": "git",

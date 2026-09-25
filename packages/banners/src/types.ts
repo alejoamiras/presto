@@ -2,8 +2,11 @@
 export type BannerVariant = "ribbon" | "billboard" | "dock" | "card" | "tile" | "sheet";
 
 /**
- * Banner state, one per SDK `PrestoStatus` outcome. `downloading` is `available: true` with
- * `needsDownload: true`; `available` is the connected outcome that plays the detected morph.
+ * Banner state, one per SDK `PrestoStatus` outcome, plus `connect`. `downloading` is
+ * `available: true` with `needsDownload: true`; `available` is the connected outcome that plays the
+ * detected morph. `connect` is never derived from a status: the host sets it before its first
+ * request to Presto, while the browser has not yet been asked (`loopbackPermission()` is `prompt` or
+ * `unsupported`).
  */
 export type BannerState =
   | "offline"
@@ -12,7 +15,8 @@ export type BannerState =
   | "version-mismatch"
   | "error"
   | "downloading"
-  | "available";
+  | "available"
+  | "connect";
 
 export type BannerTheme = "auto" | "light" | "dark";
 
@@ -50,12 +54,19 @@ export const BANNER_STATES: readonly BannerState[] = [
   "error",
   "downloading",
   "available",
+  "connect",
 ];
 
 /** Event names dispatched by `<presto-banner>` (bubbling, composed). */
 export const BANNER_EVENTS = {
   /** The install CTA was activated. Navigation to `href` is the default action. */
   cta: "presto-banner:cta",
+  /**
+   * Connect was pressed: the host should run its first status check now (the browser may ask) and
+   * set `state` or `status`. The button reads "Connecting…" until the host sets `state` again, even
+   * to the same value.
+   */
+  connect: "presto-banner:connect",
   /** A warn-state Retry was pressed; the host should re-run `checkPrestoStatus()`. */
   retry: "presto-banner:retry",
   /** The banner was dismissed; `detail.forever` when the Sheet's checkbox was ticked. */

@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type {
+  LoopbackPermissionState,
   PrestoPhase,
   PrestoProtocol,
   PrestoStatusCheckOptions,
@@ -22,6 +23,10 @@ describe("public contract (F-05 doc-sync guard)", () => {
     // B7: the typed error + the api-version constant are runtime values on the barrel.
     expect(typeof sdk.PrestoHttpError).toBe("function");
     expect(sdk.PRESTO_API_VERSION).toBe(1);
+    expect(typeof sdk.loopbackPermission).toBe("function");
+    expect(typeof sdk.watchLoopbackPermission).toBe("function");
+    const permission: LoopbackPermissionState = "prompt";
+    expect(permission).toBe("prompt");
     // Typed consts force the type-only barrel exports to resolve — dropping one from the barrel
     // (how PrestoProtocol went missing) becomes a `tsc --noEmit` compile error right here.
     const protocol: PrestoProtocol = "https";
@@ -101,5 +106,15 @@ describe("public contract (F-05 doc-sync guard)", () => {
     // F15: MIGRATION.md must be in `files` — otherwise npm never packs it and consumers never see it.
     const pkg = JSON.parse(read("../../package.json"));
     expect(pkg.files).toContain("MIGRATION.md");
+  });
+
+  test("README + packaged SKILL teach asking before the first request, and AGENTS.md ships", () => {
+    for (const doc of [read("../../README.md"), read("../../.claude/skills/presto/SKILL.md")]) {
+      expect(doc).toContain("Ask before you probe");
+      expect(doc).toContain("loopbackPermission");
+      expect(doc).toContain("watchLoopbackPermission");
+    }
+    expect(read("../../AGENTS.md")).toContain(".claude/skills/presto/SKILL.md");
+    expect(JSON.parse(read("../../package.json")).files).toContain("AGENTS.md");
   });
 });

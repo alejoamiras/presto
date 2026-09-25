@@ -88,6 +88,68 @@ describe("<presto-banner> rendering", () => {
   });
 });
 
+describe("<presto-banner> connect", () => {
+  test("every surface asks with a button that opens nothing, and names the browser's question", () => {
+    for (const variant of BANNER_VARIANTS) {
+      const el = mount({ variant, state: "connect" });
+      expect(el.hidden).toBe(false);
+      const button = query(el, '[data-action="connect"]');
+      expect(button?.tagName).toBe("BUTTON");
+      expect(button?.hasAttribute("href")).toBe(false);
+      expect(text(el)).toContain("may ask to let this site reach");
+    }
+    const sheet = mount({ variant: "sheet", state: "connect", os: "Linux" });
+    expect(sheet.shadowRoot?.activeElement).toBe(query(sheet, '[data-action="connect"]'));
+    expect(query(sheet, '[data-action="cta"]')?.textContent).toBe("Get it for Linux");
+  });
+
+  test("a click emits once and waits; any state assignment, even the same one, ends the wait", async () => {
+    const el = mount({ variant: "sheet", state: "connect" });
+    const button = () => query<HTMLButtonElement>(el, '[data-action="connect"]');
+    const never = query<HTMLInputElement>(el, '[data-role="never"]');
+    if (!never) throw new Error("checkbox missing");
+    never.checked = true;
+    let emitted = 0;
+    el.addEventListener(BANNER_EVENTS.connect, () => emitted++);
+    const connected = nextEvent(el, BANNER_EVENTS.connect);
+    click(el, '[data-action="connect"]');
+    expect((await connected).detail).toMatchObject({ variant: "sheet", state: "connect" });
+    click(el, '[data-action="connect"]');
+    expect(emitted).toBe(1);
+    expect(button()?.getAttribute("aria-disabled")).toBe("true");
+    expect(button()?.textContent).toBe("Connecting…");
+    // Patched in place: the Sheet's checkbox survives the wait.
+    expect(query<HTMLInputElement>(el, '[data-role="never"]')?.checked).toBe(true);
+
+    el.state = "connect";
+    expect(button()?.textContent).toBe("Connect Presto");
+    expect(button()?.getAttribute("aria-disabled")).toBe("false");
+    click(el, '[data-action="connect"]');
+    el.setAttribute("state", "connect");
+    expect(button()?.textContent).toBe("Connect Presto");
+    expect(emitted).toBe(2);
+  });
+
+  test("a host that answers inside its listener has the last word", () => {
+    const el = mount({ variant: "ribbon", state: "connect" });
+    let answer: "connect" | "permission-blocked" = "connect";
+    el.addEventListener(BANNER_EVENTS.connect, () => {
+      el.state = answer;
+    });
+    click(el, '[data-action="connect"]');
+    expect(query(el, '[data-action="connect"]')?.textContent).toBe("Connect Presto");
+    answer = "permission-blocked";
+    click(el, '[data-action="connect"]');
+    expect(query(el, "strong")?.textContent).toBe(STRINGS["permission-blocked"].title);
+  });
+
+  test("dismissing connect never silences the install pitch", () => {
+    click(mount({ variant: "card", state: "connect" }), '[data-action="dismiss"]');
+    expect(mount({ variant: "card", state: "connect" }).hidden).toBe(true);
+    expect(mount({ variant: "card", state: "offline" }).hidden).toBe(false);
+  });
+});
+
 describe("<presto-banner> lifecycle", () => {
   test("a dismissal hides that variant+state for dismiss-days, and nothing else", () => {
     setSystemTime(new Date("2026-09-08T12:00:00Z"));
