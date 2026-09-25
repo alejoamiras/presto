@@ -1,6 +1,6 @@
 # Implementation plans
 
-- [lna-consent](lna-consent/plan.md) — delivered, PRs #56/#57 awaiting merge — ask before any loopback request on presto.build, the playground and in integrator docs
+No active plans.
 
 Add one line per plan here when it opens; move the line to
 [`archive/index.md`](archive/index.md) when it closes. This file is read at the start of every

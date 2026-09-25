@@ -20,3 +20,8 @@ with `rg --no-ignore` / `git grep`.
 - [presto-banners-publish](presto-banners-publish/plan.md) — closed 2026-09-09 —
   `@alejoamiras/presto-banners@1.0.0` on npm `latest` with provenance, and the playground's install
   pitch replaced by the ribbon (PRs #42–#43).
+- [lna-consent](lna-consent/plan.md) — closed 2026-09-25 — no loopback request before consent:
+  presto.build never contacts Presto, the playground asks through a dialog first, `presto-core`
+  gains prompt-free `loopbackPermission()` / `watchLoopbackPermission()`, banners gain a `connect`
+  state, and the SDK docs and skill ask first (PRs #56–#57; released as core, noir and banners 1.2.0
+  and presto 5.2.0-revision.5).

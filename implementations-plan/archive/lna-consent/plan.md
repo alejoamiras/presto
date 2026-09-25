@@ -13,7 +13,7 @@ base: main @ 8edbbca
 
 ## Outcome
 
-**2026-09-25 — delivered, awaiting the owner's merge** as a two-PR stack: #56 (packages) under #57 (sites). This plan's `/goal` and `/loop` seeds are retired.
+**Closed 2026-09-25.** #56 (packages) was squash-merged as `112a986` and #57 (sites) as `b46898f`. This plan's `/goal` and `/loop` seeds are retired.
 
 **Shipped:**
 - **Packages:**
@@ -32,7 +32,11 @@ base: main @ 8edbbca
 - Out of scope: an SDK-enforced consent mode, and `app.yml` permission hardening.
 - All of the above are in `follow-ups.md`.
 
-**Release order (A2):** merge both PRs, then run a `packages: all` release before the next playground deploy. Merging #57 deploys the landing.
+**Release (A2):** done in the approved order: both PRs merged, then a `packages: all` release.
+- The landing deployed on merge (`deploy-landing.yml`, run 36192115685).
+- The first release run, 36192153461, published core, noir and banners 1.2.0 and `presto@5.2.0-revision.4`. Then the runner received a shutdown signal inside the verify step, so revision.4 has no release tag, GitHub release or verification record, and the playground deploy was skipped.
+- The fix-forward run, 36195626527, reused the three 1.2.0 packages, published `presto@5.2.0-revision.5` with full verification, and deployed the playground, which now sends `require-corp`.
+- All four new versions are on the `testnet` dist-tag. Promotion to `latest` is the owner's step (`bun run sdk:promote`, npm OTP); see `follow-ups.md`.
 
 **Review:**
 - Arc 1 converged in round 5, after the owner's A5 decision at the round-3 cap.

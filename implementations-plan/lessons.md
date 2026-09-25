@@ -111,6 +111,10 @@ _Seeded 2026-09-18 from the three plans in `archive/`._
 - **`npm trust` on npm 11.16 mis-parses `--otp <code>` as two tokens** — it takes the code as a
   positional; write `--otp=<code>`. Seen on that subcommand only, so date-stamped rather than
   general. The web OTP flow cannot complete from a non-interactive shell either. `archive/presto-banners-publish/lessons/codex-loop.md`
+- **A publish job interrupted after `npm publish` strands the version** — it is on npm with no tag,
+  GitHub release or verification, and the release planner refuses to reuse it. Fix forward: rerun
+  `packages: all`; an aztec-derived package takes the next revision, and a manifest package needs a
+  version bump. `archive/lna-consent/plan.md` (Outcome)
 
 ## Windows
 
