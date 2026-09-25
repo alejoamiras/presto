@@ -34,3 +34,15 @@ Gates after the fixes: `bun run test` exit 0 (SDK 28), `bun run lint` exit 0.
 Codex agreed to keep the `element.ts` invariant comment. The permission stub can now hold reads
 (each keeps the decision it saw); both race tests fail against the round-1 module and pass now.
 `bun run test` exit 0 (SDK 30), `bun run lint` exit 0.
+
+## Round 3 — "Changes required", 3 findings, verified by walking each sequence; loop cap reached
+
+| # | Sev | Finding | Status |
+|---|---|---|---|
+| 1 | High | `connect()`'s direct read is not the newest decision: a watcher decision landing during it is overridden (captured `denied` then a watcher grant → ends "blocked" and local while granted; captured `granted` then a reset → a new `/health` after revocation) | open |
+| 2 | High | the decision counter orders reads by completion, not by observation: read A (`granted`) completing after read B (`prompt`) started discards B, so a reset seen by B is lost and the proof goes native | open |
+| 3 | Med | a check revoked while in flight still runs its post-check read, which can re-enable native proving while the view stays "blocked" | open |
+
+Diagnosis: each round found a new interleaving of permission reads, watcher events and clicks,
+because the module lets them race and then patches orderings one at a time. Stopped at the
+3-round cap and surfaced to the owner (plan, Post-implementation step 3).
