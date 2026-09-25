@@ -127,20 +127,22 @@ async function getNoirBackend(): Promise<{
   return { backend, fixture };
 }
 
+/** `mode` is read after the lazy backend init, so a revocation during it keeps this proof local. */
 export async function proveNoirFixture(
-  mode: UiMode,
+  mode: () => UiMode,
   log: LogFn,
   onPhase: (phase: PrestoPhase, data?: PrestoPhaseData) => void,
 ): Promise<NoirProofResult> {
   const { backend, fixture } = await getNoirBackend();
+  const route = mode();
   let fellBack = false;
   backend.setOnPhase((phase, data) => {
     if (phase === "fallback") fellBack = true;
     onPhase(phase, data);
   });
-  backend.setForceLocal(mode === "local");
+  backend.setForceLocal(route === "local");
   log(
-    mode === "local"
+    route === "local"
       ? "Proving the Noir circuit in-browser..."
       : "Proving the Noir circuit with Presto...",
   );
@@ -157,7 +159,7 @@ export async function proveNoirFixture(
         : "Proof differs from the bb.js WASM reference",
       identical ? "success" : "error",
     );
-    return { mode, durationMs, identical, fellBack };
+    return { mode: mode(), durationMs, identical, fellBack };
   } finally {
     backend.setOnPhase(null);
   }

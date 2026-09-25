@@ -62,7 +62,11 @@ describe("noir panel", () => {
   test("in-browser mode proves through bb.js's UltraHonkBackend and matches the reference", async () => {
     configureNoir({ fixture, api: stubBarretenberg(fixture) });
     const phases: string[] = [];
-    const result = await proveNoirFixture("local", log, (phase) => phases.push(phase));
+    const result = await proveNoirFixture(
+      () => "local",
+      log,
+      (phase) => phases.push(phase),
+    );
     expect(result).toMatchObject({ mode: "local", identical: true, fellBack: false });
     expect(phases).toEqual(["proving", "proved"]);
     expect(logs.at(-1)).toContain("byte-identical");
@@ -87,7 +91,11 @@ describe("noir panel", () => {
       return new Response("not found", { status: 404 });
     }) as unknown as typeof fetch;
     const phases: string[] = [];
-    const native = await proveNoirFixture("accelerated", log, (phase) => phases.push(phase));
+    const native = await proveNoirFixture(
+      () => "accelerated",
+      log,
+      (phase) => phases.push(phase),
+    );
     expect(native).toMatchObject({ mode: "accelerated", identical: true, fellBack: false });
     expect(phases).toContain("transmit");
     expect(phases).not.toContain("fallback");
@@ -97,7 +105,11 @@ describe("noir panel", () => {
       throw new TypeError("refused");
     }) as unknown as typeof fetch;
     phases.length = 0;
-    const fallback = await proveNoirFixture("accelerated", log, (phase) => phases.push(phase));
+    const fallback = await proveNoirFixture(
+      () => "accelerated",
+      log,
+      (phase) => phases.push(phase),
+    );
     expect(fallback).toMatchObject({ mode: "accelerated", identical: true, fellBack: true });
     expect(phases).toContain("fallback");
   });

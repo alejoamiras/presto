@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { expect, type Page, type Route, test } from "@playwright/test";
+import { mockPermission, PRESTO_ORIGINS } from "./connect";
 
 // The Noir panel over a mocked presto. The in-browser path uses `?noirStub=true` (the fixture
 // bytes instead of WASM), and every request that only real WASM proving would make — CRS points,
@@ -17,7 +18,6 @@ const fixture = {
   publicInputs: readFileSync(resolve(fixtureDir, "public_inputs")).toString("base64"),
 };
 
-const ORIGINS = ["http://127.0.0.1:59833", "https://127.0.0.1:59834"];
 const HTTPS_PROVE_URL = "https://127.0.0.1:59834/prove/ultra-honk";
 
 const HEALTHY = JSON.stringify({
@@ -27,10 +27,12 @@ const HEALTHY = JSON.stringify({
   schemes: ["chonk", "ultra_honk"],
 });
 
+/** No Aztec node, and a browser that already allowed this site, so Presto connects on load. */
 async function mockServicesOffline(page: Page) {
   await page.route("**/aztec", (route) =>
     route.fulfill({ status: 503, body: "Service Unavailable" }),
   );
+  await mockPermission(page, "granted");
 }
 
 /** Block and record what only a real WASM prover would fetch. */
@@ -47,7 +49,7 @@ async function forbidWasmTraffic(page: Page): Promise<string[]> {
 }
 
 async function mockPresto(page: Page, prove: (route: Route) => Promise<void>) {
-  for (const origin of ORIGINS) {
+  for (const origin of PRESTO_ORIGINS) {
     await page.route(`${origin}/health`, (route) =>
       route.fulfill({ status: 200, contentType: "application/json", body: HEALTHY }),
     );
@@ -72,6 +74,7 @@ function proveWith(
 
 async function clickProve(page: Page) {
   await expect(page.locator("#noir-btn")).toBeEnabled({ timeout: 10_000 });
+  await expect(page.locator("#presto-label")).not.toHaveText(/not connected|checking/);
   await page.click("#noir-btn");
   await expect(page.locator("#noir-btn")).toHaveText("Proving...");
   await expect(page.locator("#noir-btn")).toHaveText("Prove Noir Circuit", { timeout: 20_000 });
@@ -169,7 +172,7 @@ test("an offline Presto falls back to the browser and the UI says so", async ({ 
   await mockServicesOffline(page);
   const wasmTraffic = await forbidWasmTraffic(page);
   const proveAttempts: string[] = [];
-  for (const origin of ORIGINS) {
+  for (const origin of PRESTO_ORIGINS) {
     await page.route(`${origin}/prove/**`, (route) => {
       proveAttempts.push(route.request().url());
       return route.abort();

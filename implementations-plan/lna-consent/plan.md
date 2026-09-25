@@ -145,15 +145,17 @@ export type ConnectionPhase =
   | { kind: "checked"; status: PrestoStatus; unsupportedHint: boolean }; // hint: permission unreadable, no answer
 
 export interface ConnectionView extends PrestoStatusView {
-  prestoModeHint: "connect" | "checking" | "waiting" | "blocked" | "not-found" | "unreachable" | "fastest";
+  modeHint: "connect" | "checking…" | "waiting" | "blocked" | "not found" | "couldn't connect" | "fastest";
   showConnectLink: boolean;
-  showAwaitingHelp: boolean;
   showMayAskHint: boolean;
+  retryHelp: string | null; // awaiting-browser and couldn't-connect text beside Try again
 }
 export function connectionView(phase: ConnectionPhase): ConnectionView;
 
-// PrestoStatusController (extended): start(permission), authorize(), revoke(state),
-// refresh(opts), retry(), refreshAfterPermissionChange(), refreshAfterFallback(), get authorized.
+// PrestoStatusController (extended): start(), connect() (explained click), permissionChanged(state)
+// (watcher), beforeProving() (read before a run → may it go native), refresh(opts),
+// retrySecureConnection(), refreshAfterPermissionChange(), refreshAfterFallback(), get authorized.
+// Options add permission() and onAuthorizationChange(authorized); authorize/revoke are private.
 ```
 
 ### Data & control flow (playground)
@@ -546,7 +548,7 @@ routing in `app.yml` stay.
 - Pass: exit 0 on the first three; the `rg` finds nothing; both landing runs record zero requests.
 - Layers: lint, typecheck, unit, build, real-browser E2E.
 
-### Phase 5 — playground: consent flow
+### Phase 5 — playground: consent flow ✓
 
 Controller extension (`authorize`/`revoke`, gate re-checked after waits, epoch bump on revoke,
 `settle` classification) with unit tests for every transition in the flow, including: reset to
