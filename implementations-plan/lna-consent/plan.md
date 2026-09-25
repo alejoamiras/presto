@@ -530,7 +530,7 @@ bucket separate; Sheet focus lands on Connect.
   owner's sign-off before the phase is marked ✓.
 - Layers: lint, typecheck, unit, packed artifact, visual.
 
-### Phase 4 — landing: remove detection
+### Phase 4 — landing: remove detection ✓
 
 Delete `presto-detection.ts` and its test; strip `main.ts`, panels, dead CSS; hero link copy; rewrite
 `packages/landing/README.md`. Replace the two landing tests in `lna.real.spec.ts` with one landing test

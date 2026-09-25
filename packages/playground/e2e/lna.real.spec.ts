@@ -4,6 +4,7 @@ const PLAYGROUND_ORIGIN = "http://127.0.0.1:5173";
 const LANDING_ORIGIN = "http://127.0.0.1:5174";
 const HEALTH_URL = "http://127.0.0.1:59833/health";
 const HEALTH_ADMIN = "http://127.0.0.1:59833";
+const PRESTO_PORTS = new Set(["59833", "59834"]);
 
 async function resetHealthHits(): Promise<void> {
   const response = await fetch(`${HEALTH_ADMIN}/__reset`, { method: "POST" });
@@ -67,6 +68,15 @@ async function mockLandingExternals(page: Page): Promise<void> {
   await page.route("https://api.github.com/**", (route) =>
     route.fulfill({ status: 404, body: "not needed" }),
   );
+}
+
+/** Records every page request to either Presto port, any host and path. Install before navigation. */
+function recordPrestoRequests(page: Page): string[] {
+  const seen: string[] = [];
+  page.on("request", (request) => {
+    if (PRESTO_PORTS.has(new URL(request.url()).port)) seen.push(request.url());
+  });
+  return seen;
 }
 
 async function deniedContext(browser: Browser, origin: string): Promise<BrowserContext> {
@@ -133,29 +143,6 @@ test("playground denial gives guidance and same-context grant automatically reco
   await context.close();
 });
 
-test("landing denial suppresses download and same-context grant automatically recovers", async ({
-  browser,
-}) => {
-  await resetHealthHits();
-  const context = await deniedContext(browser, LANDING_ORIGIN);
-  const page = await context.newPage();
-  await mockLandingExternals(page);
-  await page.goto(LANDING_ORIGIN);
-
-  await expect(page.locator("#landing-permission-help")).toBeVisible();
-  await expect(page.locator("#download-actions")).toBeHidden();
-  expect(await permissionState(page)).toBe("denied");
-  expect(await healthHits()).toBe(0);
-
-  await grantLocalNetwork(context, LANDING_ORIGIN);
-  await expect(page.locator("#landing-permission-help")).toBeHidden();
-  await expect(page.locator("#landing-secure-help")).toBeVisible();
-  await expect(page.locator("#download-actions")).toBeVisible();
-  await expect(page.locator("#landing-secure-title")).toHaveText("Presto is reachable");
-  expect(await healthHits()).toBeGreaterThan(0);
-  await context.close();
-});
-
 test("playground automatically recovers when an open prompt is allowed after probe timeout", async ({
   browser,
 }) => {
@@ -182,22 +169,26 @@ test("playground automatically recovers when an open prompt is allowed after pro
   await context.close();
 });
 
-test("landing automatically renders blocked guidance when an open prompt is denied after timeout", async ({
-  browser,
-}) => {
-  await resetHealthHits();
-  const context = await browser.newContext();
-  const page = await context.newPage();
-  await mockLandingExternals(page);
-  await page.goto(LANDING_ORIGIN);
+for (const permission of ["prompt", "granted"] as const) {
+  test(`landing never contacts Presto (${permission})`, async ({ browser }) => {
+    await resetHealthHits();
+    const context = await browser.newContext();
+    if (permission === "granted") await grantLocalNetwork(context, LANDING_ORIGIN);
+    const page = await context.newPage();
+    await mockLandingExternals(page);
+    const requests = recordPrestoRequests(page);
+    await page.goto(LANDING_ORIGIN, { waitUntil: "networkidle" });
+    await page.waitForTimeout(3_000);
 
-  await expect(page.locator("#landing-secure-retry")).toBeEnabled({ timeout: 10_000 });
-  expect(await permissionState(page)).toBe("prompt");
-  expect(await healthHits()).toBe(0);
+    expect(await permissionState(page)).toBe(permission);
+    expect(requests).toEqual([]);
+    expect(await healthHits()).toBe(0);
 
-  await denyLocalNetwork(context, LANDING_ORIGIN);
-  await expect(page.locator("#landing-permission-help")).toBeVisible();
-  await expect(page.locator("#download-actions")).toBeHidden();
-  expect(await healthHits()).toBe(0);
-  await context.close();
-});
+    if (permission === "granted") {
+      // Validity: the recorder does see a request to Presto when one is made.
+      expect(await rawAnnotatedHealth(page)).toBe(true);
+      expect(requests).toEqual([HEALTH_URL]);
+    }
+    await context.close();
+  });
+}
