@@ -22,3 +22,15 @@ tests fail against the round-0 module (reset, block-during-check and view tests)
 the new one.
 
 Gates after the fixes: `bun run test` exit 0 (SDK 28), `bun run lint` exit 0.
+
+## Round 2 — "Changes required", 3 findings, all verified
+
+| # | Sev | Finding | Verdict |
+|---|---|---|---|
+| 1 | High | the rewrite dropped the synchronous `setForceLocal(true)`, so a proof started while the module awaited its first read went native | accepted: restored before the first await |
+| 2 | High | a slow permission read that resolved after a newer decision was still applied (post-check read re-enabling native under a shown "ask"; `beforeProving()` starting a check after a reset) | accepted: `read()` drops results older than the last decision taken; `connect()` reads directly, since the click is itself the newest decision and a stale read there only reaches the browser's own gate |
+| 3 | Low | the persistent-`prompt` reconnect case was not exercised (the grant hook was still armed, and no pre-proof read) | accepted |
+
+Codex agreed to keep the `element.ts` invariant comment. The permission stub can now hold reads
+(each keeps the decision it saw); both race tests fail against the round-1 module and pass now.
+`bun run test` exit 0 (SDK 30), `bun run lint` exit 0.

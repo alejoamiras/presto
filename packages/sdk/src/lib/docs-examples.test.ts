@@ -25,6 +25,24 @@ type Listener = () => void;
 const permission = { state: "prompt" as string, observable: true };
 const listeners = new Set<Listener>();
 let permissionsDescriptor: PropertyDescriptor | undefined;
+let held: { started: () => void; released: Promise<void> } | null = null;
+
+/** Holds every permission read started from now until `release()`; each keeps the decision it saw. */
+function holdReads() {
+  let started!: () => void;
+  let release!: () => void;
+  const readStarted = new Promise<void>((resolve) => {
+    started = resolve;
+  });
+  held = { started, released: new Promise<void>((resolve) => (release = resolve)) };
+  return {
+    readStarted,
+    release: () => {
+      held = null;
+      release();
+    },
+  };
+}
 
 function setPermission(state: string) {
   permission.state = state;
@@ -34,20 +52,30 @@ function setPermission(state: string) {
 function stubPermissions() {
   permissionsDescriptor = Object.getOwnPropertyDescriptor(navigator, "permissions");
   listeners.clear();
+  held = null;
   permission.state = "prompt";
   permission.observable = true;
   Object.defineProperty(navigator, "permissions", {
     configurable: true,
     value: {
-      query: async () => ({
-        get state() {
-          return permission.state;
-        },
-        ...(permission.observable && {
-          addEventListener: (_: string, l: Listener) => listeners.add(l),
-          removeEventListener: (_: string, l: Listener) => listeners.delete(l),
-        }),
-      }),
+      query: async () => {
+        if (held) {
+          const seen = permission.state;
+          const { started, released } = held;
+          started();
+          await released;
+          return { state: seen };
+        }
+        return {
+          get state() {
+            return permission.state;
+          },
+          ...(permission.observable && {
+            addEventListener: (_: string, l: Listener) => listeners.add(l),
+            removeEventListener: (_: string, l: Listener) => listeners.delete(l),
+          }),
+        };
+      },
     },
   });
 }
@@ -74,21 +102,24 @@ function stubFetch() {
   }) as typeof fetch;
 }
 
-async function setup() {
-  const prover = new PrestoProver({ simulator: new WASMSimulator() });
-  const views: unknown[] = [];
-  const presto = await askBeforeConnecting(prover, (view) => views.push(view));
+const newProver = () => new PrestoProver({ simulator: new WASMSimulator() });
+
+/** Every proof here ends in the WASM stub's rejection, native attempt or not; anything else fails. */
+async function proveWith(prover: PrestoProver) {
   const wasm = BBLazyPrivateKernelProver.prototype.createChonkProof as ReturnType<typeof spyOn>;
-  /** Every proof here ends in the WASM stub's rejection, native attempt or not; anything else fails. */
-  const prove = async () => {
-    const calls = wasm.mock.calls.length;
-    await expect(prover.createChonkProof([fakeStep])).rejects.toThrow("wasm");
-    expect(wasm.mock.calls.length).toBe(calls + 1);
-  };
-  return { presto, views, prove };
+  const calls = wasm.mock.calls.length;
+  await expect(prover.createChonkProof([fakeStep])).rejects.toThrow("wasm");
+  expect(wasm.mock.calls.length).toBe(calls + 1);
 }
 
-describe("examples/consent.ts, executed", () => {
+async function setup() {
+  const prover = newProver();
+  const views: unknown[] = [];
+  const presto = await askBeforeConnecting(prover, (view) => views.push(view));
+  return { presto, views, prove: () => proveWith(prover) };
+}
+
+function useStubs() {
   beforeEach(() => {
     stubPermissions();
     stubFetch();
@@ -97,12 +128,15 @@ describe("examples/consent.ts, executed", () => {
       new Error("wasm"),
     );
   });
-
   afterEach(() => {
     globalThis.fetch = originalFetch;
     restorePermissions();
     mock.restore();
   });
+}
+
+describe("examples/consent.ts, executed", () => {
+  useStubs();
 
   test("before consent nothing reaches Presto, status checks and proofs alike", async () => {
     for (const [state, view] of [
@@ -160,6 +194,7 @@ describe("examples/consent.ts, executed", () => {
       permission.state = "granted";
     };
     await silent.presto.connect();
+    duringHealth = () => {};
     permission.state = "prompt";
     await silent.presto.beforeProving();
     fetched.length = 0;
@@ -171,13 +206,19 @@ describe("examples/consent.ts, executed", () => {
     await silent.prove();
     expect(fetched).toContain("/prove");
 
-    permission.state = "prompt"; // reset again, then the visitor clicks Connect
+    permission.state = "prompt"; // reset again; the visitor clicks Connect and never answers
     await silent.presto.beforeProving();
     await silent.presto.connect();
+    await silent.presto.beforeProving();
+    expect(permission.state).toBe("prompt");
     fetched.length = 0;
     await silent.prove();
     expect(fetched).toContain("/prove");
   });
+});
+
+describe("examples/consent.ts, races", () => {
+  useStubs();
 
   test("a block during a check hides its result and says so", async () => {
     const { presto, views } = await setup();
@@ -185,6 +226,33 @@ describe("examples/consent.ts, executed", () => {
     await presto.connect();
     expect(views.some((view) => typeof view === "object")).toBe(false);
     expect(views.at(-1)).toBe("blocked");
+  });
+
+  test("proofs stay local while the module is still reading the decision", async () => {
+    permission.state = "granted";
+    const reads = holdReads();
+    const prover = newProver();
+    const ready = askBeforeConnecting(prover, () => {});
+    await reads.readStarted;
+    await proveWith(prover);
+    expect(fetched).toEqual([]);
+    reads.release();
+    await ready;
+  });
+
+  test("a decision taken during a slow read wins over what that read saw", async () => {
+    permission.state = "granted";
+    const { presto, views, prove } = await setup();
+    const reads = holdReads();
+    const pending = presto.beforeProving(); // sees "granted"
+    await reads.readStarted;
+    setPermission("prompt"); // reset, reported while that read is held
+    reads.release();
+    fetched.length = 0;
+    await pending;
+    expect(views.at(-1)).toBe("ask");
+    await prove();
+    expect(fetched).toEqual([]);
   });
 });
 
