@@ -31,9 +31,17 @@ function deployedHeaders(): Record<string, string> {
   return headers;
 }
 
-test("production build loads without JS errors", async ({ page }) => {
+test("production build loads in-browser without JS errors or a request to Presto", async ({
+  page,
+}) => {
   const errors: string[] = [];
+  const prestoRequests: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
+  page.on("request", (request) => {
+    if (["59833", "59834"].includes(new URL(request.url()).port)) {
+      prestoRequests.push(request.url());
+    }
+  });
 
   const response = await page.goto("/");
   // Chromium isolates under either COEP value, so only the header itself shows a drift between the
@@ -56,6 +64,9 @@ test("production build loads without JS errors", async ({ page }) => {
   await page.waitForTimeout(3_000);
 
   expect(errors).toEqual([]);
+  await expect(page.locator("#mode-local")).toHaveAttribute("data-active", "true");
+  await expect(page.locator("#presto-label")).toHaveText("not connected");
+  expect(prestoRequests).toEqual([]);
 });
 
 test("production build serves all static assets", async ({ page }) => {

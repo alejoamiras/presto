@@ -3,6 +3,8 @@ import { createServer } from "node:http";
 const HOST = "127.0.0.1";
 const PORT = 59833;
 let healthHits = 0;
+/** Holds each /health answer this long, so a test can act while a check is in flight. */
+let healthDelayMs = 0;
 
 const corsHeaders = {
   "access-control-allow-origin": "*",
@@ -18,8 +20,10 @@ const server = createServer((request, response) => {
   }
   if (url.pathname === "/health") {
     healthHits++;
-    response.setHeader("content-type", "application/json");
-    response.end(JSON.stringify({ status: "ok", api_version: 1 }));
+    setTimeout(() => {
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ status: "ok", api_version: 1 }));
+    }, healthDelayMs);
     return;
   }
   if (url.pathname === "/__hits") {
@@ -27,8 +31,15 @@ const server = createServer((request, response) => {
     response.end(JSON.stringify({ healthHits }));
     return;
   }
+  if (url.pathname === "/__delay" && request.method === "POST") {
+    healthDelayMs = Number(url.searchParams.get("ms") ?? 0);
+    response.statusCode = 204;
+    response.end();
+    return;
+  }
   if (url.pathname === "/__reset" && request.method === "POST") {
     healthHits = 0;
+    healthDelayMs = 0;
     response.statusCode = 204;
     response.end();
     return;

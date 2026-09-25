@@ -3,18 +3,18 @@ import { expect, type Page } from "@playwright/test";
 export const PRESTO_ORIGINS = ["http://127.0.0.1:59833", "https://127.0.0.1:59834"];
 
 /**
- * Connects Presto the way a visitor does: "Connect Presto →", then Continue. A browser that already
- * allowed this site connects on load, so then it only waits for Presto mode.
+ * Selects Presto mode the way a visitor does: the Presto button, then Continue in the dialog if the
+ * site is not connected yet. A connected page just switches mode.
  */
 export async function connectPresto(page: Page): Promise<void> {
-  const link = page.locator("#presto-connect");
+  // The main panel appears only after startup has applied the browser's stored decision.
+  await expect(page.locator("#embedded-ui")).toBeVisible({ timeout: 60_000 });
   const presto = page.locator("#mode-accelerated");
-  await expect(link.or(page.locator('#mode-accelerated[data-active="true"]'))).toBeVisible({
-    timeout: 30_000,
-  });
-  if (await link.isVisible()) {
-    await link.click();
-    await page.locator("#presto-connect-continue").click();
+  if ((await presto.getAttribute("data-active")) !== "true") {
+    await presto.click();
+    if (await page.locator("#presto-connect-dialog").isVisible()) {
+      await page.locator("#presto-connect-continue").click();
+    }
   }
   await expect(presto).toHaveAttribute("data-active", "true");
 }

@@ -9,6 +9,7 @@
  * Usage: bun run --cwd packages/playground test:e2e:local-network
  */
 import { expect, type Page, test } from "@playwright/test";
+import { connectPresto } from "./connect";
 import { deployAndAssert, initSharedPage, runTokenFlowAndAssert } from "./fullstack.helpers";
 
 const PRESTO_URL = process.env.PRESTO_URL || "";
@@ -34,8 +35,7 @@ test.describe("Accelerated", () => {
 
   test("deploys account", async () => {
     const page = sharedPage;
-    await page.click("#mode-accelerated");
-    await expect(page.locator("#mode-accelerated")).toHaveClass(/mode-active/);
+    await connectPresto(page);
     await deployAndAssert(page, "accelerated");
   });
 
@@ -84,8 +84,7 @@ test.describe("Local", () => {
     test.skip(!PRESTO_URL, "PRESTO_URL env var not set");
     const page = sharedPage;
     await expect(page.locator("#mode-local")).toHaveClass(/mode-active/);
-    await page.click("#mode-accelerated");
-    await expect(page.locator("#mode-accelerated")).toHaveClass(/mode-active/);
+    await connectPresto(page);
     await expect(page.locator("#log")).toContainText("Proving mode");
     await deployAndAssert(page, "accelerated");
   });

@@ -11,6 +11,11 @@ async function resetHealthHits(): Promise<void> {
   expect(response.ok).toBe(true);
 }
 
+async function setHealthDelay(ms: number): Promise<void> {
+  const response = await fetch(`${HEALTH_ADMIN}/__delay?ms=${ms}`, { method: "POST" });
+  expect(response.ok).toBe(true);
+}
+
 async function healthHits(): Promise<number> {
   const response = await fetch(`${HEALTH_ADMIN}/__hits`);
   return ((await response.json()) as { healthHits: number }).healthHits;
@@ -85,6 +90,21 @@ async function deniedContext(browser: Browser, origin: string): Promise<BrowserC
   return context;
 }
 
+async function continueToPresto(page: Page): Promise<void> {
+  await page.locator("#presto-connect").click();
+  await page.locator("#presto-connect-continue").click();
+}
+
+/** Allow the browser's question, then the separate plaintext confirmation this HTTP-only harness needs. */
+async function allowAndUseHttp(context: BrowserContext, page: Page): Promise<void> {
+  await grantLocalNetwork(context, PLAYGROUND_ORIGIN);
+  await expect(page.locator("#presto-secure-help")).toBeVisible();
+  await page.locator("#presto-use-http").click();
+  await page.locator("#http-session-confirm").click();
+  await expect(page.locator("#presto-label")).toHaveText("running");
+  await expect(page.locator("#presto-status")).toHaveAttribute("data-status", "online");
+}
+
 test("harness proves a real denied and granted public-to-loopback fetch", async ({ browser }) => {
   await resetHealthHits();
   const context = await deniedContext(browser, PLAYGROUND_ORIGIN);
@@ -111,39 +131,32 @@ test("harness proves a real denied and granted public-to-loopback fetch", async 
   expect(automaticHits).toBeGreaterThan(0);
   expect(await rawAnnotatedHealth(page)).toBe(true);
   expect(await healthHits()).toBe(automaticHits + 1);
-  await page.locator("#presto-use-http").click();
-  await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#presto-label")).toHaveText("running");
   await context.close();
 });
 
-test("playground denial gives guidance and same-context grant automatically recovers", async ({
-  browser,
-}) => {
+test("playground sends nothing before consent, even 8 s after load", async ({ browser }) => {
   await resetHealthHits();
-  const context = await deniedContext(browser, PLAYGROUND_ORIGIN);
+  const context = await browser.newContext();
   const page = await context.newPage();
   await mockPlaygroundNode(page);
+  const requests = recordPrestoRequests(page);
   await page.goto(PLAYGROUND_ORIGIN);
+  await expect(page.locator("#presto-connect")).toBeVisible();
+  await page.waitForTimeout(8_000);
 
-  await expect(page.locator("#presto-label")).toHaveText("local access blocked");
-  await expect(page.locator("#presto-permission-help")).toBeVisible();
-  await expect(page.locator("#accel-banner")).toBeHidden();
-  await expect(page.locator("#presto-cta")).toBeHidden();
+  expect(await permissionState(page)).toBe("prompt");
+  expect(requests).toEqual([]);
   expect(await healthHits()).toBe(0);
 
-  await grantLocalNetwork(context, PLAYGROUND_ORIGIN);
-  await expect(page.locator("#presto-secure-help")).toBeVisible();
-  await page.locator("#presto-use-http").click();
-  await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#presto-label")).toHaveText("running");
-  await expect(page.locator("#presto-permission-help")).toBeHidden();
-  await expect(page.locator("#presto-status")).toHaveAttribute("data-status", "online");
-  expect(await healthHits()).toBeGreaterThan(0);
+  // Validity: the recorder sees the first request once the visitor continues, though the browser
+  // holds it until the question is answered.
+  await continueToPresto(page);
+  await expect.poll(() => requests.length).toBeGreaterThan(0);
+  expect(await healthHits()).toBe(0);
   await context.close();
 });
 
-test("playground automatically recovers when an open prompt is allowed after probe timeout", async ({
+test("Continue, then Allow, connects through the separate HTTP confirmation", async ({
   browser,
 }) => {
   await resetHealthHits();
@@ -152,20 +165,75 @@ test("playground automatically recovers when an open prompt is allowed after pro
   await mockPlaygroundNode(page);
   await page.goto(PLAYGROUND_ORIGIN);
 
-  // The prompt remains unresolved longer than both bounded SDK rounds. This used to settle the UI as
-  // offline permanently even after the browser later changed the permission to granted.
-  await expect(page.locator("#presto-secure-retry")).toBeEnabled({ timeout: 15_000 });
-  await expect(page.locator("#presto-label")).toContainText("secure connection unavailable");
+  await continueToPresto(page);
+  await expect(page.locator("#presto-may-ask")).toBeVisible();
+  await allowAndUseHttp(context, page);
+  expect(await healthHits()).toBeGreaterThan(0);
+  await context.close();
+});
+
+test("a blocked site gets guidance and a same-context grant recovers", async ({ browser }) => {
+  await resetHealthHits();
+  const context = await deniedContext(browser, PLAYGROUND_ORIGIN);
+  const page = await context.newPage();
+  await mockPlaygroundNode(page);
+  const requests = recordPrestoRequests(page);
+  await page.goto(PLAYGROUND_ORIGIN);
+
+  await expect(page.locator("#presto-label")).toHaveText("blocked by your browser");
+  await expect(page.locator("#presto-permission-help")).toBeVisible();
+  await expect(page.locator("#accel-banner")).toBeHidden();
+  await expect(page.locator("#presto-cta")).toBeHidden();
+  expect(requests).toEqual([]);
+
+  await allowAndUseHttp(context, page);
+  await expect(page.locator("#presto-permission-help")).toBeHidden();
+  await context.close();
+});
+
+test("a grant that arrives after the check gave up still connects", async ({ browser }) => {
+  await resetHealthHits();
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await mockPlaygroundNode(page);
+  await page.goto(PLAYGROUND_ORIGIN);
+
+  // The browser holds the request longer than every bounded SDK attempt.
+  await continueToPresto(page);
+  await expect(page.locator("#presto-label")).toHaveText("waiting for your browser", {
+    timeout: 20_000,
+  });
+  await expect(page.locator("#presto-try-again")).toBeVisible();
   expect(await permissionState(page)).toBe("prompt");
   expect(await healthHits()).toBe(0);
 
+  await allowAndUseHttp(context, page);
+  await context.close();
+});
+
+test("a reset to ask while a check is queued sends nothing more", async ({ browser }) => {
+  await resetHealthHits();
+  await setHealthDelay(3_000);
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await mockPlaygroundNode(page);
+  const requests = recordPrestoRequests(page);
+  await page.goto(PLAYGROUND_ORIGIN);
+
+  await continueToPresto(page);
+  await expect.poll(() => requests.length).toBeGreaterThan(0);
+  // Allow releases the held check (now slow at the server) and queues a fresh one behind it.
   await grantLocalNetwork(context, PLAYGROUND_ORIGIN);
-  await expect(page.locator("#presto-secure-help")).toBeVisible();
-  await page.locator("#presto-use-http").click();
-  await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#presto-label")).toHaveText("running");
-  await expect(page.locator("#presto-status")).toHaveAttribute("data-status", "online");
-  expect(await healthHits()).toBeGreaterThan(0);
+  await expect.poll(healthHits).toBeGreaterThan(0);
+  await context.clearPermissions();
+  await expect(page.locator("#presto-label")).toHaveText("not connected");
+  const sent = requests.length;
+
+  await page.waitForTimeout(6_000);
+  expect(requests.length).toBe(sent);
+  await expect(page.locator("#presto-label")).toHaveText("not connected");
+  await expect(page.locator("#mode-local")).toHaveAttribute("data-active", "true");
+  await setHealthDelay(0);
   await context.close();
 });
 
