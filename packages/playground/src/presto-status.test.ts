@@ -384,6 +384,58 @@ describe("PrestoStatusController consent", () => {
     expect(h.last()).toEqual({ kind: "blocked" });
   });
 
+  test.each(["denied", "prompt"] as const)(
+    "a late startup read that sees a %s after an early Connect revokes for every overlapping read",
+    async (state) => {
+      const h = harness("granted");
+      await h.controller.connect();
+      h.setPermission(state);
+      const release = h.holdReads();
+      const startup = h.controller.start();
+      const proof = h.controller.beforeProving();
+      release();
+      await startup;
+      expect(await proof).toBe(false);
+      expect(h.controller.authorized).toBe(false);
+      expect(h.checks).toHaveLength(1);
+    },
+  );
+
+  test("a settlement that lost the row to a newer refresh still applies the block it read", async () => {
+    const reads: ReturnType<typeof deferred<LoopbackPermissionState>>[] = [];
+    const checks: ReturnType<typeof deferred<PrestoStatus>>[] = [];
+    const controller = new PrestoStatusController({
+      check: () => {
+        checks.push(deferred<PrestoStatus>());
+        return checks.at(-1)!.promise;
+      },
+      permission: () => {
+        reads.push(deferred<LoopbackPermissionState>());
+        return reads.at(-1)!.promise;
+      },
+      render: () => {},
+      setPending: () => {},
+      onAuthorizationChange: () => {},
+    });
+    controller.permissionChanged("granted");
+    await tick();
+    reads[0]!.resolve("granted");
+    await tick();
+    void controller.refresh({ forceRefresh: true });
+    // A's inconclusive answer lands between B's read being recorded and B claiming the row.
+    reads[1]!.resolve("granted");
+    checks[0]!.resolve(OFFLINE);
+    await tick();
+    expect(reads).toHaveLength(3);
+    expect(checks).toHaveLength(2);
+
+    const proof = controller.beforeProving();
+    reads[2]!.resolve("denied");
+    reads[3]!.resolve("granted");
+    expect(await proof).toBe(false);
+    expect(controller.authorized).toBe(false);
+  });
+
   test("every refresh re-reads: a reset nobody reported stops it before any request", async () => {
     const h = harness("granted");
     await h.controller.start();

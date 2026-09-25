@@ -386,13 +386,20 @@ export class PrestoStatusController {
       });
   }
 
-  /** `fresh` is false when a decision was applied during the read; its state is returned instead. */
+  /**
+   * `fresh` is false when a decision was applied during the read; its state is returned instead. A
+   * block or a reset revokes here, whoever reads it: a caller that yields must not drop it, since
+   * every read overlapping this one now returns it as not fresh.
+   */
   async #read(): Promise<{ state: LoopbackPermissionState; fresh: boolean }> {
     const decisions = this.#decisions;
     const state = await this.options.permission();
     if (decisions !== this.#decisions) return { state: this.#permission, fresh: false };
     this.#decisions++;
     this.#permission = state;
+    if (this.#authorized && (state === "denied" || (state === "prompt" && this.#seenGranted))) {
+      this.#revoke(state);
+    }
     return { state, fresh: true };
   }
 
@@ -419,8 +426,6 @@ export class PrestoStatusController {
     }
     const { state } = await this.#read();
     if (epoch !== this.#epoch) return;
-    if (state === "denied") return this.#revoke("denied");
-    if (state === "prompt" && this.#seenGranted) return this.#revoke("prompt");
     if (state === "prompt" && !this.#reached) return this.#show({ kind: "awaiting-browser" });
     if (state === "granted") this.#seenGranted = true;
     this.#show({ kind: "checked", status, unsupportedHint: state === "unsupported" });

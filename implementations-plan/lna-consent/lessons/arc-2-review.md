@@ -22,3 +22,21 @@ PR #54's `#download-alt` link (see `phase-6.md`).
 
 Gates after the fixes: controller tests 33 pass; `test:e2e` 22 passed; `test:e2e:lna` 8 passed;
 `bun run lint` exit 0.
+
+## Round 2 — "Changes requested", 2 findings, both verified
+
+| # | Sev | Finding | Verdict |
+|---|---|---|---|
+| 1 | High | a late `start()` read recorded a block or reset and then yielded (the row was already owned by an early Connect) without applying it, so an overlapping pre-run read came back not fresh, skipped the re-check and went native | accepted, fixed at the root (below) |
+| 2 | High | an inconclusive settlement whose display was taken by a newer refresh between that refresh's read and its epoch claim (one microtask hop) recorded a block and returned on the stale epoch, with the same consequence | accepted, same fix |
+
+Root cause: a fresh read is recorded before its caller acts, and two callers could drop it. `#read()`
+now revokes on a block, or on a reset after a grant, while authorized, whoever reads it; `#settle`'s
+own revocation branches became unreachable and are gone. The startup regression runs for `denied` and
+`prompt`. The settlement one drives reads and checks by hand to hit the one-hop window; a first
+version built on the shared harness passed against the old controller too (the older check resolved
+after the newer refresh had claimed the row, so it never settled) and was replaced. All three fail
+against bd6e4fa and pass now.
+
+Gates after the fixes: controller tests 36 pass (playground unit 106); `test:e2e` 22 passed;
+`test:e2e:lna` 8 passed.
