@@ -15,11 +15,22 @@ type LoopbackPermissions = {
   query(descriptor: { name: LoopbackPermissionName }): Promise<LoopbackPermissionStatus>;
 };
 
+type Reading = { status: LoopbackPermissionStatus; state: unknown };
+
+/** Reads `state` inside the attempt, so a status without a readable one counts as a rejection. */
+async function readDescriptor(
+  permissions: LoopbackPermissions,
+  name: LoopbackPermissionName,
+): Promise<Reading> {
+  const status = await permissions.query({ name });
+  return { status, state: status.state };
+}
+
 /**
  * Reads `navigator.permissions` on every call, never at import. The umbrella `local-network-access`
  * name is tried only when the browser rejects `loopback-network` itself.
  */
-async function queryLoopbackPermission(): Promise<LoopbackPermissionStatus | undefined> {
+async function queryLoopbackPermission(): Promise<Reading | undefined> {
   let permissions: LoopbackPermissions | undefined;
   try {
     if (typeof navigator === "undefined") return undefined;
@@ -29,10 +40,10 @@ async function queryLoopbackPermission(): Promise<LoopbackPermissionStatus | und
     return undefined;
   }
   try {
-    return await permissions.query({ name: "loopback-network" });
+    return await readDescriptor(permissions, "loopback-network");
   } catch {
     try {
-      return await permissions.query({ name: "local-network-access" });
+      return await readDescriptor(permissions, "local-network-access");
     } catch {
       return undefined;
     }
@@ -49,8 +60,8 @@ function toState(state: unknown): LoopbackPermissionState {
  * action that explains the browser's question. Never throws.
  */
 export async function loopbackPermission(): Promise<LoopbackPermissionState> {
-  const status = await queryLoopbackPermission();
-  return status ? toState(status.state) : "unsupported";
+  const reading = await queryLoopbackPermission();
+  return reading ? toState(reading.state) : "unsupported";
 }
 
 /**
@@ -62,19 +73,26 @@ export async function loopbackPermission(): Promise<LoopbackPermissionState> {
 export async function watchLoopbackPermission(
   onChange: (state: Exclude<LoopbackPermissionState, "unsupported">) => void,
 ): Promise<() => void> {
-  const status = await queryLoopbackPermission();
+  const reading = await queryLoopbackPermission();
+  const status = reading?.status;
   if (
-    !status ||
-    typeof status.addEventListener !== "function" ||
+    !reading ||
+    typeof status?.addEventListener !== "function" ||
     typeof status.removeEventListener !== "function"
   ) {
     return () => {};
   }
-  let last = status.state;
+  let last = reading.state;
   const listener = () => {
-    if (status.state === last) return;
-    last = status.state;
-    const next = toState(last);
+    let current: unknown;
+    try {
+      current = status.state;
+    } catch {
+      return;
+    }
+    if (current === last) return;
+    last = current;
+    const next = toState(current);
     if (next !== "unsupported") onChange(next);
   };
   status.addEventListener("change", listener);

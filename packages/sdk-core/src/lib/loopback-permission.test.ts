@@ -61,6 +61,19 @@ describe("loopbackPermission", () => {
     expect(await loopbackPermission()).toBe("denied");
     expect(asked).toEqual(["loopback-network", "local-network-access"]);
   });
+
+  test("a status with no readable state counts as a rejection, and nothing throws", async () => {
+    const unreadable = {
+      get state(): string {
+        throw new Error("broken polyfill");
+      },
+    };
+    setQuery(async ({ name }) => (name === "loopback-network" ? undefined : { state: "denied" }));
+    expect(await loopbackPermission()).toBe("denied");
+    setQuery(async () => unreadable);
+    expect(await loopbackPermission()).toBe("unsupported");
+    expect(typeof (await watchLoopbackPermission(() => {}))).toBe("function");
+  });
 });
 
 describe("watchLoopbackPermission", () => {
@@ -78,6 +91,22 @@ describe("watchLoopbackPermission", () => {
     fake.set("denied");
     expect(seen).toEqual(["granted", "prompt"]);
     expect(fake.listeners.size).toBe(0);
+  });
+
+  test("a state that becomes unreadable after subscribing is skipped, not thrown", async () => {
+    const fake = fakeStatus("prompt");
+    setQuery(async () => fake.status);
+    const seen: string[] = [];
+    await watchLoopbackPermission((state) => seen.push(state));
+    Object.defineProperty(fake.status, "state", {
+      get() {
+        throw new Error("broken polyfill");
+      },
+    });
+    expect(() => {
+      for (const listener of fake.listeners) listener();
+    }).not.toThrow();
+    expect(seen).toEqual([]);
   });
 
   test("is a no-op where changes cannot be observed", async () => {
