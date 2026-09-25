@@ -39,8 +39,10 @@ export async function askBeforeConnecting(prover: PrestoProver, show: (view: Pre
       const started = epoch;
       const status = await prover.checkPrestoStatus({ forceRefresh: true }); // the browser may ask now
       if (epoch !== started) return;
-      apply(await loopbackPermission()); // records the answer given at the prompt
-      if (epoch === started && consented) show(status);
+      const newGrant = apply(await loopbackPermission()); // records the answer given at the prompt
+      if (epoch !== started || !consented) return;
+      if (newGrant && !status.available) return check(); // granted after this probe failed
+      show(status);
     })();
     return lastCheck;
   }
