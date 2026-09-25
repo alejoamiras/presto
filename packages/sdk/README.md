@@ -170,9 +170,9 @@ calls the toggle **Apps on device**), then call `connect()`. With
 `"permission-blocked"` the help, and `banner.status = view` the rest.
 
 Known limits: permission reads are asynchronous, so a decision that changes while one is in flight
-(a sub-second window) can be applied out of order. The view or the proving mode may then lag until
-the next change, `beforeProving()` or `connect()`, and a request may meet the browser's prompt again.
-The browser still decides every request, so a site it blocks is never reached.
+can be applied out of order. The view can then stay stale even across later reads, until the visitor
+clicks Connect again (`connect()` re-checks and repaints), and a request may meet the browser's
+prompt again. The browser still decides every request, so a site it blocks is never reached.
 
 ## API Reference
 

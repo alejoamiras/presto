@@ -52,3 +52,11 @@ counter is removed: it added machinery, caused round 3's #2, and still did not c
 the synchronous force-local gate, the epoch guard, and one line so a revoked check returns before its
 post-check read (#3's lasting wrong view). The residual races are a documented known limit in the SDK
 README and skill. `bun run test` exit 0 (SDK 29), `bun run lint` exit 0.
+
+## Round 4 (verification after the owner decision)
+
+No new code findings outside A5. One Medium doc correction, accepted: the known-limits text claimed
+the next change or `beforeProving()` repairs the lag and bounded the window as "sub-second"; Codex
+reproduced a stale "ask" surviving both, repaired only by `connect()`. Text corrected in the README,
+the skill and plan A5. The first attempt at this pass hung for about 40 minutes inside Codex's
+sandbox/approval step with no child process; stopped and retried, the retry completed normally.

@@ -436,9 +436,9 @@ both PR bodies say so); **A3** accepted; **A4** accepted. Scope and tier approve
   browser itself.
 - **A5** (raised at the arc 1 loop cap, 2026-09-25; owner chose "simplify, accept residuals"). The
   consent example lets permission reads, watcher events and clicks run concurrently, so a decision
-  that changes while a read is in flight can be applied out of order: the view or proving mode lags
-  until the next change, `beforeProving()` or `connect()`, and a request may meet the browser's prompt
-  again. Documented as a known limit in the SDK README and skill; the browser still gates every
+  that changes while a read is in flight can be applied out of order: the view can stay stale even
+  across later reads until the visitor clicks Connect again, and a request may meet the browser's
+  prompt again. Documented as a known limit in the SDK README and skill; the browser still gates every
   request. Declined alternative: serialising all permission work through one queue.
 
 ## Phases
