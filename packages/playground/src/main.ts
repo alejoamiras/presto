@@ -233,7 +233,6 @@ function handleProverPhase(ascii: SparkOrbitController, phase: string, _data?: u
   }
 }
 
-/** Re-reads the browser's decision and routes this run; returns the mode the run reports. */
 async function startRun(): Promise<() => UiMode> {
   const native = await prestoStatus.beforeProving();
   if (!native && prestoStatus.authorized && state.uiMode === "accelerated") {
