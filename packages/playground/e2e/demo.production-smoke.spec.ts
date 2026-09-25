@@ -7,13 +7,45 @@
  *
  * Usage: bun run --cwd packages/playground test:e2e:production-smoke
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
+
+/** The `Cross-Origin-*` headers the deployed `public/_headers` sends, lower-cased names. */
+function deployedHeaders(): Record<string, string> {
+  const file = readFileSync(resolve(import.meta.dirname, "../public/_headers"), "utf8");
+  const headers: Record<string, string> = {};
+  let route = "";
+  for (const line of file.split(/\r?\n/)) {
+    if (/^[^\s#]/.test(line)) route = line.trim();
+    // `! Name` detaches a header that a broader rule attached.
+    expect(line).not.toMatch(/^\s+!\s*Cross-Origin-/i);
+    const [, name, value] = /^\s+(Cross-Origin-[\w-]+):\s*(.*?)\s*$/i.exec(line) ?? [];
+    if (name === undefined || value === undefined) continue;
+    // A narrower route leaves the document without the header; Cloudflare joins a repeat into an
+    // invalid comma-separated value.
+    expect(route, name).toBe("/*");
+    expect(headers[name.toLowerCase()], name).toBeUndefined();
+    headers[name.toLowerCase()] = value;
+  }
+  return headers;
+}
 
 test("production build loads without JS errors", async ({ page }) => {
   const errors: string[] = [];
   page.on("pageerror", (err) => errors.push(err.message));
 
-  await page.goto("/");
+  const response = await page.goto("/");
+  // Chromium isolates under either COEP value, so only the header itself shows a drift between the
+  // preview server and the deployment (WebKit isolates under `require-corp` alone).
+  const deployed = deployedHeaders();
+  expect(deployed).toEqual({
+    "cross-origin-opener-policy": "same-origin",
+    "cross-origin-embedder-policy": "require-corp",
+  });
+  for (const [name, value] of Object.entries(deployed)) {
+    expect(response?.headers()[name], name).toBe(value);
+  }
 
   // Wait for the app to initialize — key UI elements should render
   await expect(page.locator("#mode-local")).toBeVisible({ timeout: 10_000 });

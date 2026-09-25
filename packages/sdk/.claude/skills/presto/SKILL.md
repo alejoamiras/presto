@@ -213,14 +213,22 @@ export default defineConfig({
   server: {
     headers: {
       "Cross-Origin-Opener-Policy": "same-origin",
-      "Cross-Origin-Embedder-Policy": "credentialless",
+      "Cross-Origin-Embedder-Policy": "require-corp",
     },
   },
   build: { target: "esnext" },
 });
 ```
 
-COOP/COEP headers are required for `SharedArrayBuffer` (used by WASM proving).
+COOP/COEP headers are required for `SharedArrayBuffer` (used by WASM proving). Send the same pair
+from your production host. Use `require-corp`: Safari and other WebKit-based browsers ignore
+`credentialless`, so the page is not cross-origin isolated there and WASM proving runs on one
+thread (about 3x slower in our Playwright WebKit benchmark). `require-corp` blocks a cross-origin
+subresource unless it loads in CORS mode or its `Cross-Origin-Resource-Policy` permits your
+origin. Fall back to `credentialless` only for `no-cors` subresources you cannot change that load
+fine without credentials, and accept single-threaded proving in WebKit. Neither value lets you
+embed an ordinary cross-origin iframe whose document does not send its own COEP;
+`<iframe credentialless>` is a separate mechanism that not every browser supports.
 
 ## Checklist
 

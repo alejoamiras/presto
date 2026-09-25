@@ -45,7 +45,9 @@ test("credentialed previews generate fixed SPA config without reading PR code", 
       // Header files ship with the static artifact; they are not read as executable configuration.
       const headers = readFileSync(join(root, `packages/${site}/public/_headers`), "utf8");
       expect(headers).toContain("Cross-Origin-Opener-Policy: same-origin");
-      expect(headers).toContain("Cross-Origin-Embedder-Policy: credentialless");
+      // Only the playground proves in the page; Safari isolates it under `require-corp` alone.
+      const coep = /^\s*Cross-Origin-Embedder-Policy:\s*(\S+)\s*$/im.exec(headers)?.[1];
+      expect(coep).toBe(site === "playground" ? "require-corp" : undefined);
     }
     const rejected = Bun.spawnSync(["node", "-e", script!], {
       env: {
