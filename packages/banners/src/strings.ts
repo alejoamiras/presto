@@ -1,9 +1,5 @@
 import type { BannerState, BannerTone, BannerVariant } from "./types.js";
 
-/**
- * What the primary control does in a state: open `href`, ask the host to connect or retry, or just
- * report.
- */
 export type PrimaryKind = "cta" | "connect" | "retry" | "status";
 
 export interface StateStrings {

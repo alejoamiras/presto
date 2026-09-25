@@ -228,6 +228,26 @@ describe("examples/consent.ts, races", () => {
     expect(views.at(-1)).toBe("blocked");
   });
 
+  test("a grant answered while a check's probe is failing gets a fresh probe", async () => {
+    let failing = true;
+    globalThis.fetch = mock(async (input: RequestInfo | URL) => {
+      const url = input instanceof Request ? input.url : String(input);
+      fetched.push(new URL(url).pathname);
+      if (!failing) return Response.json({ status: "ok", api_version: 1 });
+      setTimeout(() => setPermission("granted")); // Allow, answered while the probe retries
+      throw new TypeError("Failed to fetch");
+    }) as typeof fetch;
+    let reached!: () => void;
+    const available = new Promise<string>((resolve) => (reached = () => resolve("available")));
+    const presto = await askBeforeConnecting(newProver(), (view) => {
+      if (typeof view !== "object") return;
+      if (view.available) reached();
+      else failing = false;
+    });
+    await presto.connect();
+    expect(await Promise.race([available, Bun.sleep(1000).then(() => "stuck")])).toBe("available");
+  });
+
   test("proofs stay local while the module is still reading the decision", async () => {
     permission.state = "granted";
     const reads = holdReads();

@@ -121,16 +121,22 @@ export async function askBeforeConnecting(prover: PrestoProver, show: (view: Pre
     return newGrant;
   }
 
-  async function check() {
-    const started = epoch;
-    const status = await prover.checkPrestoStatus({ forceRefresh: true }); // the browser may ask now
-    if (epoch !== started) return;
-    apply(await loopbackPermission()); // records the answer given at the prompt
-    if (epoch === started && consented) show(status);
+  let lastCheck: Promise<void> = Promise.resolve();
+  function check() {
+    lastCheck = (async () => {
+      const started = epoch;
+      const status = await prover.checkPrestoStatus({ forceRefresh: true }); // the browser may ask now
+      if (epoch !== started) return;
+      apply(await loopbackPermission()); // records the answer given at the prompt
+      if (epoch === started && consented) show(status);
+    })();
+    return lastCheck;
   }
 
   async function sync(state: LoopbackPermissionState) {
-    if (apply(state)) await check(); // allowed earlier, in site settings, or in another tab
+    if (!apply(state)) return;
+    await lastCheck; // a forced check joins a probe already in flight, whose answer predates this grant
+    if (consented) await check(); // allowed earlier, in site settings, or in another tab
   }
 
   async function connect() {
