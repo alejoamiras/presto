@@ -11,6 +11,12 @@ for (const type of Object.values(BANNER_EVENTS)) {
   });
 }
 
+// Stands in for the host's first status check: Connecting… for a moment, then Presto is found.
+document.addEventListener(BANNER_EVENTS.connect, (event) => {
+  const banner = event.target as HTMLElement;
+  setTimeout(() => banner.setAttribute("state", "available"), 1200);
+});
+
 $("#state").addEventListener("change", (event) => {
   const value = (event.target as HTMLSelectElement).value as BannerState | "";
   for (const el of banners()) el.setAttribute("state", value);

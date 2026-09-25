@@ -500,7 +500,7 @@ verbatim, and every other example that proves or builds a wallet uses the same g
 - Pass: exit 0 on every command.
 - Layers: lint, typecheck, unit (doc-sync), packed artifact.
 
-### Phase 3 — banner `connect` state
+### Phase 3 — banner `connect` state ✓
 
 Types, strings, `PrimaryKind` `connect`, six templates (non-navigating button; secondary install link
 per the copy table), pending set before emit and patched in place, equal-value exception in

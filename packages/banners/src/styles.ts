@@ -53,7 +53,7 @@ a { color: inherit; }
 
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: 7px; border-radius: 999px; font-weight: 700; text-decoration: none; cursor: pointer; border: 1.5px solid transparent; font-family: inherit; font-size: 14px; line-height: 1; white-space: nowrap; padding: 12px 22px; transition: transform .15s cubic-bezier(.34,1.56,.64,1), background .15s, border-color .15s, color .15s; }
 .btn:active { transform: scale(.96); }
-.btn:focus-visible, .x:focus-visible, input:focus-visible, .link:focus-visible { outline: 2.5px solid var(--pb-accent); outline-offset: 2px; }
+.btn:focus-visible, .x:focus-visible, input:focus-visible, .link:focus-visible, .get:focus-visible { outline: 2.5px solid var(--pb-accent); outline-offset: 2px; }
 .btn-primary { background: var(--pb-accent); color: var(--pb-accent-on); box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--pb-accent) 45%, transparent); }
 .btn-primary:hover { background: var(--pb-accent-dim); transform: translateY(-1px); }
 .btn-sm { padding: 7px 14px; font-size: 12.5px; }
@@ -62,6 +62,10 @@ a { color: inherit; }
 .btn-outline.btn-sm { padding: 6px 13px; }
 .btn-light { background: #ffffff; color: var(--pb-solid-deep); }
 .btn-light:hover { transform: translateY(-1px); background: #fff8e6; }
+/* Connect, waiting for the host: stays focusable (aria-disabled), so no hover lift or press. */
+.btn[aria-disabled="true"] { opacity: .72; cursor: progress; transform: none; box-shadow: none; }
+.spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin .8s linear infinite; }
+.get { color: var(--pb-accent-dim); font-weight: 700; }
 .x { width: 28px; height: 28px; border-radius: 8px; border: 0; background: transparent; color: var(--pb-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; flex: none; padding: 0; transition: background .15s, color .15s; }
 .x svg { width: 15px; height: 15px; }
 .x:hover { background: color-mix(in srgb, var(--pb-text) 8%, transparent); color: var(--pb-text); }
@@ -96,7 +100,9 @@ a { color: inherit; }
 .billboard .actions { display: flex; align-items: center; gap: 8px; flex: none; margin-left: auto; }
 .billboard .x { color: rgba(255,255,255,.7); }
 .billboard .x:hover { background: rgba(255,255,255,.14); color: #fff; }
-@container (max-width: 640px) { .billboard { flex-wrap: wrap; } .billboard .actions { width: 100%; margin-left: 0; padding-left: 64px; } }
+@container (max-width: 640px) { .billboard { flex-wrap: wrap; } .billboard .actions { width: 100%; margin-left: 0; padding-left: 64px; flex-wrap: wrap; } }
+.billboard .link { color: rgba(255,255,255,.85); font-size: 12.5px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.billboard .link:hover { text-decoration: underline; }
 .root-billboard { container-type: inline-size; }
 
 /* Dock */
@@ -143,13 +149,16 @@ a { color: inherit; }
 .tile .copy { position: relative; }
 .tile .title { font-size: 31px; }
 .tile .support { font-size: 13px; font-weight: 500; opacity: .86; margin-top: 8px; max-width: 24ch; }
+.tile .support.wide { max-width: 26ch; }
 .tile .actions { position: relative; display: flex; align-items: center; gap: 12px; }
 .tile .link { color: rgba(255,255,255,.85); font-size: 12.5px; font-weight: 600; text-decoration: none; }
 .tile .link:hover { text-decoration: underline; }
 
 /* Sheet */
-/* Native modal in the top layer: the wrapper's morph opacity can't reach it, so the dialog fades itself. */
-dialog.sheet { position: relative; width: min(460px, calc(100vw - 40px)); max-width: none; margin: auto; color: var(--pb-text); background: var(--pb-surface); border: 1px solid var(--pb-border); border-radius: 24px; box-shadow: var(--pb-shadow-big); padding: 24px 26px 22px; font-family: var(--pb-font-body); transition: opacity .35s ease, transform .35s ease; }
+/* Native modal in the top layer: the wrapper's morph opacity can't reach it, so the dialog fades itself.
+   Fixed, as the UA has it: any other position lays it out at the document origin, so opening it on a
+   scrolled page jumps the page to the top. */
+dialog.sheet { position: fixed; width: min(460px, calc(100vw - 40px)); max-width: none; margin: auto; color: var(--pb-text); background: var(--pb-surface); border: 1px solid var(--pb-border); border-radius: 24px; box-shadow: var(--pb-shadow-big); padding: 24px 26px 22px; font-family: var(--pb-font-body); transition: opacity .35s ease, transform .35s ease; }
 dialog.sheet::backdrop { background: rgba(36,27,51,.42); }
 @media (prefers-color-scheme: dark) { :host(:not([theme="light"])) dialog.sheet::backdrop { background: rgba(0,0,0,.58); } }
 :host([theme="dark"]) dialog.sheet::backdrop { background: rgba(0,0,0,.58); }
@@ -175,10 +184,11 @@ dialog.sheet::backdrop { background: rgba(36,27,51,.42); }
 @keyframes pop { from { opacity: 0; transform: scale(.96); } to { opacity: 1; transform: scale(1); } }
 @keyframes backdrop { from { opacity: 0; } to { opacity: 1; } }
 @keyframes crawl { from { width: 4%; } to { width: 86%; } }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* Ambient loops off, entrances become a 150ms fade; the detected crossfade stays (it carries meaning). */
 @media (prefers-reduced-motion: reduce) {
-  .tw, .dot, .badge, .illo, .big-bolt, .race-slow { animation: none !important; }
+  .tw, .dot, .badge, .illo, .big-bolt, .race-slow, .spin { animation: none !important; }
   .race-slow { width: 60%; }
   .is-enter, .is-enter::backdrop { animation: backdrop .15s ease both !important; }
   .btn { transition: none; }

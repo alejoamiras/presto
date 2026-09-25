@@ -1,7 +1,10 @@
 import type { BannerState, BannerTone, BannerVariant } from "./types.js";
 
-/** What the primary control does in a state: open `href`, ask the host to retry, or just report. */
-export type PrimaryKind = "cta" | "retry" | "status";
+/**
+ * What the primary control does in a state: open `href`, ask the host to connect or retry, or just
+ * report.
+ */
+export type PrimaryKind = "cta" | "connect" | "retry" | "status";
 
 export interface StateStrings {
   tone: BannerTone;
@@ -13,7 +16,11 @@ export interface StateStrings {
 }
 
 const CTA = "Get Presto";
+const CONNECT = "Connect Presto";
+/** Every connect surface names the browser's question before the browser asks it. */
+const MAY_ASK = "Your browser may ask to let this site reach apps on this device";
 const RETRY = "Retry";
+export const CONNECTING = "Connecting…";
 export const DECLINE = "Continue in browser";
 export const DISMISS = "Dismiss";
 export const CONNECTED_TITLE = "Presto connected";
@@ -28,10 +35,17 @@ export const STRINGS: Readonly<Record<BannerState, StateStrings>> = {
     primary: "cta",
     primaryLabel: CTA,
   },
+  connect: {
+    tone: "accent",
+    title: "Already have Presto? Connect it",
+    support: MAY_ASK,
+    primary: "connect",
+    primaryLabel: CONNECT,
+  },
   "permission-blocked": {
     tone: "warn",
-    title: "Your browser blocked local access",
-    support: "Allow local network access for this site, then retry",
+    title: "Your browser blocked this site from reaching Presto",
+    support: "Allow it in site settings, then retry",
     primary: "retry",
     primaryLabel: RETRY,
   },
@@ -72,13 +86,21 @@ export const STRINGS: Readonly<Record<BannerState, StateStrings>> = {
   },
 };
 
-/** Surface-specific copy for the install pitch. Every surface says what Presto does, never what it is. */
+/**
+ * Surface-specific copy for the install pitch and, under `connect`, for the ask to connect an installed
+ * Presto. Every surface says what Presto does, never what it is.
+ */
 export const VARIANT_COPY = {
   billboard: {
     title: "Fast proofs. Like magic",
     support:
       "Install once. This app, and every Aztec or Noir app you open, proves at native speed instead of in your browser.",
     cta: CTA,
+    connect: {
+      support: `Have Presto installed? Connect it and this app proves at native speed. ${MAY_ASK}.`,
+      action: CONNECT,
+      link: CTA,
+    },
   },
   dock: {
     title: "Proving in your browser…",
@@ -86,6 +108,10 @@ export const VARIANT_COPY = {
     cta: CTA,
     raceBrowser: "Browser",
     racePresto: "Presto",
+    connect: {
+      support: `Have Presto? Connect it and the next proof runs natively. ${MAY_ASK}.`,
+      action: "Connect",
+    },
   },
   card: {
     eyebrow: "Faster proofs",
@@ -94,12 +120,24 @@ export const VARIANT_COPY = {
       "Install Presto once and this app, and every Aztec or Noir app you open, gets faster. No setup, no accounts.",
     cta: CTA,
     note: "Free · open source · macOS, Linux, Windows",
+    connect: {
+      title: CONNECT,
+      support: `If Presto is on this computer, connect it and this app proves at native speed. ${MAY_ASK}; you can turn that off in site settings.`,
+      action: CONNECT,
+      note: "Don't have it?",
+      link: CTA,
+    },
   },
   tile: {
     title: "Fast proofs.<br>Like magic.",
     support: "Install once. Every Aztec or Noir app you open proves at native speed.",
     cta: CTA,
     link: "How it works →",
+    connect: {
+      support: `Have Presto? Connect it to prove at native speed. ${MAY_ASK}.`,
+      action: CONNECT,
+      link: CTA,
+    },
   },
   sheet: {
     title: "Prove faster with Presto?",
@@ -111,13 +149,23 @@ export const VARIANT_COPY = {
     never: "Don't ask again",
     foot: "Free · open source ·",
     otherPlatforms: "other platforms",
+    connect: {
+      title: "Connect Presto?",
+      support:
+        "Presto proves on your computer, at native speed, instead of in this tab. To reach it, your browser may ask to let this site reach <strong>apps on this device</strong>. You can turn that off in site settings.",
+      action: CONNECT,
+      foot: "Don't have Presto?",
+      getFor: "Get it for",
+      get: "Get it",
+    },
   },
 } as const;
 
 /**
  * States each surface renders. Ribbon carries every outcome because the post-install ones
  * (permission, HTTPS, update) are the ones a user hits after installing, and a strip is the least
- * intrusive place to say so. Tile is static and ignores state entirely.
+ * intrusive place to say so. Every surface renders `connect`. Tile is static placement: it paints
+ * without a state, and `connect` is the only state that changes it.
  */
 export const VARIANT_STATES: Readonly<Record<BannerVariant, readonly BannerState[] | "any">> = {
   ribbon: [
@@ -128,10 +176,11 @@ export const VARIANT_STATES: Readonly<Record<BannerVariant, readonly BannerState
     "error",
     "downloading",
     "available",
+    "connect",
   ],
-  billboard: ["offline", "available"],
-  dock: ["offline", "available"],
-  card: ["offline", "available"],
+  billboard: ["offline", "available", "connect"],
+  dock: ["offline", "available", "connect"],
+  card: ["offline", "available", "connect"],
   tile: "any",
-  sheet: ["offline", "available"],
+  sheet: ["offline", "available", "connect"],
 };
