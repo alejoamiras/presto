@@ -1,3 +1,12 @@
+import {
+  chooseDownload,
+  type DownloadChoice,
+  downloadLinks,
+  REPO,
+  readArchitecture,
+  readDeviceSignals,
+  releasePage,
+} from "./download";
 import { FEED_URL, feedVersionToTag } from "./feed";
 import {
   detectPresto,
@@ -52,34 +61,6 @@ initNav();
 initRace();
 
 // ── OS-aware download button ──
-const REPO = "alejoamiras/presto";
-const RELEASES_URL = `https://github.com/${REPO}/releases`;
-
-interface OsInfo {
-  label: string;
-  pattern: RegExp;
-}
-
-function detectOs(): OsInfo {
-  const ua = navigator.userAgent;
-  if (/Mac/.test(ua)) {
-    // navigator.platform is deprecated but still the most reliable
-    // way to distinguish Apple Silicon from Intel in-browser
-    const isArm =
-      /arm64|aarch64/i.test(navigator.userAgent) ||
-      (navigator as any).userAgentData?.architecture === "arm" ||
-      // Safari + Chrome on Apple Silicon report this
-      (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
-    return isArm
-      ? { label: "Get Presto for macOS (Apple Silicon)", pattern: /Apple-Silicon\.dmg$/ }
-      : { label: "Get Presto for macOS", pattern: /macOS.*\.dmg$/ };
-  }
-  if (/Linux/.test(ua)) {
-    return { label: "Get Presto for Linux", pattern: /\.AppImage$/ };
-  }
-  // Windows or unknown — point to releases page
-  return { label: "Get Presto", pattern: /^$/ };
-}
 
 // Resolve the live stable tag from the SIGNED KV-backed feed (single source of truth — B6), NOT a GitHub releases
 // list-scan (which had no prerelease filter). Best effort, non-blocking; the feed body is untrusted and
@@ -94,32 +75,45 @@ async function fetchLatestPrestoTag(): Promise<string | null> {
   }
 }
 
-async function initDownload(): Promise<void> {
-  const btn = document.getElementById("download-btn") as HTMLAnchorElement | null;
-  if (!btn) return;
-
-  const os = detectOs();
-  btn.textContent = os.label;
-
-  const tag = await fetchLatestPrestoTag();
-  if (!tag) return;
-
+/** The release's asset list from the GitHub API, untrusted, or `undefined` if the request fails. */
+async function fetchReleaseAssets(tag: string): Promise<unknown> {
   try {
     const res = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/${tag}`, {
       signal: AbortSignal.timeout(3000),
     });
-    if (!res.ok) return;
-    const data = await res.json();
-    const asset = (data.assets as { name: string; browser_download_url: string }[])?.find((a) =>
-      os.pattern.test(a.name),
-    );
-    if (asset) {
-      btn.href = asset.browser_download_url;
-    } else {
-      btn.href = `${RELEASES_URL}/tag/${tag}`;
-    }
+    if (!res.ok) return undefined;
+    return ((await res.json()) as { assets?: unknown } | null)?.assets;
   } catch {
-    // Fall back to releases page
+    return undefined;
+  }
+}
+
+async function initDownload(): Promise<void> {
+  const btn = document.getElementById("download-btn") as HTMLAnchorElement | null;
+  if (!btn) return;
+  const render = (choice: DownloadChoice) => {
+    btn.textContent = choice.label;
+    const note = document.querySelector(".hero-note");
+    if (choice.note && note) note.textContent = choice.note;
+  };
+
+  // Label the button before anything is awaited; the architecture hint only refines the choice.
+  const signals = readDeviceSignals();
+  render(chooseDownload(signals));
+  const [tag, architecture] = await Promise.all([fetchLatestPrestoTag(), readArchitecture()]);
+  const choice = chooseDownload({ ...signals, architecture });
+  render(choice);
+  if (!tag) return;
+  btn.href = releasePage(tag);
+  if (!choice.asset) return;
+
+  const links = downloadLinks(choice, tag, await fetchReleaseAssets(tag));
+  btn.href = links.href;
+  const alternate = document.getElementById("download-alt") as HTMLAnchorElement | null;
+  if (alternate && links.alternate) {
+    alternate.textContent = links.alternate.label;
+    alternate.href = links.alternate.href;
+    alternate.classList.remove("hidden");
   }
 }
 
