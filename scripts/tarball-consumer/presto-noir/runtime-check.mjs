@@ -1,10 +1,12 @@
 // Runtime import of the packed dist's `default` export condition: the typecheck resolves `types`, only a
 // real load proves the JavaScript entry resolves and its exports exist.
 import {
+  loopbackPermission,
   PrestoUltraHonkBackend,
   PrestoUnavailableError,
   resolveVerifierTarget,
   TESTED_BB_VERSION,
+  watchLoopbackPermission,
 } from "@alejoamiras/presto-noir";
 
 if (typeof PrestoUltraHonkBackend !== "function") throw new Error("PrestoUltraHonkBackend missing");
@@ -21,4 +23,8 @@ for (const method of [
 ]) {
   if (typeof backend[method] !== "function") throw new Error(`${method} missing from dist`);
 }
+if (typeof watchLoopbackPermission !== "function")
+  throw new Error("watchLoopbackPermission missing");
+if ((await loopbackPermission()) !== "unsupported")
+  throw new Error("loopbackPermission off in Node");
 console.log("runtime import OK: dist exports resolve and load");

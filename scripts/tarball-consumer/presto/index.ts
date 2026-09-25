@@ -1,8 +1,14 @@
 // Typechecked inside the consumer host against the PACKED dist: exercises the full published surface,
 // runtime values and types, so a broken barrel, exports map, or types condition fails here.
 
-import type { PrestoPhase, PrestoStatus } from "@alejoamiras/presto";
-import { PRESTO_API_VERSION, PrestoHttpError, PrestoProver } from "@alejoamiras/presto";
+import type { LoopbackPermissionState, PrestoPhase, PrestoStatus } from "@alejoamiras/presto";
+import {
+  loopbackPermission,
+  PRESTO_API_VERSION,
+  PrestoHttpError,
+  PrestoProver,
+  watchLoopbackPermission,
+} from "@alejoamiras/presto";
 
 const _prover: typeof PrestoProver = PrestoProver;
 const _err: typeof PrestoHttpError = PrestoHttpError;
@@ -18,3 +24,7 @@ function _use(s: PrestoStatus): boolean {
   );
 }
 void _use;
+const _permission: Promise<LoopbackPermissionState> = loopbackPermission();
+const _stop: Promise<() => void> = watchLoopbackPermission(() => {});
+void _permission;
+void _stop;

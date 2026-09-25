@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type {
+  LoopbackPermissionState,
   PrestoPhase,
   PrestoProtocol,
   PrestoStatusCheckOptions,
@@ -22,6 +23,10 @@ describe("public contract (F-05 doc-sync guard)", () => {
     // B7: the typed error + the api-version constant are runtime values on the barrel.
     expect(typeof sdk.PrestoHttpError).toBe("function");
     expect(sdk.PRESTO_API_VERSION).toBe(1);
+    expect(typeof sdk.loopbackPermission).toBe("function");
+    expect(typeof sdk.watchLoopbackPermission).toBe("function");
+    const permission: LoopbackPermissionState = "prompt";
+    expect(permission).toBe("prompt");
     // Typed consts force the type-only barrel exports to resolve — dropping one from the barrel
     // (how PrestoProtocol went missing) becomes a `tsc --noEmit` compile error right here.
     const protocol: PrestoProtocol = "https";

@@ -70,8 +70,32 @@ local-proving phases.
 `configure(config)` moves the endpoint or changes policy and invalidates the cached status;
 `setOnPhase(cb)` replaces the callback.
 
+## Ask before the first request
+
+Chrome 142+ and Firefox 153+ ask the visitor before a public site first reaches an app on their
+device. `checkStatus()` and `prove()` are such requests, so calling either on page load shows that
+prompt before the visitor has done anything. Read the stored decision instead; neither helper
+prompts or contacts Presto:
+
+```ts
+import { loopbackPermission, watchLoopbackPermission } from "@alejoamiras/presto-core";
+
+// "granted" | "prompt" | "denied" | "unsupported" (the browser exposes no decision)
+if ((await loopbackPermission()) === "granted") await client.checkStatus(); // cannot prompt
+// Otherwise call checkStatus() from a click that first explains the browser's question.
+
+const stop = await watchLoopbackPermission((state) => {
+  // A late answer to the prompt, a site-settings edit, or a decision in another tab.
+});
+```
+
+The watcher is a no-op where the browser cannot report changes, so re-read `loopbackPermission()`
+before each proof. The [`@alejoamiras/presto` README](../sdk/README.md#ask-before-you-probe) has the
+full pattern and suggested copy.
+
 ## Also exported
 
+- `loopbackPermission()`, `watchLoopbackPermission(onChange)`, `LoopbackPermissionState` — above.
 - `PRESTO_SCHEME_CHONK`, `PRESTO_SCHEME_ULTRA_HONK` — the proving schemes a Presto advertises in
   `/health.schemes`; an adapter passes the one its route needs as `scheme`.
 - `PRESTO_API_VERSION` — the `/health.api_version` this client speaks (`1`).

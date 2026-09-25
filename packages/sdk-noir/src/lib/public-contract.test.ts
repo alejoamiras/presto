@@ -1,7 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { PrestoUltraHonkBackendOptions, VerifierTarget } from "../index.js";
+import type {
+  LoopbackPermissionState,
+  PrestoUltraHonkBackendOptions,
+  VerifierTarget,
+} from "../index.js";
 import * as noir from "../index.js";
 
 // Doc-sync guard: the barrel, the README, and the manifest describe one package.
@@ -13,12 +17,15 @@ describe("public contract", () => {
     expect(typeof noir.PrestoUnavailableError).toBe("function");
     expect(typeof noir.PrestoHttpError).toBe("function");
     expect(typeof noir.resolveVerifierTarget).toBe("function");
+    expect(typeof noir.loopbackPermission).toBe("function");
+    expect(typeof noir.watchLoopbackPermission).toBe("function");
     expect(noir.TESTED_BB_VERSION).toBe("5.2.0");
     expect(noir.TESTED_BB_VERSIONS).toEqual(["5.2.0"]);
     expect(noir.VERIFIER_TARGETS).toContain("noir-recursive-no-zk");
     const target: VerifierTarget = "evm";
     const options: PrestoUltraHonkBackendOptions = { fallback: "none" };
-    expect([target, options.fallback]).toEqual(["evm", "none"]);
+    const permission: LoopbackPermissionState = "granted";
+    expect([target, options.fallback, permission]).toEqual(["evm", "none", "granted"]);
   });
 
   test("README documents the drop-in, the fallback modes, and the tested bb.js version", () => {

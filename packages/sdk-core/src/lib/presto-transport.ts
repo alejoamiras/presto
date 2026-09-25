@@ -1,4 +1,5 @@
 import ms from "ms";
+import { loopbackPermission } from "./loopback-permission.js";
 import type { PrestoProtocol, PrestoStatus, SecureConnectionDiagnosis } from "./types.js";
 import { PRESTO_API_VERSION } from "./types.js";
 
@@ -140,11 +141,6 @@ type ProbeResult = { response: Response; protocol: PrestoProtocol; body: unknown
 /** Experimental Fetch/LNA types kept local until they are part of TypeScript's `lib.dom`. */
 type LoopbackRequestInit = RequestInit & { targetAddressSpace?: "loopback" };
 type LoopbackRequest = Request & { readonly targetAddressSpace?: string };
-type LoopbackPermissionName = "loopback-network" | "local-network-access";
-type LoopbackPermissionDescriptor = { name: LoopbackPermissionName };
-type LoopbackPermissions = {
-  query(descriptor: LoopbackPermissionDescriptor): Promise<{ state: PermissionState }>;
-};
 
 /** Payload-free private sentinels: raw browser fetch failures never cross the transport boundary. */
 const PROBE_FAILED = Object.freeze({});
@@ -168,32 +164,9 @@ export function supportsLoopbackTargetAddressSpace(): boolean {
   }
 }
 
-/**
- * Query the browser's fine-grained loopback permission, falling back to the legacy umbrella name only
- * when the modern descriptor itself is rejected. Missing APIs, prompt/granted, and query failures
- * are intentionally inconclusive.
- */
+/** Only an explicit `denied` blocks; `prompt`, `granted` and an unreadable decision stay inconclusive. */
 async function isLoopbackPermissionExplicitlyDenied(): Promise<boolean> {
-  let permissions: LoopbackPermissions | undefined;
-  try {
-    if (typeof navigator === "undefined") return false;
-    permissions = navigator.permissions as unknown as LoopbackPermissions | undefined;
-    if (!permissions || typeof permissions.query !== "function") return false;
-  } catch {
-    return false;
-  }
-
-  try {
-    const status = await permissions.query({ name: "loopback-network" });
-    return status.state === "denied";
-  } catch {
-    try {
-      const status = await permissions.query({ name: "local-network-access" });
-      return status.state === "denied";
-    } catch {
-      return false;
-    }
-  }
+  return (await loopbackPermission()) === "denied";
 }
 
 /** The three protocol-pin transitions {@link PrestoTransport.commitStatus} can apply. */

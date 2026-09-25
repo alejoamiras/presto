@@ -443,7 +443,7 @@ Every gate includes the fast layers. `SCRATCH` = the session scratch directory.
 then `bash scripts/sdk-tarball-consumer.sh <tarball> P --with <pair>...` with the printed `tarball`
 and `with` values (the two steps of the `Tarball Consumer` job in `_ts-package-ci.yml`).
 
-### Phase 1 — core helpers and re-exports
+### Phase 1 — core helpers and re-exports ✓
 
 `loopback-permission.ts` + tests (four states, name fallback, missing API, throwing query, call-time
 read, watcher dedupe/unsubscribe/no-op); transport's denied check delegates (existing transport tests
