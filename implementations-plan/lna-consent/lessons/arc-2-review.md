@@ -69,3 +69,7 @@ Retry), and each is fixed with a regression test.
 
 Codex confirmed no other material runtime finding outside A5 and that the README's known-limit
 sentence is accurate.
+
+## Round 6: converged
+
+Resumed pass over e3757f0: "No new material findings."
