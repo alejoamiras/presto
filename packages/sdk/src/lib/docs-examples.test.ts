@@ -239,21 +239,6 @@ describe("examples/consent.ts, races", () => {
     reads.release();
     await ready;
   });
-
-  test("a decision taken during a slow read wins over what that read saw", async () => {
-    permission.state = "granted";
-    const { presto, views, prove } = await setup();
-    const reads = holdReads();
-    const pending = presto.beforeProving(); // sees "granted"
-    await reads.readStarted;
-    setPermission("prompt"); // reset, reported while that read is held
-    reads.release();
-    fetched.length = 0;
-    await pending;
-    expect(views.at(-1)).toBe("ask");
-    await prove();
-    expect(fetched).toEqual([]);
-  });
 });
 
 /** Fenced TypeScript/JavaScript blocks, plus the scripts inside HTML blocks. */

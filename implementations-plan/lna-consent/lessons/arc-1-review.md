@@ -46,3 +46,9 @@ Codex agreed to keep the `element.ts` invariant comment. The permission stub can
 Diagnosis: each round found a new interleaving of permission reads, watcher events and clicks,
 because the module lets them race and then patches orderings one at a time. Stopped at the
 3-round cap and surfaced to the owner (plan, Post-implementation step 3).
+
+**Owner decision (2026-09-25): simplify, accept residuals** (plan A5, ledger L44). The read-ordering
+counter is removed: it added machinery, caused round 3's #2, and still did not close the class. Kept:
+the synchronous force-local gate, the epoch guard, and one line so a revoked check returns before its
+post-check read (#3's lasting wrong view). The residual races are a documented known limit in the SDK
+README and skill. `bun run test` exit 0 (SDK 29), `bun run lint` exit 0.

@@ -106,19 +106,10 @@ export async function askBeforeConnecting(prover: PrestoProver, show: (view: Pre
   prover.setForceLocal(true); // before the first await, so no proof goes native while this starts
   let consented = false; // the visitor clicked Connect, or the browser reports "granted"
   let granted = false; // "granted" seen since then, so a later "prompt" means it was reset
-  let epoch = 0; // bumped on revocation: a check that started earlier is never shown
-  let decisions = 0; // bumped per decision taken: a permission read that started earlier is stale
-
-  /** The stored decision, or null when a newer one was taken while reading. Never prompts. */
-  async function read(): Promise<LoopbackPermissionState | null> {
-    const started = decisions;
-    const state = await loopbackPermission();
-    return started === decisions ? state : null;
-  }
+  let epoch = 0; // bumped on revocation: a check that started earlier is dropped
 
   /** Follows the browser's decision. Returns true for a grant not seen before, which needs a check. */
   function apply(state: LoopbackPermissionState): boolean {
-    decisions++;
     const newGrant = state === "granted" && !granted;
     if (state === "granted") consented = granted = true;
     else if (state === "denied" || (state === "prompt" && granted)) {
@@ -133,30 +124,28 @@ export async function askBeforeConnecting(prover: PrestoProver, show: (view: Pre
   async function check() {
     const started = epoch;
     const status = await prover.checkPrestoStatus({ forceRefresh: true }); // the browser may ask now
-    const state = await read(); // records the answer given at the prompt
-    if (state) apply(state);
+    if (epoch !== started) return;
+    apply(await loopbackPermission()); // records the answer given at the prompt
     if (epoch === started && consented) show(status);
   }
 
-  async function sync(state: LoopbackPermissionState | null) {
-    if (state && apply(state)) await check(); // allowed earlier, in site settings, or in another tab
+  async function sync(state: LoopbackPermissionState) {
+    if (apply(state)) await check(); // allowed earlier, in site settings, or in another tab
   }
 
   async function connect() {
-    // The click is itself the newest decision; a stale read here can only reach the browser's own gate.
-    const state = await loopbackPermission();
+    const state = await loopbackPermission(); // never prompts, never contacts Presto
     if (state === "denied") return void apply(state);
-    decisions++;
     consented = true;
     granted = state === "granted";
     await check();
   }
 
   /** Catches a reset or a grant in browsers that report no changes. */
-  const beforeProving = async () => sync(await read());
+  const beforeProving = async () => sync(await loopbackPermission());
 
   const stop = await watchLoopbackPermission((state) => void sync(state));
-  await sync(await read());
+  await sync(await loopbackPermission());
   return { connect, beforeProving, stop };
 }
 ```
@@ -179,6 +168,11 @@ await presto.beforeProving();
 calls the toggle **Apps on device**), then call `connect()`. With
 [`@alejoamiras/presto-banners`](../banners/README.md), `banner.state = "connect"` renders the ask,
 `"permission-blocked"` the help, and `banner.status = view` the rest.
+
+Known limits: permission reads are asynchronous, so a decision that changes while one is in flight
+(a sub-second window) can be applied out of order. The view or the proving mode may then lag until
+the next change, `beforeProving()` or `connect()`, and a request may meet the browser's prompt again.
+The browser still decides every request, so a site it blocks is never reached.
 
 ## API Reference
 

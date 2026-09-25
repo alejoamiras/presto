@@ -434,6 +434,12 @@ both PR bodies say so); **A3** accepted; **A4** accepted. Scope and tier approve
   ("may ask") even if no prompt follows: one extra click, by the fail-closed rule. On those browsers a
   mid-session reset cannot be seen either; the next request is simply refused or re-prompted by the
   browser itself.
+- **A5** (raised at the arc 1 loop cap, 2026-09-25; owner chose "simplify, accept residuals"). The
+  consent example lets permission reads, watcher events and clicks run concurrently, so a decision
+  that changes while a read is in flight can be applied out of order: the view or proving mode lags
+  until the next change, `beforeProving()` or `connect()`, and a request may meet the browser's prompt
+  again. Documented as a known limit in the SDK README and skill; the browser still gates every
+  request. Declined alternative: serialising all permission work through one queue.
 
 ## Phases
 
@@ -680,6 +686,7 @@ secrets, auth, CI permissions or publishing.
 | L41 | A persistent `prompt` read after Presto answered would hold every proof in-browser | Codex final r3 (High) | adopted: separate `reached` (Presto answered) from `seenGranted` (reset signal) |
 | L42 | Recovery after revoke did not restore Presto mode; one-proof hold could stick | Codex final r3 (Medium) | adopted: grant (event or read) → Presto mode; force-local recomputed per proof |
 | L43 | The executed example tested status, not proving; lint allowed two instances | Codex final r3 (Medium) | adopted: example takes the app's one instance, test proves through it before consent, after connect and after revoke; lint requires one gated variable |
+| L44 | Consent example races between in-flight permission reads, watcher events and clicks (arc 1 loop r1–r3) | Codex arc 1 r1–r3 | r1–r2 fixes adopted (consent model, epoch, `"ask"`/`"blocked"` views, sync gate); r3 at the cap → owner: simplify, accept residuals (A5); read-ordering counter removed, revoked checks stop before their post-check read |
 
 **Unresolved disagreements:** three Fable proposals are resolved differently than proposed, each with
 its reason in the ledger: queuing mode flips while deploying (L7, conflicts with Codex's no-new-requests
