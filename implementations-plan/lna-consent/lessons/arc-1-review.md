@@ -60,3 +60,7 @@ the next change or `beforeProving()` repairs the lag and bounded the window as "
 reproduced a stale "ask" surviving both, repaired only by `connect()`. Text corrected in the README,
 the skill and plan A5. The first attempt at this pass hung for about 40 minutes inside Codex's
 sandbox/approval step with no child process; stopped and retried, the retry completed normally.
+
+## Round 5: converged
+
+Resumed pass on `8c9572b`: "No new material findings." Arc 1 loop closed.
