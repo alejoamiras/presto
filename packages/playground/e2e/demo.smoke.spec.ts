@@ -8,6 +8,7 @@
  * Usage: bun run --cwd packages/playground test:e2e:smoke
  */
 import { expect, type Page, test } from "@playwright/test";
+import { connectPresto } from "./connect";
 import { deployAndAssert, initSharedPage } from "./fullstack.helpers";
 
 const PRESTO_URL = process.env.PRESTO_URL || "";
@@ -33,8 +34,7 @@ test.describe("Accelerated", () => {
 
   test("deploys account", async () => {
     const page = sharedPage;
-    await page.click("#mode-accelerated");
-    await expect(page.locator("#mode-accelerated")).toHaveClass(/mode-active/);
+    await connectPresto(page);
     await deployAndAssert(page, "accelerated");
   });
 });

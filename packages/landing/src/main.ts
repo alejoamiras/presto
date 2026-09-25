@@ -8,12 +8,6 @@ import {
   releasePage,
 } from "./download";
 import { FEED_URL, feedVersionToTag } from "./feed";
-import {
-  detectPresto,
-  LandingDetectionController,
-  type LandingPrestoStatus,
-  watchLoopbackPermissionChanges,
-} from "./presto-detection";
 import { initRace } from "./race";
 
 // ── Scroll reveals ──
@@ -118,87 +112,3 @@ async function initDownload(): Promise<void> {
 }
 
 initDownload();
-
-// ── Presto detection ──
-const heroSub = document.querySelector(".hero-sub") as HTMLElement | null;
-const heroLink = heroSub?.querySelector("a") as HTMLAnchorElement | null;
-const originalHeroLink = heroLink ? Array.from(heroLink.childNodes, (n) => n.cloneNode(true)) : [];
-
-function renderPrestoStatus(status: LandingPrestoStatus): void {
-  const blocked = status === "permission-blocked";
-  const secureUnavailable = typeof status === "object";
-  document.getElementById("landing-permission-help")?.classList.toggle("hidden", !blocked);
-  document.getElementById("landing-secure-help")?.classList.toggle("hidden", !secureUnavailable);
-  document.getElementById("download-actions")?.classList.toggle("hidden", blocked);
-
-  if (secureUnavailable) {
-    const explanation = {
-      "https-disabled": {
-        title: "Encrypted Connection is disabled",
-        message: "Presto is running, but its HTTPS listener is off.",
-      },
-      "tls-or-trust-failure": {
-        title: "Secure connection is not trusted",
-        message: "Presto advertises HTTPS, but this browser could not establish it.",
-      },
-      "presto-reachable": {
-        title: "Presto is reachable",
-        message: "Its public health response hides the exact HTTPS configuration.",
-      },
-      unconfirmed: {
-        title: "Secure connection unavailable",
-        message:
-          "Presto may be stopped or not installed, or the browser may have blocked the local diagnostic.",
-      },
-    }[status.diagnosis];
-    const title = document.getElementById("landing-secure-title");
-    const message = document.getElementById("landing-secure-message");
-    if (title) title.textContent = explanation.title;
-    if (message) message.textContent = explanation.message;
-  }
-
-  if (!heroSub || !heroLink) return;
-  if (status === "available") {
-    heroSub.classList.add("detected");
-    const dot = document.createElement("span");
-    dot.className = "accel-dot";
-    dot.setAttribute("aria-hidden", "true");
-    const arrow = document.createElement("span");
-    arrow.textContent = "→";
-    heroLink.replaceChildren(dot, "Presto is running on this machine. Open the playground ", arrow);
-  } else {
-    // Offline and generic error remain deliberately quiet: restore the unchanged landing CTA.
-    heroSub.classList.remove("detected");
-    heroLink.replaceChildren(...originalHeroLink.map((n) => n.cloneNode(true)));
-  }
-}
-
-const detection = new LandingDetectionController(detectPresto, renderPrestoStatus, (pending) => {
-  for (const id of ["landing-permission-retry", "landing-secure-retry"]) {
-    const button = document.getElementById(id) as HTMLButtonElement | null;
-    if (!button) continue;
-    button.disabled = pending;
-    button.textContent = pending
-      ? "Checking…"
-      : id === "landing-secure-retry"
-        ? "Retry secure connection"
-        : "Retry";
-  }
-});
-
-for (const id of ["landing-permission-retry", "landing-secure-retry"]) {
-  document.getElementById(id)?.addEventListener("click", () => {
-    // The detector has no settled cache. The token guard ensures a late startup result cannot
-    // overwrite this same-context recovery attempt.
-    void detection.refresh().catch(() => {});
-  });
-}
-
-void (async () => {
-  // Subscribe before the first health request can open the browser prompt. A decision made after the
-  // bounded probe expires must still replace the quiet offline/download state without a reload.
-  await watchLoopbackPermissionChanges(() => {
-    void detection.refreshAfterPermissionChange().catch(() => {});
-  });
-  await detection.refresh();
-})().catch(() => {});

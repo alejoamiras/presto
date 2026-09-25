@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { connectPresto } from "./connect";
 
 /**
  * Real-browser Noir proofs against the dev server: bb.js WASM workers in Chromium (CRS from the
@@ -50,8 +51,7 @@ test.describe("with Presto", () => {
   });
 
   test("proves the Noir fixture natively, never falling back", async () => {
-    await page.click("#mode-accelerated");
-    await expect(page.locator("#mode-accelerated")).toHaveClass(/mode-active/);
+    await connectPresto(page);
     await proveAndAssert("accelerated");
     expect(await page.locator("#log").textContent()).not.toContain("proving in-browser for now");
   });

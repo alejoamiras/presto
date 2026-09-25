@@ -11,6 +11,36 @@ branch: worktree-lna-consent
 base: main @ 8edbbca
 ---
 
+## Outcome
+
+**2026-09-25 — delivered, awaiting the owner's merge** as a two-PR stack: #56 (packages) under #57 (sites). This plan's `/goal` and `/loop` seeds are retired.
+
+**Shipped:**
+- **Packages:**
+  - `presto-core` has `loopbackPermission()` and `watchLoopbackPermission()`, re-exported by `presto` and `presto-noir`. The transport's denied check delegates to them.
+  - `presto-banners` has the `connect` state on all six variants.
+  - The SDK README, skill, `AGENTS.md` and the sibling docs ask first. `examples/consent.ts` is executed by tests and quoted verbatim.
+  - `presto-core`, `presto-noir` and `presto-banners` are at 1.2.0.
+- **presto.build** makes no request to Presto on any visit.
+- **The playground** starts In-browser and asks through a dialog before its first request. It re-reads the decision before every check and run.
+- **Testing:** a real-Chromium LNA suite of 9 tests covers the playground, the landing and the SDK core, with the SDK core driven directly.
+
+**Dropped or deferred:**
+- Accepted residuals:
+  - A3: nothing aborts an SDK operation already running.
+  - A5: permission reads that overlap an unreported change may land out of order. A serialising queue was declined.
+- Out of scope: an SDK-enforced consent mode, and `app.yml` permission hardening.
+- All of the above are in `follow-ups.md`.
+
+**Release order (A2):** merge both PRs, then run a `packages: all` release before the next playground deploy. Merging #57 deploys the landing.
+
+**Review:**
+- Arc 1 converged in round 5, after the owner's A5 decision at the round-3 cap.
+- Arc 2 converged in round 6, continuing past the cap on the owner's "finish all our loops".
+- The cross-arc pass converged in round 3 and fixed two SDK-example recovery defects.
+- Codex also reviewed the rebase onto `main` after #54 and #55 merged.
+- SDK verification evidence is in `lessons/sdk-verification.md`.
+
 # lna-consent: ask before contacting Presto
 
 ## Summary
@@ -145,15 +175,17 @@ export type ConnectionPhase =
   | { kind: "checked"; status: PrestoStatus; unsupportedHint: boolean }; // hint: permission unreadable, no answer
 
 export interface ConnectionView extends PrestoStatusView {
-  prestoModeHint: "connect" | "checking" | "waiting" | "blocked" | "not-found" | "unreachable" | "fastest";
+  modeHint: "connect" | "checking…" | "waiting" | "blocked" | "not found" | "couldn't connect" | "fastest";
   showConnectLink: boolean;
-  showAwaitingHelp: boolean;
   showMayAskHint: boolean;
+  retryHelp: string | null; // awaiting-browser and couldn't-connect text beside Try again
 }
 export function connectionView(phase: ConnectionPhase): ConnectionView;
 
-// PrestoStatusController (extended): start(permission), authorize(), revoke(state),
-// refresh(opts), retry(), refreshAfterPermissionChange(), refreshAfterFallback(), get authorized.
+// PrestoStatusController (extended): start(), connect() (explained click), permissionChanged(state)
+// (watcher), beforeProving() (read before a run → may it go native), refresh(opts),
+// retrySecureConnection(), refreshAfterPermissionChange(), refreshAfterFallback(), get authorized.
+// Options add permission() and onAuthorizationChange(authorized); authorize/revoke are private.
 ```
 
 ### Data & control flow (playground)
@@ -530,7 +562,7 @@ bucket separate; Sheet focus lands on Connect.
   owner's sign-off before the phase is marked ✓.
 - Layers: lint, typecheck, unit, packed artifact, visual.
 
-### Phase 4 — landing: remove detection
+### Phase 4 — landing: remove detection ✓
 
 Delete `presto-detection.ts` and its test; strip `main.ts`, panels, dead CSS; hero link copy; rewrite
 `packages/landing/README.md`. Replace the two landing tests in `lna.real.spec.ts` with one landing test
@@ -546,7 +578,7 @@ routing in `app.yml` stay.
 - Pass: exit 0 on the first three; the `rg` finds nothing; both landing runs record zero requests.
 - Layers: lint, typecheck, unit, build, real-browser E2E.
 
-### Phase 5 — playground: consent flow
+### Phase 5 — playground: consent flow ✓
 
 Controller extension (`authorize`/`revoke`, gate re-checked after waits, epoch bump on revoke,
 `settle` classification) with unit tests for every transition in the flow, including: reset to
@@ -574,7 +606,7 @@ dialogs inert background, Escape cancels, focus returns. Record I2.
 - Pass: exit 0; mocked suite green with the zero-request assertions; no jargon in user-facing strings.
 - Layers: lint, typecheck, unit, mocked E2E, build.
 
-### Phase 6 — real browser, sandbox, release-gate specs, repo docs
+### Phase 6 — real browser, sandbox, release-gate specs, repo docs ✓
 
 `lna.real.spec.ts` playground tests: recorder before navigation, both ports, all paths; zero requests
 ≥ 8 s after load with `prompt`; recorder validity (Continue → at least one request); Continue → grant →

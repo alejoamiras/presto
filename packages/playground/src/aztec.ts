@@ -72,9 +72,8 @@ export interface AztecState {
 }
 
 /**
- * Global mutable application state. Concurrent mutations are prevented at
- * the UI layer via the `deploying` flag in main.ts, which disables action
- * buttons while an async operation is in flight.
+ * Global mutable application state. Runs are serialized by the `deploying` flag in main.ts, but a
+ * permission change may still switch `uiMode` mid-run; `routeRun` reports that run as in-browser.
  */
 export const state: AztecState = {
   node: null,
@@ -83,7 +82,7 @@ export const state: AztecState = {
   embeddedWallet: null,
   registeredAddresses: [],
   sessionAddresses: [],
-  uiMode: "accelerated",
+  uiMode: "local",
   proofsRequired: false,
   feePaymentMethod: undefined,
 };
@@ -100,8 +99,8 @@ function pickSessionSender(): AztecAddress {
 }
 
 /**
- * One lazy prover for the whole page. Startup detection creates it first; wallet initialization,
- * Retry, and every proof then reuse the same status cache, protocol pin, generation, and HTTPS
+ * One lazy prover for the whole page. The first status check or wallet initialization creates it;
+ * every later check and proof reuses the same status cache, protocol pin, generation, and HTTPS
  * history.
  */
 export function getPrestoProver(): PrestoProver {
@@ -304,9 +303,25 @@ export async function initializeWallet(log: LogFn): Promise<boolean> {
   return false;
 }
 
+/** Bumped on every mode change, so a run can tell whether it stayed in one mode. */
+let modeChanges = 0;
+
 export function setUiMode(mode: UiMode): void {
   state.uiMode = mode;
+  modeChanges++;
   state.prover?.setForceLocal(mode === "local");
+}
+
+/**
+ * Routes a run's proofs: native only in Presto mode and when `native` (the browser's decision,
+ * re-read just before the run) allows it. Returns the mode to report for the run: Presto only while
+ * the mode has not changed since, because a revocation mid-run moves the remaining proofs local.
+ */
+export function routeRun(native: boolean): () => UiMode {
+  const mode: UiMode = native && state.uiMode === "accelerated" ? "accelerated" : "local";
+  const changes = modeChanges;
+  state.prover?.setForceLocal(mode === "local");
+  return () => (changes === modeChanges ? mode : "local");
 }
 
 export interface SimStepDetail {
@@ -345,11 +360,9 @@ export interface DeployResult {
   address: string;
   steps: StepTiming[];
   totalDurationMs: number;
-  mode: UiMode;
 }
 
 export interface TokenFlowResult {
-  mode: UiMode;
   steps: StepTiming[];
   totalDurationMs: number;
   aliceBalance: bigint;
@@ -475,7 +488,6 @@ export async function deployTestAccount(
   // (5.0) The deploy is self-paid via `from: NO_FROM`, so it no longer needs a registered sandbox
   // sender — the only requirement is an initialized wallet (checked above) + the Sponsored FPC.
 
-  const mode = state.uiMode;
   const steps: StepTiming[] = [];
   const totalStart = Date.now();
   const proveTracker = createProveTracker();
@@ -585,7 +597,7 @@ export async function deployTestAccount(
       state.registeredAddresses.push(accountManager.address);
     }
 
-    return { address, steps, totalDurationMs, mode };
+    return { address, steps, totalDurationMs };
   } finally {
     state.prover?.setOnPhase(null);
     clearInterval(interval);
@@ -737,7 +749,6 @@ export async function runTokenFlow(
   // Sender validity (session-deployed account exists) is checked by pickSessionSender below,
   // which throws the actionable "deploy a test account first" guidance on every network.
 
-  const mode = state.uiMode;
   const alice = pickSessionSender();
   const fee = { paymentMethod: state.feePaymentMethod! };
   const steps: StepTiming[] = [];
@@ -767,7 +778,6 @@ export async function runTokenFlow(
     log(`Token flow complete in ${(totalDurationMs / 1000).toFixed(1)}s`, "success");
 
     return {
-      mode,
       steps,
       totalDurationMs,
       aliceBalance: balances.alice,

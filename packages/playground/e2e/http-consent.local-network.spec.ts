@@ -1,9 +1,10 @@
 /**
  * Focused full-stack recovery gate: the browser starts HTTPS-only against the real HTTP-only
- * headless server, requires explicit consent, performs one native proof, then reloads back to
- * HTTPS-only. This intentionally does not run a second proof after reload.
+ * headless server, requires explicit consent (connecting, then HTTP for the tab), performs one
+ * native proof, then reloads back to not connected and HTTPS-only. This intentionally does not run a second proof after reload.
  */
 import { expect, test } from "@playwright/test";
+import { connectPresto } from "./connect";
 import { assertServicesAvailable } from "./fullstack.fixture";
 import { deployAndAssert } from "./fullstack.helpers";
 
@@ -44,6 +45,7 @@ test("HTTP proving requires per-tab consent and resets on reload", async ({ brow
   await expect(walletState).not.toHaveText("initializing...", { timeout: 5 * 60 * 1000 });
   await expect(walletState).toHaveText("ready");
 
+  await connectPresto(page);
   await expect(page.locator("#presto-secure-title")).toHaveText("Encrypted Connection is disabled");
   expect(proveRequests, "diagnosis must never send a proof request").toEqual([]);
 
@@ -78,6 +80,9 @@ test("HTTP proving requires per-tab consent and resets on reload", async ({ brow
 
   const requestCount = proveRequests.length;
   await page.reload();
+  // Consent lives in the page: a reload asks again before anything reaches Presto.
+  await expect(page.locator("#presto-label")).toHaveText("not connected", { timeout: 60_000 });
+  await connectPresto(page);
   await expect(page.locator("#presto-secure-title")).toHaveText("Encrypted Connection is disabled");
   await expect(page.locator("#presto-label")).toContainText("secure connection unavailable");
   expect(proveRequests).toHaveLength(requestCount);

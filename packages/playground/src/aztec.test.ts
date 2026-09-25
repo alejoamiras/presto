@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, mock, test } from "bun:test";
-import { checkAztecNode, checkPrestoStatus, getPrestoProver, setUiMode, state } from "./aztec";
+import type { PrestoProver } from "@alejoamiras/presto";
+import {
+  checkAztecNode,
+  checkPrestoStatus,
+  getPrestoProver,
+  routeRun,
+  setUiMode,
+  state,
+} from "./aztec";
 
 // ── fetch mocking ──
 const originalFetch = globalThis.fetch;
@@ -17,7 +25,7 @@ afterEach(() => {
   state.embeddedWallet = null;
   state.registeredAddresses = [];
   state.sessionAddresses = [];
-  state.uiMode = "accelerated";
+  state.uiMode = "local";
   state.proofsRequired = false;
   state.feePaymentMethod = undefined;
 });
@@ -109,5 +117,35 @@ describe("setUiMode", () => {
     setUiMode("local");
     setUiMode("accelerated");
     expect(state.uiMode).toBe("accelerated");
+  });
+});
+
+describe("routeRun", () => {
+  function recordForceLocal(): boolean[] {
+    const calls: boolean[] = [];
+    state.prover = {
+      setForceLocal: (force: boolean) => calls.push(force),
+    } as unknown as PrestoProver;
+    return calls;
+  }
+
+  test("a held or in-browser run proves locally and reports in-browser", () => {
+    const calls = recordForceLocal();
+    setUiMode("accelerated");
+    expect(routeRun(false)()).toBe("local");
+    setUiMode("local");
+    expect(routeRun(true)()).toBe("local");
+    expect(calls).toEqual([false, true, true, true]);
+  });
+
+  test("a Presto run reports Presto only while the mode stays put", () => {
+    const calls = recordForceLocal();
+    setUiMode("accelerated");
+    const mode = routeRun(true);
+    expect(mode()).toBe("accelerated");
+    setUiMode("local");
+    setUiMode("accelerated");
+    expect(mode()).toBe("local");
+    expect(calls).toEqual([false, false, true, false]);
   });
 });

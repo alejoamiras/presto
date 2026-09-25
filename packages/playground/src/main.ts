@@ -1,3 +1,4 @@
+import { loopbackPermission, watchLoopbackPermission } from "@alejoamiras/presto";
 import type { PrestoBanner } from "@alejoamiras/presto-banners";
 import "@alejoamiras/presto-banners/register";
 import "./style.css";
@@ -9,6 +10,7 @@ import {
   deployTestAccount,
   enableInsecureHttpForSession,
   initializeWallet,
+  routeRun,
   runTokenFlow,
   setUiMode,
   state,
@@ -23,10 +25,11 @@ import {
 } from "./diagnostics";
 import { proveNoirFixture } from "./noir";
 import {
-  HttpSessionConsentController,
+  ConfirmDialogController,
+  type ConnectionPhase,
+  connectionView,
+  httpSessionConsent,
   PrestoStatusController,
-  prestoStatusView,
-  watchLoopbackPermissionChanges,
 } from "./presto-status";
 import { showResult, stepToPhase } from "./results";
 import { SparkOrbitController } from "./spark-orbit";
@@ -37,40 +40,93 @@ let deploying = false;
 // `initializeWallet()` succeeded, FPC included; `state.wallet` alone is set before the FPC step.
 let walletReady = false;
 
+function toggle(id: string, visible: boolean): void {
+  $(id).classList.toggle("hidden", !visible);
+}
+
+function renderConnection(phase: ConnectionPhase): void {
+  const view = connectionView(phase);
+  const focused = document.activeElement;
+  const settled = phase.kind === "checked" || phase.kind === "blocked";
+  setStatus("presto-status", view.connected || (settled ? false : null));
+  $("presto-label").textContent = view.label;
+  $("presto-mode-hint").textContent = view.modeHint;
+  toggle("presto-connect", view.showConnectLink);
+  toggle("presto-may-ask", view.showMayAskHint);
+  toggle("presto-cta", view.showInstall);
+  toggle("presto-permission-help", view.showPermissionHelp);
+  toggle("presto-secure-help", view.showSecureConnectionHelp);
+  toggle("presto-retry-help", view.retryHelp !== null);
+  $("presto-retry-text").textContent = view.retryHelp ?? "";
+  $("presto-secure-title").textContent = view.secureConnectionTitle ?? "";
+  $("presto-secure-message").textContent = view.secureConnectionMessage ?? "";
+  if (!view.showSecureConnectionHelp) httpConsent.cancel();
+  // A control that just disappeared must not strand keyboard focus on the page body.
+  if (focused instanceof HTMLElement && focused.closest(".hidden")) {
+    $("presto-service-status").focus();
+  }
+
+  // The ribbon is the install pitch only; the panels above own the warn-state recovery flows.
+  ($("accel-banner") as PrestoBanner).state = view.showInstall
+    ? "offline"
+    : view.connected
+      ? "available"
+      : null;
+  appendLog(view.log, view.logLevel);
+}
+
 const prestoStatus = new PrestoStatusController({
   check: checkPrestoStatus,
-  render: (status) => {
-    const view = prestoStatusView(status);
-    setStatus("presto-status", view.connected);
-    $("presto-label").textContent = view.label;
-    $("presto-cta").classList.toggle("hidden", !view.showInstall);
-    $("presto-permission-help").classList.toggle("hidden", !view.showPermissionHelp);
-    $("presto-secure-help").classList.toggle("hidden", !view.showSecureConnectionHelp);
-    $("presto-secure-title").textContent = view.secureConnectionTitle ?? "";
-    $("presto-secure-message").textContent = view.secureConnectionMessage ?? "";
-    if (!view.showSecureConnectionHelp) httpSessionConsent.cancel();
-
-    // The ribbon is the install pitch only; the panels above own the warn-state recovery flows.
-    ($("accel-banner") as PrestoBanner).state = view.showInstall
-      ? "offline"
-      : view.connected
-        ? "available"
-        : null;
-    appendLog(view.log, view.logLevel);
-  },
+  permission: loopbackPermission,
+  render: renderConnection,
   setPending: (pending) => {
-    const permissionRetry = $btn("presto-permission-retry");
-    permissionRetry.disabled = pending;
-    permissionRetry.textContent = pending ? "Checking…" : "Retry";
-    const secureRetry = $btn("presto-secure-retry");
-    secureRetry.disabled = pending;
-    secureRetry.textContent = pending ? "Checking…" : "Retry secure connection";
+    for (const [id, label] of [
+      ["presto-permission-retry", "Retry"],
+      ["presto-try-again", "Try again"],
+      ["presto-secure-retry", "Retry secure connection"],
+    ] as const) {
+      const button = $btn(id);
+      button.disabled = pending;
+      button.textContent = pending ? "Checking…" : label;
+    }
     $btn("presto-use-http").disabled = pending;
-    if (pending) httpSessionConsent.cancel();
+    if (pending) httpConsent.cancel();
+  },
+  onAuthorizationChange: (authorized) => {
+    if (!authorized && deploying && state.uiMode === "accelerated") {
+      appendLog("Access to Presto was turned off. This run continues in the browser", "warn");
+    }
+    const mode = authorized ? "accelerated" : "local";
+    if (state.uiMode !== mode) applyMode(mode);
   },
 });
 
-const httpSessionConsent = new HttpSessionConsentController({
+function announce(message: string): void {
+  $("presto-recovery-announcement").textContent = message;
+}
+
+/** Closes a dialog and returns focus to `returnTo`, or to the Services panel if it is gone. */
+function closeDialog(id: string, returnTo: HTMLElement | null): void {
+  const dialog = $(id) as HTMLDialogElement;
+  if (dialog.open) dialog.close();
+  const target = returnTo?.isConnected && !returnTo.closest(".hidden") ? returnTo : null;
+  (target ?? $("presto-service-status")).focus();
+}
+
+let connectOpener: HTMLElement | null = null;
+const connectDialog = new ConfirmDialogController({
+  run: () => prestoStatus.connect(),
+  setOpen: (open) => {
+    if (!open) return closeDialog("presto-connect-dialog", connectOpener);
+    connectOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    ($("presto-connect-dialog") as HTMLDialogElement).showModal();
+  },
+  setPending: () => {},
+  announce,
+  cancelled: "Presto not connected. Proofs keep running in this tab.",
+});
+
+const httpConsent = httpSessionConsent({
   configure: () => {
     const displayed = prestoStatus.displayed;
     if (!displayed || displayed.available || displayed.reason !== "secure-connection-unavailable") {
@@ -79,41 +135,43 @@ const httpSessionConsent = new HttpSessionConsentController({
     enableInsecureHttpForSession();
   },
   refresh: () => prestoStatus.refresh({ forceRefresh: true }),
-  setConfirmationOpen: (open) => {
-    const confirmation = $("http-session-confirmation");
-    const app = $("playground-app");
-    confirmation.classList.toggle("hidden", !open);
-    confirmation.classList.toggle("flex", open);
-    confirmation.setAttribute("aria-hidden", String(!open));
-    app.inert = open;
-    if (open) {
-      app.setAttribute("aria-hidden", "true");
-      $btn("http-session-cancel").focus();
-    } else {
-      app.removeAttribute("aria-hidden");
-      $("presto-service-status").focus();
-    }
+  setOpen: (open) => {
+    if (open) ($("http-session-confirmation") as HTMLDialogElement).showModal();
+    else closeDialog("http-session-confirmation", null);
   },
   setPending: (pending) => {
     const confirm = $btn("http-session-confirm");
-    const useHttp = $btn("presto-use-http");
     confirm.disabled = pending;
-    useHttp.disabled = pending;
+    $btn("presto-use-http").disabled = pending;
     confirm.textContent = pending ? "Checking…" : "Use HTTP for this session";
   },
-  announce: (message) => {
-    $("presto-recovery-announcement").textContent = message;
-  },
+  announce,
 });
+
+/** Escape, a backdrop click and a browser-forced close all cancel; nothing runs without Confirm. */
+function wireDialog(
+  id: string,
+  controller: ConfirmDialogController,
+  buttons: { cancel: string; confirm: string },
+  failure: string,
+): void {
+  const dialog = $(id) as HTMLDialogElement;
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    controller.cancel();
+  });
+  dialog.addEventListener("close", () => controller.cancel());
+  dialog.addEventListener("click", (event) => {
+    if (event.target === dialog) controller.cancel();
+  });
+  $btn(buttons.cancel).addEventListener("click", () => controller.cancel());
+  $btn(buttons.confirm).addEventListener("click", () => {
+    void controller.confirm().catch(() => appendLog(failure, "error"));
+  });
+}
 
 // ── Clock ──
 startClock();
-
-// ── Service checks ──
-
-async function checkServices(): Promise<void> {
-  await prestoStatus.refresh();
-}
 
 // ── Mode toggle ──
 const INACTIVE_BTN = "mode-btn";
@@ -132,19 +190,35 @@ function updateModeUI(mode: UiMode): void {
   }
 }
 
+function applyMode(mode: UiMode): void {
+  setUiMode(mode);
+  updateModeUI(mode);
+  appendLog(mode === "local" ? "Proving mode → in-browser" : "Proving mode → Presto");
+}
+
+/** Presto mode needs consent first: the explainer when the browser has not blocked this site. */
+function choosePresto(): void {
+  if (deploying) return;
+  const phase = prestoStatus.phase;
+  if (prestoStatus.authorized) {
+    applyMode("accelerated");
+    return;
+  }
+  if (phase.kind === "blocked") {
+    $("presto-permission-help").focus();
+    return;
+  }
+  $("presto-connect-verb").textContent =
+    phase.kind === "not-connected" && phase.permission === "prompt" ? "will ask" : "may ask";
+  connectDialog.request();
+}
+
 $("mode-local").addEventListener("click", () => {
   if (deploying) return;
-  setUiMode("local");
-  updateModeUI("local");
-  appendLog("Proving mode → in-browser");
+  applyMode("local");
 });
-
-$("mode-accelerated").addEventListener("click", () => {
-  if (deploying) return;
-  setUiMode("accelerated");
-  updateModeUI("accelerated");
-  appendLog("Proving mode → Presto");
-});
+$("mode-accelerated").addEventListener("click", choosePresto);
+$("presto-connect").addEventListener("click", choosePresto);
 
 // ── Shared helpers ──
 
@@ -157,6 +231,14 @@ function handleProverPhase(ascii: SparkOrbitController, phase: string, _data?: u
     // last rendered state was available, so in-browser fallback remains immediate and failure-proof.
     if (state.uiMode === "accelerated") prestoStatus.refreshAfterFallback();
   }
+}
+
+async function startRun(): Promise<() => UiMode> {
+  const native = await prestoStatus.beforeProving();
+  if (!native && prestoStatus.authorized && state.uiMode === "accelerated") {
+    appendLog("Waiting for your browser's answer. This run proves in the browser", "warn");
+  }
+  return routeRun(native);
 }
 
 function setActionButtonsDisabled(disabled: boolean): void {
@@ -178,10 +260,11 @@ $("noir-btn").addEventListener("click", async () => {
   $("progress").classList.remove("hidden");
 
   const ascii = new SparkOrbitController($("ascii-art"), document.getElementById("ascii-elapsed"));
-  ascii.start(state.uiMode);
+  const runMode = await startRun();
+  ascii.start(runMode());
 
   try {
-    const result = await proveNoirFixture(state.uiMode, appendLog, (phase, data) =>
+    const result = await proveNoirFixture(runMode, appendLog, (phase, data) =>
       handleProverPhase(ascii, phase, data),
     );
     appendLog(
@@ -220,7 +303,8 @@ $("deploy-btn").addEventListener("click", async () => {
   $("progress").classList.remove("hidden");
 
   const ascii = new SparkOrbitController($("ascii-art"), document.getElementById("ascii-elapsed"));
-  ascii.start(state.uiMode);
+  const runMode = await startRun();
+  ascii.start(runMode());
 
   try {
     diagMemory("deploy-start");
@@ -240,7 +324,7 @@ $("deploy-btn").addEventListener("click", async () => {
     }
     appendLog(`total: ${formatDuration(result.totalDurationMs)}`, "success");
 
-    showResult("", result.mode, result.totalDurationMs, undefined, result.steps);
+    showResult("", runMode(), result.totalDurationMs, undefined, result.steps);
   } catch (err) {
     diagMemory("deploy-error");
     appendLog(`Deploy failed: ${err instanceof Error ? err.message : String(err)}`, "error");
@@ -265,7 +349,8 @@ $("token-flow-btn").addEventListener("click", async () => {
   $("progress").classList.remove("hidden");
 
   const ascii = new SparkOrbitController($("ascii-art"), document.getElementById("ascii-elapsed"));
-  ascii.start(state.uiMode);
+  const runMode = await startRun();
+  ascii.start(runMode());
 
   try {
     diagMemory("token-flow-start");
@@ -285,7 +370,7 @@ $("token-flow-btn").addEventListener("click", async () => {
     }
     appendLog(`total: ${formatDuration(result.totalDurationMs)}`, "success");
 
-    showResult("", result.mode, result.totalDurationMs, "token flow", result.steps);
+    showResult("", runMode(), result.totalDurationMs, "token flow", result.steps);
   } catch (err) {
     diagMemory("token-flow-error");
     appendLog(`Token flow failed: ${err instanceof Error ? err.message : String(err)}`, "error");
@@ -331,30 +416,14 @@ async function initWallet(): Promise<void> {
   }
 }
 
-async function init(): Promise<void> {
-  // Install diagnostics BEFORE any Worker/WASM is created
-  installWorkerDiagnostics();
-  installWasmDiagnostics();
-  installErrorHandlers();
-
-  // Install this before the first health request can open the LNA prompt. The health probe stays
-  // bounded; a later Allow/Block decision owns a fresh, cache-bypassing status refresh instead.
-  await watchLoopbackPermissionChanges(() => {
-    void prestoStatus.refreshAfterPermissionChange().catch(() => {
-      appendLog("Couldn't re-check Presto. Proving stays in-browser", "error");
+function wirePrestoControls(): void {
+  for (const id of ["presto-permission-retry", "presto-try-again"]) {
+    $btn(id).addEventListener("click", () => {
+      void prestoStatus.connect().catch(() => {
+        appendLog("Couldn't re-check Presto. Proving stays in-browser", "error");
+      });
     });
-  });
-
-  $("aztec-url").textContent = AZTEC_DISPLAY_URL;
-
-  // Wire diagnostics export
-  $("export-diagnostics-btn").addEventListener("click", downloadDiagnostics);
-
-  $btn("presto-permission-retry").addEventListener("click", () => {
-    void prestoStatus.refresh({ forceRefresh: true }).catch(() => {
-      appendLog("Couldn't re-check Presto. Proving stays in-browser", "error");
-    });
-  });
+  }
 
   $btn("presto-secure-retry").addEventListener("click", () => {
     void prestoStatus.retrySecureConnection().catch(() => {
@@ -362,45 +431,38 @@ async function init(): Promise<void> {
     });
   });
 
-  $btn("presto-use-http").addEventListener("click", () => httpSessionConsent.request());
-  $btn("http-session-cancel").addEventListener("click", () => httpSessionConsent.cancel());
-  $btn("http-session-confirm").addEventListener("click", () => {
-    void httpSessionConsent.confirm().catch(() => {
-      appendLog("Couldn't switch to HTTP. Proving stays in-browser", "error");
-    });
-  });
-  $("http-session-confirmation").addEventListener("click", (event) => {
-    if (event.target === event.currentTarget) httpSessionConsent.cancel();
-  });
-  document.addEventListener("keydown", (event) => {
-    const confirmation = $("http-session-confirmation");
-    if (confirmation.getAttribute("aria-hidden") !== "false") return;
-    if (event.key === "Escape") {
-      event.preventDefault();
-      httpSessionConsent.cancel();
-      return;
-    }
-    if (event.key !== "Tab") return;
-    const focusable = Array.from(
-      confirmation.querySelectorAll<HTMLButtonElement>("button:not([disabled])"),
-    );
-    if (focusable.length === 0) {
-      event.preventDefault();
-      return;
-    }
-    const first = focusable[0];
-    const last = focusable.at(-1)!;
-    if (event.shiftKey && document.activeElement === first) {
-      event.preventDefault();
-      last.focus();
-    } else if (!event.shiftKey && document.activeElement === last) {
-      event.preventDefault();
-      first.focus();
-    }
-  });
+  $btn("presto-use-http").addEventListener("click", () => httpConsent.request());
+  wireDialog(
+    "http-session-confirmation",
+    httpConsent,
+    { cancel: "http-session-cancel", confirm: "http-session-confirm" },
+    "Couldn't switch to HTTP. Proving stays in-browser",
+  );
+  wireDialog(
+    "presto-connect-dialog",
+    connectDialog,
+    { cancel: "presto-connect-cancel", confirm: "presto-connect-continue" },
+    "Couldn't connect to Presto. Proving stays in-browser",
+  );
+}
 
-  // Default mode UI
-  updateModeUI("accelerated");
+async function init(): Promise<void> {
+  // Install diagnostics BEFORE any Worker/WASM is created
+  installWorkerDiagnostics();
+  installWasmDiagnostics();
+  installErrorHandlers();
+
+  // Subscribed before the first read, so a decision made while the page loads is not missed. A
+  // later Allow owns a fresh, cache-bypassing refresh; a block or a reset revokes consent.
+  await watchLoopbackPermission((next) => prestoStatus.permissionChanged(next));
+
+  $("aztec-url").textContent = AZTEC_DISPLAY_URL;
+
+  // Wire diagnostics export
+  $("export-diagnostics-btn").addEventListener("click", downloadDiagnostics);
+  wirePrestoControls();
+
+  updateModeUI("local");
   // The Noir circuit proves without an Aztec node or a wallet.
   $btn("noir-btn").disabled = false;
 
@@ -427,8 +489,8 @@ async function init(): Promise<void> {
     }
   }
 
-  // Check presto
-  await checkServices();
+  // Contacts Presto only if this site was already allowed; otherwise waits for Connect.
+  await prestoStatus.start();
 
   // Show embedded UI and hide fallback placeholder
   $("embedded-ui").classList.remove("hidden");

@@ -19,11 +19,13 @@
  * `?forceProofs=true` makes proving actually run even on a dev chain; `?httpsOnly=true` (see
  * `aztec.ts:initializeNode`) forces the prover to HTTPS-only with NO HTTP downgrade. We do NOT set
  * `ignoreHTTPSErrors` — the TLS handshake MUST succeed against the seeded trust, or the proof is not
- * a trust proof. Served from localhost, so Chrome 142+ Local Network Access exempts it.
+ * a trust proof. Served from localhost, so Chrome 142+ Local Network Access exempts it; the page still
+ * asks before connecting, so the spec connects through its dialog like a visitor.
  *
  * Usage: bun run --cwd packages/playground test:e2e:packaged
  */
 import { expect, test } from "@playwright/test";
+import { connectPresto } from "./connect";
 import { deployAndAssert } from "./fullstack.helpers";
 
 const HTTPS_PROVE_URL = "https://127.0.0.1:59834/prove";
@@ -60,8 +62,7 @@ test("native bb proof over HTTPS via the installed desktop app", async ({ browse
   await expect(walletState).not.toHaveText("initializing...", { timeout: 5 * 60 * 1000 });
   await expect(walletState).toHaveText("ready");
 
-  await page.click("#mode-accelerated");
-  await expect(page.locator("#mode-accelerated")).toHaveClass(/mode-active/);
+  await connectPresto(page);
 
   // Drives a real account deploy → a real private-kernel proof → routed to the installed app.
   // Fails loudly if the deploy reverts / errors (the helper asserts the success UI + "no Deploy failed:").

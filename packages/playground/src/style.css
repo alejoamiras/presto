@@ -85,6 +85,23 @@
   box-shadow: 0 10px 30px -14px color-mix(in srgb, var(--color-brand-text) 18%, transparent);
 }
 
+/* ── Modal dialogs ──
+   `.panel` sets `position: relative`, which lays a top-layer dialog out at the document origin, and
+   preflight zeroes the auto margins that centre it. */
+dialog.dialog {
+  position: fixed;
+  inset: 0;
+  margin: auto;
+  width: min(28rem, calc(100% - 2rem));
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
+  color: var(--color-brand-text);
+}
+
+dialog.dialog::backdrop {
+  background: rgb(0 0 0 / 0.75);
+}
+
 /* ── Status indicator LEDs ── */
 .status-dot {
   @apply w-1.5 h-1.5 rounded-full flex-shrink-0;
