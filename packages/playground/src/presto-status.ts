@@ -273,8 +273,11 @@ export class PrestoStatusController {
    * that changed nothing (a read before an early run) does not.
    */
   async start(): Promise<void> {
-    const { state } = await this.#read();
-    if (this.#shown || this.#authorized) return;
+    const { state, fresh } = await this.#read();
+    if (this.#shown || this.#authorized) {
+      if (fresh) this.#apply(state, false);
+      return;
+    }
     if (state === "granted") {
       this.#seenGranted = true;
       this.#authorize();
@@ -387,9 +390,9 @@ export class PrestoStatusController {
   }
 
   /**
-   * `fresh` is false when a decision was applied during the read; its state is returned instead. A
-   * block or a reset revokes here, whoever reads it: a caller that yields must not drop it, since
-   * every read overlapping this one now returns it as not fresh.
+   * `fresh` is false when a decision was recorded during the read; its state is returned instead.
+   * Every read overlapping a fresh one returns it as not fresh, so no caller may drop a fresh read: a
+   * block or a reset revokes here, and a caller that yields applies the rest.
    */
   async #read(): Promise<{ state: LoopbackPermissionState; fresh: boolean }> {
     const decisions = this.#decisions;
@@ -409,7 +412,8 @@ export class PrestoStatusController {
     if (state === "denied") {
       if (this.#authorized || !blocked) this.#revoke("denied");
     } else if (state === "prompt") {
-      if (this.#seenGranted || blocked || (reported && this.#authorized)) this.#revoke("prompt");
+      const unblocked = blocked && !this.#authorized;
+      if (this.#seenGranted || unblocked || (reported && this.#authorized)) this.#revoke("prompt");
     } else if (state === "granted") {
       const news = reported || !this.#seenGranted;
       this.#seenGranted = true;
@@ -424,8 +428,11 @@ export class PrestoStatusController {
       this.#reached = true;
       return this.#show({ kind: "checked", status, unsupportedHint: false });
     }
-    const { state } = await this.#read();
-    if (epoch !== this.#epoch) return;
+    const { state, fresh } = await this.#read();
+    if (epoch !== this.#epoch) {
+      if (fresh) this.#apply(state, false);
+      return;
+    }
     if (state === "prompt" && !this.#reached) return this.#show({ kind: "awaiting-browser" });
     if (state === "granted") this.#seenGranted = true;
     this.#show({ kind: "checked", status, unsupportedHint: state === "unsupported" });

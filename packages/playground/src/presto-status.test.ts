@@ -401,6 +401,26 @@ describe("PrestoStatusController consent", () => {
     },
   );
 
+  test("a grant read by a startup that yields still marks a later prompt as a reset", async () => {
+    const h = harness("prompt");
+    await h.controller.connect();
+    h.setPermission("granted");
+    await h.controller.start();
+    await tick();
+    h.setPermission("prompt");
+    expect(await h.controller.beforeProving()).toBe(false);
+    expect(h.controller.authorized).toBe(false);
+  });
+
+  test("Retry after the site went from blocked to ask connects", async () => {
+    const h = harness("denied");
+    await h.controller.start();
+    h.setPermission("prompt");
+    await h.controller.connect();
+    expect(h.authorizations).toEqual([true]);
+    expect(h.checks).toHaveLength(1);
+  });
+
   test("a settlement that lost the row to a newer refresh still applies the block it read", async () => {
     const reads: ReturnType<typeof deferred<LoopbackPermissionState>>[] = [];
     const checks: ReturnType<typeof deferred<PrestoStatus>>[] = [];

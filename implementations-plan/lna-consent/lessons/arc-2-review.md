@@ -40,3 +40,13 @@ against bd6e4fa and pass now.
 
 Gates after the fixes: controller tests 36 pass (playground unit 106); `test:e2e` 22 passed;
 `test:e2e:lna` 8 passed.
+
+## Round 3 — "Changes requested", 2 findings, both verified (loop cap reached)
+
+| # | Sev | Finding | Verdict |
+|---|---|---|---|
+| 1 | High | with no change events, a startup read of `granted` that yielded to an earlier Connect was recorded but never marked as a seen grant, so a later silent reset to "ask" was not treated as one and a proof went native | accepted: a yielding `start()` and a stale settlement now apply their fresh read with `#apply` (which keeps the first-grant probe) |
+| 2 | Med | Retry from the blocked panel, after the site setting moved from blocked to "ask", revoked its own new authorization on the refresh's re-read (the stale `blocked` phase counted as a reason to revoke) | accepted: that condition applies only while unauthorized |
+
+Regression tests reproduce both against ddd7b20 and pass now (controller tests 38). Round 3 is the
+plan's cap, so the loop stops here and the state is surfaced to the owner.
