@@ -33,7 +33,9 @@ answer shows "waiting for your browser" with **Try again**, never "not found". A
 "ask" after a grant, returns the page to In-browser mode and discards any check still running; the
 permission is re-read before every run, so browsers that report no changes are covered too. Consent
 lives in memory only; the browser's permission is the durable record. `PrestoStatusController`
-(`src/presto-status.ts`) owns all of it.
+(`src/presto-status.ts`) owns all of it. It shares the SDK consent example's known limit: permission
+reads are asynchronous, so two that overlap a silent change can be applied out of order, and a request
+may then meet the browser's question again. The browser still decides every request.
 
 ### HTTPS recovery
 

@@ -1,6 +1,9 @@
+import { resolve } from "node:path";
 import { type Browser, type BrowserContext, expect, type Page, test } from "@playwright/test";
 
 const PLAYGROUND_ORIGIN = "http://127.0.0.1:5173";
+/** The workspace SDK core as the dev server serves it, so a test can drive it past the page's gate. */
+const SDK_CORE_URL = `/@fs${resolve(import.meta.dirname, "../../sdk-core/src/index.ts")}`;
 const LANDING_ORIGIN = "http://127.0.0.1:5174";
 const HEALTH_URL = "http://127.0.0.1:59833/health";
 const HEALTH_ADMIN = "http://127.0.0.1:59833";
@@ -131,6 +134,47 @@ test("harness proves a real denied and granted public-to-loopback fetch", async 
   expect(automaticHits).toBeGreaterThan(0);
   expect(await rawAnnotatedHealth(page)).toBe(true);
   expect(await healthHits()).toBe(automaticHits + 1);
+  await context.close();
+});
+
+test("the SDK reads a real block, reports it with nothing reaching Presto, and sees the grant", async ({
+  browser,
+}) => {
+  await resetHealthHits();
+  const context = await deniedContext(browser, PLAYGROUND_ORIGIN);
+  const page = await context.newPage();
+  await mockPlaygroundNode(page);
+  const requests = recordPrestoRequests(page);
+  await page.goto(PLAYGROUND_ORIGIN);
+  await expect(page.locator("#presto-label")).toHaveText("blocked by your browser");
+
+  // The page's own gate never checks under a block, so the SDK's transport is driven directly.
+  const blocked = await page.evaluate(async (url) => {
+    const core = await import(url);
+    const target = window as unknown as { __sdkChanges: string[] };
+    target.__sdkChanges = [];
+    await core.watchLoopbackPermission((state: string) => target.__sdkChanges.push(state));
+    return {
+      permission: await core.loopbackPermission(),
+      status: await new core.PrestoClient().checkStatus(),
+    };
+  }, SDK_CORE_URL);
+  expect(blocked).toEqual({
+    permission: "denied",
+    status: { available: false, reason: "permission-blocked" },
+  });
+  // One attempt, classified by the permission once it fails: no retry, no plaintext diagnosis, and
+  // the browser stops it before it leaves the page.
+  expect(requests).toEqual(["https://127.0.0.1:59834/health"]);
+  expect(await healthHits()).toBe(0);
+
+  await grantLocalNetwork(context, PLAYGROUND_ORIGIN);
+  await expect
+    .poll(() => page.evaluate(() => (window as unknown as { __sdkChanges: string[] }).__sdkChanges))
+    .toEqual(["granted"]);
+  expect(
+    await page.evaluate(async (url) => (await import(url)).loopbackPermission(), SDK_CORE_URL),
+  ).toBe("granted");
   await context.close();
 });
 

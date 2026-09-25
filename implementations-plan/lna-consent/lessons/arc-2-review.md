@@ -50,3 +50,13 @@ Gates after the fixes: controller tests 36 pass (playground unit 106); `test:e2e
 
 Regression tests reproduce both against ddd7b20 and pass now (controller tests 38). Round 3 is the
 plan's cap, so the loop stops here and the state is surfaced to the owner.
+
+## Round 4 (continued at the owner's request: "finish all our loops") — 1 finding, classified A5
+
+| # | Sev | Finding | Verdict |
+|---|---|---|---|
+| 1 | High | overlapping permission reads are ordered by completion: read A (called first, `granted`) completing during read B (called after a silent reset, `prompt`) makes B stale, so B's reset is lost; Codex also showed that ordering reads by call time alone leaves a continuation race (a caller acting on its read one microtask after a newer one was recorded) | accepted as the A5 residual, no code change: the same class the owner accepted for the SDK consent example at the arc 1 cap (reads, events and clicks racing; a serialising queue declined). Worst case: the browser asks again; it still decides every request. Stated in the playground README next to the SDK's wording |
+
+Rounds 1–3 were not this class: each was a deterministic sequence that broke a written rule (L30's
+re-read before every consented operation) or a plain bug (the Noir startup render, the blocked-panel
+Retry), and each is fixed with a regression test.
