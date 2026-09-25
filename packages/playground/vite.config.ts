@@ -165,9 +165,11 @@ function noirFixturePlugin(): Plugin {
 }
 
 // The deployed site sends these from `public/_headers`; bb.js's worker threads need the isolation.
+// `require-corp` because Safari ignores `credentialless`, which leaves every WebKit browser without
+// SharedArrayBuffer and proving on one thread.
 const crossOriginIsolation = {
   "Cross-Origin-Opener-Policy": "same-origin",
-  "Cross-Origin-Embedder-Policy": "credentialless",
+  "Cross-Origin-Embedder-Policy": "require-corp",
 };
 
 const TESTNET_AZTEC_NODE_URL = "https://v5.testnet.rpc.aztec-labs.com";
