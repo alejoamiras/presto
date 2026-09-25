@@ -344,6 +344,58 @@ describe("PrestoStatusController consent", () => {
     expect(h.last()).toMatchObject({ kind: "checked", status: AVAILABLE });
   });
 
+  test("a read before an early run does not stop the startup render", async () => {
+    const h = harness("prompt");
+    expect(await h.controller.beforeProving()).toBe(false);
+    await h.controller.start();
+    expect(h.phases).toEqual([{ kind: "not-connected", permission: "prompt" }]);
+  });
+
+  test("a click whose read raced a reset does not undo it", async () => {
+    const h = harness("prompt");
+    await h.controller.start();
+    const release = h.holdReads();
+    const click = h.controller.connect();
+    h.controller.permissionChanged("granted");
+    h.controller.permissionChanged("prompt");
+    release();
+    await click;
+    await tick();
+    expect(h.controller.authorized).toBe(false);
+    expect(h.checks).toEqual([]);
+    expect(h.last()).toEqual({ kind: "not-connected", permission: "prompt" });
+  });
+
+  test("a read that predates a status-driven block cannot re-authorize", async () => {
+    const h = harness("granted");
+    await h.controller.start();
+    const blocked = deferred<PrestoStatus>();
+    h.answer(() => blocked.promise);
+    const retry = h.controller.retrySecureConnection();
+    await tick();
+    const release = h.holdReads();
+    const proof = h.controller.beforeProving();
+    blocked.resolve({ available: false, reason: "permission-blocked" });
+    await retry;
+    release();
+    expect(await proof).toBe(false);
+    await tick();
+    expect(h.checks).toHaveLength(2);
+    expect(h.last()).toEqual({ kind: "blocked" });
+  });
+
+  test("every refresh re-reads: a reset nobody reported stops it before any request", async () => {
+    const h = harness("granted");
+    await h.controller.start();
+    h.setPermission("prompt");
+    h.controller.refreshAfterFallback();
+    await h.controller.retrySecureConnection();
+    await tick();
+    expect(h.checks).toHaveLength(1);
+    expect(h.controller.authorized).toBe(false);
+    expect(h.last()).toEqual({ kind: "not-connected", permission: "prompt" });
+  });
+
   test("a reported change during the read before a proof wins over the read", async () => {
     const h = harness("granted");
     await h.controller.start();
@@ -398,6 +450,7 @@ describe("PrestoStatusController refreshes", () => {
     h.answer(() => (++calls === 1 ? first.promise : Promise.resolve(AVAILABLE)));
     const click = h.controller.connect();
     await tick();
+    h.setPermission("granted");
     h.controller.permissionChanged("granted");
     await tick();
     expect(h.checks).toHaveLength(1);

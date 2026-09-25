@@ -478,6 +478,7 @@ h1, h2, h3 {
   letter-spacing: -0.01em;
 }
 .why-sub { color: var(--text-muted); font-size: 14px; font-weight: 500; margin-top: 10px; }
+.hidden { display: none !important; }
 
 /* ── TEE-Rex cross-link (hidden while the project is unmaintained) ── */
 .tee-rex-callout {

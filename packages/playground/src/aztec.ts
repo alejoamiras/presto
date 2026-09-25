@@ -72,9 +72,8 @@ export interface AztecState {
 }
 
 /**
- * Global mutable application state. Concurrent mutations are prevented at
- * the UI layer via the `deploying` flag in main.ts, which disables action
- * buttons while an async operation is in flight.
+ * Global mutable application state. Runs are serialized by the `deploying` flag in main.ts, but a
+ * permission change may still switch `uiMode` mid-run; `routeRun` reports that run as in-browser.
  */
 export const state: AztecState = {
   node: null,

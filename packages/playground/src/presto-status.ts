@@ -234,8 +234,11 @@ interface PrestoStatusControllerOptions {
 export class PrestoStatusController {
   /** Display ownership: bumped by every refresh and every revocation. */
   #epoch = 0;
-  /** Bumped by every applied permission decision, so a read that raced one yields to it. */
+  /** Bumped by every applied permission decision and revocation, so a read that raced one yields. */
   #decisions = 0;
+  /** Bumped by every revocation, so a click whose read raced one cannot undo it. */
+  #revocations = 0;
+  #shown = false;
   #authorized = false;
   /** "granted" read or reported since consent, so a later "prompt" means the site was reset. */
   #seenGranted = false;
@@ -266,12 +269,12 @@ export class PrestoStatusController {
 
   /**
    * Reads the decision once at load: only "granted" connects without a click. A click or a reported
-   * change that got in first owns the row, so this read then yields.
+   * change that already authorized or rendered owns the row, so this read then yields; a decision
+   * that changed nothing (a read before an early run) does not.
    */
   async start(): Promise<void> {
-    if (this.#decisions > 0) return;
-    const { state, fresh } = await this.#read();
-    if (!fresh) return;
+    const { state } = await this.#read();
+    if (this.#shown || this.#authorized) return;
     if (state === "granted") {
       this.#seenGranted = true;
       this.#authorize();
@@ -285,7 +288,9 @@ export class PrestoStatusController {
 
   /** An explained click (Continue, Try again, Retry): proceeds unless the browser reports a block. */
   async connect(): Promise<void> {
+    const revocations = this.#revocations;
     const { state } = await this.#read();
+    if (this.#revocations !== revocations) return;
     if (state === "denied") return this.#revoke("denied");
     this.#seenGranted = state === "granted";
     this.#authorize();
@@ -309,12 +314,20 @@ export class PrestoStatusController {
     return this.#authorized && (state !== "prompt" || this.#reached || this.#seenGranted);
   }
 
+  /** Re-reads the decision first, so a block or reset nobody reported still stops the check. */
   refresh(checkOptions?: PrestoStatusCheckOptions): Promise<void> {
     if (!this.#authorized) return Promise.resolve();
-    const epoch = ++this.#epoch;
-    this.options.setPending(true);
-    this.#show({ kind: "checking", browserMayAsk: this.#permission !== "granted" });
     const operation = (async () => {
+      const { state, fresh } = await this.#read();
+      if (fresh) {
+        // This check is the probe a newly seen grant would otherwise schedule.
+        if (state === "granted") this.#seenGranted = true;
+        this.#apply(state, false);
+      }
+      if (!this.#authorized) return;
+      const epoch = ++this.#epoch;
+      this.options.setPending(true);
+      this.#show({ kind: "checking", browserMayAsk: this.#permission !== "granted" });
       try {
         const status = await this.options.check(checkOptions);
         if (epoch === this.#epoch) await this.#settle(status, epoch);
@@ -422,6 +435,9 @@ export class PrestoStatusController {
 
   #revoke(to: "denied" | "prompt"): void {
     ++this.#epoch;
+    ++this.#revocations;
+    ++this.#decisions;
+    this.#permission = to;
     const wasAuthorized = this.#authorized;
     this.#authorized = false;
     this.#seenGranted = false;
@@ -432,6 +448,7 @@ export class PrestoStatusController {
   }
 
   #show(phase: ConnectionPhase): void {
+    this.#shown = true;
     this.#phase = phase;
     this.#displayed = phase.kind === "checked" ? phase.status : null;
     this.options.render(phase);
