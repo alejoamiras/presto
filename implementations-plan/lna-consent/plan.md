@@ -576,7 +576,7 @@ dialogs inert background, Escape cancels, focus returns. Record I2.
 - Pass: exit 0; mocked suite green with the zero-request assertions; no jargon in user-facing strings.
 - Layers: lint, typecheck, unit, mocked E2E, build.
 
-### Phase 6 — real browser, sandbox, release-gate specs, repo docs
+### Phase 6 — real browser, sandbox, release-gate specs, repo docs ✓
 
 `lna.real.spec.ts` playground tests: recorder before navigation, both ports, all paths; zero requests
 ≥ 8 s after load with `prompt`; recorder validity (Continue → at least one request); Continue → grant →

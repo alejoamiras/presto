@@ -50,5 +50,9 @@
 - Sandbox lane: no `aztec` CLI here, so the plan's CI fallback applies: `app.yml` dispatched on
   `lna-consent-sites` at b54f3f3, run 36167134658 green; its `Local Network E2E / App E2E
   (test:e2e:local-network)` job reports `7 passed (2.5m)`, and `Chromium LNA E2E` is green too.
+- Packaged acceptance: `build-test-bundle.yml` with `platform: all` dispatched on
+  `lna-consent-sites` at b54f3f3, run 36167137266 green (three builds; stage, uninstall, fresh
+  install; Packaged E2E on Linux HTTP, Linux HTTPS and macOS). The arc 2 review loop changed the
+  controller afterwards, so packaged acceptance is dispatched again at the delivery SHA.
 - `test:e2e:smoke`: no HTTPS Presto is reachable from this machine, so the lane is unexercised
   (Fact 14) and is named as such in the PR body.
