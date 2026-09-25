@@ -4,7 +4,8 @@ export const PRESTO_ORIGINS = ["http://127.0.0.1:59833", "https://127.0.0.1:5983
 
 /**
  * Selects Presto mode the way a visitor does: the Presto button, then Continue in the dialog if the
- * site is not connected yet. A connected page just switches mode.
+ * site is not connected yet. A connected page just switches mode. Returns once the first check has
+ * settled: a run started while it is in flight under a `prompt` permission proves in the browser.
  */
 export async function connectPresto(page: Page): Promise<void> {
   // The main panel appears only after startup has applied the browser's stored decision.
@@ -17,6 +18,9 @@ export async function connectPresto(page: Page): Promise<void> {
     }
   }
   await expect(presto).toHaveAttribute("data-active", "true");
+  await expect(page.locator("#presto-label")).not.toHaveText(/^(not connected|checking…)$/, {
+    timeout: 60_000,
+  });
 }
 
 /**
