@@ -60,3 +60,12 @@ plan's cap, so the loop stops here and the state is surfaced to the owner.
 Rounds 1–3 were not this class: each was a deterministic sequence that broke a written rule (L30's
 re-read before every consented operation) or a plain bug (the Noir startup render, the blocked-panel
 Retry), and each is fixed with a regression test.
+
+## Round 5 — 1 finding outside A5, verified
+
+| # | Sev | Finding | Verdict |
+|---|---|---|---|
+| 1 | Med | the new SDK real-browser test only saw an HTTPS attempt to 59834, where nothing listens, so a refused connection would pass it just as an LNA block would | accepted and confirmed by probe (`net::ERR_CONNECTION_REFUSED` under a block): the SDK now also tries the live HTTP port and the test asserts Chromium's `LocalNetworkAccessPermissionDenied` verdict for it (e3757f0) |
+
+Codex confirmed no other material runtime finding outside A5 and that the README's known-limit
+sentence is accurate.
