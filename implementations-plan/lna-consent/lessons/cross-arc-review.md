@@ -33,3 +33,14 @@ Gates: docs suite 10 pass; `bun run test` exit 0 on arc 1.
 ## Round 3 — converged
 
 "No new material findings." (resumed session, `response-2.md`).
+
+## Merge review — converged
+
+`main` moved (#55, then #54) before delivery. Arc 1 rebased cleanly. Arc 2 conflicted only in
+`demo.production-smoke.spec.ts`, where the resolution keeps both sides: #55's `deployedHeaders()` and
+header assertions, and this stack's In-browser and no-request assertions. The landing merged
+textually; its one `.hidden` rule still serves #54's `#download-alt`, and nothing the stack removed is
+referenced by #54. Gates at the rebased heads: `bun run test`, `bun run lint`, `bun run lint:actions`
+exit 0; four tarball checks OK; `test:e2e` 22, `test:e2e:lna` 9, `test:e2e:production-smoke` 4
+passed. Codex, resumed with the range-diff and a semantic-conflict ask: "No new material findings."
+(`response-3.md`).

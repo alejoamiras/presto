@@ -18,6 +18,10 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 
 ## Owner actions
 
+- **Run a `packages: all` release before the next playground deploy.** Once the lna-consent stack
+  merges, `scripts/published-playground.ts` fails every `deploy-app` run until published `presto` and
+  `presto-noir` pin `presto-core` 1.2.0. Delete this entry after the release.
+  `archive/lna-consent/plan.md` (Assumptions → A2). **Verified 2026-09-25.**
 - **`@aztec/*` packaging is broader than the three packages already reported upstream.** Every
   `@aztec/*` package the playground bundles from aztec-packages or noir (23 at 5.2.0; `@aztec/viem`
   is the exception) ships no licence file, about twenty declare
@@ -63,6 +67,16 @@ None of these were re-checked on 2026-09-18.
   both on WASM so verification stays circuit-bound, and `fallback: "none"` covers `generateProof`
   only. Documented and tested as such; revisit only with a reason to move verification native.
   `archive/presto-noir/plan.md` (Asks → A-01)
+- **`test:e2e:smoke` never ran against the ask-first playground** — it needs a reachable HTTPS Presto.
+  The sandbox, packaged, mocked, production-smoke and real-Chromium lanes did run.
+  `archive/lna-consent/lessons/phase-6.md`
+- **`test-production-smoke.sh` orphans `vite preview`** — it kills the `npx` wrapper, not the node
+  server, so the port stays bound and a caller piping its output hangs until the server is killed.
+  **Verified 2026-09-25.**
+- **The `presto` tarball ships test files** — `src/lib/*.test.ts`, now also `docs-examples.test.ts`.
+  Harmless at runtime; trim with the package's `files`. **Verified 2026-09-25.**
+- **`app.yml` has no workflow-level `permissions: contents: read`** — scoped out of lna-consent.
+  Not re-verified.
 
 ## Accepted residual risk — standing decisions, not work
 
@@ -94,6 +108,13 @@ None of these were re-checked on 2026-09-18.
   the wallet to "ready") and no unit test around `main.ts` (an entry module wiring the DOM at import
   time over the whole `@aztec` graph). The wallet-readiness boolean is covered by inspection only.
   `archive/presto-noir/lessons/arc-5-review.md`
+- **Permission reads can land out of order (lna-consent A5)** — the consent example and the
+  playground apply asynchronous reads in completion order, so two that overlap a change nobody
+  reported may leave the page one decision behind until the next read; a request may then meet the
+  browser's question again. The browser still decides every request. A serialising read queue was
+  declined as more machinery than the risk warrants. Neither the SDK nor the example can stop a
+  status check or proof already running (A3); an SDK-enforced consent mode or an abortable
+  check would close both, and both were scoped out. `archive/lna-consent/plan.md`
 
 ## Closed by the sweep
 

@@ -11,6 +11,36 @@ branch: worktree-lna-consent
 base: main @ 8edbbca
 ---
 
+## Outcome
+
+**2026-09-25 — delivered, awaiting the owner's merge** as a two-PR stack: #56 (packages) under #57 (sites). This plan's `/goal` and `/loop` seeds are retired.
+
+**Shipped:**
+- **Packages:**
+  - `presto-core` has `loopbackPermission()` and `watchLoopbackPermission()`, re-exported by `presto` and `presto-noir`. The transport's denied check delegates to them.
+  - `presto-banners` has the `connect` state on all six variants.
+  - The SDK README, skill, `AGENTS.md` and the sibling docs ask first. `examples/consent.ts` is executed by tests and quoted verbatim.
+  - `presto-core`, `presto-noir` and `presto-banners` are at 1.2.0.
+- **presto.build** makes no request to Presto on any visit.
+- **The playground** starts In-browser and asks through a dialog before its first request. It re-reads the decision before every check and run.
+- **Testing:** a real-Chromium LNA suite of 9 tests covers the playground, the landing and the SDK core, with the SDK core driven directly.
+
+**Dropped or deferred:**
+- Accepted residuals:
+  - A3: nothing aborts an SDK operation already running.
+  - A5: permission reads that overlap an unreported change may land out of order. A serialising queue was declined.
+- Out of scope: an SDK-enforced consent mode, and `app.yml` permission hardening.
+- All of the above are in `follow-ups.md`.
+
+**Release order (A2):** merge both PRs, then run a `packages: all` release before the next playground deploy. Merging #57 deploys the landing.
+
+**Review:**
+- Arc 1 converged in round 5, after the owner's A5 decision at the round-3 cap.
+- Arc 2 converged in round 6, continuing past the cap on the owner's "finish all our loops".
+- The cross-arc pass converged in round 3 and fixed two SDK-example recovery defects.
+- Codex also reviewed the rebase onto `main` after #54 and #55 merged.
+- SDK verification evidence is in `lessons/sdk-verification.md`.
+
 # lna-consent: ask before contacting Presto
 
 ## Summary

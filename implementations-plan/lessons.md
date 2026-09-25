@@ -28,9 +28,6 @@ _Seeded 2026-09-18 from the three plans in `archive/`._
 
 - **`minimumReleaseAge` is npm-only — Cargo has no equivalent** — an unconstrained `cargo update` took
   27 crates from inside the 7-day window. `archive/presto-cleanup/lessons/phase-2.md`
-- **A blanket release-age floor cannot coexist with a nightly upstream** — it holds every `@aztec/*`
-  bump red for a week; such scopes need a dated exemption.
-  `archive/presto-cleanup/lessons/review-17.md`
 - **Vite only bundles a *literal* `new URL("./f", import.meta.url)`** — composed from a variable it
   stays unrewritten: local warning, production 404. `archive/presto-noir/lessons/phase-17.md`
 - **Vite's dev server treats extension-less files as JS and inflates `.gz`** — a binary fetch returns
@@ -41,9 +38,6 @@ _Seeded 2026-09-18 from the three plans in `archive/`._
   object and msgpackr died on `.prototype.utf8Write`; Rollup had tolerated it, so it was misread as a
   Vite 8 miscompile for a month. Read the ESM entry from the package's `exports` map; in a Vite
   config `import.meta.resolve` is rewritten to a virtual module Bun cannot load. (2026-09, Vite 8.3)
-- **reqwest 0.12→0.13 swaps the TLS backend and the CI toolchain** — rustls drops `libssl-dev`, adds
-  AWS-LC/CMake, and pulls `tokio-rustls`, tripping deny-lists written for cert-*serving* crates.
-  `archive/presto-cleanup/lessons/phase-2.md`
 
 ## Types and package boundaries
 
@@ -52,6 +46,9 @@ _Seeded 2026-09-18 from the three plans in `archive/`._
 - **`tsc` emits nothing for an unresolved side-effect import** — `import "pkg/register"` validates
   nothing. Use a named import or `noUncheckedSideEffectImports`.
   `archive/presto-banners-publish/lessons/codex-loop.md`
+- **A forced `checkStatus()` joins a probe already in flight** — a refresh fired by a permission
+  change mid-probe gets the answer from before the change. Wait out the running check, then force.
+  `archive/lna-consent/lessons/cross-arc-review.md`
 
 ## Tests
 
@@ -70,6 +67,12 @@ _Seeded 2026-09-18 from the three plans in `archive/`._
 - **"Green" without a run ID is not green** — a PR with a failing Windows lane was treated as
   merged-clean. Assume any platform with no lane was never exercised.
   `archive/presto-noir/lessons/audit-fixes.md`
+- **A regression test proves nothing until it fails against the old code** — twice a new test
+  passed on the unfixed code: a stub harness answered the way the fix did, and a prover built before
+  `fetch` was stubbed kept the passing stub. `archive/lna-consent/lessons/cross-arc-review.md`
+- **A refused loopback port and a Local Network Access block look the same to the page** — both are
+  `Failed to fetch`; only CDP `Network.loadingFailed` carries `corsError:
+  LocalNetworkAccessPermissionDenied`. `archive/lna-consent/lessons/arc-2-review.md`
 
 ## CI and release
 
