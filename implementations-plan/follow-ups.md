@@ -18,10 +18,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 
 ## Owner actions
 
-- **Run a `packages: all` release before the next playground deploy.** Once the lna-consent stack
-  merges, `scripts/published-playground.ts` fails every `deploy-app` run until published `presto` and
-  `presto-noir` pin `presto-core` 1.2.0. Delete this entry after the release.
-  `archive/lna-consent/plan.md` (Assumptions → A2). **Verified 2026-09-25.**
 - **`@aztec/*` packaging is broader than the three packages already reported upstream.** Every
   `@aztec/*` package the playground bundles from aztec-packages or noir (23 at 5.2.0; `@aztec/viem`
   is the exception) ships no licence file, about twenty declare
