@@ -36,7 +36,7 @@ base: main @ 8edbbca
 - The landing deployed on merge (`deploy-landing.yml`, run 36192115685).
 - The first release run, 36192153461, published core, noir and banners 1.2.0 and `presto@5.2.0-revision.4`. Then the runner received a shutdown signal inside the verify step, so revision.4 has no release tag, GitHub release or verification record, and the playground deploy was skipped.
 - The fix-forward run, 36195626527, reused the three 1.2.0 packages, published `presto@5.2.0-revision.5` with full verification, and deployed the playground, which now sends `require-corp`.
-- All four new versions are on the `testnet` dist-tag. Promotion to `latest` is the owner's step (`bun run sdk:promote`, npm OTP); see `follow-ups.md`.
+- The owner promoted all four to `latest` on 2026-09-26 with `bun run sdk:promote`, core first. Revision.4 was never promoted; the script refuses a version without a GitHub release.
 
 **Review:**
 - Arc 1 converged in round 5, after the owner's A5 decision at the round-3 cap.

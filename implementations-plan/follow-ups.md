@@ -18,14 +18,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 
 ## Owner actions
 
-- **Promote the 2026-09-25 release to npm `latest`.** `presto-core`, `presto-noir` and
-  `presto-banners` 1.2.0 and `presto` 5.2.0-revision.5 are on `testnet`; `latest` still serves 1.1.0
-  and revision.3. Core goes first, since the other three pin it exactly:
-  `bun run sdk:promote -- --package presto-core 1.2.0`, then `presto-noir 1.2.0`,
-  `presto-banners 1.2.0` and `presto 5.2.0-revision.5`. The script is interactive and needs the npm
-  OTP. **Never promote `presto@5.2.0-revision.4`.** Its run was interrupted after publishing, so it has
-  no release tag, GitHub release or verification record. `archive/lna-consent/plan.md` (Outcome).
-  **Verified 2026-09-25.**
 - **`@aztec/*` packaging is broader than the three packages already reported upstream.** Every
   `@aztec/*` package the playground bundles from aztec-packages or noir (23 at 5.2.0; `@aztec/viem`
   is the exception) ships no licence file, about twenty declare
