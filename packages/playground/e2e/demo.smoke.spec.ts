@@ -1,15 +1,13 @@
 /**
- * Deploy-only smoke tests — runs against testnet with real proofs.
+ * Deploy smoke against a live network with real proofs: one account deploy per mode. With
+ * PRESTO_URL set, the Presto deploy must prove natively; an `http:` URL names the headless server,
+ * which has no TLS listener, so the page's per-tab HTTP consent is taken first.
  *
- * 2 tests: one deploy per mode (accelerated, local). No token flow,
- * no mode switching — just verifies that each proving mode can deploy
- * an account successfully. Used by deploy pipelines.
- *
- * Usage: bun run --cwd packages/playground test:e2e:smoke
+ * Usage: AZTEC_NODE_URL=<node> [PRESTO_URL=<presto>] bun run --cwd packages/playground test:e2e:smoke
  */
 import { expect, type Page, test } from "@playwright/test";
-import { connectPresto } from "./connect";
-import { deployAndAssert, initSharedPage } from "./fullstack.helpers";
+import { connectPresto, useHttpForSession } from "./connect";
+import { deployAndAssert, expectNativeProof, initSharedPage } from "./fullstack.helpers";
 
 const PRESTO_URL = process.env.PRESTO_URL || "";
 
@@ -35,7 +33,9 @@ test.describe("Accelerated", () => {
   test("deploys account", async () => {
     const page = sharedPage;
     await connectPresto(page);
+    if (PRESTO_URL.startsWith("http:")) await useHttpForSession(page);
     await deployAndAssert(page, "accelerated");
+    await expectNativeProof(page);
   });
 });
 

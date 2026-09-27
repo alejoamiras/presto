@@ -106,6 +106,7 @@ describe("public contract (F-05 doc-sync guard)", () => {
     // F15: MIGRATION.md must be in `files` — otherwise npm never packs it and consumers never see it.
     const pkg = JSON.parse(read("../../package.json"));
     expect(pkg.files).toContain("MIGRATION.md");
+    expect(pkg.files).toEqual(expect.arrayContaining(["!src/**/*.test.ts", "!src/test-setup.ts"]));
   });
 
   test("README + packaged SKILL teach asking before the first request, and AGENTS.md ships", () => {

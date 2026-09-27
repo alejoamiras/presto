@@ -79,8 +79,15 @@ bun run test:unit              # Unit tests
 bun run test:e2e               # E2E tests (mocked project)
 bun run test:e2e:local-network # E2E tests against local Aztec sandbox
 bun run test:e2e:lna           # Real Local Network Access gate (Chromium), playground and landing
-bun run test:e2e:smoke         # Smoke tests against deployed environment
+bun run test:e2e:smoke         # Real proofs against AZTEC_NODE_URL (testnet); PRESTO_URL adds native
 ```
+
+`test:e2e:smoke` deploys an account with real proofs, in the browser and, when `PRESTO_URL` names a
+running Presto, natively; the native deploy fails if it falls back to the browser. An `http:` URL
+(the headless server, which has no TLS listener) takes the page's per-tab HTTP consent first and
+skips the native Noir proof, which needs HTTPS. The lane depends on the network's health, so no PR
+gate runs it; dispatch `smoke-playground.yml` to run it in CI against a headless Presto built from
+the chosen ref.
 
 E2E tests use [Playwright](https://playwright.dev). Specs that prove natively select Presto with
 `connectPresto(page)` (`e2e/connect.ts`), the way a visitor does. `test:e2e:lna` runs the page
@@ -89,7 +96,7 @@ ports proves nothing leaves the page before consent, on the playground and on th
 mocked project stays network-free: the Noir specs mock `/health` and `/prove/ultra-honk`, and the
 offline-Presto case selects a stub WASM source with `?noirStub=true` (a test-only URL parameter; it
 never proves) while blocking any CRS or worker download. The smoke project proves the fixture with
-real bb.js WASM in Chromium and, with `PRESTO_URL` set, natively.
+real bb.js WASM in Chromium and, with an HTTPS `PRESTO_URL`, natively.
 
 ## Build and Deployment
 

@@ -1,0 +1,25 @@
+name: Smoke Playground
+
+# Manual: deploys an account on testnet with real proofs, once in the browser and once through a
+# headless Presto over the page's HTTP consent, from the playground at the chosen ref. The headless
+# server has no TLS listener, so the native Noir proof is skipped. No PR gate runs it, because it
+# depends on testnet's health.
+on:
+  workflow_dispatch:
+    inputs:
+      aztec_node_url:
+        description: Aztec node the playground talks to
+        required: false
+        type: string
+        default: https://v5.testnet.rpc.aztec-labs.com
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    uses: ./.github/workflows/_e2e-app.yml
+    with:
+      test_script: test:e2e:smoke
+      aztec_node_url: ${{ inputs.aztec_node_url }}
+      build_presto: true

@@ -27,8 +27,10 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 - **Revoke the old site deploy token in Cloudflare.** The GitHub secret
   `CLOUDFLARE_DEPLOY_API_TOKEN` and variable `PRESTO_PREVIEWS_ENABLED` were deleted on 2026-09-27;
   the Cloudflare token itself (account-wide Workers Scripts Edit, last used by the Actions deploys)
-  still has to be deleted in the dashboard. Both release-feed tokens stay: the feed Worker is out of Workers
-  Builds by decision. `workers-builds/plan.md` (Owner steps).
+  still has to be deleted in the dashboard. Both release-feed tokens stay: the feed Worker is out of
+  Workers Builds by decision. `workers-builds/plan.md` (Owner steps).
+- **The next `release-sdk` must bump `presto-core` and `presto-noir` (patch).** Their `files` changed
+  after 1.2.0 was tagged, and the release planner refuses to reuse a version whose package changed.
 - **The `bb.exe` text-mode I/O bug was never reported upstream.** Barretenberg reads and writes binary
   files in text mode on Windows, so key reads truncate at the first 0x1A and proof writes expand every
   0x0A. Presto routes around it with `--output_format json`; every other consumer on Windows silently
@@ -50,7 +52,9 @@ None of these were re-checked on 2026-09-18.
   `archive/presto-noir/lessons/arc-1-review.md`
 - **The playground's Noir action ignores the page's HTTP-session consent** — the adapter exposes no
   `setPrestoConfig`, so under `secure-connection-unavailable` it falls back to the browser. As a
-  consequence core's `endpoint-changed` reason is documented as reserved rather than reachable.
+  consequence core's `endpoint-changed` reason is documented as reserved rather than reachable, and
+  the smoke lane skips its native Noir proof against the headless server. Only an HTTPS Presto (the
+  desktop app) runs it, and it has not run against the ask-first playground.
   `archive/presto-noir/lessons/phase-17.md`
 - **Per-job metering is logged but not consumed** — `/prove/ultra-honk` emits a per-job info log
   (scheme, origin, target, ok, elapsed_ms) for a metering follow-up that does not exist yet.
@@ -59,20 +63,13 @@ None of these were re-checked on 2026-09-18.
   (follow-ups)" row names a **tray per-origin cumulative prove time** display and a **one-click revoke
   UI** (the metering log above is the data source for the first), and **per-proof overhead
   measurement / persistent bb**. `archive/presto-noir/plan.md` (Scope table)
+- **Connect still shows on phones and tablets, where Presto cannot be installed** — scoped out of
+  lna-consent for a mobile-aware-detection plan that does not exist yet. The load-time probe that
+  made Android Chrome prompt is gone; the button itself remains. `archive/lna-consent/plan.md` (Out)
 - **Native `verifyProof` / `getVerificationKey` were deferred by owner decision (A-01)** — v1 keeps
   both on WASM so verification stays circuit-bound, and `fallback: "none"` covers `generateProof`
   only. Documented and tested as such; revisit only with a reason to move verification native.
   `archive/presto-noir/plan.md` (Asks → A-01)
-- **`test:e2e:smoke` never ran against the ask-first playground** — it needs a reachable HTTPS Presto.
-  The sandbox, packaged, mocked, production-smoke and real-Chromium lanes did run.
-  `archive/lna-consent/lessons/phase-6.md`
-- **`test-production-smoke.sh` orphans `vite preview`** — it kills the `npx` wrapper, not the node
-  server, so the port stays bound and a caller piping its output hangs until the server is killed.
-  **Verified 2026-09-25.**
-- **The `presto` tarball ships test files** — `src/lib/*.test.ts`, now also `docs-examples.test.ts`.
-  Harmless at runtime; trim with the package's `files`. **Verified 2026-09-25.**
-- **`app.yml` has no workflow-level `permissions: contents: read`** — scoped out of lna-consent.
-  Not re-verified.
 - **`bump-playground`'s own steps have never run, and a bot auto-merge has never been seen firing**
   — every `bump-source` run (2026-09-06 to 09-20) opened its PR and then failed with "Auto merge is
   not allowed for this repository"; the owner merged those by hand and has since enabled the

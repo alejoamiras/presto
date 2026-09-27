@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { type Browser, type BrowserContext, expect, type Page, test } from "@playwright/test";
+import { useHttpForSession } from "./connect";
 
 const PLAYGROUND_ORIGIN = "http://127.0.0.1:5173";
 /** The workspace SDK core as the dev server serves it, so a test can drive it past the page's gate. */
@@ -102,9 +103,7 @@ async function continueToPresto(page: Page): Promise<void> {
 async function allowAndUseHttp(context: BrowserContext, page: Page): Promise<void> {
   await grantLocalNetwork(context, PLAYGROUND_ORIGIN);
   await expect(page.locator("#presto-secure-help")).toBeVisible();
-  await page.locator("#presto-use-http").click();
-  await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#presto-label")).toHaveText("running");
+  await useHttpForSession(page);
   await expect(page.locator("#presto-status")).toHaveAttribute("data-status", "online");
 }
 

@@ -11,6 +11,8 @@
   "exports": "./src/index.ts",
   "files": [
     "src",
+    "!src/**/*.test.ts",
+    "!src/test-setup.ts",
     "dist",
     ".claude",
     "AGENTS.md",

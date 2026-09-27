@@ -51,6 +51,6 @@ describe("public contract", () => {
     expect(pkg.dependencies["@alejoamiras/presto-core"]).toBe("workspace:*");
     expect(Object.keys(pkg.dependencies).some((name) => name.startsWith("@aztec/"))).toBe(false);
     expect(pkg.publishConfig).toEqual({ access: "public" });
-    expect(pkg.files).toEqual(["src", "dist"]);
+    expect(pkg.files).toEqual(["src", "!src/**/*.test.ts", "dist"]);
   });
 });

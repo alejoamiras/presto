@@ -95,6 +95,21 @@ export async function deployAndAssert(page: Page, mode: "local" | "accelerated")
 }
 
 /**
+ * Fails unless the last deploy proved natively, which `deployAndAssert` cannot tell from a silent
+ * in-browser fallback. Reads the phase trail the page resets at every deploy; `receive` and `proved`
+ * appear on the fallback path too, so only `transmit` shows a request reached Presto.
+ */
+export async function expectNativeProof(page: Page): Promise<void> {
+  const phases = await page.evaluate(
+    () => (window as Window & { __PRESTO_PHASES__?: string[] }).__PRESTO_PHASES__ ?? [],
+  );
+  const trail = JSON.stringify(phases);
+  expect(phases, `no proof request reached Presto; phase trail ${trail}`).toContain("transmit");
+  expect(phases, `fell back to the browser; phase trail ${trail}`).not.toContain("fallback");
+  expect(phases, `Presto refused the origin; phase trail ${trail}`).not.toContain("denied");
+}
+
+/**
  * Ensure a session-deployed account exists (the token flow's sender requirement).
  * The token-flow button stays disabled until one does, so its state is the signal.
  */
