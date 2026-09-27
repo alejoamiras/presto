@@ -125,6 +125,33 @@ describe("bot-push", () => {
     }
   });
 
+  test("never advances a branch created after the probe, even by a fast-forward", () => {
+    const { work, origin } = repo();
+    // A git shim whose ls-remote answers first, then lets a concurrent run create the branch.
+    const bin = join(work, "..", "bin");
+    mkdirSync(bin);
+    writeFileSync(
+      join(bin, "git"),
+      `#!/usr/bin/env bash
+if [ "$1" = ls-remote ]; then
+  "$REAL_GIT" "$@"; code=$?
+  "$REAL_GIT" push -q origin main:refs/heads/chore/x
+  exit "$code"
+fi
+exec "$REAL_GIT" "$@"
+`,
+    );
+    chmodSync(join(bin, "git"), 0o755);
+    const main = git(origin, "rev-parse", "refs/heads/main");
+    writeFileSync(join(work, "a.txt"), "a2\n");
+    const result = push(work, {
+      PATH: `${bin}:${process.env.PATH ?? ""}`,
+      REAL_GIT: Bun.which("git") ?? "git",
+    });
+    expect(result.code).not.toBe(0);
+    expect(git(origin, "rev-parse", "refs/heads/chore/x")).toBe(main);
+  });
+
   test("fails when it cannot tell whether the branch exists", () => {
     const { work } = repo();
     git(work, "remote", "set-url", "origin", join(work, "..", "missing.git"));

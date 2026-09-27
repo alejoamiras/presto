@@ -29,7 +29,7 @@ inputs:
     required: false
     default: "false"
   head:
-    description: The commit auto-merge is pinned to (bot-push's head output). Required with auto-merge.
+    description: The PR head expected when enabling auto-merge (bot-push's head output). Required with auto-merge.
     required: false
     default: ""
   merge-token:
