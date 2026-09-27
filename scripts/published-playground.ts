@@ -3,7 +3,8 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseNpmPackResult } from "./npm-pack-result";
 import { NPM_PACKAGES, type NpmPackage } from "./npm-packages";
-import { SDK_PACKAGE, SDK_VERSION_PATTERN } from "./sdk-release-verification";
+import { readPlaygroundPin } from "./playground-pin";
+import { SDK_PACKAGE } from "./sdk-release-verification";
 import { assertCorePin, CORE_NAME, expectedCoreVersion } from "./tarball-consumer/assert-core-pin";
 import { verifySdkPackageSignatures } from "./verify-sdk-package-signatures";
 
@@ -131,8 +132,8 @@ if (import.meta.main) {
     return { tarball, manifest };
   };
 
-  const version = process.argv[2] || run(["npm", "view", `${SDK_PACKAGE}@testnet`, "version"]);
-  if (!SDK_VERSION_PATTERN.test(version)) throw new Error("Invalid published SDK candidate");
+  const pin = await readPlaygroundPin(root);
+  const version = pin[SDK_PACKAGE];
   const playground = await readJson("packages/playground/package.json");
   const workspaceVersions = {
     [CORE_NAME]: (await readJson("packages/sdk-core/package.json")).version,
@@ -146,10 +147,9 @@ if (import.meta.main) {
     workspaceVersions,
   );
   const adapters = [sdk];
-  // The Noir adapter, when the playground depends on it, at the workspace version of this commit.
   const noirPackage = NPM_PACKAGES["presto-noir"];
   if (playground.dependencies?.[noirPackage.name]) {
-    const noirVersion = (await readJson(`${noirPackage.dir}/package.json`)).version;
+    const noirVersion = pin[noirPackage.name];
     const noir = await fetchVerified(noirPackage, noirVersion);
     assertPublishedManifest(
       noir.manifest,

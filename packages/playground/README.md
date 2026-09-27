@@ -97,7 +97,7 @@ real bb.js WASM in Chromium and, with `PRESTO_URL` set, natively.
 bun run build   # Output: dist/
 ```
 
-Deployed with Cloudflare Workers Static Assets at `playground.presto.build`. `app.yml` is the PR gate (lint, typecheck, unit, e2e). The live deploy is a manual `release-sdk.yml` dispatch: choose `sdk-and-playground` for a candidate SDK release plus deploy, or `playground-only` to deploy without publishing npm.
+Deployed with Cloudflare Workers Static Assets at `playground.presto.build` by Cloudflare Workers Builds: every push to `main` deploys, and every other branch gets a Worker Preview built from the workspace SDK. Production installs the published SDK versions pinned in [`published-sdk.json`](published-sdk.json), which `release-sdk.yml` raises through an auto-merging PR ([runbook](../../docs/RELEASE_RUNBOOK.md#deploying-the-playground-the-pin-pr)). `app.yml` is the PR gate (lint, typecheck, unit, e2e, and the production build whenever the pin or its code path changes).
 
 ## License
 

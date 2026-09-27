@@ -79,7 +79,7 @@ describe("presto CI path routing", () => {
       ],
     ],
     ["unrelated documentation", ["docs/PLATFORM_SUPPORT.md"], []],
-    ["unrelated workflow", [".github/workflows/deploy-landing.yml"], []],
+    ["unrelated workflow", [".github/workflows/deploy-release-feed.yml"], []],
     [
       "routing contract",
       [".github/filters/presto.yml"],

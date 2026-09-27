@@ -1,6 +1,6 @@
 # Implementation plans
 
-No active plans.
+- [workers-builds](workers-builds/plan.md) — PR open — landing + playground deploys and PR previews move to Cloudflare Workers Builds; the playground pins its published SDK
 
 Add one line per plan here when it opens; move the line to
 [`archive/index.md`](archive/index.md) when it closes. This file is read at the start of every

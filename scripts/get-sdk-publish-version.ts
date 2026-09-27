@@ -39,6 +39,22 @@ export function resolvePublishVersion(baseVersion: string, publishedVersions: st
     : `${baseVersion}-revision.${nextRevision}`;
 }
 
+/**
+ * Comparator for stable `aztec-derived` versions in publish order: `X.Y.Z` ships before
+ * `X.Y.Z-revision.N`, which semver sorts the other way.
+ */
+export function revisionOrder(a: string, b: string): number {
+  const parts = (v: string) => {
+    const m = /^(\d+)\.(\d+)\.(\d+)(?:-revision\.(\d+))?$/.exec(v);
+    if (!m) throw new Error(`${JSON.stringify(v)} is not a stable aztec-derived version`);
+    return [m[1], m[2], m[3], m[4] ?? "0"].map(Number);
+  };
+  const x = parts(a);
+  const y = parts(b);
+  const i = x.findIndex((n, k) => n !== y[k]);
+  return i < 0 ? 0 : Math.sign((x[i] as number) - (y[i] as number));
+}
+
 /** The version to publish for `pkg`; a manifest version already on npm is never suffixed. */
 export function resolvePackageVersion(
   pkg: NpmPackage,

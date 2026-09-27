@@ -72,14 +72,6 @@
       "expires": "2026-11-30",
       "reason": "Reached only through commitlint's config loader, which parses this repository's own files. js-yaml 4.3.2 fixes it but is newer than the install release-age gate allows.",
       "upgrade": "Remove once js-yaml 4.3.2 clears the release-age gate and the lockfile is refreshed."
-    },
-    {
-      "ecosystem": "npm",
-      "id": "GHSA-rgj7-g3m4-5g8c",
-      "package": "sharp",
-      "expires": "2026-11-30",
-      "reason": "Pinned exactly by miniflare (wrangler's local dev runtime); only wrangler's local tooling loads it, never a shipped bundle. sharp 0.35.4 fixes it.",
-      "upgrade": "Remove when wrangler's miniflare moves to sharp 0.35.4 or newer."
     }
   ]
 }

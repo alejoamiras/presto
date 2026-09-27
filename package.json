@@ -66,6 +66,6 @@
     "lint-staged": "^17.4.1",
     "sort-package-json": "^4.0.0",
     "typescript": "^7.0.2",
-    "wrangler": "4.127.1"
+    "wrangler": "4.135.0"
   }
 }

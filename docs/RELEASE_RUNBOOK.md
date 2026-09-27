@@ -56,13 +56,13 @@ Keep three distinct tokens, each saved/read-back verified in 1Password before Gi
 
 | Purpose | GitHub location | Permissions |
 | --- | --- | --- |
-| Landing/playground and PR previews | Repository: `CLOUDFLARE_DEPLOY_API_TOKEN` | Account Workers Scripts Edit; Presto zone Workers Routes Edit and Zone Read |
+| Landing/playground builds and previews | None: the Workers Builds build token lives in Cloudflare ([setup](CLOUDFLARE_DEPLOYMENT.md#workers-builds-landing-and-playground)) | Account Workers Scripts Edit and Account Settings Read; Presto zone Workers Routes Edit and Zone Read; User Details Read and Memberships Read |
 | Feed Worker code | Main-only `release-feed`: `CLOUDFLARE_RELEASE_FEED_DEPLOY_API_TOKEN` | Account Workers Scripts Edit only |
 | Signed feed promotion | Main-only `release-feed`: `CLOUDFLARE_RELEASE_FEED_API_TOKEN` | Account Workers KV Storage Edit only |
 
 Feed deployment uses `wrangler versions upload` and deploys the exact returned version ID at 100%.
-It does not run `wrangler deploy` or `wrangler triggers deploy`: route changes require the separately
-scoped site token and an explicit infrastructure operation. Keep the configured feed route in place.
+It does not run `wrangler deploy` or `wrangler triggers deploy`: route changes are an explicit
+infrastructure operation outside this workflow. Keep the configured feed route in place.
 The uploaded version is selected from Wrangler's structured output, validating the Worker name and
 version ID before activation. This follows Cloudflare's separation of
 [versions, deployments and triggers](https://developers.cloudflare.com/workers/wrangler/commands/workers/).
@@ -236,6 +236,10 @@ After reviewing the target and its bindings, the deliberate mutation is:
 bunx wrangler rollback '<VERIFIED_VERSION_ID>' --config packages/landing/wrangler.jsonc
 ```
 
+For `landing` and `playground`, Workers Builds overwrites a rollback with the next production build:
+revert the offending commit on `main` instead (preferred), or roll back and pause builds until the
+fix merges.
+
 Repeat the read-back and public endpoint checks after a rollback. A Worker rollback changes code
 and assets, **not KV contents**; signed-feed restoration still uses the guarded native promotion
 flow above. Keep the namespace and other bound resources intact. Cloudflare limits rollback to
@@ -244,24 +248,19 @@ remains deployable forever. See [Cloudflare rollback semantics](https://develope
 
 ## Releasing the SDK candidate
 
-`release-sdk.yml` has one manual entry point, three modes, a package selection, and a dry run:
+`release-sdk.yml` has one manual entry point, a package selection, and a dry run. It never deploys
+anything itself:
 
 ```bash
-# Default: publish the SDK candidate, then deploy the testnet playground
-gh workflow run release-sdk.yml --ref main -f mode=sdk-and-playground
-
-# Publish only
-gh workflow run release-sdk.yml --ref main -f mode=sdk-only
-
-# Deploy playground only; no npm mutation
-gh workflow run release-sdk.yml --ref main -f mode=playground-only
+# Default: publish the SDK candidate
+gh workflow run release-sdk.yml --ref main
 
 # One sibling package, or every package in dependency order (core before its adapters)
-gh workflow run release-sdk.yml --ref main -f mode=sdk-only -f packages=presto-core
-gh workflow run release-sdk.yml --ref main -f mode=sdk-only -f packages=all
+gh workflow run release-sdk.yml --ref main -f packages=presto-core
+gh workflow run release-sdk.yml --ref main -f packages=all
 
 # Plan and preflight only: publishes nothing, reports what would publish, reuse, or be deferred
-gh workflow run release-sdk.yml --ref main -f mode=sdk-only -f packages=all -f dry_run=true
+gh workflow run release-sdk.yml --ref main -f packages=all -f dry_run=true
 ```
 
 The `plan` job (`scripts/release-plan.ts`) decides before anything is published:
@@ -273,9 +272,37 @@ The `plan` job (`scripts/release-plan.ts`) decides before anything is published:
 
 After a partial publish (a dependency published, an adapter failed), rerun with the same selection: the published dependency is reused and only the remaining packages publish.
 
-Publish order is core → `presto-noir` → `presto`, each adapter's consumer profile rerun against the registry core before it publishes. With `mode=sdk-and-playground` the playground deploys once every selected package has published (or was reused); a package not selected is consumed at its current published version — `packages=presto-noir` alone deploys the published adapter with the SDK currently on `testnet`. The deployment consumes only tarballs whose bytes hash to the integrity that both the provenance statement and npm's signature audit vouched for; a download that differs from what was verified aborts the deploy. `@alejoamiras/presto-banners` is the exception: the playground bundles it from the workspace at the deployed commit, and its published artifact is proven by the tarball-consumer gate instead. `@alejoamiras/presto` keeps the sandbox e2e (native chonk parity) as its gate; `@alejoamiras/presto-noir` has its own production gates at the release SHA, run by the `noir-gates` job through `_ts-package-ci.yml`: bb.js WASM must reproduce the committed Noir fixtures byte for byte, and the adapter must prove natively (`fallback: "none"`) against a headless presto built from that commit with the real `bb`. Either failing blocks the adapter's publish and, through the order above, the SDK's.
+Publish order is core → `presto-noir` → `presto`, each adapter's consumer profile rerun against the registry core before it publishes. `@alejoamiras/presto` keeps the sandbox e2e (native chonk parity) as its gate; `@alejoamiras/presto-noir` has its own production gates at the release SHA, run by the `noir-gates` job through `_ts-package-ci.yml`: bb.js WASM must reproduce the committed Noir fixtures byte for byte, and the adapter must prove natively (`fallback: "none"`) against a headless presto built from that commit with the real `bb`. Either failing blocks the adapter's publish and, through the order above, the SDK's.
 
-`testnet` is the npm candidate dist-tag used by the public testnet playground. It is not an npm network or a lesser form of the package. There is no separate `mainnet` publish path today: accepted candidates are deliberately promoted from `testnet` to npm's default `latest` tag. The old npm nightly publish path is retired; the historical `nightlies` dist-tag is left untouched.
+### Deploying the playground: the pin PR
+
+The production playground builds from `packages/playground/published-sdk.json`, the exact `presto`
+and `presto-noir` publications it installs. After the publications, `bump-playground` raises the
+pin to the `presto` published in this run and the `presto-noir` the plan published or reused (a
+version never moves backward, so rerunning an older release changes nothing), then opens a PR from
+`chore/playground-sdk-pin-<run>-<attempt>` with auto-merge on. App's **Published Playground Build**
+runs the production build on that PR; merging it is the deploy, since Workers Builds then builds
+`main` from the pin. The build consumes only tarballs whose bytes hash to the integrity that both
+the provenance statement and npm's signature audit vouched for; any mismatch fails the build and the
+previous deployment keeps serving. `@alejoamiras/presto-banners` is the exception: the playground
+bundles it from the workspace, and its published artifact is proven by the tarball-consumer gate.
+
+- **A pin PR is still open**: the job fails rather than stack a second bump. Merge that PR (usually
+  it only needs "Update branch"), then use "Re-run failed jobs" on the release run; upstream outputs
+  carry over and a fresh branch is cut from `main`. Do not just close it: the re-run carries only
+  its own run's versions, so the closed PR's would be lost. If it must not merge, carry its versions
+  over with the manual fallback below.
+- **Manual fallback**: in a PR, run
+  `PRESTO_VERSION=<version> PRESTO_NOIR_VERSION=<version> bun scripts/playground-pin.ts` (either may
+  be empty). A deliberate move back to an older SDK is a hand-edited, reviewed pin.
+- **Expected fail-closed window**: a production build succeeds only while `main`'s dependency graph
+  (the `@aztec/*` versions, the core version the adapters pin, the bb.js peer) matches the pinned
+  publications. After an Aztec bump or a core version bump merges, playground builds of `main` fail
+  (a red Workers Builds check on the commit) until the release that publishes the new graph merges
+  its pin PR. PRs that change the production build path (they run App's Published Playground Build)
+  wait for that release too. Landing builds are unaffected.
+
+`testnet` is the npm candidate dist-tag. The playground never reads a dist-tag; it builds from the pinned versions. It is not an npm network or a lesser form of the package. There is no separate `mainnet` publish path today: accepted candidates are deliberately promoted from `testnet` to npm's default `latest` tag. The old npm nightly publish path is retired; the historical `nightlies` dist-tag is left untouched.
 
 ### Candidate version and gates
 
@@ -318,10 +345,10 @@ hold in supported browsers:
 - the landing page explains recovery but cannot activate or persist HTTP.
 
 If any transport invariant, status classification, prompt, or session-reset behavior regresses,
-stop promotion. Fix forward under a new derived SDK revision and redeploy the testnet playground.
+stop promotion. Fix forward under a new derived SDK revision; its pin PR redeploys the playground.
 If a regression is discovered only after promotion, move `latest` back with the SDK rollback command
-below and restore the last known-good playground deployment; never delete or republish the bad npm
-version.
+below and pin the playground back to the last known-good versions in a reviewed PR; never delete or
+republish the bad npm version.
 
 ### First OIDC canary
 
@@ -329,7 +356,7 @@ For the first run after enabling trusted publishing:
 
 1. Double-check the npm trusted-publisher fields and `npm publish` allowed action.
 2. Keep the old token stored but ensure it is not referenced by either workflow.
-3. Dispatch `sdk-only` from `main`.
+3. Dispatch `release-sdk.yml` from `main`.
 4. Confirm the publish step reports trusted publishing/OIDC, `testnet` moved, provenance passes, the Git tag/release exist, and a clean install succeeds.
 5. Remove the old automation token from GitHub and revoke it on npm.
 

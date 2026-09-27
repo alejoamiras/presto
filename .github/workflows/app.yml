@@ -18,6 +18,7 @@ jobs:
     outputs:
       relevant: ${{ steps.override.outputs.relevant || steps.filter.outputs.relevant }}
       lna_relevant: ${{ steps.override.outputs.relevant || steps.filter.outputs.lna_relevant }}
+      published: ${{ steps.override.outputs.relevant || steps.filter.outputs.published }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -60,6 +61,23 @@ jobs:
               - 'bunfig.toml'
               - '.bun-version'
               - '.github/actions/playwright-cache/**'
+              - '.github/workflows/app.yml'
+            # The pin, and the code and Bun version of the production build path. Never a file an
+            # Aztec bump edits (bunfig.toml's release-age excludes included): that PR cannot match the
+            # published SDK until the release after it.
+            published:
+              - 'packages/playground/published-sdk.json'
+              - '.bun-version'
+              - 'scripts/workers-build.ts'
+              - 'scripts/playground-pin.ts'
+              - 'scripts/get-sdk-publish-version.ts'
+              - 'scripts/published-playground.ts'
+              - 'scripts/npm-pack-result.ts'
+              - 'scripts/npm-packages.ts'
+              - 'scripts/sdk-release-verification.ts'
+              - 'scripts/verify-sdk-package-signatures.ts'
+              - 'scripts/tarball-consumer/assert-core-pin.ts'
+              - '.github/scripts/packaged-e2e-swap-sdk.sh'
               - '.github/workflows/app.yml'
       - name: Override for manual dispatch
         if: github.event_name == 'workflow_dispatch'
@@ -185,16 +203,44 @@ jobs:
           package-dir: packages/playground
       - run: bun run --cwd packages/playground test:e2e:lna
 
+  # The production playground build Workers Builds runs on `main`, without its deploy: a pin change
+  # proves here that the pinned publications verify, install and build before it can merge.
+  published-build:
+    name: Published Playground Build
+    needs: changes
+    if: needs.changes.outputs.published == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # npm 10 omits verified attestations from its JSON signature-audit report.
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24.20.0
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+      - run: bun scripts/workers-build.ts playground
+        env:
+          WORKERS_CI_BRANCH: main
+
   app-status:
     name: App Status
     if: always()
-    needs: [changes, lint, unit-tests, mocked-e2e, production-smoke, local-network-e2e, chromium-lna-e2e]
+    needs: [changes, lint, unit-tests, mocked-e2e, production-smoke, local-network-e2e, chromium-lna-e2e, published-build]
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
       - name: Check results
         run: |
-          results="${{ needs.changes.result }} ${{ needs.lint.result }} ${{ needs.unit-tests.result }} ${{ needs.mocked-e2e.result }} ${{ needs.production-smoke.result }} ${{ needs.local-network-e2e.result }} ${{ needs.chromium-lna-e2e.result }}"
+          results="${{ needs.changes.result }} ${{ needs.lint.result }} ${{ needs.unit-tests.result }} ${{ needs.mocked-e2e.result }} ${{ needs.production-smoke.result }} ${{ needs.local-network-e2e.result }} ${{ needs.chromium-lna-e2e.result }} ${{ needs.published-build.result }}"
           for r in $results; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
               echo "Job failed or was cancelled: $r"

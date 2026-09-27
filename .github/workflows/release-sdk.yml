@@ -3,15 +3,6 @@ name: Release SDK
 on:
   workflow_dispatch:
     inputs:
-      mode:
-        description: "Release the SDK candidate, deploy the testnet playground, or both"
-        required: true
-        type: choice
-        options:
-          - sdk-and-playground
-          - sdk-only
-          - playground-only
-        default: sdk-and-playground
       packages:
         description: "Which npm packages to release (scripts/npm-packages.ts keys, or all in dependency order)"
         required: false
@@ -130,9 +121,8 @@ jobs:
     uses: ./.github/workflows/_e2e.yml
     with:
       ref: ${{ github.sha }}
-      # SDK candidates must exercise the native proving path. A playground-only hotfix keeps
-      # the lighter WASM gate because it does not publish a new SDK artifact.
-      build_presto: ${{ inputs.mode != 'playground-only' }}
+      # SDK candidates must exercise the native proving path.
+      build_presto: true
 
   dependency-audit:
     needs: [assert-main, plan]
@@ -143,7 +133,7 @@ jobs:
   # the registry dependency) run inside their own publish job, after this one verified the artifact.
   publish-core:
     needs: [assert-main, plan, e2e, dependency-audit]
-    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto_core == 'true' }}
+    if: ${{ !cancelled() && !inputs.dry_run && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto_core == 'true' }}
     permissions:
       id-token: write
       contents: write
@@ -158,7 +148,7 @@ jobs:
   # The chonk SDK keeps the sandbox e2e above as its gate.
   noir-gates:
     needs: [assert-main, plan]
-    if: ${{ !inputs.dry_run && inputs.mode != 'playground-only' && needs.plan.outputs.publish_presto_noir == 'true' }}
+    if: ${{ !inputs.dry_run && needs.plan.outputs.publish_presto_noir == 'true' }}
     permissions:
       contents: read
     uses: ./.github/workflows/_ts-package-ci.yml
@@ -167,12 +157,11 @@ jobs:
       identity: true
       live: true
 
-  # Adapters publish after core; presto publishes after noir so the playground deployment that
-  # follows sees both adapters on the registry. A skipped noir publication is acceptable only when
-  # noir was not selected — a selected noir whose gates failed also skips, and must block presto.
+  # Adapters publish after core, and presto after noir. A skipped noir publication is acceptable only
+  # when noir was not selected — a selected noir whose gates failed also skips, and must block presto.
   publish-presto:
     needs: [assert-main, plan, e2e, dependency-audit, publish-core, publish-noir]
-    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') && (needs.publish-noir.result == 'success' || (needs.publish-noir.result == 'skipped' && needs.plan.outputs.publish_presto_noir != 'true')) }}
+    if: ${{ !cancelled() && !inputs.dry_run && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') && (needs.publish-noir.result == 'success' || (needs.publish-noir.result == 'skipped' && needs.plan.outputs.publish_presto_noir != 'true')) }}
     permissions:
       id-token: write
       contents: write
@@ -185,7 +174,7 @@ jobs:
 
   publish-noir:
     needs: [assert-main, plan, e2e, dependency-audit, publish-core, noir-gates]
-    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.noir-gates.result == 'success' && needs.plan.outputs.publish_presto_noir == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') }}
+    if: ${{ !cancelled() && !inputs.dry_run && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.noir-gates.result == 'success' && needs.plan.outputs.publish_presto_noir == 'true' && (needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped') }}
     permissions:
       id-token: write
       contents: write
@@ -199,7 +188,7 @@ jobs:
   # preconditions, and it needs no ordering against the SDK packages.
   publish-banners:
     needs: [assert-main, plan, e2e, dependency-audit]
-    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'playground-only' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto_banners == 'true' }}
+    if: ${{ !cancelled() && !inputs.dry_run && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && needs.plan.outputs.publish_presto_banners == 'true' }}
     permissions:
       id-token: write
       contents: write
@@ -209,49 +198,77 @@ jobs:
       version: ${{ needs.plan.outputs.version_presto_banners }}
       dependency_versions: ${{ needs.plan.outputs.deps_presto_banners }}
 
-  # The deployment consumes the SDK, core and the Noir adapter at their verified published versions:
-  # the ones published in this run, and for a package not selected (or reused) the version already
-  # on the registry — the presto from `testnet` when no version is passed. The banner kit is bundled
-  # from the workspace at this commit. A selected publication that failed or was gated out blocks it.
-  deploy-app:
-    needs: [assert-main, plan, e2e, dependency-audit, publish-core, publish-noir, publish-presto, publish-banners]
-    if: ${{ !cancelled() && !inputs.dry_run && inputs.mode != 'sdk-only' && needs.assert-main.result == 'success' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && (inputs.mode == 'playground-only' || ((needs.publish-core.result == 'success' || (needs.publish-core.result == 'skipped' && needs.plan.outputs.publish_presto_core != 'true')) && (needs.publish-noir.result == 'success' || (needs.publish-noir.result == 'skipped' && needs.plan.outputs.publish_presto_noir != 'true')) && (needs.publish-presto.result == 'success' || (needs.publish-presto.result == 'skipped' && needs.plan.outputs.publish_presto != 'true')) && (needs.publish-banners.result == 'success' || (needs.publish-banners.result == 'skipped' && needs.plan.outputs.publish_presto_banners != 'true')))) }}
+  # Merging the pin PR deploys the playground: Workers Builds builds `main` from the pinned,
+  # provenance-verified publications (scripts/workers-build.ts). A selected publication that failed
+  # or was gated out blocks the bump; pins only move forward, so rerunning an older release is a no-op.
+  bump-playground:
+    name: Bump playground SDK pin
+    needs: [plan, e2e, dependency-audit, publish-core, publish-noir, publish-presto]
+    if: ${{ !cancelled() && !inputs.dry_run && needs.plan.result == 'success' && needs.e2e.result == 'success' && needs.dependency-audit.result == 'success' && (needs.plan.outputs.publish_presto_core != 'true' || needs.publish-core.result == 'success') && (needs.plan.outputs.publish_presto_noir != 'true' || needs.publish-noir.result == 'success') && (needs.plan.outputs.publish_presto != 'true' || needs.publish-presto.result == 'success') }}
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
+    timeout-minutes: 5
+    # A short-lived release-bot App token (contents + pull requests) pushes the branch and opens the PR.
+    permissions: {}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      # npm 10 omits verified attestations from its JSON signature-audit report.
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
         with:
-          node-version: 24.20.0
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+
+      # The pin is raised against `main` as it is now, not the release SHA: an earlier pin PR may have
+      # merged since this run started.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          token: ${{ steps.app-token.outputs.token }}
+
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-          restore-keys: ${{ runner.os }}-bun-
-      - run: bun install --frozen-lockfile
 
-      # Empty when presto was not published in this run (unselected, or playground-only): the script
-      # then takes the SDK on `testnet`. The plan's version_presto is the NEXT publication, never a
-      # published one, so it must not be used here.
-      - name: Consume the exact verified published candidate
+      # No install: the pin script imports only repository modules, so no dependency code runs
+      # next to the App token.
+      - name: Raise the pin
+        id: pin
         env:
-          PUBLISHED_VERSION: ${{ needs.publish-presto.outputs.version }}
-        run: bun scripts/published-playground.ts "$PUBLISHED_VERSION"
+          # Empty unless presto published in this run: the plan's version_presto is the next
+          # publication, never a published one. The plan's noir version is set for a publication and
+          # a verified reuse alike, so a redispatch catches the pin up with an earlier run's noir.
+          PRESTO_VERSION: ${{ needs.publish-presto.outputs.version }}
+          PRESTO_NOIR_VERSION: ${{ needs.plan.outputs.version_presto_noir }}
+        run: |
+          result="$(bun scripts/playground-pin.ts)"
+          echo "result=$result" >> "$GITHUB_OUTPUT"
 
-      - name: Build playground
+      # Never combined with a pending pin PR: every way of merging two bumps could drop a version.
+      - name: Open the pin PR
+        if: steps.pin.outputs.result == 'changed'
         env:
-          # Deployed assets have no dev proxy; the optional secret overrides the public node.
-          AZTEC_NODE_URL: ${{ secrets.TESTNET_AZTEC_NODE_URL || 'https://v5.testnet.rpc.aztec-labs.com' }}
-        run: bun run --cwd packages/playground build
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          BRANCH: chore/playground-sdk-pin-${{ github.run_id }}-${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          open="$(gh pr list --state open --limit 1000 --json number,headRefName,isCrossRepository \
+            --jq '[.[] | select((.isCrossRepository | not) and (.headRefName | startswith("chore/playground-sdk-pin-"))) | "#\(.number)"] | join(" ")')"
+          if [ -n "$open" ]; then
+            echo "::error::playground pin PR $open is still open: merge it, then re-run this job (closing it drops its versions)"
+            exit 1
+          fi
 
-      - name: Deploy playground Worker
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_DEPLOY_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: bunx wrangler deploy --config packages/playground/wrangler.jsonc
+          presto="$(jq -r '."@alejoamiras/presto"' packages/playground/published-sdk.json)"
+          noir="$(jq -r '."@alejoamiras/presto-noir"' packages/playground/published-sdk.json)"
+          title="chore(playground): build production from presto ${presto}, presto-noir ${noir}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$BRANCH"
+          git add packages/playground/published-sdk.json
+          git commit -m "$title"
+          git push origin "$BRANCH"
+          head="$(git rev-parse HEAD)"
+
+          gh pr create --base main --head "$BRANCH" --title "$title" \
+            --body "Raised by $RUN_URL. Merging deploys playground.presto.build through Workers Builds; App's Published Playground Build verifies the pinned publications first."
+          gh pr merge "$BRANCH" --auto --squash --delete-branch --match-head-commit "$head"

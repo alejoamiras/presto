@@ -30,7 +30,7 @@ describe("npm release workflow contract", () => {
       expect(block).toContain("uses: ./.github/workflows/_publish-npm.yml");
       expect(block).toContain("id-token: write");
     }
-    for (const name of ["assert-main", "plan", "noir-gates", "deploy-app"]) {
+    for (const name of ["assert-main", "plan", "noir-gates", "bump-playground"]) {
       expect(job(release, name)).not.toContain("id-token");
     }
     expect(release.match(/id-token: write/g)?.length).toBe(publishJobs.length);
@@ -53,7 +53,6 @@ describe("npm release workflow contract", () => {
       const block = job(release, name);
       expect(block).toContain("needs: [assert-main, plan, e2e, dependency-audit");
       expect(block).toContain("!inputs.dry_run");
-      expect(block).toContain("inputs.mode != 'playground-only'");
       expect(block).toMatch(/version: \$\{\{ needs\.plan\.outputs\.version_[a-z_]+ \}\}/);
     }
     expect(publish).toMatch(/PLANNED: \$\{\{ inputs\.version \}\}/);
@@ -62,8 +61,7 @@ describe("npm release workflow contract", () => {
         "(needs.publish-core.result == 'success' || needs.publish-core.result == 'skipped')",
       );
     }
-    // Noir's production gates run at the release SHA before it publishes; presto publishes last so
-    // the playground deployment sees both adapters on the registry.
+    // Noir's production gates run at the release SHA before it publishes; presto publishes last.
     const gates = job(release, "noir-gates");
     expect(gates).toContain("uses: ./.github/workflows/_ts-package-ci.yml");
     expect(gates).toContain("package: presto-noir");
@@ -160,45 +158,61 @@ describe("publish job isolation", () => {
   });
 });
 
-describe("playground deployment", () => {
-  test("playground verification uses the publish job's Node/npm toolchain", () => {
-    const deploy = release.slice(release.indexOf("  deploy-app:"));
-    const setup = deploy.indexOf(
-      "uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020",
-    );
-    expect(setup).toBeGreaterThan(0);
-    expect(deploy.slice(setup)).toContain("node-version: 24");
-    expect(setup).toBeLessThan(deploy.indexOf("bun scripts/published-playground.ts"));
+describe("playground pin", () => {
+  const bump = job(release, "bump-playground");
+  const steps = (
+    Bun.YAML.parse(release) as { jobs: Record<string, { steps: Array<{ run?: string }> }> }
+  ).jobs["bump-playground"]?.steps;
+
+  test("the release deploys nothing itself: no mode input, no Cloudflare credential", () => {
+    expect(release).not.toMatch(/^\s+mode:|inputs\.mode/m);
+    expect(release).not.toMatch(/CLOUDFLARE_|wrangler/);
   });
-  test("waits for every selected publication and tolerates unselected ones", () => {
-    const deploy = job(release, "deploy-app");
-    expect(deploy).toContain(
-      "needs: [assert-main, plan, e2e, dependency-audit, publish-core, publish-noir, publish-presto, publish-banners]",
+
+  test("waits for every scheduled publication and tolerates unscheduled or reused ones", () => {
+    expect(bump).toContain(
+      "needs: [plan, e2e, dependency-audit, publish-core, publish-noir, publish-presto]",
+    );
+    // Without an explicit status function, a skipped upstream publish job would skip this one too.
+    expect(bump).toContain(
+      "if: ${{ !cancelled() && !inputs.dry_run && needs.plan.result == 'success'",
     );
     for (const [jobName, slug] of [
       ["publish-core", "presto_core"],
       ["publish-noir", "presto_noir"],
       ["publish-presto", "presto"],
-      ["publish-banners", "presto_banners"],
     ]) {
-      expect(deploy).toContain(
-        `(needs.${jobName}.result == 'success' || (needs.${jobName}.result == 'skipped' && needs.plan.outputs.publish_${slug} != 'true'))`,
+      expect(bump).toContain(
+        `(needs.plan.outputs.publish_${slug} != 'true' || needs.${jobName}.result == 'success')`,
       );
     }
-    expect(deploy).toContain("inputs.mode == 'playground-only' ||");
-    // Only a version published in THIS run may be passed; the plan's version_presto is the next
-    // publication (a playground-only run would otherwise ask for an unpublished revision).
-    expect(deploy).toMatch(
-      /PUBLISHED_VERSION: \$\{\{ needs\.publish-presto\.outputs\.version \}\}/,
-    );
-    expect(deploy).not.toContain("needs.plan.outputs.version_presto");
   });
 
-  test("the deployed bundle targets the public testnet node when no secret overrides it", () => {
-    const deploy = job(release, "deploy-app");
-    expect(deploy).toMatch(
-      /AZTEC_NODE_URL: \$\{\{ secrets\.TESTNET_AZTEC_NODE_URL \|\| 'https:\/\/v5\.testnet\.rpc\.aztec-labs\.com' \}\}/,
+  test("versions reach the pin script only through the environment", () => {
+    // Only a version published in THIS run: the plan's version_presto is the next publication.
+    expect(bump).toContain(`PRESTO_VERSION: \${{ needs.publish-presto.outputs.version }}`);
+    expect(bump).toContain(`PRESTO_NOIR_VERSION: \${{ needs.plan.outputs.version_presto_noir }}`);
+    expect(bump).not.toContain("needs.plan.outputs.version_presto }}");
+    expect(steps?.some((step) => step.run?.includes("bun scripts/playground-pin.ts"))).toBe(true);
+    expect(steps?.filter((step) => step.run?.includes("${{"))).toEqual([]);
+  });
+
+  test("a least-privilege bot opens a fresh PR, never stacks on an open one, and merges only its head", () => {
+    expect(bump).toContain("permissions: {}");
+    expect(bump).toContain("permission-contents: write");
+    expect(bump).toContain("permission-pull-requests: write");
+    expect(bump).not.toContain("bun install");
+    expect(bump).toContain(
+      `BRANCH: chore/playground-sdk-pin-\${{ github.run_id }}-\${{ github.run_attempt }}`,
     );
+    const guard = bump.indexOf('startswith("chore/playground-sdk-pin-")');
+    expect(guard).toBeGreaterThan(0);
+    expect(bump.indexOf("exit 1", guard)).toBeLessThan(bump.indexOf('git push origin "$BRANCH"'));
+    expect(bump).not.toContain("--force");
+    expect(bump).toContain('--auto --squash --delete-branch --match-head-commit "$head"');
+  });
+
+  test("the production bundle targets the public testnet node", () => {
     const vite = readFileSync(resolve(repository, "packages/playground/vite.config.ts"), "utf8");
     expect(vite).toContain(
       'const TESTNET_AZTEC_NODE_URL = "https://v5.testnet.rpc.aztec-labs.com"',

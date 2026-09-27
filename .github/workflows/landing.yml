@@ -35,7 +35,6 @@ jobs:
               - 'bunfig.toml'
               - '.bun-version'
               - '.github/workflows/landing.yml'
-              - '.github/workflows/deploy-landing.yml'
               - '.github/workflows/deploy-release-feed.yml'
       - name: Override for manual dispatch
         if: github.event_name == 'workflow_dispatch'

@@ -11,14 +11,16 @@ const AZTEC_VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly|spartan|devnet|aztecnr
 // The Noir adapter's exact `@aztec/bb.js` peer (and its dev copy) move with every Aztec bump; its
 // `TESTED_BB_VERSIONS` constant is a separate, deliberate step — the adapter's tests fail loud
 // until the new pairing is declared tested.
-const PACKAGE_JSON_FILES = [
+export const PACKAGE_JSON_FILES = [
   "packages/sdk/package.json",
   "packages/playground/package.json",
   "packages/sdk-noir/package.json",
 ];
 const DEPENDENCY_SECTIONS = ["dependencies", "devDependencies", "peerDependencies"] as const;
 // The Noir consumer host installs the adapter's peer itself; a flat `{ name: version }` file.
-const HOST_DEPENDENCY_FILES = ["scripts/tarball-consumer/presto-noir/host-dependencies.json"];
+export const HOST_DEPENDENCY_FILES = [
+  "scripts/tarball-consumer/presto-noir/host-dependencies.json",
+];
 
 /**
  * Companion packages that must stay in version-lockstep with @aztec/*: their generated
@@ -101,7 +103,7 @@ async function findMissingPackages(version: string, packageFiles: string[]): Pro
   return missing;
 }
 
-const CRS_FILE = "packages/playground/src/aztec.ts";
+export const CRS_FILE = "packages/playground/src/aztec.ts";
 
 /** Bump CRS_CACHE_VERSION so returning playground visitors re-download the CRS if bb.js changed its format. */
 async function updateCrsCacheVersion(version: string): Promise<boolean> {

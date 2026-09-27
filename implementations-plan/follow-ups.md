@@ -8,13 +8,12 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 
 ## Dated — one cliff, 2026-11-30
 
-- **All ten dependency-audit exceptions expire on the same day.**
+- **All nine dependency-audit exceptions expire on the same day.**
   `scripts/dependency-audit-allowlist.json` accepts GHSA entries for `@opentelemetry/propagator-jaeger`,
-  `undici` (×3), `deepmerge-ts`, `extract-zip` (×2), `serialize-javascript`, `js-yaml` and `sharp`,
-  every one with `"expires": "2026-11-30"`. On 2026-12-01 the audit gate goes red on all ten at once.
-  Two are already fixable without upstream movement: js-yaml 4.3.2 only needs the release-age gate to
-  clear plus a lockfile refresh, and sharp 0.35.4 needs wrangler's miniflare to move. The rest are
-  pinned by Aztec 5.2 or the WebdriverIO stack. **Verified 2026-09-18.**
+  `undici` (×3), `deepmerge-ts`, `extract-zip` (×2), `serialize-javascript` and `js-yaml`, every one
+  with `"expires": "2026-11-30"`. On 2026-12-01 the audit gate goes red on all nine at once. js-yaml
+  4.3.2 only needs the release-age gate to clear plus a lockfile refresh; the rest are pinned by
+  Aztec 5.2 or the WebdriverIO stack. (sharp left with wrangler 4.135.) **Verified 2026-09-26.**
 
 ## Owner actions
 
@@ -25,10 +24,12 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   Apache-2.0 text. The playground now vendors the upstream texts
   (`packages/playground/licensing/license-fallbacks.ts`); each rule there can go once upstream ships
   the file itself. **Verified 2026-09-21.**
-- **The three Cloudflare API tokens versus Workers Builds.** `CLOUDFLARE_DEPLOY_API_TOKEN` and
-  `CLOUDFLARE_RELEASE_FEED_DEPLOY_API_TOKEN` are long-lived deploy tokens in repository secrets that
-  connecting the repo to Workers Builds would retire; `CLOUDFLARE_RELEASE_FEED_API_TOKEN` writes the
-  updater feed's KV from the promote job and has to stay. Not verified.
+- **Retire the site deploy token once Workers Builds has served a day.** No workflow reads
+  `CLOUDFLARE_DEPLOY_API_TOKEN` or `PRESTO_PREVIEWS_ENABLED` any more: revoke the token in
+  Cloudflare, then `gh secret delete CLOUDFLARE_DEPLOY_API_TOKEN` and
+  `gh variable delete PRESTO_PREVIEWS_ENABLED`. Until then, reverting the workers-builds PR (and
+  disconnecting Builds) restores the Actions path. Both release-feed tokens stay: the feed Worker is
+  out of Workers Builds by decision. `workers-builds/plan.md` (Owner steps). **Verified 2026-09-26.**
 - **The `bb.exe` text-mode I/O bug was never reported upstream.** Barretenberg reads and writes binary
   files in text mode on Windows, so key reads truncate at the first 0x1A and proof writes expand every
   0x0A. Presto routes around it with `--output_format json`; every other consumer on Windows silently
@@ -73,9 +74,29 @@ None of these were re-checked on 2026-09-18.
   Harmless at runtime; trim with the package's `files`. **Verified 2026-09-25.**
 - **`app.yml` has no workflow-level `permissions: contents: read`** — scoped out of lna-consent.
   Not re-verified.
+- **`bump-playground` has never run, and bot auto-merge has never been seen firing** — the first
+  `release-sdk` run after the Workers Builds cutover is the first exercise of the pin PR.
+  `workers-builds/plan.md` (A2, I10)
+- **`_aztec-update.yml` does not stage `host-dependencies.json`** — `update-aztec-version.ts` rewrites
+  `scripts/tarball-consumer/presto-noir/host-dependencies.json` (the `@aztec/bb.js` pin), the step's
+  `git add` list omits it, and its own `git diff --exit-code` guard should then fail the next Aztec
+  update PR. **Verified 2026-09-26** by reading both files; not reproduced.
+- **Three App-token bot-PR sequences** — `release-presto.yml` `bump-source`, `_aztec-update.yml` and
+  `release-sdk.yml` `bump-playground` each mint a token, cut a branch, open a PR and enable
+  auto-merge. A shared composite action would consolidate them. **Verified 2026-09-26.**
 
 ## Accepted residual risk — standing decisions, not work
 
+- **Every site build runs next to an account-wide Workers token (workers-builds A3)** — Workers
+  Scripts Edit cannot be narrowed below the account, so build-time code on any branch of this repo
+  could redeploy any Worker, the release-feed Worker included. Mitigated by `--ignore-scripts`, the
+  release-age floor and a repo-scoped GitHub App; the builds use Cloudflare's default token (a
+  narrower custom one is optional and would not change this boundary). Accepted by the owner
+  2026-09-25. `workers-builds/plan.md` (Security)
+- **Fork PRs were never tested against Workers Builds (workers-builds I2)** — the owner skipped the
+  controlled fork check on 2026-09-27. Cloudflare documents builds for pushes to the connected
+  repository and says nothing about forks; if a fork PR ever shows a Workers Builds check, turn
+  preview builds off on both Workers. `docs/CLOUDFLARE_DEPLOYMENT.md` (Cutover, step 3)
 - **`@aztec/*` is exempt from the seven-day release-age floor** (owner decision 2026-08-18, 31 exact
   package names in `bunfig.toml`; a glob is silently ignored, and the list must cover the full
   resolved transitive graph). Aztec releases are consumed same-day by design, so for this scope

@@ -3,6 +3,7 @@ import {
   baseVersionFor,
   resolvePackageVersion,
   resolvePublishVersion,
+  revisionOrder,
 } from "./get-sdk-publish-version";
 import { NPM_PACKAGES } from "./npm-packages.ts";
 
@@ -102,5 +103,17 @@ describe("baseVersionFor", () => {
     ).toBe("5.2.0");
     expect(() => baseVersionFor(manifestMode, {})).toThrow("has no version");
     expect(() => baseVersionFor(aztecDerived, { version: "0.0.0" })).toThrow("no @aztec/stdlib");
+  });
+});
+
+describe("revisionOrder", () => {
+  test("a base publishes before its revisions, and revisions before the next base", () => {
+    const published = ["5.2.0", "5.2.0-revision.1", "5.2.0-revision.10", "5.3.0"];
+    expect([...published].reverse().sort(revisionOrder)).toEqual(published);
+    expect(revisionOrder("5.2.0-revision.5", "5.2.0-revision.5")).toBe(0);
+  });
+
+  test("rejects versions outside the stable aztec-derived shape", () => {
+    expect(() => revisionOrder("5.3.0-nightly.20260224", "5.3.0")).toThrow("not a stable");
   });
 });
