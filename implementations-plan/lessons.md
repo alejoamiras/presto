@@ -88,9 +88,9 @@ not belong here. Sections are stable; append, never re-sort.
   identity should install nothing. `archive/presto-noir/lessons/audit-fixes.md`
 - **npm's attestation endpoint 404s for minutes after a successful publish** — timing, not a missing
   signature; wait on a ten-minute scale. `archive/presto-noir/lessons/audit-fixes.md`
-- **npm says "not found" rather than "forbidden", and dist-tag reads are CDN-cached** — only an
-  identified `E404` proves absence; verify a promotion through an uncached read.
-  `archive/presto-noir/lessons/arc-2-review.md`
+- **npm says "not found" rather than "forbidden", and registry reads are CDN-cached** — a write with
+  an expired `npm login` 404s too (check `npm whoami`), and only an identified `E404` proves absence.
+  Verify a promotion or deprecation through an uncached read. `archive/presto-noir/lessons/arc-2-review.md`
 - **`npm trust` mis-parses `--otp <code>`; write `--otp=<code>`** (npm 11.16, 2026-09). Its web OTP
   flow cannot complete from a non-interactive shell. `archive/presto-banners-publish/lessons/codex-loop.md`
 - **A publish job interrupted after `npm publish` strands the version** — no tag, release or

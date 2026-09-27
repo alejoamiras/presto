@@ -30,9 +30,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   `gh variable delete PRESTO_PREVIEWS_ENABLED`. Until then, reverting the workers-builds PR (and
   disconnecting Builds) restores the Actions path. Both release-feed tokens stay: the feed Worker is
   out of Workers Builds by decision. `workers-builds/plan.md` (Owner steps). **Verified 2026-09-26.**
-- **Deprecate `@alejoamiras/presto@5.2.0-revision.4`.** Its release run was cancelled after
-  `npm publish`, so it has no tag, GitHub release or verification; revision.5 superseded it. Needs the
-  owner's OTP: `npm deprecate @alejoamiras/presto@5.2.0-revision.4 "<message>" --otp=<code>`.
 - **The next `release-sdk` must bump `presto-core` and `presto-noir` (patch).** Their `files` changed
   after 1.2.0 was tagged, and the release planner refuses to reuse a version whose package changed.
 - **The `bb.exe` text-mode I/O bug was never reported upstream.** Barretenberg reads and writes binary
