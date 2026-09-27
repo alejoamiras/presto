@@ -12,6 +12,7 @@
   "exports": "./src/index.ts",
   "files": [
     "src",
+    "!src/**/*.test.ts",
     "dist"
   ],
   "scripts": {

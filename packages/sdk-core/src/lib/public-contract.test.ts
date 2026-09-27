@@ -59,7 +59,7 @@ describe("public contract", () => {
     expect(pkg.name).toBe("@alejoamiras/presto-core");
     expect(pkg.version).toMatch(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.]+)?$/);
     expect(pkg.publishConfig).toEqual({ access: "public" });
-    expect(pkg.files).toEqual(["src", "dist"]);
+    expect(pkg.files).toEqual(["src", "!src/**/*.test.ts", "dist"]);
     for (const name of Object.keys({ ...pkg.dependencies, ...pkg.peerDependencies })) {
       expect(name.startsWith("@aztec/")).toBe(false);
     }

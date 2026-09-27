@@ -4,9 +4,9 @@
  * native proof, then reloads back to not connected and HTTPS-only. This intentionally does not run a second proof after reload.
  */
 import { expect, test } from "@playwright/test";
-import { connectPresto } from "./connect";
+import { connectPresto, useHttpForSession } from "./connect";
 import { assertServicesAvailable } from "./fullstack.fixture";
-import { deployAndAssert } from "./fullstack.helpers";
+import { deployAndAssert, expectNativeProof } from "./fullstack.helpers";
 
 function isHttpProve(urlString: string): boolean {
   const url = new URL(urlString);
@@ -49,10 +49,7 @@ test("HTTP proving requires per-tab consent and resets on reload", async ({ brow
   await expect(page.locator("#presto-secure-title")).toHaveText("Encrypted Connection is disabled");
   expect(proveRequests, "diagnosis must never send a proof request").toEqual([]);
 
-  await page.locator("#presto-use-http").click();
-  await expect(page.locator("#http-session-confirmation")).toBeVisible();
-  await page.locator("#http-session-confirm").click();
-  await expect(page.locator("#presto-label")).toHaveText("running");
+  await useHttpForSession(page);
 
   await page.locator("#mode-accelerated").click();
   await deployAndAssert(page, "accelerated");
@@ -71,12 +68,7 @@ test("HTTP proving requires per-tab consent and resets on reload", async ({ brow
     }),
     `expected a successful native HTTP proof after consent; saw ${JSON.stringify(proveHits)}`,
   ).toBe(true);
-  const phases = await page.evaluate(
-    () => (window as Window & { __PRESTO_PHASES__?: string[] }).__PRESTO_PHASES__ ?? [],
-  );
-  expect(phases).toContain("receive");
-  expect(phases).not.toContain("fallback");
-  expect(phases).not.toContain("denied");
+  await expectNativeProof(page);
 
   const requestCount = proveRequests.length;
   await page.reload();
