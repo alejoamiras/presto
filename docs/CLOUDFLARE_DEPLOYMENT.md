@@ -35,7 +35,7 @@ branch decision lives in `scripts/workers-build.ts`.
 | Preview command | `bunx wrangler preview --config packages/landing/wrangler.jsonc` | `bunx wrangler preview --config packages/playground/wrangler.jsonc` |
 | Build variables | `BUN_VERSION=1.4.0`, `SKIP_DEPENDENCY_INSTALL=1` | same, plus `NODE_VERSION=24.20.0` |
 | Build watch paths (include) | `packages/landing/*`, `scripts/*`, `package.json`, `bun.lock`, `bunfig.toml`, `.bun-version` | `packages/playground/*`, `packages/sdk/*`, `packages/sdk-core/*`, `packages/sdk-noir/*`, `packages/banners/*`, `fixtures/noir/*`, `scripts/*`, `.github/scripts/*`, `package.json`, `bun.lock`, `bunfig.toml`, `.bun-version`, `tsconfig.json` |
-| API token | the default one Cloudflare creates on connect | same |
+| API token | the custom build token below | same |
 
 The build script installs with `--frozen-lockfile --ignore-scripts` (no dependency lifecycle script
 runs next to the token), refuses a Bun other than `.bun-version`, and for the playground checks npm
@@ -56,21 +56,23 @@ included, uses the workspace. The pin moves through the release flow in
 production-only. Previews never enter `verified-sites.json`, so Presto treats them as ordinary
 deny-by-default origins. Cloudflare keeps the latest 100 per Worker.
 
-**Build token.** Connecting a Worker makes Cloudflare create the token its builds deploy with; it
-never leaves Cloudflare. The default also grants KV, R2 and all-zone route edit. Optional
-hardening: a custom token with only Account › Workers Scripts Edit, Account › Account Settings Read,
-Zone `presto.build` › Workers Routes Edit and Zone Read, User › User Details Read and Memberships
-Read. It removes direct KV/R2 access, not the account-wide boundary below. Install the Cloudflare
-GitHub App on `alejoamiras/presto` only.
+**Build token.** The token builds deploy with never leaves Cloudflare. The one Cloudflare creates on
+connect also grants KV, R2 and all-zone route edit, so both Workers use a custom token (Settings →
+Build → API token) with only Account › Workers Scripts Edit, Account › Account Settings Read, Zone
+`presto.build` › Workers Routes Edit and Zone Read, User › User Details Read and Memberships Read.
+It removes direct KV/R2 access, not the account-wide boundary below. If a production deploy fails
+on the custom domains, add Zone `presto.build` › DNS Edit. Install the Cloudflare GitHub App on
+`alejoamiras/presto` only.
 
 **The real boundary is the account.** Workers Scripts Edit is account-wide, so any code that runs
 in a build (a preview branch included) could in the worst case redeploy any Worker in the account,
 the release-feed Worker among them. Clients verify the feed's Ed25519 signature, so the worst case
 on the updater path is a withheld or replayed older signed feed; on the landing it is altered
 download links. Builds come from pushes to branches of this repository (the owner and the
-release-bot App). Cloudflare's docs describe builds for pushes to the connected repository and say
-nothing about fork PRs, so fork exclusion is **unverified** until the cutover's fork check passes. Build variables are compiled into
-public bundles; never put a secret in one.
+release-bot App). Cloudflare's docs say nothing about fork PRs; the cutover's fork check passed on
+2026-09-27 (a fork PR touching `scripts/` got no build, check or comment), so recheck it after any
+change to the Builds connection or Cloudflare's preview behaviour. Build variables are compiled
+into public bundles; never put a secret in one.
 `AZTEC_NODE_URL` defaults to the public testnet node at build time; set it only to override.
 
 **Rollback.** A dashboard or `wrangler rollback` is overwritten by the next production build.

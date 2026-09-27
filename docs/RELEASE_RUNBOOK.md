@@ -292,6 +292,11 @@ bundles it from the workspace, and its published artifact is proven by the tarba
   carry over and a fresh branch is cut from `main`. Do not just close it: the re-run carries only
   its own run's versions, so the closed PR's would be lost. If it must not merge, carry its versions
   over with the manual fallback below.
+- **The bot's PR path** (`.github/actions/bot-push` then `bot-pr`, shared with `bump-source` and
+  the Aztec updates) needs the repository's "Allow auto-merge" setting; without it every bot PR
+  opened but stayed unmerged. Dispatching **Release Bot Token Check** runs that path end to end on a
+  throwaway PR, enabling and then disabling auto-merge without merging anything. Run it after
+  changing either action or the App's permissions.
 - **Manual fallback**: in a PR, run
   `PRESTO_VERSION=<version> PRESTO_NOIR_VERSION=<version> bun scripts/playground-pin.ts` (either may
   be empty). A deliberate move back to an older SDK is a hand-edited, reviewed pin.
