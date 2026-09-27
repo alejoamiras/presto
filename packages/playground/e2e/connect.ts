@@ -24,6 +24,17 @@ export async function connectPresto(page: Page): Promise<void> {
 }
 
 /**
+ * Takes the page's per-tab consent to prove over plain HTTP, the only listener the headless server
+ * has. The page must already be showing the Encrypted Connection help.
+ */
+export async function useHttpForSession(page: Page): Promise<void> {
+  await page.locator("#presto-use-http").click();
+  await expect(page.locator("#http-session-confirmation")).toBeVisible();
+  await page.locator("#http-session-confirm").click();
+  await expect(page.locator("#presto-label")).toHaveText("running");
+}
+
+/**
  * Replaces the browser's stored Local Network Access decision for the page. The stub reports no
  * change events; tests move it with `setMockPermission`.
  */

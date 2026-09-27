@@ -3,10 +3,9 @@ import { connectPresto } from "./connect";
 
 /**
  * Real-browser Noir proofs against the dev server: bb.js WASM workers in Chromium (CRS from the
- * network), then Presto natively when PRESTO_URL is set — a presence flag, as in
- * demo.smoke.spec.ts: the page talks to its default loopback endpoints (HTTPS in the browser), so
- * the presto must serve the HTTPS listener. No Aztec node or wallet is needed. The production
- * bundle's packaging is covered by noir.production-smoke.spec.ts.
+ * network), then Presto natively when PRESTO_URL names an HTTPS one. The Noir backend ignores the
+ * page's HTTP consent, so an `http:` URL (the headless server) skips the native proof. No Aztec node
+ * or wallet is needed. The production bundle's packaging is covered by noir.production-smoke.spec.ts.
  *
  * Usage: bun run --cwd packages/playground test:e2e:smoke
  */
@@ -48,6 +47,7 @@ test("proves the Noir fixture in the browser with real bb.js WASM", async () => 
 test.describe("with Presto", () => {
   test.beforeEach(() => {
     test.skip(!PRESTO_URL, "PRESTO_URL env var not set");
+    test.skip(PRESTO_URL.startsWith("http:"), "the Noir backend proves natively over HTTPS only");
   });
 
   test("proves the Noir fixture natively, never falling back", async () => {
