@@ -76,9 +76,10 @@ None of these were re-checked on 2026-09-18.
 - **`bump-playground`'s own steps have never run, and a bot auto-merge has never been seen firing**
   — every `bump-source` run (2026-09-06 to 09-20) opened its PR and then failed with "Auto merge is
   not allowed for this repository"; the owner merged those by hand and has since enabled the
-  setting. Release Bot Token Check now runs the shared bot path, auto-merge included, short of the
-  merge itself. The first `release-sdk` run after the cutover is still the first pin PR, and the
-  first bot PR whose auto-merge is expected to fire. `workers-builds/plan.md` (A2, I10)
+  setting. Release Bot Token Check now runs the shared bot path short of the merge itself; its run
+  36356273867 (2026-09-27, throwaway PR #65) was the App's first successful auto-merge enable. The
+  first `release-sdk` run after the cutover is still the first pin PR, and the first bot PR whose
+  auto-merge is expected to fire. `workers-builds/plan.md` (A2, I10)
 
 ## Accepted residual risk — standing decisions, not work
 
