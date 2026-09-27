@@ -21,9 +21,12 @@ runs:
       shell: bash
       env:
         AZTEC_NODE_URL: ${{ inputs.aztec_node_url }}
+      # Hosted nodes answer GET /status with 405; the JSON-RPC call works on every node.
       run: |
+        body='{"jsonrpc":"2.0","id":1,"method":"node_getNodeInfo","params":[]}'
         for i in $(seq 1 60); do
-          if curl -sf "${AZTEC_NODE_URL}/status" > /dev/null 2>&1; then
+          if curl -sf --max-time 10 -H 'Content-Type: application/json' -d "$body" "$AZTEC_NODE_URL" 2>/dev/null \
+            | grep -q '"nodeVersion"'; then
             echo "Aztec node ready (attempt $i)"
             exit 0
           fi
