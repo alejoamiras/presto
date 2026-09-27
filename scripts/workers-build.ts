@@ -82,3 +82,4 @@ if (import.meta.main) {
     if (exitCode !== 0) process.exit(exitCode ?? 1);
   }
 }
+// fork-check: throwaway change from a fork; never merged.
