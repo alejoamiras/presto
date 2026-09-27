@@ -1513,25 +1513,25 @@ jobs:
             done
           done
 
-      - name: Create PR
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          NEXT_VERSION: ${{ steps.next.outputs.version }}
-          RELEASED: ${{ needs.validate.outputs.version }}
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+      - name: Push the bump branch
+        id: push
+        uses: ./.github/actions/bot-push
+        with:
+          branch: chore/bump-presto-${{ steps.next.outputs.version }}
+          message: "chore(presto): bump source version to ${{ steps.next.outputs.version }}"
+          paths: |
+            packages/presto/src-tauri/tauri.conf.json
+            packages/presto/src-tauri/Cargo.toml
+            packages/presto/server/Cargo.toml
+            packages/presto/src-tauri/Cargo.lock
+            packages/presto/server/Cargo.lock
 
-          BRANCH="chore/bump-presto-${NEXT_VERSION}"
-          git checkout -b "$BRANCH"
-          git add packages/presto/src-tauri/tauri.conf.json packages/presto/src-tauri/Cargo.toml packages/presto/server/Cargo.toml packages/presto/src-tauri/Cargo.lock packages/presto/server/Cargo.lock
-          git commit -m "chore(presto): bump source version to ${NEXT_VERSION}"
-          git push -u origin "$BRANCH"
-
-          gh pr create \
-            --base main \
-            --head "$BRANCH" \
-            --title "chore(presto): bump source version to ${NEXT_VERSION}" \
-            --body "Automated post-release version bump after releasing ${RELEASED}."
-
-          gh pr merge "$BRANCH" --auto --squash --delete-branch
+      - name: Open the bump PR
+        uses: ./.github/actions/bot-pr
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: chore/bump-presto-${{ steps.next.outputs.version }}
+          title: "chore(presto): bump source version to ${{ steps.next.outputs.version }}"
+          body: Automated post-release version bump after releasing ${{ needs.validate.outputs.version }}.
+          auto-merge: "true"
+          head: ${{ steps.push.outputs.head }}

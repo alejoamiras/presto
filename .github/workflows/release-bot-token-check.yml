@@ -1,16 +1,14 @@
 name: Release Bot Token Check
 
-# Dispatch-only diagnostic. Proves the release-bot GitHub App + its secrets mint
-# a working installation token with exactly the perms `bump-source` needs
-# (contents:write + pull_requests:write) AND that an App-token PR triggers the
-# required CI checks — WITHOUT merging anything. Run once before relying on the
-# App token at a real stable cut.
+# Dispatch-only diagnostic. Runs the release bot's real PR path (bot-push + bot-pr, the actions every
+# bot PR uses) with the permissions `bump-source` and `bump-playground` mint, and proves that
+# the App token can push, open a CI-triggering PR, label and comment on it, and enable auto-merge
+# pinned to the pushed head — WITHOUT merging anything. Auto-merge is switched off again at once:
+# the PR's required checks have not started by then, so it cannot fire.
 #
-# It creates a throwaway branch off main + a trivial commit under
-# packages/presto/** (so the Presto gate actually fires), opens a PR
-# against main, asserts check-runs appear on it, then closes the PR + deletes the
-# branch + cancels the triggered runs. The App token does the writes; the default
-# GITHUB_TOKEN does only the read assertions + run cancellation.
+# Dispatched from a feature ref, the smoke branch carries that ref's diff. Cleanup always closes the
+# PR, deletes the branch and cancels the runs it triggered. The App token does the writes; the
+# default GITHUB_TOKEN does only the read assertions and the run cancellation.
 
 on:
   workflow_dispatch:
@@ -23,9 +21,11 @@ permissions:
 
 jobs:
   check:
-    name: Mint App token + prove push/PR/CI-trigger
+    name: Mint App token + prove push/PR/auto-merge/CI-trigger
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    env:
+      BR: release-bot-smoke-${{ github.run_id }}
     steps:
       - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
         id: app-token
@@ -36,70 +36,93 @@ jobs:
           permission-pull-requests: write
           permission-issues: write
 
-      - name: Prove the App token can push + open a CI-triggering PR + label/comment (issues:write)
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+
+      # Under packages/presto/** so the Presto gate fires, and its long jobs keep a required check
+      # pending for minutes.
+      - name: Write the smoke change
+        run: printf 'release-bot token smoke %s\n' "$BR" > packages/presto/.release-bot-smoke
+
+      - name: Push the smoke branch (contents:write)
+        id: push
+        uses: ./.github/actions/bot-push
+        with:
+          branch: ${{ env.BR }}
+          message: "chore: release-bot token smoke (throwaway)"
+          paths: packages/presto/.release-bot-smoke
+
+      - name: Open the smoke PR with auto-merge (pull_requests:write + contents:write)
+        id: pr
+        uses: ./.github/actions/bot-pr
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: ${{ env.BR }}
+          title: "chore: release-bot token smoke (auto-closing, do not merge)"
+          body: Throwaway PR verifying the release-bot GitHub App token. Auto-closed by the Release Bot Token Check workflow.
+          auto-merge: "true"
+          head: ${{ steps.push.outputs.head }}
+
+      - name: Prove auto-merge registered, then switch it off
         env:
-          APP_TOKEN: ${{ steps.app-token.outputs.token }}
-          GH_TOKEN: ${{ github.token }} # default token: read checks/runs + cancel
-          REPO: ${{ github.repository }}
-          BR: release-bot-smoke-${{ github.run_id }}
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUM: ${{ steps.pr.outputs.number }}
         run: |
           set -euo pipefail
-          PR_NUM=""
+          method="$(gh pr view "$PR_NUM" --json autoMergeRequest --jq '.autoMergeRequest.mergeMethod // empty')"
+          gh pr merge "$PR_NUM" --disable-auto
+          if [ "$method" != SQUASH ]; then
+            echo "::error::auto-merge did not register on PR #$PR_NUM (got '${method:-none}')"
+            exit 1
+          fi
+          echo "✅ auto-merge registered (squash, pinned to the pushed head) and switched off"
 
-          # cleanup runs indirectly via `trap cleanup EXIT`, so shellcheck's
-          # reachability analysis flags its body — SC2329 (never invoked) and
-          # SC2317 (unreachable) are both false positives here.
-          # shellcheck disable=SC2317,SC2329
-          cleanup() {
-            set +e
-            [ -n "$PR_NUM" ] && GH_TOKEN="$APP_TOKEN" gh pr close "$PR_NUM" --repo "$REPO" --comment "release-bot smoke cleanup" 2>/dev/null
-            GH_TOKEN="$APP_TOKEN" gh api -X DELETE "repos/$REPO/git/refs/heads/$BR" 2>/dev/null
-            # cancel the gate runs the PR triggered (default token, actions:write)
-            for rid in $(gh api "repos/$REPO/actions/runs?branch=$BR&per_page=100" --jq '.workflow_runs[].id' 2>/dev/null); do
-              gh api -X POST "repos/$REPO/actions/runs/$rid/cancel" >/dev/null 2>&1
-            done
-            echo "── cleanup done (branch + PR removed, triggered runs cancelled) ──"
-          }
-          trap cleanup EXIT
+      # The @aztec update workflows label their PRs and close stale ones with a comment; those go
+      # through the issues label/comment endpoints.
+      - name: Prove issues:write (label + comment)
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          PR_NUM: ${{ steps.pr.outputs.number }}
+        run: |
+          gh pr edit "$PR_NUM" --add-label dependencies
+          gh pr comment "$PR_NUM" --body "release-bot issues:write smoke — auto-closing"
+          echo "✅ issues:write — label and comment"
 
-          BASE_SHA=$(gh api "repos/$REPO/git/refs/heads/main" --jq '.object.sha')
-
-          # contents:write — create the branch, then a trivial commit under
-          # packages/presto/** so the Presto PR gate actually fires.
-          GH_TOKEN="$APP_TOKEN" gh api -X POST "repos/$REPO/git/refs" \
-            -f ref="refs/heads/$BR" -f sha="$BASE_SHA" >/dev/null
-          echo "✅ contents:write — branch $BR created"
-          GH_TOKEN="$APP_TOKEN" gh api -X PUT "repos/$REPO/contents/packages/presto/.release-bot-smoke" \
-            -f message="chore: release-bot token smoke (throwaway)" \
-            -f content="$(printf 'release-bot token smoke %s\n' "$BR" | base64 | tr -d '\n')" \
-            -f branch="$BR" >/dev/null
-          echo "✅ contents:write — commit pushed on $BR"
-
-          # pull_requests:write — open the PR against main (this is what triggers CI).
-          PR_URL=$(GH_TOKEN="$APP_TOKEN" gh pr create --repo "$REPO" --base main --head "$BR" \
-            --title "chore: release-bot token smoke (auto-closing, do not merge)" \
-            --body "Throwaway PR verifying the release-bot GitHub App token. Auto-closed by the Release Bot Token Check workflow.")
-          PR_NUM=$(printf '%s' "$PR_URL" | grep -oE '[0-9]+$')
-          echo "✅ pull_requests:write — opened PR #$PR_NUM"
-
-          # issues:write — the @aztec update workflows add a label + comment on
-          # their PRs (and close stale ones with a --comment); those go through
-          # the issues label/comment endpoints. Exercise both on this throwaway PR.
-          GH_TOKEN="$APP_TOKEN" gh pr edit "$PR_NUM" --repo "$REPO" --add-label dependencies
-          echo "✅ issues:write — added label 'dependencies'"
-          GH_TOKEN="$APP_TOKEN" gh pr comment "$PR_NUM" --repo "$REPO" --body "release-bot issues:write smoke — auto-closing"
-          echo "✅ issues:write — posted a comment"
-
-          # Assert the App-token PR triggered CI (check-runs appear on the head).
-          # This is what guarantees the required *-status checks exist so the real
-          # bump PR's `--auto` waits for them instead of merging ungated.
+      # Check-runs on the head are what guarantee the required *-status checks exist, so a real bump
+      # PR's auto-merge waits for them instead of merging ungated.
+      - name: Prove the App-token PR triggers CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
           for _ in $(seq 1 18); do
             n=$(gh api "repos/$REPO/commits/$BR/check-runs" --jq '.total_count' 2>/dev/null || echo 0)
             if [ "${n:-0}" -gt 0 ]; then
-              echo "✅ App-token PR triggered CI ($n check-run(s)) — required checks will gate the real bump PR"
+              echo "✅ App-token PR triggered CI ($n check-run(s))"
               exit 0
             fi
             sleep 10
           done
-          echo "::error::No check-runs appeared on the App-token PR within ~3min — the bump PR may not trigger the required checks. Investigate before relying on the App token at a stable cut."
+          echo "::error::No check-runs appeared on the App-token PR within ~3min. Investigate before relying on the App token at a stable cut."
           exit 1
+
+      - name: Clean up
+        if: always()
+        env:
+          APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          set +e
+          pr="$(GH_TOKEN="$APP_TOKEN" gh pr list --repo "$REPO" --head "$BR" --state open \
+            --json number,isCrossRepository --jq '[.[] | select(.isCrossRepository | not) | .number][0] // empty')"
+          if [ -n "$pr" ]; then
+            GH_TOKEN="$APP_TOKEN" gh pr merge "$pr" --repo "$REPO" --disable-auto 2>/dev/null
+            GH_TOKEN="$APP_TOKEN" gh pr close "$pr" --repo "$REPO" --comment "release-bot smoke cleanup"
+          fi
+          GH_TOKEN="$APP_TOKEN" gh api -X DELETE "repos/$REPO/git/refs/heads/$BR" 2>/dev/null
+          for rid in $(gh api "repos/$REPO/actions/runs?branch=$BR&per_page=100" --jq '.workflow_runs[].id' 2>/dev/null); do
+            gh api -X POST "repos/$REPO/actions/runs/$rid/cancel" >/dev/null 2>&1
+          done
+          echo "── cleanup done (PR closed, branch deleted, triggered runs cancelled) ──"

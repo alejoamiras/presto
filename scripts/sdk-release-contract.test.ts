@@ -161,7 +161,12 @@ describe("publish job isolation", () => {
 describe("playground pin", () => {
   const bump = job(release, "bump-playground");
   const steps = (
-    Bun.YAML.parse(release) as { jobs: Record<string, { steps: Array<{ run?: string }> }> }
+    Bun.YAML.parse(release) as {
+      jobs: Record<
+        string,
+        { steps: Array<{ run?: string; uses?: string; with?: Record<string, string> }> }
+      >;
+    }
   ).jobs["bump-playground"]?.steps;
 
   test("the release deploys nothing itself: no mode input, no Cloudflare credential", () => {
@@ -197,19 +202,22 @@ describe("playground pin", () => {
     expect(steps?.filter((step) => step.run?.includes("${{"))).toEqual([]);
   });
 
-  test("a least-privilege bot opens a fresh PR, never stacks on an open one, and merges only its head", () => {
+  test("a least-privilege bot opens a fresh PR, never stacks on an open one, and auto-merges", () => {
     expect(bump).toContain("permissions: {}");
     expect(bump).toContain("permission-contents: write");
     expect(bump).toContain("permission-pull-requests: write");
     expect(bump).not.toContain("bun install");
-    expect(bump).toContain(
-      `BRANCH: chore/playground-sdk-pin-\${{ github.run_id }}-\${{ github.run_attempt }}`,
-    );
-    const guard = bump.indexOf('startswith("chore/playground-sdk-pin-")');
+    const branch = `chore/playground-sdk-pin-\${{ github.run_id }}-\${{ github.run_attempt }}`;
+    const at = (action: string) =>
+      steps?.findIndex((step) => step.uses === `./.github/actions/${action}`) ?? -1;
+    const guard =
+      steps?.findIndex((step) => step.run?.includes('startswith("chore/playground-sdk-pin-")')) ??
+      -1;
     expect(guard).toBeGreaterThan(0);
-    expect(bump.indexOf("exit 1", guard)).toBeLessThan(bump.indexOf('git push origin "$BRANCH"'));
-    expect(bump).not.toContain("--force");
-    expect(bump).toContain('--auto --squash --delete-branch --match-head-commit "$head"');
+    expect(at("bot-push")).toBeGreaterThan(guard);
+    expect(at("bot-pr")).toBeGreaterThan(at("bot-push"));
+    expect(steps?.[at("bot-push")]?.with?.branch).toBe(branch);
+    expect(steps?.[at("bot-pr")]?.with).toMatchObject({ branch, "auto-merge": "true" });
   });
 
   test("the production bundle targets the public testnet node", () => {

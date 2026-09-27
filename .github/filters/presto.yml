@@ -123,6 +123,13 @@ release_tooling:
   - 'bunfig.toml'
   - '.bun-version'
   - '.github/scripts/**'
+  # The release bot's shared PR path and every workflow that runs it (scripts/bot-pr.test.ts).
+  - '.github/actions/bot-push/**'
+  - '.github/actions/bot-pr/**'
+  - '.github/workflows/release-sdk.yml'
+  - '.github/workflows/_aztec-update.yml'
+  - '.github/workflows/aztec-stable.yml'
+  - '.github/workflows/release-bot-token-check.yml'
   - '.github/workflows/release-presto.yml'
   - '.github/workflows/_e2e-packaged.yml'
   - '.github/workflows/_e2e-updater.yml'

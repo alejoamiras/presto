@@ -1,0 +1,55 @@
+name: Bot PR
+description: |
+  Open the release bot's PR from a pushed branch, or refresh the open one, and optionally enable
+  auto-merge pinned to the pushed head. See .github/scripts/bot-pr.sh.
+
+inputs:
+  token:
+    description: Token that creates or edits the PR (pull-requests write).
+    required: true
+  branch:
+    description: The pushed head branch.
+    required: true
+  base:
+    description: The base branch.
+    required: false
+    default: main
+  title:
+    description: PR title.
+    required: true
+  body:
+    description: PR body.
+    required: true
+  auto-merge:
+    description: '"true" enables squash auto-merge, which still waits for the required checks.'
+    required: false
+    default: "false"
+  head:
+    description: The commit auto-merge is pinned to (bot-push's head output). Required with auto-merge.
+    required: false
+    default: ""
+  merge-token:
+    description: Token that enables auto-merge when `token` cannot (contents write). Defaults to `token`.
+    required: false
+    default: ""
+
+outputs:
+  number:
+    description: The PR number.
+    value: ${{ steps.pr.outputs.number }}
+
+runs:
+  using: composite
+  steps:
+    - id: pr
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.token }}
+        MERGE_TOKEN: ${{ inputs.merge-token }}
+        BRANCH: ${{ inputs.branch }}
+        BASE: ${{ inputs.base }}
+        TITLE: ${{ inputs.title }}
+        BODY: ${{ inputs.body }}
+        AUTO_MERGE: ${{ inputs.auto-merge }}
+        HEAD_SHA: ${{ inputs.head }}
+      run: bash "$GITHUB_ACTION_PATH/../../scripts/bot-pr.sh"
