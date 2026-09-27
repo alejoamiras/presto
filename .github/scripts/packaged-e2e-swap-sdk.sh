@@ -166,4 +166,4 @@ fi
 echo "Playground @alejoamiras/presto now resolves to the packed tarball (versions below):"
 grep -m1 '"version"' "${DEST}/package.json" || true
 grep -m1 '"version"' "${CORE_DEST}/package.json" || true
-[ -n "${NOIR_ABS}" ] && grep -m1 '"version"' "${NOIR_DEST}/package.json" || true
+if [ -n "${NOIR_ABS}" ]; then grep -m1 '"version"' "${NOIR_DEST}/package.json" || true; fi
