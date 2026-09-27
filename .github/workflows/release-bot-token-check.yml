@@ -1,10 +1,11 @@
 name: Release Bot Token Check
 
 # Dispatch-only diagnostic. Runs the release bot's real PR path (bot-push + bot-pr, the actions every
-# bot PR uses) with the permissions `bump-source` and `bump-playground` mint, and proves that
-# the App token can push, open a CI-triggering PR, label and comment on it, and enable auto-merge
-# pinned to the pushed head — WITHOUT merging anything. Auto-merge is switched off again at once:
-# the PR's required checks have not started by then, so it cannot fire.
+# bot PR uses) with the permissions `bump-source` and `bump-playground` mint, and proves that the
+# App token can push, open a CI-triggering PR, label and comment on it, and enable auto-merge for
+# the pushed head, WITHOUT merging anything: the smoke commit adds an unparsable
+# scripts/release-bot-smoke.ts, so SDK Status (a required check) always fails and the PR can never
+# merge, whatever happens to this job. Auto-merge is also switched off again at once.
 #
 # Dispatched from a feature ref, the smoke branch carries that ref's diff. Cleanup always closes the
 # PR, deletes the branch and cancels the runs it triggered. The App token does the writes; the
@@ -40,10 +41,10 @@ jobs:
         with:
           token: ${{ steps.app-token.outputs.token }}
 
-      # Under packages/presto/** so the Presto gate fires, and its long jobs keep a required check
-      # pending for minutes.
-      - name: Write the smoke change
-        run: printf 'release-bot token smoke %s\n' "$BR" > packages/presto/.release-bot-smoke
+      # Biome and tsc reject it, so SDK Lint fails and SDK Status can never pass.
+      - name: Write the unmergeable smoke change
+        run: |
+          printf '// release-bot token smoke %s: deliberately unparsable, never merged.\nexport const smoke = ;\n' "$BR" > scripts/release-bot-smoke.ts
 
       - name: Push the smoke branch (contents:write)
         id: push
@@ -51,9 +52,9 @@ jobs:
         with:
           branch: ${{ env.BR }}
           message: "chore: release-bot token smoke (throwaway)"
-          paths: packages/presto/.release-bot-smoke
+          paths: scripts/release-bot-smoke.ts
 
-      - name: Open the smoke PR with auto-merge (pull_requests:write + contents:write)
+      - name: Open the smoke PR, label it and enable auto-merge (pull_requests + issues + contents)
         id: pr
         uses: ./.github/actions/bot-pr
         with:
@@ -61,6 +62,7 @@ jobs:
           branch: ${{ env.BR }}
           title: "chore: release-bot token smoke (auto-closing, do not merge)"
           body: Throwaway PR verifying the release-bot GitHub App token. Auto-closed by the Release Bot Token Check workflow.
+          label: dependencies
           auto-merge: "true"
           head: ${{ steps.push.outputs.head }}
 
@@ -76,16 +78,15 @@ jobs:
             echo "::error::auto-merge did not register on PR #$PR_NUM (got '${method:-none}')"
             exit 1
           fi
-          echo "✅ auto-merge registered (squash, pinned to the pushed head) and switched off"
+          echo "✅ auto-merge registered (squash) and switched off"
 
-      # The @aztec update workflows label their PRs and close stale ones with a comment; those go
-      # through the issues label/comment endpoints.
-      - name: Prove issues:write (label + comment)
+      # The @aztec update workflows close stale PRs with a comment (issues endpoints); the label was
+      # applied through bot-pr above.
+      - name: Prove issues:write (comment)
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
           PR_NUM: ${{ steps.pr.outputs.number }}
         run: |
-          gh pr edit "$PR_NUM" --add-label dependencies
           gh pr comment "$PR_NUM" --body "release-bot issues:write smoke — auto-closing"
           echo "✅ issues:write — label and comment"
 

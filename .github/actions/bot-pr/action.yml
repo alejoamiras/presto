@@ -1,7 +1,7 @@
 name: Bot PR
 description: |
-  Open the release bot's PR from a pushed branch, or refresh the open one, and optionally enable
-  auto-merge pinned to the pushed head. See .github/scripts/bot-pr.sh.
+  Open the release bot's PR from a pushed branch, or refresh the open one, label it, and optionally
+  enable auto-merge for the pushed head. See .github/scripts/bot-pr.sh.
 
 inputs:
   token:
@@ -20,6 +20,10 @@ inputs:
   body:
     description: PR body.
     required: true
+  label:
+    description: A label applied before auto-merge is enabled (issues write).
+    required: false
+    default: ""
   auto-merge:
     description: '"true" enables squash auto-merge, which still waits for the required checks.'
     required: false
@@ -50,6 +54,7 @@ runs:
         BASE: ${{ inputs.base }}
         TITLE: ${{ inputs.title }}
         BODY: ${{ inputs.body }}
+        LABEL: ${{ inputs.label }}
         AUTO_MERGE: ${{ inputs.auto-merge }}
         HEAD_SHA: ${{ inputs.head }}
       run: bash "$GITHUB_ACTION_PATH/../../scripts/bot-pr.sh"

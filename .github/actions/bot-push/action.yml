@@ -1,8 +1,8 @@
 name: Bot push
 description: |
-  Commit exactly the listed paths on a new branch as github-actions[bot] and push it, never with
-  force, using the credentials actions/checkout persisted. Fails when nothing changed or when a
-  change outside the list is left behind. See .github/scripts/bot-push.sh.
+  Commit exactly the listed paths on a new branch as github-actions[bot] and push it create-only,
+  using the credentials actions/checkout persisted. Fails on a pre-staged index, when nothing
+  changed, or when a change outside the list is left behind. See .github/scripts/bot-push.sh.
 
 inputs:
   branch:

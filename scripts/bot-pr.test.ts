@@ -106,18 +106,33 @@ describe("bot-push", () => {
     );
   });
 
-  test("pushes nothing when a change outside the list is left behind", () => {
-    for (const stray of ["b.txt", "untracked.txt"]) {
+  test("pushes nothing when a change outside the list is staged or left behind", () => {
+    for (const [stray, stage, error] of [
+      ["b.txt", false, "extend the paths input"],
+      ["untracked.txt", false, "extend the paths input"],
+      ["b.txt", true, "the index already holds staged changes"],
+    ] as const) {
       const { work, origin } = repo();
       writeFileSync(join(work, "a.txt"), "a2\n");
       writeFileSync(join(work, stray), "stray\n");
+      if (stage) git(work, "add", stray);
       const result = push(work, {});
       expect(result.code).not.toBe(0);
-      expect(result.out).toContain("extend the paths input");
+      expect(result.out).toContain(error);
       expect(
         run(["git", "rev-parse", "-q", "--verify", "refs/heads/chore/x"], origin).code,
       ).not.toBe(0);
     }
+  });
+
+  test("fails when it cannot tell whether the branch exists", () => {
+    const { work } = repo();
+    git(work, "remote", "set-url", "origin", join(work, "..", "missing.git"));
+    writeFileSync(join(work, "a.txt"), "a2\n");
+    const result = push(work, { IF_EXISTS: "skip" });
+    expect(result.code).not.toBe(0);
+    expect(result.out).toContain("could not list origin's branches");
+    expect(result.outputs).toEqual({});
   });
 
   test("an existing branch fails the run, or with skip is kept exactly as pushed", () => {
@@ -170,12 +185,17 @@ function openPr(env: Record<string, string>) {
 }
 
 describe("bot-pr", () => {
-  test("opens the PR and pins auto-merge to the pushed head, with the merge token", () => {
-    const result = openPr({ AUTO_MERGE: "true", HEAD_SHA: "abc123", MERGE_TOKEN: "merge-token" });
+  test("opens and labels the PR, then enables auto-merge for the pushed head with the merge token", () => {
+    const result = openPr({
+      LABEL: "deps",
+      AUTO_MERGE: "true",
+      HEAD_SHA: "abc123",
+      MERGE_TOKEN: "merge-token",
+    });
     expect(result.code).toBe(0);
     expect(result.outputs.number).toBe("42");
     expect(result.calls.slice(1)).toEqual([
-      "pr-token pr create --repo o/r --base main --head chore/x --title t --body b",
+      "pr-token pr create --repo o/r --base main --head chore/x --title t --body b --label deps",
       "merge-token pr merge 42 --repo o/r --auto --squash --delete-branch --match-head-commit abc123",
     ]);
   });
@@ -185,13 +205,15 @@ describe("bot-pr", () => {
       { number: 5, isCrossRepository: true },
       { number: 9, isCrossRepository: false },
     ];
-    const result = openPr({ FAKE_PRS: JSON.stringify(prs) });
+    const result = openPr({ FAKE_PRS: JSON.stringify(prs), LABEL: "deps" });
     expect(result.code).toBe(0);
     expect(result.outputs.number).toBe("9");
-    expect(result.calls.slice(1)).toEqual(["pr-token pr edit 9 --repo o/r --title t --body b"]);
+    expect(result.calls.slice(1)).toEqual([
+      "pr-token pr edit 9 --repo o/r --title t --body b --add-label deps",
+    ]);
   });
 
-  test("refuses auto-merge without a pinned head before calling GitHub", () => {
+  test("refuses auto-merge without the pushed head before calling GitHub", () => {
     const result = openPr({ AUTO_MERGE: "true" });
     expect(result.code).not.toBe(0);
     expect(result.calls).toEqual([]);
@@ -215,7 +237,7 @@ describe("bot PR contract", () => {
     }
   });
 
-  test("every bot PR is pinned to the head its bot-push pushed", () => {
+  test("every bot PR enables auto-merge only for the head its bot-push pushed", () => {
     const uses = workflows.flatMap(({ file, steps }) =>
       steps
         .filter((step) => step.uses === "./.github/actions/bot-pr")
@@ -230,6 +252,18 @@ describe("bot PR contract", () => {
     for (const { step } of uses) {
       expect(step.with?.head).toMatch(/^\$\{\{ (steps\.push|needs\.update)\.outputs\.head \}\}$/);
     }
+  });
+
+  test("the token smoke's PR can never merge: its commit fails a required SDK check", () => {
+    const smoke = workflows.find(({ file }) => file === "release-bot-token-check.yml")?.steps;
+    const write = smoke?.find((step) => step.run?.includes("scripts/release-bot-smoke.ts"))?.run;
+    const push = smoke?.find((step) => step.uses === "./.github/actions/bot-push");
+    expect(push?.with?.paths).toBe("scripts/release-bot-smoke.ts");
+    const source = /printf '([^']*)'/.exec(write ?? "")?.[1]?.replaceAll("\\n", "\n") ?? "";
+    expect(source).toContain("export const smoke = ;");
+    expect(() => new Bun.Transpiler({ loader: "ts" }).transformSync(source)).toThrow();
+    // SDK Status (required on main) fails when the SDK lint of `scripts/**` fails.
+    expect(readFileSync(join(WORKFLOWS, "sdk.yml"), "utf8")).toContain("- 'scripts/**'");
   });
 
   test("the actions reach their scripts only through the environment", () => {

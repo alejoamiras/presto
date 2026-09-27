@@ -232,7 +232,6 @@ jobs:
           permission-pull-requests: write
 
       - name: Create or update PR
-        id: pr
         uses: ./.github/actions/bot-pr
         with:
           token: ${{ steps.app-token.outputs.token }}
@@ -246,14 +245,6 @@ jobs:
             Automated dependency bump. PR CI runs all tests (unit, e2e).
 
             [Workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
+          label: ${{ inputs.add_label }}
           auto-merge: ${{ inputs.merge_mode == 'auto' }}
           head: ${{ needs.update.outputs.head }}
-
-      # Label when specified (e.g. one that triggers extra CI).
-      - name: Add label
-        if: inputs.add_label != ''
-        env:
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          ADD_LABEL: ${{ inputs.add_label }}
-          PR_NUM: ${{ steps.pr.outputs.number }}
-        run: gh pr edit "$PR_NUM" --add-label "$ADD_LABEL" 2>/dev/null || true

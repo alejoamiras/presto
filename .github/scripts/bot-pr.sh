@@ -1,8 +1,10 @@
 #!/usr/bin/env bash
-# Open the release bot's PR from BRANCH (or refresh the open one) and, with AUTO_MERGE=true, enable
-# auto-merge pinned to HEAD_SHA, so a commit pushed after it can never ride along.
-# Env: GH_TOKEN, BASE, BRANCH, TITLE, BODY, AUTO_MERGE (true | false), HEAD_SHA, MERGE_TOKEN
-# (optional; enables auto-merge instead of GH_TOKEN, for callers whose PR token cannot merge).
+# Open the release bot's PR from BRANCH (or refresh the open one), apply LABEL, and with
+# AUTO_MERGE=true enable squash auto-merge. `--match-head-commit` makes GitHub refuse unless the
+# branch tip is still HEAD_SHA, the commit the workflow pushed; it does not stop a later push by
+# someone with write access from riding along.
+# Env: GH_TOKEN, BASE, BRANCH, TITLE, BODY, LABEL (optional), AUTO_MERGE (true | false), HEAD_SHA,
+# MERGE_TOKEN (optional; enables auto-merge instead of GH_TOKEN, for a PR token that cannot merge).
 # Outputs: number.
 set -euo pipefail
 
@@ -19,10 +21,11 @@ number="$(gh pr list --repo "$GITHUB_REPOSITORY" --base "$BASE" --head "$BRANCH"
   --json number,isCrossRepository \
   --jq '[.[] | select(.isCrossRepository | not) | .number][0] // empty')"
 if [ -n "$number" ]; then
-  gh pr edit "$number" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY"
+  gh pr edit "$number" --repo "$GITHUB_REPOSITORY" --title "$TITLE" --body "$BODY" \
+    ${LABEL:+--add-label "$LABEL"}
 else
   url="$(gh pr create --repo "$GITHUB_REPOSITORY" --base "$BASE" --head "$BRANCH" \
-    --title "$TITLE" --body "$BODY")"
+    --title "$TITLE" --body "$BODY" ${LABEL:+--label "$LABEL"})"
   number="${url##*/}"
 fi
 case "$number" in

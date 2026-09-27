@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Commit exactly PATHS on a new branch as github-actions[bot] and push it with the credentials
-# actions/checkout persisted. Never force-pushes: an existing branch fails the run, or with
-# IF_EXISTS=skip is kept as pushed (rewriting it would orphan the commit its CI runs against).
+# actions/checkout persisted. The push only ever creates the branch: an existing one fails the run,
+# or with IF_EXISTS=skip is kept as pushed (rewriting it would orphan the commit its CI runs against).
 # Env: BRANCH, MESSAGE, PATHS (one per line), IF_EXISTS (fail | skip).
 # Outputs: pushed (true | false), head (the branch tip).
 set -euo pipefail
@@ -13,13 +13,26 @@ case "${IF_EXISTS:-fail}" in
   *) echo "::error::IF_EXISTS must be fail or skip"; exit 1 ;;
 esac
 
-if remote="$(git ls-remote --exit-code --heads origin "refs/heads/$BRANCH")"; then
-  if [ "${IF_EXISTS:-fail}" = skip ]; then
-    echo "Branch $BRANCH already exists on origin; keeping it as pushed"
-    { echo "pushed=false"; echo "head=${remote%%[[:space:]]*}"; } >> "$out"
-    exit 0
-  fi
-  echo "::error::branch $BRANCH already exists on origin"
+# ls-remote --exit-code: 0 found, 2 no such ref, anything else could not ask.
+probe=0
+remote="$(git ls-remote --exit-code --heads origin "refs/heads/$BRANCH")" || probe=$?
+case "$probe" in
+  0)
+    if [ "${IF_EXISTS:-fail}" = skip ]; then
+      echo "Branch $BRANCH already exists on origin; keeping it as pushed"
+      { echo "pushed=false"; echo "head=${remote%%[[:space:]]*}"; } >> "$out"
+      exit 0
+    fi
+    echo "::error::branch $BRANCH already exists on origin"
+    exit 1
+    ;;
+  2) ;;
+  *) echo "::error::could not list origin's branches (git ls-remote exit $probe)"; exit 1 ;;
+esac
+
+# An earlier step's staged change would otherwise ride along in the commit.
+if ! git diff --cached --quiet; then
+  echo "::error::the index already holds staged changes; bot-push stages only its own paths"
   exit 1
 fi
 
@@ -43,5 +56,6 @@ if [ -n "$leftover" ]; then
   exit 1
 fi
 
-git push origin "refs/heads/$BRANCH"
+# The empty lease makes the push create-only, closing the window since the probe above.
+git push --force-with-lease="refs/heads/$BRANCH:" origin "HEAD:refs/heads/$BRANCH"
 { echo "pushed=true"; echo "head=$(git rev-parse HEAD)"; } >> "$out"
