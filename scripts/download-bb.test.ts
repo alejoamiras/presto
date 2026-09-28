@@ -116,10 +116,14 @@ function wireHappyFetch(version: string, tarball: Uint8Array): void {
   const digest = sha256Hex(tarball);
   routeFetch((url) => {
     if (url.includes("api.github.com")) {
-      expect(url).toContain(`/tags/v${version}`);
+      expect(url).toBe(
+        `https://api.github.com/repos/AztecProtocol/barretenberg/releases/tags/v${version}`,
+      );
       return jsonResp(200, { assets: [{ name: asset, digest: `sha256:${digest}` }] });
     }
-    expect(url).toContain(`/download/v${version}/${asset}`);
+    expect(url).toBe(
+      `https://github.com/AztecProtocol/barretenberg/releases/download/v${version}/${asset}`,
+    );
     return streamResp(tarball);
   });
 }

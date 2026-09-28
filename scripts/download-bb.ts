@@ -40,6 +40,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
+import { BB_RELEASE_REPO } from "../packages/presto/scripts/copy-bb.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -79,7 +80,7 @@ function assetName(): string {
 }
 
 export function downloadUrl(version: string): string {
-  return `https://github.com/AztecProtocol/aztec-packages/releases/download/v${version}/${assetName()}`;
+  return `https://github.com/${BB_RELEASE_REPO}/releases/download/v${version}/${assetName()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,7 +202,7 @@ export function sha256File(path: string): string {
  * GITHUB_TOKEN to dodge the 60/hr unauth rate limit.
  */
 export async function fetchAssetDigest(version: string, asset: string): Promise<string> {
-  const apiUrl = `https://api.github.com/repos/AztecProtocol/aztec-packages/releases/tags/v${version}`;
+  const apiUrl = `https://api.github.com/repos/${BB_RELEASE_REPO}/releases/tags/v${version}`;
   const headers: Record<string, string> = {
     accept: "application/vnd.github+json",
     "user-agent": "presto",
@@ -291,7 +292,7 @@ export async function downloadTarball(version: string): Promise<Uint8Array> {
     if (res.status === 404) {
       throw new Error(
         `Version ${version} not found (404). Check available releases at:\n` +
-          `  https://github.com/AztecProtocol/aztec-packages/releases`,
+          `  https://github.com/${BB_RELEASE_REPO}/releases`,
       );
     }
     throw new Error(`Download failed: ${res.status} ${res.statusText}`);

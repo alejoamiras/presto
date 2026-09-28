@@ -27,7 +27,7 @@ dApp → adapter SDK → presto-core → loopback HTTP/HTTPS → local bb proces
   certificate material, and the updater.
 - **The headless server** reuses the same proving core but is a CI-only operator tool with no
   approval UI and no TLS.
-- **`bb` is published by AztecProtocol.** Presto downloads it from the upstream `aztec-packages`
+- **`bb` is published by AztecProtocol.** Presto downloads it from the upstream `barretenberg`
   GitHub releases and neither builds nor publishes it.
 - **Desktop releases are published by this project.** macOS artifacts are signed and notarized;
   Windows first-install packages are intentionally unsigned. All updater payloads are Ed25519-signed
@@ -88,6 +88,11 @@ release infrastructure. The comparison detects transit corruption, incomplete do
 modification, and a release asset that changed after its digest was recorded. It does **not** provide
 independent publisher authentication if the upstream publisher account or the shared GitHub control
 plane is compromised.
+
+The source is `AztecProtocol/barretenberg`, the only repository that releases `bb` for Aztec v6
+(`aztec-packages` stopped at v5). Moving between two repositories of the same organisation leaves this
+trust model unchanged. Barretenberg rebuilt v5.0.1, so its assets differ from `aztec-packages`' for that
+one version. A copy already cached keeps verifying against its own recorded digest.
 
 The same reasoning governs the Windows `bb.exe` sidecar, which is pinned by SHA-256 in
 `scripts/copy-bb.ts`. Pins are never auto-generated — downloading and recording whatever arrived is

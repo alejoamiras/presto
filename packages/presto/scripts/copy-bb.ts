@@ -6,7 +6,7 @@
  *
  * - macOS/Linux: bb ships inside the `@aztec/bb.js` npm package (`build/<arch>-<os>/bb`).
  * - Windows: bb.js ships NO Windows build, so we fetch the self-contained `bb.exe`
- *   from the matching aztec-packages GitHub release tarball and verify it against a
+ *   from the matching barretenberg GitHub release tarball and verify it against a
  *   pinned SHA-256. Upstream publishes no checksum file, so this in-repo, review-gated
  *   pin is the supply-chain integrity anchor.
  */
@@ -31,11 +31,13 @@ import { getTargetTriple } from "./copy-bb-target-triple.ts";
 export { getTargetTriple };
 
 // --- Windows bb.exe supply chain ---
-// The Windows bb.exe is fetched from the aztec-packages release whose tag matches the
+// The Windows bb.exe is fetched from the barretenberg release whose tag matches the
 // LIVE @aztec/bb.js version (never the committed AZTEC_VERSION file, which can drift).
 // Each version's tarball SHA-256 is pinned below; the prebuild fails closed on an
 // unknown version or a hash mismatch — both force a deliberate review whenever bb bumps.
 
+/** Mirrors `BB_RELEASE_REPO` in `core/src/versions/release_metadata.rs`. */
+export const BB_RELEASE_REPO = "AztecProtocol/barretenberg";
 export const WINDOWS_BB_ASSET = "barretenberg-amd64-windows.tar.gz";
 
 /**
@@ -59,17 +61,8 @@ export interface WindowsBbPin {
 // a twice-downloaded asset is not independent evidence). A human adds each entry after review; the
 // Windows Prebuild/Build Smoke gate re-fetches + re-verifies against the pinned sha, failing closed on a
 // missing/mismatched/unaccepted-provenance entry.
+// Only versions barretenberg serves byte-identically are kept: it has no v4.x, and it rebuilt v5.0.1.
 export const WINDOWS_BB_CHECKSUMS: Record<string, WindowsBbPin> = {
-  "4.2.0": {
-    sha256: "55043d74d20afd55cb3d3c5fd690b79f9d964ba52bfebd13bcba71b74a3d0c8f",
-    provenance: "manual-review",
-    note: "Legacy pin adopted as a change-detector — CI-hashed on windows-latest, not independently verified (SEC-02).",
-  },
-  "4.3.1": {
-    sha256: "58294203ba658d2c6d983dc22f68f3a2280f5107e9e973570e4adb751997fd2c",
-    provenance: "manual-review",
-    note: "Legacy pin, change-detector only — sha256 of the v4.3.1 release asset, not independently verified.",
-  },
   "5.0.0-rc.1": {
     sha256: "7fd01446b4d23810ab76163e500729d1a5310df4dcb8e9e03259ad477183c4dd",
     provenance: "manual-review",
@@ -85,15 +78,10 @@ export const WINDOWS_BB_CHECKSUMS: Record<string, WindowsBbPin> = {
     provenance: "manual-review",
     note: "v5.0.0 stable asset; matches the GitHub release asset digest. Change-detector only (SEC-02) — the Windows Prebuild/Build Smoke gates independently re-fetch + verify.",
   },
-  "5.0.1": {
-    sha256: "f7a2d6b10d4208f4a4d0990b71df1360033688f2b621040cf297e4676ea59c4c",
-    provenance: "manual-review",
-    note: "v5.0.1 asset; matches the GitHub release asset digest. Change-detector only (SEC-02) — carried over from main's 5.0.1 cycle and re-verified by the Windows CI gates.",
-  },
   "5.2.0": {
     sha256: "17fe17e1cb1109328a266e8ceef28ec3d830073e734b4e93bfb27a20d4a9d2fe",
     provenance: "manual-review",
-    note: "v5.2.0 asset, fetched 2026-08-19; two-channel verified: downloaded-file sha256sum EQUALS the GitHub API asset digest (asset id RA_kwDOJAQCos4e3ffa, 5970432 bytes). Reproduce: curl -fsSL -o bb.tar.gz https://github.com/AztecProtocol/aztec-packages/releases/download/v5.2.0/barretenberg-amd64-windows.tar.gz && sha256sum bb.tar.gz. Change-detector only (SEC-02).",
+    note: "v5.2.0 asset, fetched 2026-08-19 from aztec-packages; two-channel verified: downloaded-file sha256sum EQUALS the GitHub API asset digest (5970432 bytes). 2026-09-28: barretenberg's v5.2.0 asset digest is identical. Reproduce: curl -fsSL -o bb.tar.gz https://github.com/AztecProtocol/barretenberg/releases/download/v5.2.0/barretenberg-amd64-windows.tar.gz && sha256sum bb.tar.gz. Change-detector only (SEC-02).",
   },
 };
 
@@ -112,7 +100,7 @@ export function resolveWindowsBbChecksum(version: string): string {
     throw new Error(
       `No pinned Windows bb.exe SHA-256 for @aztec/bb.js ${version}.\n` +
         `A human must add a REVIEWED pin: download ${WINDOWS_BB_ASSET} from the v${version} ` +
-        `aztec-packages release, verify the release page + tag signature, diff it against the prior ` +
+        `barretenberg release, verify the release page + tag signature, diff it against the prior ` +
         `pinned asset, then add a { sha256, provenance: "manual-review", note } entry to ` +
         `WINDOWS_BB_CHECKSUMS in copy-bb.ts. (Pins are never auto-generated — F-008.)`,
     );
@@ -153,7 +141,7 @@ const MAX_BB_TARBALL_BYTES = 64 * 1024 * 1024;
 async function fetchWindowsBb(version: string, destExe: string): Promise<void> {
   const tag = windowsBbReleaseTag(version);
   const expected = resolveWindowsBbChecksum(version);
-  const url = `https://github.com/AztecProtocol/aztec-packages/releases/download/${tag}/${WINDOWS_BB_ASSET}`;
+  const url = `https://github.com/${BB_RELEASE_REPO}/releases/download/${tag}/${WINDOWS_BB_ASSET}`;
 
   console.log(`Fetching Windows bb.exe: ${url}`);
   const res = await fetch(url);
