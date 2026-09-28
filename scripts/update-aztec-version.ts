@@ -179,10 +179,10 @@ async function main() {
     "     setup-aztec's graph check names every addition and removal (scripts/aztec-installer-graph.ts).",
   );
   console.log(
-    "  3. ⚠️  Aztec artifacts may have recompiled → the salt=0 SponsoredFPC address can MOVE. Derive + redeploy on testnet if so:",
+    "  3. ⚠️  Aztec artifacts may have recompiled → the salt=0 SponsoredFPC address can MOVE. Check it on testnet:",
   );
   console.log(
-    "       bun run packages/playground/scripts/deploy-sponsored-fpc.ts --salt 0x0   (--salt 0x0 mandatory; the script defaults to random)",
+    "       AZTEC_NODE_URL=... bun packages/playground/scripts/fpc-state.ts --salt 0x0   (funding: deploy-sponsored-fpc.ts --preflight first)",
   );
 }
 
