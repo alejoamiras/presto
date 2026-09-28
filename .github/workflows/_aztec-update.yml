@@ -79,7 +79,7 @@ jobs:
               echo "::error::Invalid forced version (rejected before use)"
               exit 1
             fi
-            CURRENT=$(bun -e "console.log(JSON.parse(require('fs').readFileSync('packages/sdk/package.json','utf8')).devDependencies['@aztec/aztec.js'])")
+            CURRENT=$(bun scripts/aztec-manifest.ts packages/sdk/package.json aztec.js)
             {
               echo "needs_update=true"
               echo "new_version=$INPUT_VERSION"

@@ -82,6 +82,22 @@ describe("updatePackageJson", () => {
     expect(pkg.dependencies["@aztec-foundation/some-other-package"]).toBe("1.2.3");
   });
 
+  test("bumps v6-scoped release packages, exact foundation names only", () => {
+    const v6 = JSON.stringify({
+      dependencies: {
+        "@aztec-labs/stdlib": "6.0.0-rc.1",
+        "@aztec-foundation/noir-acvm_js": "6.0.0-rc.1",
+        "@aztec-foundation/x": "6.0.0-rc.1",
+      },
+      peerDependencies: { "@aztec-foundation/bb.js": "6.0.0-rc.1" },
+    });
+    const pkg = JSON.parse(updatePackageJson(v6, "6.0.0-rc.2"));
+    expect(pkg.dependencies["@aztec-labs/stdlib"]).toBe("6.0.0-rc.2");
+    expect(pkg.dependencies["@aztec-foundation/noir-acvm_js"]).toBe("6.0.0-rc.2");
+    expect(pkg.peerDependencies["@aztec-foundation/bb.js"]).toBe("6.0.0-rc.2");
+    expect(pkg.dependencies["@aztec-foundation/x"]).toBe("6.0.0-rc.1");
+  });
+
   test("respects skipPackages set", () => {
     const skip = new Set(["@aztec/simulator"]);
     const result = updatePackageJson(samplePkg, "5.0.0-nightly.20260224", skip);

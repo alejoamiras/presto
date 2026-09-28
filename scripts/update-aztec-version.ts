@@ -1,9 +1,11 @@
 /**
- * Update all @aztec/* version references across the repo.
+ * Update every Aztec release package's version across the repo, under either scope generation.
  *
  * Usage: bun scripts/update-aztec-version.ts <version>
  * Example: bun scripts/update-aztec-version.ts 5.0.0-nightly.20260220
  */
+
+import { isAztecPackage } from "./aztec-manifest.ts";
 
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly\.\d{8}|rc\.\d+|aztecnr-rc\.\d+))?$/;
 const AZTEC_VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly|spartan|devnet|aztecnr-rc|rc)[\w.-]*)?$/;
@@ -23,15 +25,15 @@ export const HOST_DEPENDENCY_FILES = [
 ];
 
 /**
- * Companion packages that must stay in version-lockstep with @aztec/*: their generated
- * code carries undeclared runtime imports of @aztec/aztec.js resolved against OUR pins,
+ * Companion packages that must stay in version-lockstep with Aztec's own: their generated
+ * code carries undeclared runtime imports of aztec.js resolved against OUR pins,
  * so version skew breaks at runtime, silently. Explicit allowlist — NOT a scope prefix —
  * so unrelated @aztec-foundation packages never get swept up.
  */
 const LOCKSTEP_PACKAGES = new Set(["@aztec-foundation/aztec-standards"]);
 
 export function isAztecManagedDep(key: string): boolean {
-  return key.startsWith("@aztec/") || LOCKSTEP_PACKAGES.has(key);
+  return isAztecPackage(key) || LOCKSTEP_PACKAGES.has(key);
 }
 
 export function validateVersion(version: string): boolean {

@@ -108,7 +108,9 @@ case "${RESOLVED}" in
     ;;
 esac
 # And the packed code must reach its own deps through the linked graph — core through the PACKED copy.
-for dep in @logtape/logtape @aztec/bb-prover @alejoamiras/presto-core; do
+# bb-prover is named under whichever Aztec scope the packed SDK pins.
+BB_PROVER="$(bun "${REPO_ROOT}/scripts/aztec-manifest.ts" "${DEST}/package.json" bb-prover --name)"
+for dep in @logtape/logtape "${BB_PROVER}" @alejoamiras/presto-core; do
   bun -e "Bun.resolveSync('${dep}', '${REPO_ROOT}/${DEST}')" || {
     echo "::error::packed SDK cannot resolve its dependency '${dep}' from ${DEST}"
     exit 1
@@ -155,7 +157,8 @@ if [ -n "${NOIR_ABS}" ]; then
       exit 1
       ;;
   esac
-  for dep in @aztec/bb.js @alejoamiras/presto-core; do
+  BB_JS="$(bun "${REPO_ROOT}/scripts/aztec-manifest.ts" "${NOIR_DEST}/package.json" bb.js --name)"
+  for dep in "${BB_JS}" @alejoamiras/presto-core; do
     bun -e "Bun.resolveSync('${dep}', '${REPO_ROOT}/${NOIR_DEST}')" || {
       echo "::error::packed Noir adapter cannot resolve its dependency '${dep}' from ${NOIR_DEST}"
       exit 1

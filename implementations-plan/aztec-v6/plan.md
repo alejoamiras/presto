@@ -664,7 +664,7 @@ Layers: lint · unit · Rust unit · live download (two versions, isolated).
 
 Layers: lint · typecheck · unit · workflow lint.
 
-### Phase 3: one scope-agnostic Aztec manifest reader (arc 2)
+### Phase 3: one scope-agnostic Aztec manifest reader (arc 2) ✓
 
 **Validation gate:**
 - `bun run test && bun run lint && bun run lint:actions` exit 0; `lint` includes shellcheck.

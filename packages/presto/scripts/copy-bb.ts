@@ -25,6 +25,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
+import { requireAztecDependency } from "../../../scripts/aztec-manifest.ts";
 import { getTargetTriple } from "./copy-bb-target-triple.ts";
 
 // Lives in its own module so the Node-run WebDriver suite can import it without loading this Bun script.
@@ -98,7 +99,7 @@ export function resolveWindowsBbChecksum(version: string): string {
   const pin = WINDOWS_BB_CHECKSUMS[version];
   if (!pin) {
     throw new Error(
-      `No pinned Windows bb.exe SHA-256 for @aztec/bb.js ${version}.\n` +
+      `No pinned Windows bb.exe SHA-256 for bb.js ${version}.\n` +
         `A human must add a REVIEWED pin: download ${WINDOWS_BB_ASSET} from the v${version} ` +
         `barretenberg release, verify the release page + tag signature, diff it against the prior ` +
         `pinned asset, then add a { sha256, provenance: "manual-review", note } entry to ` +
@@ -193,18 +194,29 @@ async function fetchWindowsBb(version: string, destExe: string): Promise<void> {
 }
 
 /**
- * Resolve the LIVE `@aztec/bb.js` version + package root from the installed dependency tree (bb-prover
- * is a direct SDK dep; bb.js is its dep). Single source of truth for the bb version — the committed
- * AZTEC_VERSION file can drift. Separate from the prebuild so the lean headless CI legs can read the
- * version without copying bb.
+ * Resolve the LIVE bb.js version, package root and entry from the installed dependency tree: bb-prover
+ * is a direct SDK dep and bb.js is its dep, each named by its manifest's scope. Single source of truth
+ * for the bb version — the committed AZTEC_VERSION file can drift. Separate from the prebuild so the
+ * lean headless CI legs can read the version without copying bb.
  */
-export function resolveAztecBb(): { version: string; bbJsRoot: string } {
+export function resolveAztecBb(): { version: string; bbJsRoot: string; entry: string } {
   const sdkDir = join(import.meta.dirname!, "..", "..", "sdk");
-  const bbProverEntry = Bun.resolveSync("@aztec/bb-prover", sdkDir);
-  const bbJsPkgJson = Bun.resolveSync("@aztec/bb.js/package.json", dirname(bbProverEntry));
-  const bbJsRoot = dirname(bbJsPkgJson);
-  const version: string = JSON.parse(readFileSync(bbJsPkgJson, "utf8")).version;
-  return { version, bbJsRoot };
+  const readJson = (path: string) => JSON.parse(readFileSync(path, "utf8"));
+  const bbProver = requireAztecDependency(readJson(join(sdkDir, "package.json")), "bb-prover", [
+    "dependencies",
+  ]).name;
+  const bbProverDir = dirname(Bun.resolveSync(bbProver, sdkDir));
+  const bbJs = requireAztecDependency(
+    readJson(Bun.resolveSync(`${bbProver}/package.json`, sdkDir)),
+    "bb.js",
+    ["dependencies"],
+  ).name;
+  const bbJsPkgJson = Bun.resolveSync(`${bbJs}/package.json`, bbProverDir);
+  return {
+    version: readJson(bbJsPkgJson).version,
+    bbJsRoot: dirname(bbJsPkgJson),
+    entry: Bun.resolveSync(bbJs, bbProverDir),
+  };
 }
 
 async function main(): Promise<void> {

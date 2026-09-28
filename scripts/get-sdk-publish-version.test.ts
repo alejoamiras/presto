@@ -102,7 +102,12 @@ describe("baseVersionFor", () => {
       }),
     ).toBe("5.2.0");
     expect(() => baseVersionFor(manifestMode, {})).toThrow("has no version");
-    expect(() => baseVersionFor(aztecDerived, { version: "0.0.0" })).toThrow("no @aztec/stdlib");
+    expect(() => baseVersionFor(aztecDerived, { version: "0.0.0" })).toThrow(
+      "no Aztec stdlib dependency",
+    );
+    expect(
+      baseVersionFor(aztecDerived, { dependencies: { "@aztec-labs/stdlib": "6.0.0-rc.1" } }),
+    ).toBe("6.0.0-rc.1");
   });
 });
 

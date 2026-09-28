@@ -3,6 +3,7 @@ import { lstat, mkdir, mkdtemp, readdir, readFile, symlink } from "node:fs/promi
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import legacy from "../audit/fixtures/legacy-identity.json";
+import { aztecVersionOf } from "./aztec-manifest";
 import { parseNpmPackResult } from "./npm-pack-result";
 
 const root = resolve(import.meta.dir, "..");
@@ -65,7 +66,7 @@ const current = await Bun.file(join(root, "packages/sdk/package.json")).json();
 if (manifest.name !== legacy.sdkPackage || manifest.version !== legacy.sdkVersion) {
   throw new Error("Historical SDK identity mismatch");
 }
-if (manifest.dependencies["@aztec/stdlib"] !== current.dependencies["@aztec/stdlib"]) {
+if (aztecVersionOf(manifest) !== aztecVersionOf(current)) {
   throw new Error("Legacy interoperability fixture must use the same Aztec protocol version");
 }
 await linkWorkspaceDependencies(join(packageDir, "node_modules"), [

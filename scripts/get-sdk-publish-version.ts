@@ -1,8 +1,8 @@
 /**
  * Determine the publish version for one package (`--package <key>`, default `presto`).
  *
- * `aztec-derived` packages follow the pinned Aztec version (the argument, or the package's
- * `@aztec/stdlib` dependency) and get a revision suffix when that base is already on npm:
+ * `aztec-derived` packages follow the pinned Aztec version (the argument, or the package's Aztec
+ * `stdlib` dependency, under either scope) and get a revision suffix when that base is already on npm:
  *
  *   5.0.0-nightly.20260224 → 5.0.0-nightly.20260224.1 → .2   (prereleases extend the identifier)
  *   4.2.0                  → 4.2.0-revision.1 → -revision.2   (stable + "." + number is not semver)
@@ -14,6 +14,7 @@
  * Usage: bun scripts/get-sdk-publish-version.ts [--package <key>] [base-version]
  */
 
+import { aztecVersionOf } from "./aztec-manifest.ts";
 import {
   isPrerelease,
   type NpmPackage,
@@ -82,7 +83,7 @@ export function resolvePackageVersion(
   return baseVersion;
 }
 
-/** The base version: the argument, else the manifest version or its `@aztec/stdlib` pin. */
+/** The base version: the argument, else the manifest version or its Aztec `stdlib` pin. */
 export function baseVersionFor(
   pkg: NpmPackage,
   manifest: { version?: string; dependencies?: Record<string, string> },
@@ -93,11 +94,11 @@ export function baseVersionFor(
     if (!manifest.version) throw new Error(`${pkg.name}: package.json has no version`);
     return manifest.version;
   }
-  const pin = manifest.dependencies?.["@aztec/stdlib"];
-  if (!pin) {
-    throw new Error(`${pkg.name}: no @aztec/stdlib dependency to derive the base version from`);
+  try {
+    return aztecVersionOf(manifest);
+  } catch (error) {
+    throw new Error(`${pkg.name}: ${(error as Error).message}; cannot derive the base version`);
   }
-  return pin;
 }
 
 async function getPublishedVersions(name: string): Promise<string[]> {

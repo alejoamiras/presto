@@ -31,7 +31,7 @@ export function checkWindowsBbPin(version: string = resolveAztecBb().version): W
     return {
       version,
       present: true,
-      message: `✓ Windows bb.exe pin present for @aztec/bb.js ${version} (sha256:${sha.slice(0, 12)}…, provenance manual-review).`,
+      message: `✓ Windows bb.exe pin present for bb.js ${version} (sha256:${sha.slice(0, 12)}…, provenance manual-review).`,
     };
   } catch (err) {
     const detail = err instanceof Error ? err.message : String(err);
@@ -39,7 +39,7 @@ export function checkWindowsBbPin(version: string = resolveAztecBb().version): W
       version,
       present: false,
       message:
-        `⚠️  MANUAL PIN REQUIRED for @aztec/bb.js ${version}\n` +
+        `⚠️  MANUAL PIN REQUIRED for bb.js ${version}\n` +
         `The Windows Prebuild/Build Smoke CI gate stays RED until a human adds a reviewed pin.\n` +
         `Steps: download ${WINDOWS_BB_ASSET} from the v${version} ${BB_RELEASE_REPO} release, verify the\n` +
         `release page + tag signature, diff it against the prior pinned asset, then add a\n` +
