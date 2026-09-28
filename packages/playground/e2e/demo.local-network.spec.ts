@@ -70,9 +70,8 @@ test.describe("Local", () => {
     await deployAndAssert(page, "local");
   });
 
-  // Re-enabled at 5.0.1 as the automated behavioral gate on the standards token (WASM path;
-  // asserts a NEW 500/500 balance outcome). The 4-minute timeout IS the plan's CI-time
-  // budget — mechanized (measured: ~2 min in CI at 5.0.1).
+  // The automated behavioral gate on the token flow (WASM path; asserts a NEW 500/500 balance
+  // outcome). The 4-minute timeout is the CI-time budget (measured: ~2 min in CI at 5.0.1).
   test("runs full token flow", async () => {
     test.setTimeout(240_000);
     const page = sharedPage;

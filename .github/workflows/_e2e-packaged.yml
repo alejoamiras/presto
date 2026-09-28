@@ -243,9 +243,12 @@ jobs:
           AZTEC_NODE_URL: ${{ inputs.aztec_node_url }}
           PRESTO_URL: http://127.0.0.1:59833
         run: |
+          # Empty output: the fixture targets another Aztec major, and the script logged a notice.
           LEGACY_SDK_ENTRY=$(bun scripts/install-legacy-sdk.ts)
-          test -f "$LEGACY_SDK_ENTRY"
-          export LEGACY_SDK_ENTRY
+          if [ -n "$LEGACY_SDK_ENTRY" ]; then
+            test -f "$LEGACY_SDK_ENTRY"
+            export LEGACY_SDK_ENTRY
+          fi
           bun run test:all
 
       # Point the playground at the PACKED SDK tarball (not the workspace source), so the composed proof

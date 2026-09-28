@@ -646,8 +646,8 @@ async function resolveBob(context: TokenFlowContext): Promise<AztecAddress> {
 
 async function deployToken(context: TokenFlowContext): Promise<TokenContract> {
   context.onStep("deploying token");
-  context.log("Deploying TokenContract (admin=Alice)...");
-  // The admin is the token's minter.
+  context.log("Deploying TokenContract (minter=Alice)...");
+  // The reference Token makes its admin the minter.
   const deployment = TokenContract.deploy(state.wallet!, context.alice, "Presto", "ACEL", 18);
   const { timing, txHash } = await executeStep({
     step: "deploy token",
