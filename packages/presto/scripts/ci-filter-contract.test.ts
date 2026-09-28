@@ -78,6 +78,11 @@ describe("presto CI path routing", () => {
       ],
     ],
     [
+      "installer graph check (setup-aztec runs it)",
+      ["scripts/aztec-installer-graph.ts"],
+      ["release_tooling", "sdk_integration"],
+    ],
+    [
       "Rust toolchain pin",
       ["rust-toolchain.toml"],
       [
