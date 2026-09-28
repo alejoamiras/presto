@@ -118,10 +118,10 @@ const EXACT_SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
 
 /**
- * One exact semver.org version npm also parses as a version: no ranges, no empty identifiers, no
- * leading zeros, at most 256 characters, and every numeric identifier a safe integer. npm treats
- * anything else (`5.2.0-alpha..x`, `9007199254740993.0.0`) as a mutable TAG — the opposite of a pin —
- * and numeric comparison past that range is lossy (`Bun.semver.order` reverses 30-digit identifiers).
+ * One exact semver.org version that npm pins and Bun orders. npm reads a malformed spec
+ * (`5.2.0-alpha..x`), one over 256 characters, or an unsafe-integer base component as a mutable TAG
+ * — the opposite of a pin. An unsafe-integer prerelease number stays a version to npm but misorders
+ * in `Bun.semver.order`, so it is refused too.
  */
 export function isExactSemver(version: string): boolean {
   const m = version.length <= 256 ? EXACT_SEMVER.exec(version) : null;
