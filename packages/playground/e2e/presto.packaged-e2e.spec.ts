@@ -20,7 +20,8 @@
  * `aztec.ts:initializeNode`) forces the prover to HTTPS-only with NO HTTP downgrade. We do NOT set
  * `ignoreHTTPSErrors` — the TLS handshake MUST succeed against the seeded trust, or the proof is not
  * a trust proof. Served from localhost, so Chrome 142+ Local Network Access exempts it; the page still
- * asks before connecting, so the spec connects through its dialog like a visitor.
+ * asks before connecting, so the spec connects through its dialog like a visitor. A second test proves
+ * the committed Noir fixture through the page's Noir panel, the `/prove/ultra-honk` route.
  *
  * Usage: bun run --cwd packages/playground test:e2e:packaged
  */
@@ -29,6 +30,7 @@ import { connectPresto } from "./connect";
 import { deployAndAssert } from "./fullstack.helpers";
 
 const HTTPS_PROVE_URL = "https://127.0.0.1:59834/prove";
+const HTTPS_ULTRA_HONK_URL = "https://127.0.0.1:59834/prove/ultra-honk";
 
 test.describe.configure({ mode: "serial" });
 
@@ -98,6 +100,41 @@ test("native bb proof over HTTPS via the installed desktop app", async ({ browse
   expect(phases, `unexpected auth denial in trail: ${JSON.stringify(phases)}`).not.toContain(
     "denied",
   );
+
+  await page.close();
+});
+
+test("native Noir proof over HTTPS via the installed desktop app", async ({ browser }) => {
+  test.setTimeout(5 * 60 * 1000);
+  const page = await browser.newPage();
+
+  const proveHits: { status: number; durationHeader: string | undefined }[] = [];
+  page.on("response", (res) => {
+    if (res.url() === HTTPS_ULTRA_HONK_URL) {
+      proveHits.push({
+        status: res.status(),
+        durationHeader: res.headers()["x-prove-duration-ms"],
+      });
+    }
+  });
+  page.on("pageerror", (err) => console.log(`[browser:pageerror] ${err.message}`));
+
+  // The Noir backend is its own client: `?httpsOnly=true` pins it to HTTPS with no downgrade too.
+  await page.goto("/?httpsOnly=true");
+  await expect(page.locator("#noir-btn")).toBeEnabled({ timeout: 60_000 });
+  await connectPresto(page);
+
+  await page.click("#noir-btn");
+  await expect(page.locator("#noir-btn")).toHaveText("Proving...");
+  await expect(page.locator("#noir-btn")).toHaveText("Prove Noir Circuit", { timeout: 4 * 60_000 });
+
+  // A fallback fills the in-browser column instead, so this tag alone rules one out; the header
+  // shows bb itself answered over HTTPS.
+  await expect(page.locator("#noir-tag-accelerated")).toHaveText("identical to fixture");
+  expect(
+    proveHits.some((h) => h.status === 200 && h.durationHeader !== undefined),
+    `expected a 200 ${HTTPS_ULTRA_HONK_URL} carrying x-prove-duration-ms; saw ${JSON.stringify(proveHits)}`,
+  ).toBe(true);
 
   await page.close();
 });
