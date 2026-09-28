@@ -25,3 +25,7 @@ with `rg --no-ignore` / `git grep`.
   gains prompt-free `loopbackPermission()` / `watchLoopbackPermission()`, banners gain a `connect`
   state, and the SDK docs and skill ask first (PRs #56–#57; released as core, noir and banners 1.2.0
   and presto 5.2.0-revision.5).
+- [workers-builds](workers-builds/plan.md) — closed 2026-09-28 — Cloudflare Workers Builds deploys
+  presto.build and the playground (production on `main`, a preview per branch), the production
+  playground builds from the pinned, provenance-verified SDK raised by an auto-merging bot PR, and
+  GitHub holds no site credential (PRs #61, #66, #68).

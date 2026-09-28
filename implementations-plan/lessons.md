@@ -15,8 +15,7 @@ not belong here. Sections are stable; append, never re-sort.
 - **`Guard::drop` runs before tokio reaps the child** — a confirm-the-kill wait inside `Drop` can only
   time out; use a spawned task with a cancel signal. `archive/presto-noir/lessons/arc-1-review.md`
 - **Clippy scores macro-expanded code and `#[test]` bodies under `--all-targets`** — `tracing!` calls
-  blow length and complexity limits while the source is well under them.
-  `archive/presto-noir/lessons/phase-4.md`, `archive/presto-cleanup/lessons/phase-3.md`
+  blow length and complexity limits. `archive/presto-cleanup/lessons/phase-3.md`
 - **An unfulfilled `#[expect]` is an error under `-D warnings`** — verify suppressions from a clean
   build, under every feature set. `archive/presto-cleanup/lessons/review-18.md`
 
@@ -27,8 +26,11 @@ not belong here. Sections are stable; append, never re-sort.
 - **Vite only bundles a *literal* `new URL("./f", import.meta.url)`** — composed from a variable it
   stays unrewritten: local warning, production 404. `archive/presto-noir/lessons/phase-17.md`
 - **`require.resolve` on a dual package picks the CJS entry, which Rolldown gives Node-mode interop**
-  — `.default` became the whole `exports` object and an injected `Buffer` a plain object; misread as a
-  Vite 8 miscompile for a month. Resolve the ESM entry from the `exports` map. (2026-09, Vite 8.3)
+  — `.default` became the whole `exports` object. Resolve the ESM entry from the `exports` map.
+  (2026-09, Vite 8.3)
+- **Any Wrangler bump fails `release-feed`'s typecheck** — `wrangler types --check` wants
+  `worker-configuration.d.ts` regenerated (`bun run --cwd packages/release-feed types`).
+  `archive/workers-builds/lessons/phase-1.md`
 
 ## Types and package boundaries
 
@@ -48,15 +50,13 @@ not belong here. Sections are stable; append, never re-sort.
 - **`vite preview` does not serve the deployment's headers** — no COOP/COEP means no
   `crossOriginIsolated` and no WASM threads. Assert it. `archive/presto-noir/lessons/arc-5-review.md`
 - **wdio 9 wraps every worker in `xvfb-run` when `DISPLAY` is unset**, killing the IPC channel
-  (`write EINVAL`) before any test runs. It runs under Node, so shared helpers must be runtime-neutral.
-  `archive/presto-noir/lessons/phase-6.md`
+  (`write EINVAL`) before any test runs. `archive/presto-noir/lessons/phase-6.md`
 - **A test that self-skips with `return` reports `ok`** — two `#[ignore]`d hermetic tests asserted
   nothing in an `--ignored` lane for months. Grep the log for the skip message.
 - **"Green" without a run ID is not green** — a failing Windows lane was treated as merged-clean.
   Assume any platform with no lane was never exercised. `archive/presto-noir/lessons/audit-fixes.md`
 - **A regression test proves nothing until it fails against the old code** — twice a new test passed
-  on the unfixed code (a stub answered like the fix; a prover built before `fetch` was stubbed).
-  `archive/lna-consent/lessons/cross-arc-review.md`
+  on the unfixed code. `archive/lna-consent/lessons/cross-arc-review.md`
 - **A Presto-mode deploy passes on a silent in-browser fallback** — the smoke's native deploy went
   green against a Presto the HTTPS-only page could not reach. Assert the phase trail
   (`expectNativeProof`).
@@ -78,6 +78,11 @@ not belong here. Sections are stable; append, never re-sort.
   earlier greens were API luck. `archive/presto-noir/lessons/cross-arc-review.md`
 - **A ruleset requiring contexts "up to date with main" forces a stack to land one level at a time** —
   those contexts only exist on a PR targeting `main`. `archive/presto-noir/lessons/cross-arc-review.md`
+- **Under `bash -e`, a failing `$(…)` inside an argument does not fail the step** — `echo "x=$(cmd)"`
+  succeeds; assign first. `archive/workers-builds/lessons/phase-3.md`
+- **Bot auto-merge needs the repository's "Allow auto-merge"** — every `bump-source` PR failed at
+  `gh pr merge --auto` for two weeks. `--match-head-commit` binds only when enabling.
+  `archive/workers-builds/lessons/post-impl.md`
 
 ## npm publishing
 
@@ -88,14 +93,11 @@ not belong here. Sections are stable; append, never re-sort.
   identity should install nothing. `archive/presto-noir/lessons/audit-fixes.md`
 - **npm's attestation endpoint 404s for minutes after a successful publish** — timing, not a missing
   signature; wait on a ten-minute scale. `archive/presto-noir/lessons/audit-fixes.md`
-- **npm says "not found" rather than "forbidden", and registry reads are CDN-cached** — a write with
-  an expired `npm login` 404s too (check `npm whoami`), and only an identified `E404` proves absence.
-  Verify a promotion or deprecation through an uncached read. `archive/presto-noir/lessons/arc-2-review.md`
-- **`npm trust` mis-parses `--otp <code>`; write `--otp=<code>`** (npm 11.16, 2026-09). Its web OTP
-  flow cannot complete from a non-interactive shell. `archive/presto-banners-publish/lessons/codex-loop.md`
-- **A publish job interrupted after `npm publish` strands the version** — no tag, release or
-  verification, and the planner refuses to reuse it. Fix forward with `packages: all` (next revision,
-  or a manifest bump), then deprecate the stranded one. `archive/lna-consent/plan.md`
+- **npm says "not found" rather than "forbidden", and registry reads are CDN-cached** — an expired
+  `npm login` 404s too (check `npm whoami`); verify a promotion through an uncached read.
+  `archive/presto-noir/lessons/arc-2-review.md`
+- **A publish job interrupted after `npm publish` strands the version** — the planner refuses to
+  reuse it. Fix forward with `packages: all`, then deprecate it. `archive/lna-consent/plan.md`
 
 ## Windows
 
@@ -113,7 +115,10 @@ not belong here. Sections are stable; append, never re-sort.
 - **zsh aborts the entire command line when any glob has no match** — `rm -f a/*.tgz b/*.tgz` runs
   *neither* removal if the first is empty. `archive/presto-noir/lessons/phase-16.md`
 - **Tear down by process group, never by name or wrapper pid** — `pkill -f` matched the tool shell's
-  own argv, and killing `npx vite preview &`'s pid left the server holding its port and the caller's
-  pipe. Start it under `set -m`, then `kill -- -$pgid`. `archive/presto-noir/lessons/phase-5.md`
+  own argv; killing `npx`'s pid left the server bound. `kill -- -$pgid`.
+  `archive/presto-noir/lessons/phase-5.md`
 - **git hooks do not inherit your interactive PATH** — a lint-staged `rustfmt` step could not find its
   binary and the commit *silently aborted*. `archive/presto-noir/lessons/phase-3.md`
+- **Local shellcheck 0.11 passes what CI's 0.9 fails** (SC2015, info level, still exit 1) — check
+  shell changes with the `koalaman/shellcheck:v0.9.0` image.
+  `archive/workers-builds/lessons/post-impl.md`

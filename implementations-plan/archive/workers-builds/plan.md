@@ -5,9 +5,39 @@ driver: claude-code
 code_review: off
 eli5_mode: artifact
 harden: not scheduled (small CI/CD diff; the codex loop's adversarial pass covers it)
-status: implemented 2026-09-27 — PR open; live preview check passed; fork check skipped by the owner
+status: closed 2026-09-28 (see Outcome)
 worktree: .claude/worktrees/workers-builds (branch worktree-workers-builds, rebased 2026-09-26 onto main @ b46898f)
 ---
+
+## Outcome
+
+**Closed 2026-09-28.** #61 was squash-merged as `08e507b` on 2026-09-27. Follow-on PRs #66 (`2d5826f`) and #68 (`2a04329`) closed its follow-ups. This plan's `/goal` and `/loop` seeds are retired.
+
+**Shipped:**
+- **Hosting:** Workers Builds builds and deploys both sites from the connected repo: production on every push to `main`, a Worker Preview on every other branch. Every branch decision lives in `scripts/workers-build.ts`; Wrangler is at 4.135.
+- **Production playground:** installs the provenance-verified publications pinned in `packages/playground/published-sdk.json`.
+  - `release-sdk`'s `bump-playground` raises the pin through an auto-merging release-bot PR.
+  - `app.yml`'s Published Playground Build gates PRs that touch the pin or its code path.
+- **Retired:** `deploy-landing.yml`, `presto-previews.yml`, and `release-sdk`'s `mode` input and `deploy-app` job. GitHub holds no site credential: the secret and variable were deleted on 2026-09-27, and the owner found no old token left in Cloudflare.
+- **Verified live:**
+  - Previews: headers, `crossOriginIsolated`.
+  - Production on the merge commit.
+  - Production again after #66 merged, on the owner's narrowed custom build token.
+- **Follow-on #66:**
+  - Every release-bot PR goes through the shared `bot-push` and `bot-pr` actions.
+  - The Aztec update stages `host-dependencies.json`.
+  - Release Bot Token Check exercises auto-merge.
+  - The fork check passed (PR #63). See `lessons/post-impl.md`.
+
+**Dropped or deferred:**
+- The release-feed Worker stays on manual, environment-gated Actions deploys (owner decision).
+- A3, the account-wide Workers Scripts Edit boundary, is an accepted risk.
+- `bump-playground`'s own steps first run at the next `release-sdk`.
+- Both of the last two are in `follow-ups.md`.
+
+**Review:**
+- Codex converged in 3 rounds on #61 and in 3 rounds on #66.
+- The owner skipped the cutover's fork check at #61; it was run and passed before #66.
 
 # Landing + playground deploys and PR previews on Cloudflare Workers Builds
 
