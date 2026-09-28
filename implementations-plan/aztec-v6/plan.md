@@ -731,7 +731,7 @@ Layers: lint · typecheck ×3 · unit · build · consumer install · installer 
 
 Layers: unit · integration (native bb 6 against the committed WASM reference).
 
-### Phase 6: token demo, legacy gate and local-network e2e (arc 3; needs R1 published)
+### Phase 6: token demo, legacy gate and local-network e2e (arc 3; needs R1 published) ✓
 
 Rewrite the token flow for the reference `Token`: `constructor(alice, …)`, `mint_to_private(alice,
 1000n)`, `transfer(bob, 500n)` sent from Alice, and balances of 500/500. The narrative and copy are
