@@ -124,6 +124,9 @@ export function parseFundingArgs(
 export interface Snapshot {
   nodeVersion: string;
   chainId: number;
+  /** For the anchor check: the registry and rollup version the destinations derive from. */
+  registry: EthAddress;
+  rollupVersion: number;
   portal: EthAddress;
   token: EthAddress;
   handler: EthAddress;
@@ -142,6 +145,8 @@ export async function readSnapshot(node: { getNodeInfo(): Promise<NodeInfo> }): 
   return {
     nodeVersion: info.nodeVersion,
     chainId: info.l1ChainId,
+    registry: info.l1ContractAddresses.registryAddress,
+    rollupVersion: info.rollupVersion,
     portal: feeJuicePortalAddress,
     token: feeJuiceAddress,
     handler: feeAssetHandlerAddress,
@@ -152,6 +157,8 @@ export async function readSnapshot(node: { getNodeInfo(): Promise<NodeInfo> }): 
 export interface Manifest {
   nodeVersion: string;
   chain: number;
+  registry: string;
+  rollupVersion: number;
   portal: string;
   token: string;
   handler: string;
@@ -163,6 +170,8 @@ export function manifestOf(snapshot: Snapshot, fpc: AztecAddress, args: FundingA
   return {
     nodeVersion: snapshot.nodeVersion,
     chain: snapshot.chainId,
+    registry: snapshot.registry.toString().toLowerCase(),
+    rollupVersion: snapshot.rollupVersion,
     portal: snapshot.portal.toString().toLowerCase(),
     token: snapshot.token.toString().toLowerCase(),
     handler: snapshot.handler.toString().toLowerCase(),

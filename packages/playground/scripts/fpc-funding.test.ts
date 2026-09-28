@@ -47,7 +47,9 @@ const nodeInfo = (chain: number, portal: string) =>
   ({
     nodeVersion: "6.0.0-rc.1",
     l1ChainId: chain,
+    rollupVersion: 7,
     l1ContractAddresses: {
+      registryAddress: eth("99"),
       feeJuicePortalAddress: eth(portal),
       feeJuiceAddress: eth("bb"),
       feeAssetHandlerAddress: eth("cc"),
