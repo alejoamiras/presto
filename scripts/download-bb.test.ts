@@ -232,6 +232,17 @@ describe("fetchAssetDigest (fail-closed, mirrors release_metadata.rs)", () => {
     routeFetch(() => jsonResp(200, { assets: [{ name: asset, digest: "sha256:xyz" }] }));
     await expect(fetchAssetDigest("5.0.0-rc.2", asset)).rejects.toThrow();
   });
+  test("the lookup refuses redirects", async () => {
+    let init: RequestInit | undefined;
+    globalThis.fetch = ((_input: unknown, given?: RequestInit) => {
+      init = given;
+      return Promise.resolve(
+        jsonResp(200, { assets: [{ name: asset, digest: `sha256:${sha("t")}` }] }),
+      );
+    }) as typeof fetch;
+    await fetchAssetDigest("5.0.0-rc.2", asset);
+    expect(init?.redirect).toBe("error");
+  });
 });
 
 describe("downloadTarball (bounded streaming)", () => {

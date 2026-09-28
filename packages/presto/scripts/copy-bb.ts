@@ -195,8 +195,8 @@ async function fetchWindowsBb(version: string, destExe: string): Promise<void> {
 /**
  * Resolve the LIVE `@aztec/bb.js` version + package root from the installed dependency tree (bb-prover
  * is a direct SDK dep; bb.js is its dep). Single source of truth for the bb version — the committed
- * AZTEC_VERSION file can drift. Extracted so the lean headless CI legs can read the version without the
- * full bb-copy prebuild. (core-extraction Phase 3b)
+ * AZTEC_VERSION file can drift. Separate from the prebuild so the lean headless CI legs can read the
+ * version without copying bb.
  */
 export function resolveAztecBb(): { version: string; bbJsRoot: string } {
   const sdkDir = join(import.meta.dirname!, "..", "..", "sdk");

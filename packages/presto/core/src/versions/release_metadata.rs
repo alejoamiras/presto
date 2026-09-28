@@ -91,11 +91,8 @@ pub fn current_platform() -> &'static str {
 /// aztec-packages 5.0.1 still verifies against its own marker, a fresh download gets the rebuild.
 const BB_RELEASE_REPO: &str = "AztecProtocol/barretenberg";
 
-/// Returns the download URL for a bb tarball from Aztec's GitHub releases.
-///
-/// Format: `https://github.com/AztecProtocol/barretenberg/releases/download/v{VERSION}/barretenberg-{PLATFORM}.tar.gz`
-/// q7e3-F-08: takes the validated `&AztecVersion` — an unvalidated string can no longer reach this
-/// URL-building sink.
+/// The bb tarball URL for this platform. Takes the validated `&AztecVersion`, so an unvalidated
+/// string cannot reach this URL-building sink.
 pub fn download_url(version: &AztecVersion) -> String {
     format!(
         "https://github.com/{BB_RELEASE_REPO}/releases/download/v{}/barretenberg-{}.tar.gz",
@@ -163,7 +160,6 @@ fn refusal_reason(status: reqwest::StatusCode, authenticated: bool) -> String {
 /// already does — but Aztec does not yet sign `bb` releases. Pinning known-good digests in the app is
 /// NOT a workaround: barretenberg nightlies ship EVERY night, so a pinned-digest manifest would be
 /// perpetually stale. Revisit once Aztec signs `bb`.
-/// Tracking: `implementations-plan/security-hardening-2026-06-09` (SEC-02) + a GitHub issue.
 pub(crate) async fn fetch_github_asset_digest(
     version: &str,
     asset_name: &str,
