@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
+import { aztecVersionOf } from "../../scripts/aztec-manifest.ts";
 import { LICENSE_POLICY } from "./licensing/license-fallbacks.ts";
 import { thirdPartyLicenses } from "./licensing/third-party-licenses.ts";
 
@@ -191,11 +192,9 @@ export default defineConfig(({ mode, command }) => {
       allEnv.AZTEC_NODE_URL || (command === "build" ? TESTNET_AZTEC_NODE_URL : undefined),
   };
 
-  // Read @aztec-labs/stdlib version from SDK package.json at build time
-  const sdkPkg = JSON.parse(
-    readFileSync(resolve(import.meta.dirname, "../sdk/package.json"), "utf8"),
+  const aztecSdkVersion = aztecVersionOf(
+    JSON.parse(readFileSync(resolve(import.meta.dirname, "../sdk/package.json"), "utf8")),
   );
-  const aztecSdkVersion: string = sdkPkg.dependencies["@aztec-labs/stdlib"] ?? "unknown";
 
   const licenses = thirdPartyLicenses(LICENSE_POLICY);
 

@@ -86,16 +86,11 @@ runs:
         # outage. If a bad release ever survives past it, pin instead by pre-creating the version
         # directory's package.json with `{"overrides":{"snappy":"<good>"}}` before this runs.
         export npm_config_min_release_age=7
-        # Aztec exemption (owner decisions 2026-08-19, exact names only since 2026-09-28): the
-        # quarantine above blocks even the EXACT-pinned Aztec version being installed when it is
-        # <7 days old (npm ETARGETs a same-day release), which would hold every e2e leg red for a
-        # week after each Aztec release. So the first-party names in `installer-aztec-packages.txt`
-        # skip the age gate, one `min-release-age-exclude[]` line each (npm's array syntax), and
-        # every third-party transitive (the snappy class this quarantine exists for) keeps the full
-        # 7 days. No scope glob: it would let any new package under a scope skip quarantine
-        # unreviewed. The list is the installer's full resolved Aztec graph, every platform's
-        # optional packages included; the graph check below keeps it exact. `min-release-age-exclude`
-        # ships in npm 12 (Node 24 bundles npm 11, which has no exclude in any form).
+        # The quarantine would also ETARGET the Aztec release itself for its first 7 days, so the
+        # reviewed names in `installer-aztec-packages.txt` are exempt, one exact name each (a scope
+        # glob would exempt a new package unreviewed); third-party transitives keep the 7 days, and
+        # the graph check below holds the list exact. `min-release-age-exclude` needs npm 12; Node
+        # 24 bundles npm 11.
         npm install -g npm@12.0.2
         AZTEC_LIST="$GITHUB_WORKSPACE/.github/actions/setup-aztec/installer-aztec-packages.txt"
         # npm 12 blocks dependency install scripts by default (allowScripts). Reviewed minimal
@@ -133,13 +128,12 @@ runs:
         VERSION=${{ steps.detect.outputs.version }} bash "$INSTALL_SCRIPT"
         ls -la ~/.aztec/versions/${{ steps.detect.outputs.version }}/bin/
 
-    # Runs on a cache hit too: the list proves the age-gate configuration, not the graph. A new
-    # first-party package that has already cleared the 7 days installs regardless, and only this
-    # name comparison sees it.
+    # Runs on a cache hit too: the npmrc assertion proves the age-gate configuration, not what the
+    # unlocked installer resolved.
     - name: Check the installed Aztec graph against the reviewed list
       if: inputs.skip_cli != 'true'
       shell: bash
-      run: bun scripts/aztec-installer-graph.ts "$HOME/.aztec/versions/${{ steps.detect.outputs.version }}" .github/actions/setup-aztec/installer-aztec-packages.txt
+      run: bun scripts/aztec-installer-graph.ts "$HOME/.aztec/versions/${{ steps.detect.outputs.version }}" .github/actions/setup-aztec/installer-aztec-packages.txt "${{ steps.detect.outputs.version }}"
 
     # The installer can produce a tree whose `snappy` cannot resolve a platform binding, and the only
     # symptom is `aztec start` dying with ERR_MODULE_NOT_FOUND ~10 minutes later, at the node-readiness

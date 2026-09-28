@@ -1,5 +1,5 @@
 import { describe, expect, mock, test } from "bun:test";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AztecAddress, EthAddress } from "@aztec-labs/aztec.js/addresses";
@@ -146,7 +146,7 @@ describe("the pre-signing checks", () => {
     );
   });
 
-  test("refuse a key file others can read, or one without a key", () => {
+  test("refuse a key file others can read, a symlink, or a file without a key", () => {
     const dir = mkdtempSync(join(tmpdir(), "fpc-key-"));
     try {
       const file = join(dir, "key");
@@ -155,6 +155,8 @@ describe("the pre-signing checks", () => {
       expect(() => readKeyFile(file)).toThrow("0600");
       chmodSync(file, 0o600);
       expect(() => readKeyFile(file)).toThrow("hex private key");
+      symlinkSync(file, join(dir, "link"));
+      expect(() => readKeyFile(join(dir, "link"))).toThrow("ELOOP");
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
@@ -163,11 +165,11 @@ describe("the pre-signing checks", () => {
 
 describe("fundingBudget", () => {
   const WEI = 10n ** 18n;
-  const fakeManager = () => {
+  const fakeManager = (mintAmount = 1_000n * WEI) => {
     const mint = mock(async () => {});
     const bridgeTokensPublic = mock(async () => ({}));
     const manager = {
-      getTokenManager: () => ({ getMintAmount: async () => 1_000n * WEI, mint }),
+      getTokenManager: () => ({ getMintAmount: async () => mintAmount, mint }),
       bridgeTokensPublic,
     } as unknown as L1FeeJuicePortalManager;
     return { manager, mint, bridgeTokensPublic };
@@ -175,19 +177,22 @@ describe("fundingBudget", () => {
 
   test("mints and bridges exactly the amount, and stops at the total", async () => {
     const { manager, mint, bridgeTokensPublic } = fakeManager();
-    const bridge = fundingBudget(2_000n);
-    await bridge(manager, "0x01", FPC, 2_000n);
+    const bridge = await fundingBudget(manager, "0x01", 2_000n, [2_000n]);
+    await bridge(FPC, 2_000n);
     expect(mint).toHaveBeenCalledTimes(2);
     expect(bridgeTokensPublic).toHaveBeenCalledWith(FPC, 2_000n * WEI, false);
-    await expect(bridge(manager, "0x01", FPC, 1n)).rejects.toThrow("--max-total 2000");
+    await expect(bridge(FPC, 1_000n)).rejects.toThrow("--max-total 2000");
     expect(mint).toHaveBeenCalledTimes(2);
   });
 
-  test("refuses an amount the fixed-size mint cannot produce exactly", async () => {
+  test("refuses, before any mint, a plan the handler cannot mint exactly or only in too many mints", async () => {
     const { manager, mint } = fakeManager();
-    await expect(fundingBudget(2_000n)(manager, "0x01", FPC, 1_500n)).rejects.toThrow(
+    await expect(fundingBudget(manager, "0x01", 2_000n, [1_000n, 1_500n])).rejects.toThrow(
       "handler mints",
     );
+    const tiny = fakeManager(1n);
+    await expect(fundingBudget(tiny.manager, "0x01", 2_000n, [1n])).rejects.toThrow("cap is 20");
     expect(mint).not.toHaveBeenCalled();
+    expect(tiny.mint).not.toHaveBeenCalled();
   });
 });

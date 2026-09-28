@@ -9,19 +9,30 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
+const RELEASE = "6.0.0-rc.1";
+
 /**
  * An install prefix with each `path → name` package on disk and in `package-lock.json`, plus
- * `lockOnly` entries (another platform's optional packages) in the lock alone.
+ * `lockOnly` entries (another platform's optional packages) in the lock alone. Every package is at
+ * `RELEASE` unless `versions` names another.
  */
-function prefix(installed: Record<string, string>, lockOnly: Record<string, string> = {}): string {
+function prefix(
+  installed: Record<string, string>,
+  lockOnly: Record<string, string> = {},
+  versions: Record<string, string> = {},
+): string {
   const root = mkdtempSync(join(tmpdir(), "aztec-graph-"));
   roots.push(root);
+  const version = (path: string) => versions[path] ?? RELEASE;
   for (const [path, name] of Object.entries(installed)) {
     mkdirSync(join(root, path), { recursive: true });
-    writeFileSync(join(root, path, "package.json"), JSON.stringify({ name, version: "1.0.0" }));
+    writeFileSync(
+      join(root, path, "package.json"),
+      JSON.stringify({ name, version: version(path) }),
+    );
   }
   const packages = Object.fromEntries(
-    Object.entries({ ...installed, ...lockOnly }).map(([path]) => [path, { version: "1.0.0" }]),
+    Object.keys({ ...installed, ...lockOnly }).map((path) => [path, { version: version(path) }]),
   );
   writeFileSync(
     join(root, "package-lock.json"),
@@ -30,19 +41,21 @@ function prefix(installed: Record<string, string>, lockOnly: Record<string, stri
   return root;
 }
 
+const VIEM = "node_modules/@aztec-labs/aztec/node_modules/@aztec/viem";
 const INSTALLED = {
   "node_modules/@aztec-labs/aztec": "@aztec-labs/aztec",
-  "node_modules/@aztec-labs/aztec/node_modules/@aztec/viem": "@aztec/viem",
+  [VIEM]: "@aztec/viem",
   "node_modules/snappy": "snappy",
 };
 const OTHER_PLATFORM = { "node_modules/@aztec-foundation/wsdb-darwin-arm64": "" };
 const LISTED = ["@aztec-foundation/wsdb-darwin-arm64", "@aztec-labs/aztec", "@aztec/viem"];
+const clean = { added: [], removed: [], offRelease: [] };
 
 describe("installer graph check", () => {
   test("lock and disk together match the list: nested, three scopes, other platforms", () => {
-    const graph = aztecGraph(prefix(INSTALLED, OTHER_PLATFORM));
-    expect(graph).toEqual(LISTED);
-    expect(compareGraph(graph, LISTED)).toEqual({ added: [], removed: [] });
+    const graph = aztecGraph(prefix(INSTALLED, OTHER_PLATFORM, { [VIEM]: "2.38.3" }));
+    expect([...graph.keys()].sort()).toEqual(LISTED);
+    expect(compareGraph(graph, LISTED, RELEASE)).toEqual(clean);
   });
 
   test("names an unlisted package, however long ago it was published", () => {
@@ -51,18 +64,39 @@ describe("installer graph check", () => {
     const root = prefix(INSTALLED, OTHER_PLATFORM);
     const extra = join(root, "node_modules/@aztec-labs/old-new");
     mkdirSync(extra, { recursive: true });
-    writeFileSync(join(extra, "package.json"), JSON.stringify({ name: "@aztec-labs/old-new" }));
-    expect(compareGraph(aztecGraph(root), LISTED)).toEqual({
+    writeFileSync(
+      join(extra, "package.json"),
+      JSON.stringify({ name: "@aztec-labs/old-new", version: RELEASE }),
+    );
+    expect(compareGraph(aztecGraph(root), LISTED, RELEASE)).toEqual({
+      ...clean,
       added: ["@aztec-labs/old-new"],
-      removed: [],
     });
   });
 
   test("names a listed package the tree no longer resolves", () => {
-    expect(compareGraph(aztecGraph(prefix(INSTALLED)), LISTED)).toEqual({
-      added: [],
+    expect(compareGraph(aztecGraph(prefix(INSTALLED)), LISTED, RELEASE)).toEqual({
+      ...clean,
       removed: ["@aztec-foundation/wsdb-darwin-arm64"],
     });
+  });
+
+  test("names a listed package resolved at another release, which its exemption let skip the gate", () => {
+    const nested =
+      "node_modules/@aztec-labs/aztec/node_modules/@aztec-foundation/wsdb-darwin-arm64";
+    const graph = aztecGraph(
+      prefix(INSTALLED, { ...OTHER_PLATFORM, [nested]: "" }, { [nested]: "6.0.0-rc.2" }),
+    );
+    expect(compareGraph(graph, LISTED, RELEASE)).toEqual({
+      ...clean,
+      offRelease: ["@aztec-foundation/wsdb-darwin-arm64@6.0.0-rc.2"],
+    });
+  });
+
+  test("an unreadable package manifest fails the check instead of hiding the package", () => {
+    const root = prefix(INSTALLED, OTHER_PLATFORM);
+    writeFileSync(join(root, "node_modules/@aztec-labs/aztec/package.json"), "{");
+    expect(() => aztecGraph(root)).toThrow();
   });
 
   test("the list takes exact names only", () => {

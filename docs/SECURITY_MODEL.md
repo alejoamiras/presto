@@ -229,7 +229,8 @@ separate, unlocked graph), because Aztec releases are consumed the day they ship
 **exact names only**; a scope glob would let any new package under the scope skip quarantine
 unreviewed. `scripts/bunfig-aztec-excludes.test.ts` holds the bunfig list equal to the lock, and
 `scripts/aztec-installer-graph.ts` holds the installer list equal to what the installer resolved, on a
-cache hit too. The residual risk is accepted: a compromised publish from either scope, including one
+cache hit too, and fails any exempt `@aztec-labs` or `@aztec-foundation` package at a version other
+than the release being installed. The residual risk is accepted: a compromised publish from either scope, including one
 from the shared account, installs without an observation window.
 
 Versions are held by **exact pins**, not dist-tags: `@aztec-foundation/bb.js`'s `prerelease` tag

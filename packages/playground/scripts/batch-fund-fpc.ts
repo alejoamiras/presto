@@ -57,9 +57,10 @@ const manager = portalManagerFrom(
   l1Client as unknown as Parameters<typeof portalManagerFrom>[1],
   createLogger("batch-fund-fpc"),
 );
-const bridgeExact = fundingBudget(args.maxTotalFj);
-const bridge = (to: typeof fpc.address, amountFj: bigint) =>
-  bridgeExact(manager, account.address, to, amountFj);
+const bridge = await fundingBudget(manager, account.address, args.maxTotalFj, [
+  args.bootstrapFj,
+  args.fpcFj,
+]);
 
 if (!(await node.getContract(fpc.address))) {
   throw new Error(`no contract at ${fpc.address}; deploy it with deploy-sponsored-fpc.ts`);

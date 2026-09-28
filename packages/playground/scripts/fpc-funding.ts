@@ -5,7 +5,7 @@
  * from the node again. Every check runs before the L1 key is loaded.
  */
 
-import { readFileSync, statSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import type { AztecAddress, EthAddress } from "@aztec-labs/aztec.js/addresses";
 import { L1FeeJuicePortalManager, type L2AmountClaim } from "@aztec-labs/aztec.js/ethereum";
@@ -204,13 +204,24 @@ export async function checkL1Chain(client: { getChainId(): Promise<number> }, ex
   return chain;
 }
 
-/** Reads a hex private key from a file only its owner can read. The key is never logged. */
+/**
+ * Reads a hex private key from a regular file only its owner can read. One descriptor serves the
+ * check and the read, and a symlink is refused, so the file checked is the file read. The key is
+ * never logged.
+ */
 export function readKeyFile(path: string): `0x${string}` {
-  if ((statSync(path).mode & 0o077) !== 0)
-    throw new Error(`${path} must not be readable by others (0600)`);
-  const key = readFileSync(path, "utf8").trim();
-  if (!/^0x[0-9a-fA-F]{64}$/.test(key)) throw new Error(`${path} does not hold a hex private key`);
-  return key as `0x${string}`;
+  const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || (stat.mode & 0o077) !== 0)
+      throw new Error(`${path} must be a regular file only its owner can read (0600)`);
+    const key = readFileSync(fd, "utf8").trim();
+    if (!/^0x[0-9a-fA-F]{64}$/.test(key))
+      throw new Error(`${path} does not hold a hex private key`);
+    return key as `0x${string}`;
+  } finally {
+    closeSync(fd);
+  }
 }
 
 export function portalManagerFrom(
@@ -227,32 +238,51 @@ export function portalManagerFrom(
   );
 }
 
+/** A handler, or an L1 RPC, reporting a tiny mint size must not turn a bridge into a signing loop. */
+const MAX_MINTS = 20n;
+
 /**
  * Mints the exact amount through the handler's fixed-size mint, then bridges exactly that amount,
- * never the account's whole balance. Every bridge draws on one budget capped at `--max-total`.
+ * never the account's whole balance. Every planned amount is checked against the mint size before
+ * anything is signed, and all bridges draw on one budget: `--max-total` FJ and `MAX_MINTS` mints.
  */
-export function fundingBudget(maxTotalFj: bigint) {
+export async function fundingBudget(
+  manager: L1FeeJuicePortalManager,
+  minter: Hex,
+  maxTotalFj: bigint,
+  plannedFj: readonly bigint[],
+) {
+  const tokens = manager.getTokenManager();
+  const perMint = await tokens.getMintAmount();
+  const mintsFor = (amountFj: bigint) => {
+    const amount = amountFj * WEI_PER_FJ;
+    if (perMint <= 0n || amount % perMint !== 0n) {
+      throw new Error(`${amountFj} FJ is not a whole number of ${perMint}-wei handler mints`);
+    }
+    return amount / perMint;
+  };
+  const planned = plannedFj.reduce((sum, amountFj) => sum + mintsFor(amountFj), 0n);
+  if (planned > MAX_MINTS) {
+    throw new Error(
+      `the run needs ${planned} handler mints of ${perMint} wei; the cap is ${MAX_MINTS}`,
+    );
+  }
   let spentFj = 0n;
-  return async function bridgeExact(
-    manager: L1FeeJuicePortalManager,
-    minter: Hex,
-    to: AztecAddress,
-    amountFj: bigint,
-  ): Promise<L2AmountClaim> {
+  let minted = 0n;
+  return async function bridgeExact(to: AztecAddress, amountFj: bigint): Promise<L2AmountClaim> {
+    const mints = mintsFor(amountFj);
     if (spentFj + amountFj > maxTotalFj) {
       throw new Error(
         `bridging ${amountFj} FJ would pass --max-total ${maxTotalFj} (spent ${spentFj})`,
       );
     }
-    const tokens = manager.getTokenManager();
-    const amount = amountFj * WEI_PER_FJ;
-    const perMint = await tokens.getMintAmount();
-    if (perMint <= 0n || amount % perMint !== 0n) {
-      throw new Error(`${amountFj} FJ is not a whole number of ${perMint}-wei handler mints`);
+    if (minted + mints > MAX_MINTS) {
+      throw new Error(`bridging ${amountFj} FJ would pass ${MAX_MINTS} handler mints`);
     }
     spentFj += amountFj;
-    for (let i = 0n; i < amount / perMint; i++) await tokens.mint(minter);
-    return manager.bridgeTokensPublic(to, amount, false);
+    minted += mints;
+    for (let i = 0n; i < mints; i++) await tokens.mint(minter);
+    return manager.bridgeTokensPublic(to, amountFj * WEI_PER_FJ, false);
   };
 }
 
