@@ -16,6 +16,7 @@
 
 import { aztecVersionOf } from "./aztec-manifest.ts";
 import {
+  isExactSemver,
   isPrerelease,
   type NpmPackage,
   packageFromArgs,
@@ -52,7 +53,7 @@ export function resolvePublishVersion(baseVersion: string, publishedVersions: st
  */
 export function aztecDerivedOrder(a: string, b: string): number {
   const parts = (v: string) => {
-    if (!VERSION_PATTERNS["aztec-derived"].test(v)) {
+    if (!isExactSemver(v) || !VERSION_PATTERNS["aztec-derived"].test(v)) {
       throw new Error(`${JSON.stringify(v)} is not an aztec-derived version`);
     }
     const m = /^(\d+)\.(\d+)\.(\d+)(?:-revision\.(\d+))?/.exec(v) as RegExpExecArray;

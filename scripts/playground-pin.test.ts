@@ -62,5 +62,8 @@ describe("raisePin", () => {
 
   test("an invalid update fails before anything moves", () => {
     expect(() => raisePin(pin("5.2.0", "1.2.0"), { [SDK]: "5.3.0; rm -rf /" })).toThrow("Invalid");
+    expect(() => raisePin(pin("5.2.0", "1.2.0"), { [SDK]: `6.0.0-rc.${"1".repeat(31)}` })).toThrow(
+      "Invalid",
+    );
   });
 });

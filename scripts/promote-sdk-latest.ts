@@ -142,7 +142,7 @@ export function parsePromotionOptions(args: string[]): PromotionOptions {
   if (!version || positional.length !== 1 || !isValidVersion(pkg, version)) {
     throw new Error(USAGE);
   }
-  // `--rollback` skips the testnet check, which is the only other thing keeping a prerelease off latest.
+  // Prereleases publish to testnet too, so no later check keeps one off latest, in either mode.
   if (isPrerelease(version)) {
     throw new Error(`${pkg.name}@${version} is a prerelease; latest only takes a stable version`);
   }

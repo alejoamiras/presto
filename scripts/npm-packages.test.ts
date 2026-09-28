@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import {
   CONSUMER_PROFILE_ROOT,
   DEFAULT_PACKAGE,
+  isExactSemver,
   isPrerelease,
   isValidVersion,
   NPM_PACKAGES,
@@ -73,8 +74,18 @@ describe("npm package descriptor", () => {
     expect(packageFromArgs([]).pkg).toBe(NPM_PACKAGES.presto);
   });
 
+  test("provenance subject and release tag are derived from the package name", () => {
+    expect(provenanceSubject(NPM_PACKAGES.presto, "5.2.0")).toBe(
+      "pkg:npm/%40alejoamiras/presto@5.2.0",
+    );
+    expect(releaseTag(NPM_PACKAGES.presto, "5.2.0")).toBe("@alejoamiras/presto@5.2.0");
+  });
+});
+
+describe("version shapes", () => {
+  const aztec = NPM_PACKAGES.presto;
+
   test("version patterns keep the revision suffix exclusive to aztec-derived packages", () => {
-    const aztec = NPM_PACKAGES.presto;
     const manifest = { ...aztec, versionMode: "manifest" as const };
     expect(isValidVersion(aztec, "5.2.0")).toBe(true);
     expect(isValidVersion(aztec, "5.2.0-revision.3")).toBe(true);
@@ -85,7 +96,6 @@ describe("npm package descriptor", () => {
   });
 
   test("aztec-derived versions take Aztec's prerelease shapes and their `.N` republishes", () => {
-    const aztec = NPM_PACKAGES.presto;
     for (const version of [
       "6.0.0-rc.1",
       "6.0.0-rc.1.2",
@@ -112,10 +122,18 @@ describe("npm package descriptor", () => {
     expect(["6.0.0", "5.2.0-revision.5", "1.2.1"].map(isPrerelease)).toEqual([false, false, false]);
   });
 
-  test("provenance subject and release tag are derived from the package name", () => {
-    expect(provenanceSubject(NPM_PACKAGES.presto, "5.2.0")).toBe(
-      "pkg:npm/%40alejoamiras/presto@5.2.0",
-    );
-    expect(releaseTag(NPM_PACKAGES.presto, "5.2.0")).toBe("@alejoamiras/presto@5.2.0");
+  test("exact semver stops where npm or Bun stop treating a string as an ordered version", () => {
+    // npm parses the first two as tags; the third's identifier is past lossless numeric comparison.
+    for (const version of [
+      "9007199254740992.0.0",
+      `6.0.0-rc.${"1".repeat(249)}`,
+      "6.0.0-rc.9007199254740993",
+    ]) {
+      expect(isExactSemver(version)).toBe(false);
+      expect(isValidVersion(aztec, version)).toBe(false);
+    }
+    expect(isExactSemver("9007199254740991.0.0")).toBe(true);
+    expect(isExactSemver(`6.0.0-rc.${"1".repeat(247)}`)).toBe(false);
+    expect(isExactSemver(`6.0.0-${"a".repeat(250)}`)).toBe(true);
   });
 });

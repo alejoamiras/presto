@@ -134,5 +134,9 @@ describe("aztecDerivedOrder", () => {
 
   test("rejects versions outside the aztec-derived shape", () => {
     expect(() => aztecDerivedOrder("6.0.0-foo.1", "6.0.0")).toThrow("not an aztec-derived version");
+    // Bun.semver.order reverses these two; past the safe-integer range nothing is compared.
+    expect(() =>
+      aztecDerivedOrder(`6.0.0-rc.${"1".repeat(31)}`, `6.0.0-rc.${"9".repeat(30)}`),
+    ).toThrow("not an aztec-derived version");
   });
 });

@@ -114,16 +114,25 @@ export function packageFromArgs(args: readonly string[]): { pkg: NpmPackage; res
   return { pkg: resolvePackage(key), rest };
 }
 
-/**
- * One exact semver.org version: no ranges, no empty identifiers, no leading zeros. npm treats a
- * malformed spec like `5.2.0-alpha..x` as a mutable TAG — the opposite of a pin.
- */
-export const EXACT_SEMVER =
+const EXACT_SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+
+/**
+ * One exact semver.org version npm also parses as a version: no ranges, no empty identifiers, no
+ * leading zeros, at most 256 characters, and every numeric identifier a safe integer. npm treats
+ * anything else (`5.2.0-alpha..x`, `9007199254740993.0.0`) as a mutable TAG — the opposite of a pin —
+ * and numeric comparison past that range is lossy (`Bun.semver.order` reverses 30-digit identifiers).
+ */
+export function isExactSemver(version: string): boolean {
+  const m = version.length <= 256 ? EXACT_SEMVER.exec(version) : null;
+  if (!m) return false;
+  const ids = [m[1], m[2], m[3], ...(m[4]?.split(".") ?? [])];
+  return ids.every((id = "") => !/^\d+$/.test(id) || Number(id) <= Number.MAX_SAFE_INTEGER);
+}
 
 /** A publishable version: exact semver in the shape the package's version mode allows. */
 export function isValidVersion(pkg: NpmPackage, version: string): boolean {
-  return EXACT_SEMVER.test(version) && VERSION_PATTERNS[pkg.versionMode].test(version);
+  return isExactSemver(version) && VERSION_PATTERNS[pkg.versionMode].test(version);
 }
 
 /** The SLSA provenance subject npm records for a published version (purl: scope `@` is `%40`). */

@@ -12,12 +12,12 @@ import {
   type PackageManifest,
   requireAztecDependency,
 } from "../aztec-manifest.ts";
-import { EXACT_SEMVER, type NpmPackage, packageFromArgs } from "../npm-packages.ts";
+import { isExactSemver, type NpmPackage, packageFromArgs } from "../npm-packages.ts";
 
 /**
- * An `aztec-derived` package must pin `stdlib` exactly (the F13 deps-vs-peers decision: exact pins
- * are what make the consumer's Aztec graph a singleton); a range here would still resolve but
- * silently weaken that contract. A `manifest` package may omit the dependency entirely.
+ * An `aztec-derived` package must pin `stdlib` exactly: exact pins are what make the consumer's Aztec
+ * graph a singleton, and a range here would still resolve but silently weaken that contract. A
+ * `manifest` package may omit the dependency entirely.
  */
 export function exactAztecPin(
   manifest: PackageManifest,
@@ -27,7 +27,7 @@ export function exactAztecPin(
     pkg.versionMode === "aztec-derived"
       ? requireAztecDependency(manifest, "stdlib", ["dependencies"])
       : findAztecDependency(manifest, "stdlib", ["dependencies"]);
-  if (pin && !EXACT_SEMVER.test(pin.version)) {
+  if (pin && !isExactSemver(pin.version)) {
     throw new Error(
       `${pkg.name}: the tarball pins ${pin.name} as ${JSON.stringify(pin.version)}, not an exact semver; the exact-pin invariant is broken`,
     );

@@ -25,6 +25,7 @@ describe("exact Aztec stdlib pin", () => {
       "5.2",
       "5.2.0-alpha..x",
       "npm:@aztec/stdlib@5.2.0",
+      "9007199254740993.0.0",
       "",
     ]) {
       expect(() => exactAztecPin({ dependencies: { "@aztec/stdlib": pin } }, aztecDerived)).toThrow(

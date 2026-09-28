@@ -3,7 +3,7 @@
 // every `workspace:` dependency pinned to the exact sibling version publishing alongside. Pure, so the
 // rewrite is unit-tested; the publish workflow and the tarball-consumer CI job run the same code.
 
-import { EXACT_SEMVER } from "./npm-packages.ts";
+import { isExactSemver } from "./npm-packages.ts";
 
 /**
  * A source export entry: TypeScript under `src/`, which `build` emits to the same path under `dist/`.
@@ -99,7 +99,7 @@ export function rewriteWorkspaceRanges(
         `${name} is a workspace dependency but no publish version was supplied for it (--dep ${name}=<version>)`,
       );
     }
-    if (!EXACT_SEMVER.test(pinned)) {
+    if (!isExactSemver(pinned)) {
       throw new Error(`${name} pin ${JSON.stringify(pinned)} is not an exact semver version`);
     }
     out[name] = pinned;
