@@ -330,7 +330,8 @@ authorization, 2026-09-28, A5):
   `playground/src/aztec.ts:52-53`.
 - **Playground build config:** `playground/vite.config.ts` (dedupe, optimizeDeps and allowlists at
   :44-48, :68-69, :113, :118, :208, :276), `playground/licensing/license-fallbacks.ts` (rules
-  re-keyed; the bb.js text now sourced from the barretenberg repository at `v6.0.0-rc.1`).
+  re-keyed; bb.js's text from aztec-packages' `barretenberg/LICENSE` at `v6.0.0-rc.1`, since the
+  barretenberg release repository ships none; see D18).
 - **FeeJuice:** `FeeJuiceContract` from `@aztec-labs/aztec.js/protocol` in
   `playground/scripts/{deploy-sponsored-fpc,batch-fund-fpc}.ts` and
   `sdk/e2e/{legacy-compatibility,proving}.test.ts`.
@@ -888,7 +889,9 @@ after 7b. PR bodies state:
      constraint on bumps, the two age gates, barretenberg as the `bb` source;
    - close the core/noir bump follow-up;
    - add follow-ups: the legacy gate re-armed against the previous presto rc, `latest` promotion when
-     Aztec v6 goes stable, the next app release bundling v6 `bb`;
+     Aztec v6 goes stable, the next app release bundling v6 `bb`, and `FOUNDATION_PACKAGES`'s doc
+     comment in `scripts/aztec-manifest.ts`, which wrongly calls the three names "only these are Aztec
+     release artifacts" (the file is in the `published` filter, so arc 3 cannot touch it);
    - archive after the merge.
 
 **Post-implementation hardening:** no `/harden`. The trust boundaries are unchanged and no secret or
@@ -915,7 +918,7 @@ permission is added; the supply-chain deltas are recorded above and in `docs/SEC
 | D15 | Phase 4 grep without the quote anchor, covering shipped `.md` | Fable MEDIUM | adopted |
 | D16 | Security residual: maintainers, shared account, provenance, exact pins → `SECURITY_MODEL.md` | Fable LOW | adopted |
 | D17 | Prune Windows pins absent from barretenberg; test URL fixture to 5.2.0 | Fable LOW | adopted |
-| D18 | bb.js licence text re-sourced from barretenberg | Fable LOW | adopted |
+| D18 | bb.js licence text re-sourced from barretenberg | Fable LOW | adopted, then superseded: barretenberg has no LICENSE at `v6.0.0-rc.1`, so the text is aztec-packages' `barretenberg/LICENSE` at the same tag (`lessons/phase-4.md`) |
 | D19 | `noir-fixture.ts` reuses `resolveAztecBb()` | Codex MEDIUM (scope edit), dedup | adopted |
 | D20 | A dual-source app (barretenberg, then aztec-packages) | draft alternative | rejected: no supported version needs it |
 | D21 | Released-artifact gate reworked: the headless archive has no bundled `bb`; `native.test.ts` sends `x-aztec-version`; `BB_BINARY_PATH`, `~/.bb` and `PATH` `bb` excluded; coexistence proven by a versioned 5.2.0 request with the v5 fixture | final Codex HIGH | adopted (supersedes D10's wording) |

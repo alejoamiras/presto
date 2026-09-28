@@ -38,3 +38,28 @@ Codex, on the resumed session: "no new material findings. **No CRITICAL or HIGH 
 It ran 13 targeted checks of the version guard (every scope, missing versions, nested viem
 mismatches) and took a last pass over the whole arc: installer, legacy gate, pins, token flow,
 fixture headers, licence rules. The `published`-filter intersection is still empty.
+
+# Cross-arc pass: fresh Codex session over `4cdc2f2..HEAD`
+
+## Round 1: 1 MEDIUM, 4 LOW, no CRITICAL or HIGH
+
+Checked and fine, per Codex:
+- manifest reads go through `aztec-manifest.ts` (the shipped SDK's local read is the packaging
+  exception);
+- bb.js, the pins, the Noir peer, `TESTED_BB_VERSION` and the fixtures agree on 6.0.0-rc.1;
+- the in-memory R2 plan gives core 1.2.1, noir 2.0.0-rc.1, presto 6.0.0-rc.1, with banners reused,
+  all on `testnet`;
+- promotion refuses prereleases;
+- noir publishing needs its gates;
+- the `published` intersection is empty.
+
+| # | Sev | Finding | Verdict | Change |
+|---|---|---|---|---|
+| 1 | MEDIUM | `validateVersion` in `update-aztec-version.ts` is weaker than arc 2's `isExactSemver`: it accepts `9007199254740993.0.0`, which npm reads as a tag. | Accepted | `validateVersion` also requires `isExactSemver`. The forced-version workflow runs the updater, so it gets the same check. A test case covers it. The validator predates the arcs; this is a one-line fix in a file arc 3 touches. |
+| 2 | LOW | The sdk-noir README says the default bb version is `5.2.0`. | Accepted | The literal is gone; the default is `TESTED_BB_VERSION`, the bb.js release that version pins. |
+| 3 | LOW | The `FOUNDATION_PACKAGES` comment calls the three names the only foundation release artifacts. | Accepted, deferred | `scripts/aztec-manifest.ts` is in `app.yml`'s `published` filter, which arc 3 must not touch. The edit was reverted and added to the close-out follow-ups in `plan.md`. |
+| 4 | LOW | The plan's change map and D18 still say bb.js's licence comes from barretenberg. | Accepted | Both now record the deviation (aztec-packages' `barretenberg/LICENSE`). |
+| 5 | LOW | `setup-aztec` comments: 16 lines of incident history, and an obsolete "repair" description beside a diagnose-only step. | Accepted | Cut to the invariants: an unlocked install needs the quarantine, snappy's wasm error is a red herring, and the step diagnoses only (a fix is a reviewed Aztec bump). The runtime error no longer asserts that `latest` is ahead of the pin. |
+
+Gates: `bun run test` 0, `bun run lint` 0, `bun run lint:actions` 0. The `published` intersection
+is empty.

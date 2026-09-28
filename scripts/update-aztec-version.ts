@@ -6,6 +6,7 @@
  */
 
 import { isAztecPackage } from "./aztec-manifest.ts";
+import { isExactSemver } from "./npm-packages.ts";
 
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly\.\d{8}|rc\.\d+|aztecnr-rc\.\d+))?$/;
 const AZTEC_VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly|spartan|devnet|aztecnr-rc|rc)[\w.-]*)?$/;
@@ -24,8 +25,9 @@ export const HOST_DEPENDENCY_FILES = [
   "scripts/tarball-consumer/presto-noir/host-dependencies.json",
 ];
 
+/** A release shape the updater knows that npm also reads as a version, never as a dist-tag. */
 export function validateVersion(version: string): boolean {
-  return VERSION_PATTERN.test(version);
+  return VERSION_PATTERN.test(version) && isExactSemver(version);
 }
 
 function bumpPins(deps: Record<string, unknown>, newVersion: string, skipPackages?: Set<string>) {

@@ -61,7 +61,8 @@ adapter and the page share one WASM runtime.
 - `api` — a `Barretenberg` instance, or a factory `() => Promise<Barretenberg>`. A factory is called
   only when WASM is needed (a fallback, `verifyProof`, a cold `getVerificationKey`), so a dApp with a
   running Presto never pays WASM + CRS initialisation; an instance is yours and is never destroyed.
-- `options.bbVersion` — the bb release Presto proves with; defaults to `TESTED_BB_VERSION` (`5.2.0`).
+- `options.bbVersion` — the bb release Presto proves with; defaults to `TESTED_BB_VERSION`, the bb.js release
+  this version pins.
   Another value is refused unless `allowUntestedBbVersion: true`.
 - `options.presto` — connection config (`port`, `host`, `httpsOnly`, `allowInsecureDowngrade`), as in
   `@alejoamiras/presto`.

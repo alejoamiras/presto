@@ -24,6 +24,8 @@ describe("validateVersion", () => {
 
   test("rejects invalid format", () => {
     expect(validateVersion("not-a-version")).toBe(false);
+    // Matches the release shape, but npm reads an unsafe-integer base as a mutable tag.
+    expect(validateVersion("9007199254740993.0.0")).toBe(false);
   });
 });
 
