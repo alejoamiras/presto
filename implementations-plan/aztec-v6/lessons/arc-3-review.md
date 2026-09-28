@@ -63,3 +63,10 @@ Checked and fine, per Codex:
 
 Gates: `bun run test` 0, `bun run lint` 0, `bun run lint:actions` 0. The `published` intersection
 is empty.
+
+## Round 2: converged
+
+Codex, resumed session: "no new material findings. **No CRITICAL or HIGH finding remains.**" It
+judged the deferral of the `FOUNDATION_PACKAGES` comment acceptable: the change is comment-only and
+tracked, and touching `aztec-manifest.ts` would trigger the published-playground gate during the
+intended v5/v6 mismatch. Its checks: 23 tests pass, and a malformed version fails the updater CLI.
