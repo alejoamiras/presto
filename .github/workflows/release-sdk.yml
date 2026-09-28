@@ -244,12 +244,11 @@ jobs:
           echo "result=$result" >> "$GITHUB_OUTPUT"
 
       # Never combined with a pending pin PR: every way of merging two bumps could drop a version.
-      - name: Open the pin PR
+      - name: Refuse to stack on an open pin PR
+        id: describe
         if: steps.pin.outputs.result == 'changed'
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token }}
-          BRANCH: chore/playground-sdk-pin-${{ github.run_id }}-${{ github.run_attempt }}
-          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           open="$(gh pr list --state open --limit 1000 --json number,headRefName,isCrossRepository \
             --jq '[.[] | select((.isCrossRepository | not) and (.headRefName | startswith("chore/playground-sdk-pin-"))) | "#\(.number)"] | join(" ")')"
@@ -260,15 +259,24 @@ jobs:
 
           presto="$(jq -r '."@alejoamiras/presto"' packages/playground/published-sdk.json)"
           noir="$(jq -r '."@alejoamiras/presto-noir"' packages/playground/published-sdk.json)"
-          title="chore(playground): build production from presto ${presto}, presto-noir ${noir}"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -b "$BRANCH"
-          git add packages/playground/published-sdk.json
-          git commit -m "$title"
-          git push origin "$BRANCH"
-          head="$(git rev-parse HEAD)"
+          echo "title=chore(playground): build production from presto ${presto}, presto-noir ${noir}" >> "$GITHUB_OUTPUT"
 
-          gh pr create --base main --head "$BRANCH" --title "$title" \
-            --body "Raised by $RUN_URL. Merging deploys playground.presto.build through Workers Builds; App's Published Playground Build verifies the pinned publications first."
-          gh pr merge "$BRANCH" --auto --squash --delete-branch --match-head-commit "$head"
+      - name: Push the pin branch
+        id: push
+        if: steps.pin.outputs.result == 'changed'
+        uses: ./.github/actions/bot-push
+        with:
+          branch: chore/playground-sdk-pin-${{ github.run_id }}-${{ github.run_attempt }}
+          message: ${{ steps.describe.outputs.title }}
+          paths: packages/playground/published-sdk.json
+
+      - name: Open the pin PR
+        if: steps.pin.outputs.result == 'changed'
+        uses: ./.github/actions/bot-pr
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: chore/playground-sdk-pin-${{ github.run_id }}-${{ github.run_attempt }}
+          title: ${{ steps.describe.outputs.title }}
+          body: Raised by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}. Merging deploys playground.presto.build through Workers Builds; App's Published Playground Build verifies the pinned publications first.
+          auto-merge: "true"
+          head: ${{ steps.push.outputs.head }}

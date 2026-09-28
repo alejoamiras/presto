@@ -24,7 +24,7 @@
     "lint:fix": "biome check --write . && cargo fmt --manifest-path packages/presto/core/Cargo.toml && cargo fmt --manifest-path packages/presto/server/Cargo.toml && cargo fmt --manifest-path packages/presto/src-tauri/Cargo.toml",
     "lint:pkg": "sort-package-json --check package.json packages/*/package.json",
     "lint:rust": "cargo fmt --check --manifest-path packages/presto/core/Cargo.toml && cargo fmt --check --manifest-path packages/presto/server/Cargo.toml && cargo fmt --check --manifest-path packages/presto/src-tauri/Cargo.toml",
-    "lint:shell": "shellcheck packages/*/scripts/*.sh",
+    "lint:shell": "shellcheck packages/*/scripts/*.sh .github/scripts/*.sh",
     "prepare": "husky",
     "sdk:promote": "bun scripts/promote-sdk-latest.ts",
     "test": "bun run lint && bun run test:typecheck && bun run test:unit",

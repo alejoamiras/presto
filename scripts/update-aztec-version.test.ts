@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { updateHostDependencies, updatePackageJson, validateVersion } from "./update-aztec-version";
+import {
+  CRS_FILE,
+  HOST_DEPENDENCY_FILES,
+  PACKAGE_JSON_FILES,
+  updateHostDependencies,
+  updatePackageJson,
+  validateVersion,
+} from "./update-aztec-version";
 
 describe("validateVersion", () => {
   test("accepts nightly format", () => {
@@ -122,5 +129,21 @@ describe("updateHostDependencies", () => {
     ).json();
     const adapter = await Bun.file(new URL("packages/sdk-noir/package.json", root)).json();
     expect(host["@aztec/bb.js"]).toBe(adapter.peerDependencies["@aztec/bb.js"]);
+  });
+});
+
+describe("the Aztec update workflow", () => {
+  test("stages exactly what the updater writes, plus the lockfile", async () => {
+    const source = await Bun.file(
+      new URL("../.github/workflows/_aztec-update.yml", import.meta.url),
+    ).text();
+    type Step = { uses?: string; with?: { paths?: string } };
+    const workflow = Bun.YAML.parse(source) as { jobs: { update: { steps: Step[] } } };
+    const push = workflow.jobs.update.steps.find(
+      (step) => step.uses === "./.github/actions/bot-push",
+    );
+    const staged = (push?.with?.paths ?? "").split("\n").filter(Boolean).sort();
+    const written = [...PACKAGE_JSON_FILES, ...HOST_DEPENDENCY_FILES, CRS_FILE, "bun.lock"].sort();
+    expect(staged).toEqual(written);
   });
 });

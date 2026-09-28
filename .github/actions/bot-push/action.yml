@@ -1,0 +1,40 @@
+name: Bot push
+description: |
+  Commit exactly the listed paths on a new branch as github-actions[bot] and push it create-only,
+  using the credentials actions/checkout persisted. Fails on a pre-staged index, when nothing
+  changed, or when a change outside the list is left behind. See .github/scripts/bot-push.sh.
+
+inputs:
+  branch:
+    description: The new branch.
+    required: true
+  message:
+    description: The commit message.
+    required: true
+  paths:
+    description: Paths to stage, one per line.
+    required: true
+  if-exists:
+    description: What to do when the branch already exists on origin (fail | skip).
+    required: false
+    default: fail
+
+outputs:
+  pushed:
+    description: '"true" when this run pushed the branch, "false" when an existing one was kept.'
+    value: ${{ steps.push.outputs.pushed }}
+  head:
+    description: The branch tip.
+    value: ${{ steps.push.outputs.head }}
+
+runs:
+  using: composite
+  steps:
+    - id: push
+      shell: bash
+      env:
+        BRANCH: ${{ inputs.branch }}
+        MESSAGE: ${{ inputs.message }}
+        PATHS: ${{ inputs.paths }}
+        IF_EXISTS: ${{ inputs.if-exists }}
+      run: bash "$GITHUB_ACTION_PATH/../../scripts/bot-push.sh"
