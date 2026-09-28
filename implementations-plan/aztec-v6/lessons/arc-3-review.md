@@ -31,3 +31,10 @@ amount leaves zero mints, and the counters advance before the first `await`.
 
 Gates: `bun run test` 0, `bun run lint` 0, `bun run lint:actions` 0. The scratch v6 tree still
 matches (62 names).
+
+## Round 3: converged
+
+Codex, on the resumed session: "no new material findings. **No CRITICAL or HIGH finding remains.**"
+It ran 13 targeted checks of the version guard (every scope, missing versions, nested viem
+mismatches) and took a last pass over the whole arc: installer, legacy gate, pins, token flow,
+fixture headers, licence rules. The `published`-filter intersection is still empty.
