@@ -12,6 +12,7 @@
  * (aztec-stable → main) runs that gate.
  */
 import {
+  BB_RELEASE_REPO,
   resolveAztecBb,
   resolveWindowsBbChecksum,
   WINDOWS_BB_ASSET,
@@ -40,7 +41,7 @@ export function checkWindowsBbPin(version: string = resolveAztecBb().version): W
       message:
         `⚠️  MANUAL PIN REQUIRED for @aztec/bb.js ${version}\n` +
         `The Windows Prebuild/Build Smoke CI gate stays RED until a human adds a reviewed pin.\n` +
-        `Steps: download ${WINDOWS_BB_ASSET} from the v${version} aztec-packages release, verify the\n` +
+        `Steps: download ${WINDOWS_BB_ASSET} from the v${version} ${BB_RELEASE_REPO} release, verify the\n` +
         `release page + tag signature, diff it against the prior pinned asset, then add a\n` +
         `{ sha256, provenance: "manual-review", note } entry to WINDOWS_BB_CHECKSUMS in\n` +
         `packages/presto/scripts/copy-bb.ts. Pins are NEVER auto-generated (F-008).\n` +

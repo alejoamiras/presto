@@ -902,8 +902,7 @@ mod tests {
             return;
         }
 
-        // Use the bundled version — guaranteed to exist on GitHub releases
-        let version = std::env::var("AZTEC_BB_VERSION").unwrap_or("4.2.0-aztecnr-rc.2".to_string());
+        let version = std::env::var("AZTEC_BB_VERSION").unwrap_or("5.2.0".to_string());
 
         let av = AztecVersion::parse(&version).expect("bundled version is valid");
 

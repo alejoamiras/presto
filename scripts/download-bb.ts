@@ -40,6 +40,7 @@ import {
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
+import { BB_RELEASE_REPO } from "../packages/presto/scripts/copy-bb.ts";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -79,7 +80,7 @@ function assetName(): string {
 }
 
 export function downloadUrl(version: string): string {
-  return `https://github.com/AztecProtocol/aztec-packages/releases/download/v${version}/${assetName()}`;
+  return `https://github.com/${BB_RELEASE_REPO}/releases/download/v${version}/${assetName()}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -201,14 +202,15 @@ export function sha256File(path: string): string {
  * GITHUB_TOKEN to dodge the 60/hr unauth rate limit.
  */
 export async function fetchAssetDigest(version: string, asset: string): Promise<string> {
-  const apiUrl = `https://api.github.com/repos/AztecProtocol/aztec-packages/releases/tags/v${version}`;
+  const apiUrl = `https://api.github.com/repos/${BB_RELEASE_REPO}/releases/tags/v${version}`;
   const headers: Record<string, string> = {
     accept: "application/vnd.github+json",
     "user-agent": "presto",
   };
   if (process.env.GITHUB_TOKEN) headers.authorization = `Bearer ${process.env.GITHUB_TOKEN}`;
 
-  const res = await fetch(apiUrl, { headers });
+  // A redirect is refused, as in Rust: following one would take the digest from wherever it points.
+  const res = await fetch(apiUrl, { headers, redirect: "error" });
   if (!res.ok) {
     throw new Error(
       `Cannot verify bb v${version}: release metadata HTTP ${res.status} ${res.statusText}`,
@@ -218,13 +220,9 @@ export async function fetchAssetDigest(version: string, asset: string): Promise<
     immutable?: boolean;
     assets?: Array<{ name?: string; digest?: string }>;
   };
-  // G2 (full-branch audit): the asset AND the digest we verify against both come from the SAME GitHub
-  // release. On a MUTABLE release, a compromised Aztec release token could swap the asset and its
-  // reported digest together, and our check would still pass — this is an inherent trust in Aztec's
-  // release infra. We do NOT hard-require `immutable` (Aztec releases are not all immutable — the API
-  // returns `immutable: false` — so requiring it would break every legitimate download, repeating the
-  // version-floor over-block mistake). Instead we surface the weaker guarantee with a warning; tighten
-  // to a hard requirement only once Aztec publishes immutable releases. See FINDINGS.md (G2).
+  // On a mutable release the publisher can replace the asset and its digest together, and this check
+  // still passes. Aztec's releases report `immutable: false`, so requiring immutability would refuse
+  // every legitimate download; the weaker guarantee is surfaced instead.
   if (release.immutable === false) {
     console.warn(
       `⚠️  bb v${version}: GitHub release is MUTABLE — its asset digest is not tamper-locked after publish. ` +
@@ -291,7 +289,7 @@ export async function downloadTarball(version: string): Promise<Uint8Array> {
     if (res.status === 404) {
       throw new Error(
         `Version ${version} not found (404). Check available releases at:\n` +
-          `  https://github.com/AztecProtocol/aztec-packages/releases`,
+          `  https://github.com/${BB_RELEASE_REPO}/releases`,
       );
     }
     throw new Error(`Download failed: ${res.status} ${res.statusText}`);

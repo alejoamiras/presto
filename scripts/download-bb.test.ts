@@ -116,10 +116,14 @@ function wireHappyFetch(version: string, tarball: Uint8Array): void {
   const digest = sha256Hex(tarball);
   routeFetch((url) => {
     if (url.includes("api.github.com")) {
-      expect(url).toContain(`/tags/v${version}`);
+      expect(url).toBe(
+        `https://api.github.com/repos/AztecProtocol/barretenberg/releases/tags/v${version}`,
+      );
       return jsonResp(200, { assets: [{ name: asset, digest: `sha256:${digest}` }] });
     }
-    expect(url).toContain(`/download/v${version}/${asset}`);
+    expect(url).toBe(
+      `https://github.com/AztecProtocol/barretenberg/releases/download/v${version}/${asset}`,
+    );
     return streamResp(tarball);
   });
 }
@@ -227,6 +231,17 @@ describe("fetchAssetDigest (fail-closed, mirrors release_metadata.rs)", () => {
   test("malformed digest ⇒ throws", async () => {
     routeFetch(() => jsonResp(200, { assets: [{ name: asset, digest: "sha256:xyz" }] }));
     await expect(fetchAssetDigest("5.0.0-rc.2", asset)).rejects.toThrow();
+  });
+  test("the lookup refuses redirects", async () => {
+    let init: RequestInit | undefined;
+    globalThis.fetch = ((_input: unknown, given?: RequestInit) => {
+      init = given;
+      return Promise.resolve(
+        jsonResp(200, { assets: [{ name: asset, digest: `sha256:${sha("t")}` }] }),
+      );
+    }) as typeof fetch;
+    await fetchAssetDigest("5.0.0-rc.2", asset);
+    expect(init?.redirect).toBe("error");
   });
 });
 

@@ -86,14 +86,16 @@ pub fn current_platform() -> &'static str {
     }
 }
 
-/// Returns the download URL for a bb tarball from Aztec's GitHub releases.
-///
-/// Format: `https://github.com/AztecProtocol/aztec-packages/releases/download/v{VERSION}/barretenberg-{PLATFORM}.tar.gz`
-/// q7e3-F-08: takes the validated `&AztecVersion` — an unvalidated string can no longer reach this
-/// URL-building sink.
+/// The one repository that publishes `bb` for every supported version; aztec-packages has no v6
+/// release. Their v5 assets are identical except v5.0.1, which barretenberg rebuilt: a cached
+/// aztec-packages 5.0.1 still verifies against its own marker, a fresh download gets the rebuild.
+const BB_RELEASE_REPO: &str = "AztecProtocol/barretenberg";
+
+/// The bb tarball URL for this platform. Takes the validated `&AztecVersion`, so an unvalidated
+/// string cannot reach this URL-building sink.
 pub fn download_url(version: &AztecVersion) -> String {
     format!(
-        "https://github.com/AztecProtocol/aztec-packages/releases/download/v{}/barretenberg-{}.tar.gz",
+        "https://github.com/{BB_RELEASE_REPO}/releases/download/v{}/barretenberg-{}.tar.gz",
         version,
         current_platform(),
     )
@@ -158,14 +160,12 @@ fn refusal_reason(status: reqwest::StatusCode, authenticated: bool) -> String {
 /// already does — but Aztec does not yet sign `bb` releases. Pinning known-good digests in the app is
 /// NOT a workaround: barretenberg nightlies ship EVERY night, so a pinned-digest manifest would be
 /// perpetually stale. Revisit once Aztec signs `bb`.
-/// Tracking: `implementations-plan/security-hardening-2026-06-09` (SEC-02) + a GitHub issue.
 pub(crate) async fn fetch_github_asset_digest(
     version: &str,
     asset_name: &str,
 ) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
-    let api_url = format!(
-        "https://api.github.com/repos/AztecProtocol/aztec-packages/releases/tags/v{version}"
-    );
+    let api_url =
+        format!("https://api.github.com/repos/{BB_RELEASE_REPO}/releases/tags/v{version}");
     let token = github_api_token();
     let response = metadata_request(&metadata_client()?, &api_url, token.as_deref())
         .send()
@@ -292,9 +292,11 @@ mod tests {
 
     #[test]
     fn download_url_format() {
-        let version = AztecVersion::parse("5.0.0-nightly.20260307").unwrap();
+        let version = AztecVersion::parse("5.2.0").unwrap();
         let url = download_url(&version);
-        assert!(url.starts_with("https://github.com/AztecProtocol/aztec-packages/releases/download/v5.0.0-nightly.20260307/barretenberg-"));
+        assert!(url.starts_with(
+            "https://github.com/AztecProtocol/barretenberg/releases/download/v5.2.0/barretenberg-"
+        ));
         assert!(url.ends_with(".tar.gz"));
     }
 
@@ -312,7 +314,7 @@ mod tests {
         assert!(
             valid.contains(&platform),
             "current_platform() returned '{platform}', expected one of {valid:?}. \
-             Check Aztec release assets at https://github.com/AztecProtocol/aztec-packages/releases"
+             Check Aztec release assets at https://github.com/AztecProtocol/barretenberg/releases"
         );
     }
 
@@ -324,8 +326,7 @@ mod tests {
             eprintln!("Skipping download_url_resolves (set PRESTO_DOWNLOAD_TEST=1 to enable)");
             return;
         }
-        // Use a known stable version that will always exist
-        let version = std::env::var("AZTEC_BB_VERSION").unwrap_or("5.0.0-nightly.20260307".into());
+        let version = std::env::var("AZTEC_BB_VERSION").unwrap_or("5.2.0".into());
         let version = AztecVersion::parse(&version).expect("test version is valid");
         let url = download_url(&version);
         let client = reqwest::Client::new();
