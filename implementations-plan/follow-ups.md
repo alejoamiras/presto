@@ -71,7 +71,7 @@ None of these were re-checked on 2026-09-18.
   setting. Release Bot Token Check now runs the shared bot path short of the merge itself; its run
   36356273867 (2026-09-27, throwaway PR #65) was the App's first successful auto-merge enable. The
   first `release-sdk` run after the cutover is still the first pin PR, and the first bot PR whose
-  auto-merge is expected to fire. `workers-builds/plan.md` (A2, I10)
+  auto-merge is expected to fire. `archive/workers-builds/plan.md` (A2, I10)
 
 ## Accepted residual risk — standing decisions, not work
 
@@ -80,7 +80,7 @@ None of these were re-checked on 2026-09-18.
   could redeploy any Worker, the release-feed Worker included. Mitigated by `--ignore-scripts`, the
   release-age floor and a repo-scoped GitHub App; since 2026-09-27 the builds use a narrowed custom
   token, which drops KV and R2 but cannot change this boundary. Fork PRs do not build (checked
-  2026-09-27). Accepted by the owner 2026-09-25. `workers-builds/plan.md` (Security)
+  2026-09-27). Accepted by the owner 2026-09-25. `archive/workers-builds/plan.md` (Security)
 - **`@aztec/*` is exempt from the seven-day release-age floor** (owner decision 2026-08-18, 31 exact
   package names in `bunfig.toml`; a glob is silently ignored, and the list must cover the full
   resolved transitive graph). Aztec releases are consumed same-day by design, so for this scope

@@ -37,3 +37,23 @@ rejected; one adopted with a simpler fix than proposed).
   200, `noindex`, COOP + COEP `require-corp`, `crossOriginIsolated === true` in headless Chromium.
 - Confirms I3 (npm ≥ 11 under `NODE_VERSION=24.20.0`: the preflight passed), I4 (`bunx wrangler
   preview --config` is accepted as the Preview command) and I8 (Worker-name check from the root).
+
+## Follow-on PR #66 and the checks after merge (2026-09-27)
+
+- **Fork check passed.** PR #63 from a throwaway fork (`aztec-pioneers/presto-fork-check`, since
+  deleted) changed a watched `scripts/` file; ten minutes later it carried only GitHub Actions
+  checks, with no Workers Builds check, status or comment.
+- **Narrowed build token.** The owner switched both Workers to a custom token. A throwaway branch
+  proved the preview path; #66's merge proved production, custom domains included.
+- **Bot auto-merge had never worked.** Every `bump-source` run from 2026-09-06 to 09-20 opened its
+  PR, then failed at `gh pr merge --auto` with "Auto merge is not allowed for this repository"; the
+  owner merged them by hand, then enabled the setting. Release Bot Token Check run 36356273867 made
+  the App's first successful enable (PR #65).
+- **GitHub facts behind the smoke design:** `--match-head-commit` is checked only when auto-merge is
+  enabled; auto-merge cannot be enabled on a draft PR; an App token without `workflows` permission
+  cannot push a workflow file. The smoke therefore adds an unparsable `scripts/*.ts` file, so a
+  required check always fails and the PR can never merge.
+- **shellcheck differs by version.** Local 0.11.0 passed a line CI's 0.9.0 flags as SC2015 (info,
+  still an exit 1). Check with the `koalaman/shellcheck:v0.9.0` image before pushing shell changes.
+- Codex (session `01a0e500-3829-7850-a886-1de5c125ff3a`) converged in 3 rounds: 5 findings in round
+  1, 2 lows in round 2, all fixed.
