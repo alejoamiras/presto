@@ -4,12 +4,12 @@ This repository ships three npm packages and one native app, each versioned inde
 
 | Artifact | Version | Release entry point | Use it when |
 |---|---|---|---|
-| SDK (`@alejoamiras/presto`) | derived from the pinned `@aztec/stdlib` | `release-sdk.yml` (`packages=presto`, the default) | The SDK or pinned `@aztec/*` dependencies changed |
+| SDK (`@alejoamiras/presto`) | derived from the pinned Aztec `stdlib` | `release-sdk.yml` (`packages=presto`, the default) | The SDK or its pinned Aztec dependencies changed |
 | Core (`@alejoamiras/presto-core`) | `packages/sdk-core/package.json` | `release-sdk.yml` (`packages=presto-core`) | Transport, status, or fallback policy changed |
-| Noir adapter (`@alejoamiras/presto-noir`) | `packages/sdk-noir/package.json` | `release-sdk.yml` (`packages=presto-noir`) | The adapter changed, or its `@aztec/bb.js` peer pin moved |
+| Noir adapter (`@alejoamiras/presto-noir`) | `packages/sdk-noir/package.json` | `release-sdk.yml` (`packages=presto-noir`) | The adapter changed, or its bb.js peer pin moved |
 | Desktop + headless presto | `packages/presto` | `release-presto.yml` | Native server, desktop UI, updater, trust, or bb download logic changed |
 
-An Aztec protocol bump is normally SDK-only. Installed Presto apps download and verify the matching `bb` version at runtime; do not cut a native-app release merely to track an `@aztec/*` bump. It is also **not** a core release: core has no `@aztec/*` dependency. It is a `presto-noir` release only when the adapter's `@aztec/bb.js` peer pin (and `TESTED_BB_VERSIONS`) moves with it — `scripts/update-aztec-version.ts` bumps that pin in lockstep, so a bump that touches `packages/sdk-noir` publishes the adapter too.
+An Aztec protocol bump is normally SDK-only. Installed Presto apps download and verify the matching `bb` version at runtime; do not cut a native-app release merely to track an Aztec bump. It is also **not** a core release: core has no Aztec dependency. It is a `presto-noir` release only when the adapter's bb.js peer pin (and `TESTED_BB_VERSIONS`) moves with it — `scripts/update-aztec-version.ts` bumps that pin in lockstep, so a bump that touches `packages/sdk-noir` publishes the adapter too.
 
 Both SDKs depend on core at an **exact** version (`workspace:*` in the tree, pinned to the packed version at publish time), so a core change reaches users only through a publish of core **and** of every adapter that must pick it up: publish core, bump nothing else, and the adapters keep their previous core pin until they are republished.
 
@@ -303,7 +303,7 @@ bundles it from the workspace, and its published artifact is proven by the tarba
   `PRESTO_VERSION=<version> PRESTO_NOIR_VERSION=<version> bun scripts/playground-pin.ts` (either may
   be empty). A deliberate move back to an older SDK is a hand-edited, reviewed pin.
 - **Expected fail-closed window**: a production build succeeds only while `main`'s dependency graph
-  (the `@aztec/*` versions, the core version the adapters pin, the bb.js peer) matches the pinned
+  (the Aztec package versions, the core version the adapters pin, the bb.js peer) matches the pinned
   publications. After an Aztec bump or a core version bump merges, playground builds of `main` fail
   (a red Workers Builds check on the commit) until the release that publishes the new graph merges
   its pin PR. PRs that change the production build path (they run App's Published Playground Build)
@@ -313,7 +313,7 @@ bundles it from the workspace, and its published artifact is proven by the tarba
 
 ### Candidate version and gates
 
-The SDK package's checked-in version remains `0.0.0`. The workflow derives a version from the pinned `@aztec/stdlib` version. If the base already exists, it chooses `<base>-revision.N` for a stable base or appends `.N` to a prerelease base. `presto-core` and `presto-noir` publish the version in their `package.json` verbatim, so a change to either starts with a version bump in the tree (a `manifest` version is never suffixed).
+The SDK package's checked-in version remains `0.0.0`. The workflow derives a version from the pinned Aztec `stdlib` version. If the base already exists, it chooses `<base>-revision.N` for a stable base or appends `.N` to a prerelease base. `presto-core` and `presto-noir` publish the version in their `package.json` verbatim, so a change to either starts with a version bump in the tree (a `manifest` version is never suffixed).
 
 Preview the derived version (`--package <key>` for a sibling; the base comes from the package's manifest):
 

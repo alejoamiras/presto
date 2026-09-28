@@ -58,7 +58,8 @@ Aztec dApp                                   Noir dApp
 ### For dApp developers (SDK)
 
 ```bash
-npm install @alejoamiras/presto
+npm install @alejoamiras/presto@testnet   # Aztec v6 (6.0.0-rc.1); native proving needs Presto 1.1.3+
+npm install @alejoamiras/presto           # Aztec v5 (5.2.0), npm `latest`
 ```
 
 ```typescript
@@ -86,16 +87,17 @@ confirmed, current-tab-only HTTP escape hatch by setting both `httpsOnly: false`
 > `unconfirmed` diagnosis. The SDK's loopback annotation does not bypass permission, and HTTPS is subject to the
 > same address-space gate.
 
-> **Versioning / dist-tags.** SDK `X.Y.Z` targets Aztec `X.Y.Z` — the published version is derived from the pinned `@aztec/stdlib` dependency. The standard release path publishes on npm's **`testnet`** dist-tag; **`latest`** is moved to it in a separate, deliberate step, so the two usually match and differ only while a newer line is being validated or after a rollback. The presto downloads the matching `bb` binary **at runtime**, so an Aztec version bump ships **SDK-only** — already-installed prestos need no re-release. `@alejoamiras/presto-core` and `@alejoamiras/presto-noir` carry their own semver (their `package.json` version, published once) and follow the same `testnet` → `latest` path. See the [release runbook](docs/RELEASE_RUNBOOK.md).
+> **Versioning / dist-tags.** SDK `X.Y.Z` targets Aztec `X.Y.Z` — the published version is derived from the pinned Aztec `stdlib` dependency (`@aztec-labs/stdlib` from v6, `@aztec/stdlib` through v5). `latest` stays on v5 until Aztec v6 is stable, and no prerelease is ever promoted to it. The standard release path publishes on npm's **`testnet`** dist-tag; **`latest`** is moved to it in a separate, deliberate step, so the two usually match and differ only while a newer line is being validated or after a rollback. The presto downloads the matching `bb` binary **at runtime**, so an Aztec version bump ships **SDK-only** — already-installed prestos need no re-release. `@alejoamiras/presto-core` and `@alejoamiras/presto-noir` carry their own semver (their `package.json` version, published once) and follow the same `testnet` → `latest` path. See the [release runbook](docs/RELEASE_RUNBOOK.md).
 
 ### For Noir circuits (`@alejoamiras/presto-noir`)
 
 ```bash
-npm install @alejoamiras/presto-noir @aztec/bb.js@5.2.0
+npm install @alejoamiras/presto-noir@testnet @aztec-foundation/bb.js@6.0.0-rc.1   # Aztec v6
+npm install @alejoamiras/presto-noir @aztec/bb.js@5.2.0                         # Aztec v5, `latest`
 ```
 
 ```typescript
-import { Barretenberg } from "@aztec/bb.js";
+import { Barretenberg } from "@aztec-foundation/bb.js";
 import { PrestoUltraHonkBackend } from "@alejoamiras/presto-noir";
 import circuit from "./target/circuit.json";
 
@@ -189,9 +191,10 @@ than ship, so the copyleft falls on whoever distributes a modified prover or off
 network, not on the dApps that call it. Third-party components keep their own terms regardless: the
 desktop app's vendored fonts are SIL OFL 1.1 (see
 [`packages/presto/src-tauri/frontend/fonts/LICENSES.md`](packages/presto/src-tauri/frontend/fonts/LICENSES.md)),
-`@aztec/bb.js` and `@aztec/noir-acvm_js` are MIT, `@aztec/noir-noirc_abi` is MIT OR Apache-2.0, and
-`@aztec/bb-prover`, `@aztec/foundation` and `@aztec/stdlib` ship no licence metadata but are
-Apache-2.0 in the upstream `aztec-packages` repository at the pinned tag.
+`@aztec-foundation/bb.js` and `@aztec-foundation/noir-acvm_js` are MIT, `@aztec-foundation/noir-noirc_abi`
+is MIT OR Apache-2.0, and `@aztec-labs/bb-prover`, `@aztec-labs/foundation` and `@aztec-labs/stdlib`
+ship no licence metadata but are Apache-2.0 in the upstream `aztec-packages` repository at the pinned
+tag.
 
 A contribution is accepted under the licence of the directory it lands in.
 

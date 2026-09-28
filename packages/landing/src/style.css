@@ -384,6 +384,9 @@ h1, h2, h3 {
   display: inline-block;
 }
 .dev-callout-text code::before { content: "$ "; color: var(--text-muted); }
+.dev-install { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.dev-install + .dev-install { margin-top: 6px; }
+.dev-install small { color: var(--text-muted); font-size: 12px; font-weight: 500; }
 .dev-callout > a {
   color: var(--accent-dim);
   font-weight: 700;

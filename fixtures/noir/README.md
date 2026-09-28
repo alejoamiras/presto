@@ -14,7 +14,7 @@ must reproduce byte for byte:
 `public_inputs`, the verifier target (`noir-recursive-no-zk`, the deterministic family; ZK targets
 are randomized and never byte-comparable), and the toolchain that produced the artifacts.
 
-- Verify (CI): `bun scripts/noir-fixture.ts --verify` — also fails when the installed `@aztec/bb.js`
+- Verify (CI): `bun scripts/noir-fixture.ts --verify` — also fails when the installed bb.js
   no longer matches the manifest, so an Aztec bump forces a regeneration.
 - Regenerate (dev box, needs `aztec-nargo` on PATH or `AZTEC_NARGO`):
   `bun scripts/noir-fixture.ts --regenerate [square nopub hashchain]`.
