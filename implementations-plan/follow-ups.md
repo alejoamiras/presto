@@ -53,9 +53,8 @@ None of these were re-checked on 2026-09-18.
 - **The playground's Noir action ignores the page's HTTP-session consent** — the adapter exposes no
   `setPrestoConfig`, so under `secure-connection-unavailable` it falls back to the browser. As a
   consequence core's `endpoint-changed` reason is documented as reserved rather than reachable, and
-  the smoke lane skips its native Noir proof against the headless server. Only an HTTPS Presto (the
-  desktop app) runs it, and it has not run against the ask-first playground.
-  `archive/presto-noir/lessons/phase-17.md`
+  the testnet smoke skips its native Noir proof against the headless server; the packaged e2e proves
+  it through the page over HTTPS. `archive/presto-noir/lessons/phase-17.md`
 - **Per-job metering is logged but not consumed** — `/prove/ultra-honk` emits a per-job info log
   (scheme, origin, target, ok, elapsed_ms) for a metering follow-up that does not exist yet.
   `archive/presto-noir/lessons/phase-4.md`
