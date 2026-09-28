@@ -1,6 +1,7 @@
 # Implementation plans
 
 - [workers-builds](workers-builds/plan.md) — PR open — landing + playground deploys and PR previews move to Cloudflare Workers Builds; the playground pins its published SDK
+- [aztec-v6](aztec-v6/plan.md) — implementing (arc 1 of 3) — Aztec v6 rc.1: `bb` from barretenberg, prerelease release tooling, the scope rename, releases to `testnet`
 
 Add one line per plan here when it opens; move the line to
 [`archive/index.md`](archive/index.md) when it closes. This file is read at the start of every
