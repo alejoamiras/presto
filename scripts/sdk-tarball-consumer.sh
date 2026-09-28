@@ -3,8 +3,8 @@
 # Node, with dependency lifecycle scripts off — and prove two things nothing else in the repo checks:
 #   1. the packed `dist` exports/types RESOLVE, typecheck, and load (workspace consumers use the source
 #      `exports`, so a broken publish rewrite or missing dist would otherwise ship undetected);
-#   2. for a package that pins `@aztec/stdlib`: default npm resolves an EXACT-version host to a SINGLETON
-#      `@aztec/stdlib` graph. A conflicting-version host is recorded for comparison only.
+#   2. for a package that pins an Aztec `stdlib` (either scope): default npm resolves an EXACT-version
+#      host to a SINGLETON `stdlib` graph. A conflicting-version host is recorded for comparison only.
 #
 # The host's files come from the package's profile under scripts/tarball-consumer/<profile>/ (see
 # scripts/npm-packages.ts): index.ts, runtime-check.mjs, tsconfig.json, and optional
@@ -54,14 +54,14 @@ PROFILE_DIR="$REPO_ROOT/$PROFILE"
 EXTRAS=""
 [ -f "$PROFILE_DIR/host-dependencies.json" ] && EXTRAS="$PROFILE_DIR/host-dependencies.json"
 
-# Count DISTINCT @aztec/stdlib install locations in a consumer dir (1 = singleton graph).
+# Count DISTINCT ${STDLIB_NAME} install locations in a consumer dir (1 = singleton graph).
 count_stdlib() {
   local dir="$1"
-  ( cd "$dir" && find node_modules -type d -path '*@aztec/stdlib' 2>/dev/null | wc -l | tr -d ' ' )
+  ( cd "$dir" && find node_modules -type d -path "*${STDLIB_NAME}" 2>/dev/null | wc -l | tr -d ' ' )
 }
 
 make_host() {
-  # make_host <dir> [aztec-version]
+  # make_host <dir> [<stdlib-name>@<version>]
   local dir="$1" aztec="${2:-}"
   mkdir -p "$dir"
   bun "$REPO_ROOT/scripts/tarball-consumer/host-manifest.ts" "$dir" "$TARBALL" "$PACKAGE_NAME" "$aztec" "$EXTRAS" "${WITH[@]}"
@@ -70,12 +70,16 @@ make_host() {
 
 # The exact-host pin comes from the ARTIFACT UNDER TEST (scripts/tarball-consumer/exact-pin.ts): an
 # aztec-derived package without it fails there; a package that does not ship the dependency gets a
-# plain host and no singleton gate.
-AZTEC_PIN="$(bun "$REPO_ROOT/scripts/tarball-consumer/exact-pin.ts" --package "$PACKAGE_KEY" "$TARBALL")"
+# plain host and no singleton gate. It prints `<name> <version>`: the name follows the tarball's scope.
+AZTEC_DEP="$(bun "$REPO_ROOT/scripts/tarball-consumer/exact-pin.ts" --package "$PACKAGE_KEY" "$TARBALL")"
+STDLIB_NAME="${AZTEC_DEP% *}"
+AZTEC_PIN="${AZTEC_DEP#* }"
+EXACT_SPEC=""
+[ -n "$AZTEC_DEP" ] && EXACT_SPEC="${STDLIB_NAME}@${AZTEC_PIN}"
 
-echo "=== exact host (${AZTEC_PIN:-no @aztec/stdlib pin}): tarball resolution ==="
+echo "=== exact host (${EXACT_SPEC:-no Aztec stdlib pin}): tarball resolution ==="
 EXACT="$WORK/exact-host"
-make_host "$EXACT" "$AZTEC_PIN"
+make_host "$EXACT" "$EXACT_SPEC"
 ( cd "$EXACT" && npm install --ignore-scripts --no-audit --no-fund --loglevel=error )
 # A supplied dependency must be THE copy the candidate resolves: npm would otherwise keep the root
 # `file:` copy and nest a registry copy under the candidate when the pin and the tarball disagree.
@@ -96,27 +100,27 @@ echo "--- typecheck the consumer against the PACKED dist (resolves the 'types' c
 echo "--- RUNTIME import: resolve + load the packed dist 'default' export ---"
 ( cd "$EXACT" && node runtime-check.mjs )
 
-if [ -z "$AZTEC_PIN" ]; then
-  echo "OK: packed tarball resolves, typechecks, and loads (no @aztec/stdlib dependency: singleton gate not applicable)"
+if [ -z "$AZTEC_DEP" ]; then
+  echo "OK: packed tarball resolves, typechecks, and loads (no Aztec stdlib dependency: singleton gate not applicable)"
   exit 0
 fi
 
-echo "--- npm ls @aztec/stdlib (exact host) ---"
-( cd "$EXACT" && npm ls @aztec/stdlib || true )
+echo "--- npm ls ${STDLIB_NAME} (exact host) ---"
+( cd "$EXACT" && { npm ls "$STDLIB_NAME" || true; } )
 EXACT_COUNT="$(count_stdlib "$EXACT")"
-echo "exact host @aztec/stdlib install locations: $EXACT_COUNT"
+echo "exact host ${STDLIB_NAME} install locations: $EXACT_COUNT"
 
 echo "=== conflicting host (5.0.0): informational ==="
 CONFLICT="$WORK/conflict-host"
-make_host "$CONFLICT" "5.0.0"
+make_host "$CONFLICT" "${STDLIB_NAME}@5.0.0"
 ( cd "$CONFLICT" && npm install --ignore-scripts --no-audit --no-fund --loglevel=error ) || echo "conflict host install returned non-zero (ERESOLVE?) — recorded"
-echo "--- npm ls @aztec/stdlib (conflict host) ---"
-( cd "$CONFLICT" && npm ls @aztec/stdlib || true )
-echo "conflict host @aztec/stdlib install locations: $(count_stdlib "$CONFLICT")"
+echo "--- npm ls ${STDLIB_NAME} (conflict host) ---"
+( cd "$CONFLICT" && { npm ls "$STDLIB_NAME" || true; } )
+echo "conflict host ${STDLIB_NAME} install locations: $(count_stdlib "$CONFLICT")"
 
-# The decisive gate: the exact host — the supported case — MUST resolve to a single @aztec/stdlib.
+# The decisive gate: the exact host — the supported case — MUST resolve to a single stdlib.
 if [ "$EXACT_COUNT" != "1" ]; then
-  echo "::error::exact-host resolved $EXACT_COUNT copies of @aztec/stdlib; expected a singleton graph" >&2
+  echo "::error::exact-host resolved $EXACT_COUNT copies of ${STDLIB_NAME}; expected a singleton graph" >&2
   exit 1
 fi
-echo "OK: packed tarball resolves + typechecks; exact-host @aztec graph is a singleton"
+echo "OK: packed tarball resolves + typechecks; exact-host ${STDLIB_NAME} graph is a singleton"

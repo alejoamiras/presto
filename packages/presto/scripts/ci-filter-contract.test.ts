@@ -66,6 +66,18 @@ describe("presto CI path routing", () => {
       ["desktop_runtime", "release_tooling", "sdk_integration", "windows_bb", "windows_packaging"],
     ],
     [
+      "Aztec manifest reader (copy-bb resolves bb through it)",
+      ["scripts/aztec-manifest.ts"],
+      [
+        "desktop_runtime",
+        "headless_server",
+        "release_tooling",
+        "sdk_integration",
+        "windows_bb",
+        "windows_packaging",
+      ],
+    ],
+    [
       "Rust toolchain pin",
       ["rust-toolchain.toml"],
       [

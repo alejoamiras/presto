@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import {
+  aztecDerivedOrder,
   baseVersionFor,
   resolvePackageVersion,
   resolvePublishVersion,
-  revisionOrder,
 } from "./get-sdk-publish-version";
 import { NPM_PACKAGES } from "./npm-packages.ts";
 
@@ -102,18 +102,41 @@ describe("baseVersionFor", () => {
       }),
     ).toBe("5.2.0");
     expect(() => baseVersionFor(manifestMode, {})).toThrow("has no version");
-    expect(() => baseVersionFor(aztecDerived, { version: "0.0.0" })).toThrow("no @aztec/stdlib");
+    expect(() => baseVersionFor(aztecDerived, { version: "0.0.0" })).toThrow(
+      "no Aztec stdlib dependency",
+    );
+    expect(
+      baseVersionFor(aztecDerived, { dependencies: { "@aztec-labs/stdlib": "6.0.0-rc.1" } }),
+    ).toBe("6.0.0-rc.1");
   });
 });
 
-describe("revisionOrder", () => {
-  test("a base publishes before its revisions, and revisions before the next base", () => {
-    const published = ["5.2.0", "5.2.0-revision.1", "5.2.0-revision.10", "5.3.0"];
-    expect([...published].reverse().sort(revisionOrder)).toEqual(published);
-    expect(revisionOrder("5.2.0-revision.5", "5.2.0-revision.5")).toBe(0);
+describe("aztecDerivedOrder", () => {
+  test("prereleases, then the base, then its revisions, then the next release", () => {
+    const published = [
+      "5.2.0",
+      "5.2.0-revision.1",
+      "5.2.0-revision.5",
+      "5.2.0-revision.10",
+      "6.0.0-nightly.20260829",
+      "6.0.0-rc.1",
+      "6.0.0-rc.1.1",
+      "6.0.0-rc.1.10",
+      "6.0.0-rc.2",
+      "6.0.0-rc.10",
+      "6.0.0",
+      "6.0.0-revision.1",
+    ];
+    expect([...published].reverse().sort(aztecDerivedOrder)).toEqual(published);
+    expect(aztecDerivedOrder("5.2.0-revision.5", "5.2.0-revision.5")).toBe(0);
+    expect(aztecDerivedOrder("6.0.0-rc.1", "6.0.0-rc.1")).toBe(0);
   });
 
-  test("rejects versions outside the stable aztec-derived shape", () => {
-    expect(() => revisionOrder("5.3.0-nightly.20260224", "5.3.0")).toThrow("not a stable");
+  test("rejects versions outside the aztec-derived shape", () => {
+    expect(() => aztecDerivedOrder("6.0.0-foo.1", "6.0.0")).toThrow("not an aztec-derived version");
+    // Bun.semver.order reverses these two; past the safe-integer range nothing is compared.
+    expect(() =>
+      aztecDerivedOrder(`6.0.0-rc.${"1".repeat(31)}`, `6.0.0-rc.${"9".repeat(30)}`),
+    ).toThrow("not an aztec-derived version");
   });
 });

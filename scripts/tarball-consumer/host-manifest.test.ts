@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { hostManifest, parseLocalTarballs } from "./host-manifest.ts";
+import { hostManifest, parseAztecPin, parseLocalTarballs } from "./host-manifest.ts";
 
 describe("consumer host manifest", () => {
   test("the tarball under test is the last word on its own package", () => {
@@ -7,7 +7,7 @@ describe("consumer host manifest", () => {
       "@alejoamiras/presto",
       "/tmp/presto.tgz",
       { "@aztec/bb.js": "5.2.0" },
-      "5.2.0",
+      parseAztecPin("@aztec/stdlib@5.2.0"),
     );
     expect(manifest.dependencies).toEqual({
       "@aztec/bb.js": "5.2.0",
@@ -16,6 +16,18 @@ describe("consumer host manifest", () => {
     });
     expect(manifest.name).toBe("host-5.2.0");
     expect(hostManifest("@alejoamiras/presto", "/tmp/p.tgz").name).toBe("host-default");
+  });
+
+  test("the stdlib pin keeps the scope the tarball names", () => {
+    const pin = parseAztecPin("@aztec-labs/stdlib@6.0.0-rc.1");
+    expect(pin).toEqual({ name: "@aztec-labs/stdlib", version: "6.0.0-rc.1" });
+    expect(hostManifest("@alejoamiras/presto", "/tmp/p.tgz", {}, pin).dependencies).toEqual({
+      "@aztec-labs/stdlib": "6.0.0-rc.1",
+      "@alejoamiras/presto": "file:/tmp/p.tgz",
+    });
+    for (const bad of ["@aztec/stdlib", "stdlib@", "@6.0.0"]) {
+      expect(() => parseAztecPin(bad)).toThrow("expected name@version");
+    }
   });
 
   test("local workspace tarballs install as file: dependencies beside the candidate", () => {

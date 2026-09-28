@@ -1,4 +1,10 @@
-import { isValidVersion, type NpmPackage, packageFromArgs, releaseTag } from "./npm-packages.ts";
+import {
+  isPrerelease,
+  isValidVersion,
+  type NpmPackage,
+  packageFromArgs,
+  releaseTag,
+} from "./npm-packages.ts";
 import {
   fetchAndVerifySdkProvenance,
   LEGACY_SDK_RELEASE_WORKFLOW,
@@ -135,6 +141,10 @@ export function parsePromotionOptions(args: string[]): PromotionOptions {
   const version = positional[0];
   if (!version || positional.length !== 1 || !isValidVersion(pkg, version)) {
     throw new Error(USAGE);
+  }
+  // Prereleases publish to testnet too, so no later check keeps one off latest, in either mode.
+  if (isPrerelease(version)) {
+    throw new Error(`${pkg.name}@${version} is a prerelease; latest only takes a stable version`);
   }
   return {
     pkg,

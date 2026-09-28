@@ -96,11 +96,12 @@ describe("windows bb.exe sidecar supply chain", () => {
 });
 
 describe("aztec bb version resolver (Phase 3b — the version-only CI path)", () => {
-  test("resolves a live @aztec/bb.js version + package root from the dep tree", () => {
-    const { version, bbJsRoot } = resolveAztecBb();
+  test("resolves the live bb.js version, package root and entry from the dep tree", () => {
+    const { version, bbJsRoot, entry } = resolveAztecBb();
     // A real semver-ish version (e.g. 4.2.0 / 4.2.0-aztecnr-rc.2), never the "unknown" fallback.
     expect(version).toMatch(/^\d+\.\d+\.\d+/);
     expect(version).not.toBe("unknown");
     expect(existsSync(bbJsRoot)).toBe(true);
+    expect(entry.startsWith(`${bbJsRoot}/`)).toBe(true);
   });
 });

@@ -313,7 +313,7 @@ jobs:
           git push origin "$tag"
 
           if [ "$VERSION_MODE" = "aztec-derived" ]; then
-            aztec_version="$(node -p "require('./$PACKAGE_DIR/package.json').dependencies['@aztec/stdlib']")"
+            aztec_version="$(bun scripts/aztec-manifest.ts "$PACKAGE_DIR/package.json")"
             if [ "$VERSION" = "$aztec_version" ]; then
               notes="Aligned with Aztec testnet version \`$aztec_version\`."
             else

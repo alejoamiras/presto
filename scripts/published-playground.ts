@@ -1,6 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { requireAztecDependency } from "./aztec-manifest";
 import { parseNpmPackResult } from "./npm-pack-result";
 import { NPM_PACKAGES, type NpmPackage } from "./npm-packages";
 import { readPlaygroundPin } from "./playground-pin";
@@ -189,11 +190,12 @@ if (import.meta.main) {
   if (adapters[1]) {
     const noirDir = join(root, "packages/playground/node_modules/@alejoamiras/presto-noir");
     const installedNoir = await Bun.file(join(noirDir, "package.json")).json();
-    // Vite dedupes `@aztec/bb.js` to the copy resolved from the playground root, whatever sits
-    // beside the adapter; that copy is the peer the built bundle runs the adapter on.
-    const bbJsDir = packageRoot("@aztec/bb.js", join(root, "packages/playground"));
+    // Vite dedupes the adapter's bb.js peer to the copy resolved from the playground root, whatever
+    // sits beside the adapter; that copy is the peer the built bundle runs the adapter on.
+    const bbJsName = requireAztecDependency(installedNoir, "bb.js", ["peerDependencies"]).name;
+    const bbJsDir = packageRoot(bbJsName, join(root, "packages/playground"));
     const bbJs = await Bun.file(join(bbJsDir, "package.json")).json();
-    assertPeerPin(installedNoir, "@aztec/bb.js", bbJs.version);
+    assertPeerPin(installedNoir, bbJsName, bbJs.version);
     assertCorePin(installedNoir, installedCore);
   }
   console.log(

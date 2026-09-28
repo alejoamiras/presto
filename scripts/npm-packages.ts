@@ -59,11 +59,21 @@ export const DEFAULT_PACKAGE: PackageKey = "presto";
 
 export const CONSUMER_PROFILE_ROOT = "scripts/tarball-consumer";
 
-/** `aztec-derived` versions are stable or stable + `-revision.N`; `manifest` versions are plain semver. */
+/**
+ * `aztec-derived` versions are an Aztec release (stable, or one of its `rc` / `nightly` / `aztecnr-rc`
+ * prereleases) plus an optional republish suffix: `-revision.N` on a stable base, `.N` on a
+ * prerelease. `manifest` versions are plain semver.
+ */
 export const VERSION_PATTERNS: Record<VersionMode, RegExp> = {
-  "aztec-derived": /^\d+\.\d+\.\d+(?:-revision\.\d+)?$/,
+  "aztec-derived":
+    /^\d+\.\d+\.\d+(?:-revision\.\d+|-(?:rc\.\d+|nightly\.\d{8}|aztecnr-rc\.\d+)(?:\.\d+)?)?$/,
   manifest: /^\d+\.\d+\.\d+(?:-(?!revision\.)[0-9A-Za-z.-]+)?$/,
 };
+
+/** Any pre-release suffix except `-revision.N`, which republishes a stable base. */
+export function isPrerelease(version: string): boolean {
+  return /^\d+\.\d+\.\d+-(?!revision\.\d+$)/.test(version);
+}
 
 export function isPackageKey(key: string): key is PackageKey {
   return Object.hasOwn(NPM_PACKAGES, key);
@@ -104,16 +114,25 @@ export function packageFromArgs(args: readonly string[]): { pkg: NpmPackage; res
   return { pkg: resolvePackage(key), rest };
 }
 
-/**
- * One exact semver.org version: no ranges, no empty identifiers, no leading zeros. npm treats a
- * malformed spec like `5.2.0-alpha..x` as a mutable TAG — the opposite of a pin.
- */
-export const EXACT_SEMVER =
+const EXACT_SEMVER =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/;
+
+/**
+ * One exact semver.org version that npm pins and Bun orders. npm reads a malformed spec
+ * (`5.2.0-alpha..x`), one over 256 characters, or an unsafe-integer base component as a mutable TAG
+ * — the opposite of a pin. An unsafe-integer prerelease number stays a version to npm but misorders
+ * in `Bun.semver.order`, so it is refused too.
+ */
+export function isExactSemver(version: string): boolean {
+  const m = version.length <= 256 ? EXACT_SEMVER.exec(version) : null;
+  if (!m) return false;
+  const ids = [m[1], m[2], m[3], ...(m[4]?.split(".") ?? [])];
+  return ids.every((id = "") => !/^\d+$/.test(id) || Number(id) <= Number.MAX_SAFE_INTEGER);
+}
 
 /** A publishable version: exact semver in the shape the package's version mode allows. */
 export function isValidVersion(pkg: NpmPackage, version: string): boolean {
-  return EXACT_SEMVER.test(version) && VERSION_PATTERNS[pkg.versionMode].test(version);
+  return isExactSemver(version) && VERSION_PATTERNS[pkg.versionMode].test(version);
 }
 
 /** The SLSA provenance subject npm records for a published version (purl: scope `@` is `%40`). */

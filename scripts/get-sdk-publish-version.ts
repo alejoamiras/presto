@@ -1,8 +1,8 @@
 /**
  * Determine the publish version for one package (`--package <key>`, default `presto`).
  *
- * `aztec-derived` packages follow the pinned Aztec version (the argument, or the package's
- * `@aztec/stdlib` dependency) and get a revision suffix when that base is already on npm:
+ * `aztec-derived` packages follow the pinned Aztec version (the argument, or the package's Aztec
+ * `stdlib` dependency, under either scope) and get a revision suffix when that base is already on npm:
  *
  *   5.0.0-nightly.20260224 → 5.0.0-nightly.20260224.1 → .2   (prereleases extend the identifier)
  *   4.2.0                  → 4.2.0-revision.1 → -revision.2   (stable + "." + number is not semver)
@@ -14,7 +14,15 @@
  * Usage: bun scripts/get-sdk-publish-version.ts [--package <key>] [base-version]
  */
 
-import { type NpmPackage, packageFromArgs, readManifest } from "./npm-packages.ts";
+import { aztecVersionOf } from "./aztec-manifest.ts";
+import {
+  isExactSemver,
+  isPrerelease,
+  type NpmPackage,
+  packageFromArgs,
+  readManifest,
+  VERSION_PATTERNS,
+} from "./npm-packages.ts";
 
 /**
  * Pure function: given a base version and the list of already-published
@@ -40,19 +48,23 @@ export function resolvePublishVersion(baseVersion: string, publishedVersions: st
 }
 
 /**
- * Comparator for stable `aztec-derived` versions in publish order: `X.Y.Z` ships before
- * `X.Y.Z-revision.N`, which semver sorts the other way.
+ * Comparator for `aztec-derived` versions in publish order: prereleases (semver order among
+ * themselves) < `X.Y.Z` < `X.Y.Z-revision.N`. Semver puts a revision before its own base.
  */
-export function revisionOrder(a: string, b: string): number {
+export function aztecDerivedOrder(a: string, b: string): number {
   const parts = (v: string) => {
-    const m = /^(\d+)\.(\d+)\.(\d+)(?:-revision\.(\d+))?$/.exec(v);
-    if (!m) throw new Error(`${JSON.stringify(v)} is not a stable aztec-derived version`);
-    return [m[1], m[2], m[3], m[4] ?? "0"].map(Number);
+    if (!isExactSemver(v) || !VERSION_PATTERNS["aztec-derived"].test(v)) {
+      throw new Error(`${JSON.stringify(v)} is not an aztec-derived version`);
+    }
+    const m = /^(\d+)\.(\d+)\.(\d+)(?:-revision\.(\d+))?/.exec(v) as RegExpExecArray;
+    const stage = isPrerelease(v) ? -1 : m[4] === undefined ? 0 : 1;
+    return [m[1], m[2], m[3], stage, m[4] ?? "0"].map(Number);
   };
   const x = parts(a);
   const y = parts(b);
   const i = x.findIndex((n, k) => n !== y[k]);
-  return i < 0 ? 0 : Math.sign((x[i] as number) - (y[i] as number));
+  if (i >= 0) return Math.sign((x[i] as number) - (y[i] as number));
+  return x[3] === -1 ? Bun.semver.order(a, b) : 0;
 }
 
 /** The version to publish for `pkg`; a manifest version already on npm is never suffixed. */
@@ -72,7 +84,7 @@ export function resolvePackageVersion(
   return baseVersion;
 }
 
-/** The base version: the argument, else the manifest version or its `@aztec/stdlib` pin. */
+/** The base version: the argument, else the manifest version or its Aztec `stdlib` pin. */
 export function baseVersionFor(
   pkg: NpmPackage,
   manifest: { version?: string; dependencies?: Record<string, string> },
@@ -83,11 +95,11 @@ export function baseVersionFor(
     if (!manifest.version) throw new Error(`${pkg.name}: package.json has no version`);
     return manifest.version;
   }
-  const pin = manifest.dependencies?.["@aztec/stdlib"];
-  if (!pin) {
-    throw new Error(`${pkg.name}: no @aztec/stdlib dependency to derive the base version from`);
+  try {
+    return aztecVersionOf(manifest);
+  } catch (error) {
+    throw new Error(`${pkg.name}: ${(error as Error).message}; cannot derive the base version`);
   }
-  return pin;
 }
 
 async function getPublishedVersions(name: string): Promise<string[]> {

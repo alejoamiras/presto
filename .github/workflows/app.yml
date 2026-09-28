@@ -73,6 +73,7 @@ jobs:
               - '.bun-version'
               - 'scripts/workers-build.ts'
               - 'scripts/playground-pin.ts'
+              - 'scripts/aztec-manifest.ts'
               - 'scripts/get-sdk-publish-version.ts'
               - 'scripts/published-playground.ts'
               - 'scripts/npm-pack-result.ts'

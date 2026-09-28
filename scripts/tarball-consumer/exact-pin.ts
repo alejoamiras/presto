@@ -1,34 +1,35 @@
 /**
- * The `@aztec/stdlib` version a packed manifest pins, derived from the artifact under test — never a
+ * The Aztec `stdlib` dependency a packed manifest pins, derived from the artifact under test — never a
  * hardcode (which silently manufactures the very skew the consumer gate exists to catch after every
  * Aztec bump) and never the workspace manifest (which skews whenever an older tarball is tested).
  *
  * Usage: bun scripts/tarball-consumer/exact-pin.ts [--package <key>] <tarball>
- * Prints the pin, or nothing for a package that does not ship the dependency.
+ * Prints `<name> <version>`, or nothing for a package that does not ship the dependency.
  */
-import { EXACT_SEMVER, type NpmPackage, packageFromArgs } from "../npm-packages.ts";
+import {
+  type AztecDependency,
+  findAztecDependency,
+  type PackageManifest,
+  requireAztecDependency,
+} from "../aztec-manifest.ts";
+import { isExactSemver, type NpmPackage, packageFromArgs } from "../npm-packages.ts";
 
 /**
- * An `aztec-derived` package must pin `@aztec/stdlib` exactly (the F13 deps-vs-peers decision: exact
- * pins are what make the consumer's `@aztec` graph a singleton); a range here would still resolve but
- * silently weaken that contract. A `manifest` package may omit the dependency entirely.
+ * An `aztec-derived` package must pin `stdlib` exactly: exact pins are what make the consumer's Aztec
+ * graph a singleton, and a range here would still resolve but silently weaken that contract. A
+ * `manifest` package may omit the dependency entirely.
  */
 export function exactAztecPin(
-  manifest: { dependencies?: Record<string, string> },
+  manifest: PackageManifest,
   pkg: NpmPackage,
-): string | undefined {
-  const pin = manifest.dependencies?.["@aztec/stdlib"];
-  if (pin === undefined) {
-    if (pkg.versionMode === "aztec-derived") {
-      throw new Error(
-        `${pkg.name}: the tarball manifest has no dependencies["@aztec/stdlib"]; the exact-host pin cannot be derived`,
-      );
-    }
-    return undefined;
-  }
-  if (!EXACT_SEMVER.test(pin)) {
+): AztecDependency | undefined {
+  const pin =
+    pkg.versionMode === "aztec-derived"
+      ? requireAztecDependency(manifest, "stdlib", ["dependencies"])
+      : findAztecDependency(manifest, "stdlib", ["dependencies"]);
+  if (pin && !isExactSemver(pin.version)) {
     throw new Error(
-      `${pkg.name}: the tarball pins @aztec/stdlib as ${JSON.stringify(pin)}, not an exact semver; the exact-pin invariant is broken`,
+      `${pkg.name}: the tarball pins ${pin.name} as ${JSON.stringify(pin.version)}, not an exact semver; the exact-pin invariant is broken`,
     );
   }
   return pin;
@@ -50,9 +51,10 @@ if (import.meta.main) {
     process.exit(1);
   }
   try {
-    console.log(exactAztecPin(JSON.parse(extracted.stdout.toString()), pkg) ?? "");
+    const pin = exactAztecPin(JSON.parse(extracted.stdout.toString()), pkg);
+    console.log(pin ? `${pin.name} ${pin.version}` : "");
   } catch (error) {
-    console.error(error instanceof Error ? error.message : String(error));
+    console.error(`${pkg.name}: ${error instanceof Error ? error.message : String(error)}`);
     process.exit(1);
   }
 }

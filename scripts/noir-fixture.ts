@@ -14,7 +14,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { cpus } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 import { resolveAztecBb } from "../packages/presto/scripts/copy-bb.ts";
 
 export const FIXTURE_SCHEMA = "presto/noir-fixture@1";
@@ -234,10 +234,7 @@ interface UltraHonkBackendLike {
 }
 
 async function loadBbJs(): Promise<BbJs> {
-  const sdkDir = join(import.meta.dirname, "..", "packages", "sdk");
-  const bbProverEntry = Bun.resolveSync("@aztec/bb-prover", sdkDir);
-  const entry = Bun.resolveSync("@aztec/bb.js", dirname(bbProverEntry));
-  return (await import(entry)) as BbJs;
+  return (await import(resolveAztecBb().entry)) as BbJs;
 }
 
 /** bb.js returns public inputs as `0x`-prefixed 32-byte hex fields; the wire and bb use raw bytes. */

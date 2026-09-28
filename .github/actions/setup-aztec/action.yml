@@ -28,7 +28,7 @@ runs:
       id: detect
       shell: bash
       run: |
-        VERSION=$(bun -e "console.log(JSON.parse(require('fs').readFileSync('packages/sdk/package.json','utf8')).devDependencies['@aztec/aztec.js'])")
+        VERSION=$(bun scripts/aztec-manifest.ts packages/sdk/package.json aztec.js)
         echo "Aztec version: $VERSION"
         echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
