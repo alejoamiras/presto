@@ -24,11 +24,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   Apache-2.0 text. The playground now vendors the upstream texts
   (`packages/playground/licensing/license-fallbacks.ts`); each rule there can go once upstream ships
   the file itself. **Verified 2026-09-21.**
-- **Revoke the old site deploy token in Cloudflare.** The GitHub secret
-  `CLOUDFLARE_DEPLOY_API_TOKEN` and variable `PRESTO_PREVIEWS_ENABLED` were deleted on 2026-09-27;
-  the Cloudflare token itself (account-wide Workers Scripts Edit, last used by the Actions deploys)
-  still has to be deleted in the dashboard. Both release-feed tokens stay: the feed Worker is out of
-  Workers Builds by decision. `workers-builds/plan.md` (Owner steps).
 - **The next `release-sdk` must bump `presto-core` and `presto-noir` (patch).** Their `files` changed
   after 1.2.0 was tagged, and the release planner refuses to reuse a version whose package changed.
 - **The `bb.exe` text-mode I/O bug was never reported upstream.** Barretenberg reads and writes binary
