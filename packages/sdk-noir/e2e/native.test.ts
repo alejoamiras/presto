@@ -90,7 +90,9 @@ describe.skipIf(!endpoint)("PrestoUltraHonkBackend against a live presto", () =>
     const post = async (body: Record<string, string>) => {
       const response = await fetch(new URL("/prove/ultra-honk", PRESTO_URL), {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        // The versioned path the adapter takes: a request without the header would prove with
+        // whatever unversioned bb the presto finds first.
+        headers: { "content-type": "application/json", "x-aztec-version": fixture.bbJs },
         body: JSON.stringify(body),
       });
       expect(response.status).toBe(200);

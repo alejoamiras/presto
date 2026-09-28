@@ -716,7 +716,7 @@ Layers: lint · unit · consumer install · workflow lint.
 
 Layers: lint · typecheck ×3 · unit · build · consumer install · installer dry run.
 
-### Phase 5: Noir fixtures and adapter gates (arc 3)
+### Phase 5: Noir fixtures and adapter gates (arc 3) ✓
 
 **Validation gate:**
 - After installing `aztec-nargo` 6.0.0-rc.1 and running `bun scripts/noir-fixture.ts --regenerate`,

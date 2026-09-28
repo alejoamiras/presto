@@ -3,8 +3,8 @@
   "name": "hashchain",
   "verifierTarget": "noir-recursive-no-zk",
   "toolchain": {
-    "nargo": "1.0.0-beta.25",
-    "bbJs": "5.2.0",
+    "nargo": "1.0.0-rc.3",
+    "bbJs": "6.0.0-rc.1",
     "backend": "WasmWorker"
   },
   "files": {
@@ -21,8 +21,8 @@
       "bytes": 298
     },
     "circuit.json": {
-      "sha256": "0362d21963c38d22b7c0be6d83a1259faa41dfea0f9312bc437e2051995df112",
-      "bytes": 225830
+      "sha256": "77a0598c2026be6238a6068cc9bb68e4726ccdb24d7ea2b212cd3b9137a038a5",
+      "bytes": 225863
     },
     "witness.gz": {
       "sha256": "fa50fb0b464395f6ea3393a861157f1145acfb9cee1abdc1220da2531afdb075",
@@ -33,7 +33,7 @@
       "bytes": 3680
     },
     "proof": {
-      "sha256": "621ba835648e5bf6f67537efa5c06c3b88d08d912dcc8ab490d3e84fb3137399",
+      "sha256": "5ed1eae7cee4d09a28286c364f58e70c0a56c5150bb2a57281be299c603dd866",
       "bytes": 13120,
       "fields": 410
     },
