@@ -2,7 +2,8 @@
  * Shared guard for the SponsoredFPC funding scripts. A funding run signs L1 transactions whose
  * destinations (fee juice portal, token, mint handler) come from the Aztec node, so the node is read
  * once, that snapshot is checked against the approved values, and nothing a signer touches is read
- * from the node again. Every check runs before the L1 key is loaded.
+ * from the node again. The node and chain checks run before the L1 key is loaded, and the mint plan
+ * is checked before anything is signed.
  */
 
 import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";

@@ -14,7 +14,7 @@ const RELEASE = "6.0.0-rc.1";
 /**
  * An install prefix with each `path → name` package on disk and in `package-lock.json`, plus
  * `lockOnly` entries (another platform's optional packages) in the lock alone. Every package is at
- * `RELEASE` unless `versions` names another.
+ * its reviewed version unless `versions` names another.
  */
 function prefix(
   installed: Record<string, string>,
@@ -23,7 +23,7 @@ function prefix(
 ): string {
   const root = mkdtempSync(join(tmpdir(), "aztec-graph-"));
   roots.push(root);
-  const version = (path: string) => versions[path] ?? RELEASE;
+  const version = (path: string) => versions[path] ?? (path === VIEM ? "2.38.3" : RELEASE);
   for (const [path, name] of Object.entries(installed)) {
     mkdirSync(join(root, path), { recursive: true });
     writeFileSync(
@@ -53,7 +53,7 @@ const clean = { added: [], removed: [], offRelease: [] };
 
 describe("installer graph check", () => {
   test("lock and disk together match the list: nested, three scopes, other platforms", () => {
-    const graph = aztecGraph(prefix(INSTALLED, OTHER_PLATFORM, { [VIEM]: "2.38.3" }));
+    const graph = aztecGraph(prefix(INSTALLED, OTHER_PLATFORM));
     expect([...graph.keys()].sort()).toEqual(LISTED);
     expect(compareGraph(graph, LISTED, RELEASE)).toEqual(clean);
   });
@@ -81,15 +81,19 @@ describe("installer graph check", () => {
     });
   });
 
-  test("names a listed package resolved at another release, which its exemption let skip the gate", () => {
+  test("names a listed package at any version but its reviewed one, which its exemption let skip the gate", () => {
     const nested =
       "node_modules/@aztec-labs/aztec/node_modules/@aztec-foundation/wsdb-darwin-arm64";
     const graph = aztecGraph(
-      prefix(INSTALLED, { ...OTHER_PLATFORM, [nested]: "" }, { [nested]: "6.0.0-rc.2" }),
+      prefix(
+        INSTALLED,
+        { ...OTHER_PLATFORM, [nested]: "" },
+        { [nested]: "6.0.0-rc.2", [VIEM]: RELEASE },
+      ),
     );
     expect(compareGraph(graph, LISTED, RELEASE)).toEqual({
       ...clean,
-      offRelease: ["@aztec-foundation/wsdb-darwin-arm64@6.0.0-rc.2"],
+      offRelease: ["@aztec-foundation/wsdb-darwin-arm64@6.0.0-rc.2", `@aztec/viem@${RELEASE}`],
     });
   });
 

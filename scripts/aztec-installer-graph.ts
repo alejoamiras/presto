@@ -3,8 +3,8 @@
  * the reviewed list that exempts them from npm's release-age gate. The installer resolves unlocked,
  * so a new first-party package already older than the gate installs without the list noticing;
  * only this name comparison catches it, and it must run whether or not the install step was cached.
- * The exemption is by name, so every `@aztec-labs` and `@aztec-foundation` package must also be at
- * the release being installed: any other version skipped the gate unreviewed.
+ * The exemption is by name, so every package must also be at its reviewed version, the release being
+ * installed (`@aztec/viem`: `VIEM_VERSION`): any other version skipped the gate unreviewed.
  *
  * The graph is the prefix's `package-lock.json` (every platform's optional packages, which the age
  * gate also filters) joined with what is on disk, so a package missing from the lock still counts.
@@ -16,8 +16,8 @@ import { lstatSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const AZTEC_NAME = /^@aztec(?:-labs|-foundation)?\/[a-z0-9][a-z0-9._-]*$/;
-/** `@aztec/viem` is Aztec's viem fork at its own version; the release scopes share one. */
-const RELEASE_SCOPE = /^@aztec-(?:labs|foundation)\//;
+/** Aztec's viem fork, versioned apart from the release; the playground's `viem` alias pins it too. */
+const VIEM_VERSION = "2.38.3";
 
 /** Aztec-scoped package name → every version installed or locked under that name. */
 export type AztecGraph = Map<string, Set<string>>;
@@ -102,10 +102,9 @@ export function parseReviewedList(text: string): string[] {
 
 export function compareGraph(graph: AztecGraph, listed: string[], release: string) {
   const installed = [...graph.keys()].sort();
+  const reviewed = (name: string) => (name === "@aztec/viem" ? VIEM_VERSION : release);
   const offRelease = installed.flatMap((name) =>
-    RELEASE_SCOPE.test(name)
-      ? [...(graph.get(name) ?? [])].filter((v) => v !== release).map((v) => `${name}@${v}`)
-      : [],
+    [...(graph.get(name) ?? [])].filter((v) => v !== reviewed(name)).map((v) => `${name}@${v}`),
   );
   return {
     added: installed.filter((name) => !listed.includes(name)),
@@ -136,7 +135,9 @@ if (import.meta.main) {
     console.error(`::error::in ${listFile} but not installed (stale exemption): ${name}`);
   }
   for (const pkg of offRelease) {
-    console.error(`::error::not at Aztec ${release}, so its exemption was not reviewed: ${pkg}`);
+    console.error(
+      `::error::not at its reviewed version, so its exemption was not reviewed: ${pkg}`,
+    );
   }
   if (added.length > 0 || removed.length > 0 || offRelease.length > 0) process.exit(1);
   console.log(`Aztec installer graph matches ${listFile} at ${release} (${graph.size} names)`);

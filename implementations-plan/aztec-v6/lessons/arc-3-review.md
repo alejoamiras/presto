@@ -17,3 +17,17 @@ adversarial and security ask, and the two verbatim rules.
 
 Gates after the fixes: `bun run test` 0, `bun run lint` 0, `bun run lint:actions` 0; playground
 build 0.
+
+## Round 2: 1 MEDIUM, 1 LOW, no CRITICAL or HIGH
+
+Codex accepted the rejection of the partial-install requirement ("merely missing a package does not
+establish an unreviewed-code execution path"). It confirmed the budget holds: an invalid later
+amount leaves zero mints, and the counters advance before the first `await`.
+
+| # | Sev | Finding | Verdict | Change |
+|---|---|---|---|---|
+| 1 | MEDIUM | The `@aztec/viem` exception skipped version validation, so a second or versionless viem passed. | Accepted | Every name is held to its reviewed version: the release, or `VIEM_VERSION = "2.38.3"` for the fork (the playground's alias pins the same). A missing version reads as `"undefined"` and fails. |
+| 2 | LOW | The `fpc-funding.ts` header still said every check precedes the key load; the mint plan is checked after the load and before signing. | Accepted | The header now says so. |
+
+Gates: `bun run test` 0, `bun run lint` 0, `bun run lint:actions` 0. The scratch v6 tree still
+matches (62 names).
