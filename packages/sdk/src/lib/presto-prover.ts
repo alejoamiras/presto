@@ -7,15 +7,18 @@ import type {
   ProveOutcome,
 } from "@alejoamiras/presto-core";
 import { fromBase64, PRESTO_SCHEME_CHONK, PrestoClient } from "@alejoamiras/presto-core";
-import { BBLazyPrivateKernelProver } from "@aztec/bb-prover/client/lazy";
-import type { CircuitSimulator } from "@aztec/simulator/client";
-import { type PrivateExecutionStep, serializePrivateExecutionSteps } from "@aztec/stdlib/kernel";
-import { ChonkProofWithPublicInputs } from "@aztec/stdlib/proofs";
+import { BBLazyPrivateKernelProver } from "@aztec-labs/bb-prover/client/lazy";
+import type { CircuitSimulator } from "@aztec-labs/simulator/client";
+import {
+  type PrivateExecutionStep,
+  serializePrivateExecutionSteps,
+} from "@aztec-labs/stdlib/kernel";
+import { ChonkProofWithPublicInputs } from "@aztec-labs/stdlib/proofs";
 import sdkPkg from "../../package.json" with { type: "json" };
 import { logger } from "./logger.js";
 
 export interface PrestoProverOptions {
-  /** Circuit simulator. Defaults to WASMSimulator (lazy-loaded from @aztec/simulator/client). */
+  /** Circuit simulator. Defaults to WASMSimulator (lazy-loaded from @aztec-labs/simulator/client). */
   simulator?: CircuitSimulator;
   /** Presto connection config (port, host). */
   presto?: PrestoConfig;
@@ -25,8 +28,8 @@ export interface PrestoProverOptions {
 
 /**
  * Create a lazy-loading proxy for CircuitSimulator that dynamically imports
- * `@aztec/simulator/client` on first method call. This avoids adding
- * `@aztec/simulator` as a runtime dependency of the SDK.
+ * `@aztec-labs/simulator/client` on first method call. This avoids adding
+ * `@aztec-labs/simulator` as a runtime dependency of the SDK.
  */
 function createLazySimulator(): CircuitSimulator {
   let instance: CircuitSimulator | null = null;
@@ -35,7 +38,7 @@ function createLazySimulator(): CircuitSimulator {
   async function getInstance(): Promise<CircuitSimulator> {
     if (instance) return instance;
     if (!loading) {
-      loading = import("@aztec/simulator/client")
+      loading = import("@aztec-labs/simulator/client")
         .then((mod) => {
           instance = new mod.WASMSimulator();
           return instance;
@@ -43,8 +46,8 @@ function createLazySimulator(): CircuitSimulator {
         .catch(() => {
           loading = null;
           throw new Error(
-            "No simulator provided and @aztec/simulator/client could not be loaded. " +
-              "Install @aztec/simulator or pass a simulator in the constructor options.",
+            "No simulator provided and @aztec-labs/simulator/client could not be loaded. " +
+              "Install @aztec-labs/simulator or pass a simulator in the constructor options.",
           );
         });
     }
@@ -69,12 +72,12 @@ function createLazySimulator(): CircuitSimulator {
 }
 
 /**
- * The Aztec version this SDK expects, from its pinned `@aztec/stdlib`. Only the LEADING non-digits
+ * The Aztec version this SDK expects, from its pinned `@aztec-labs/stdlib`. Only the LEADING non-digits
  * are stripped (a `^`/`~` range prefix): the server's version check accepts the inner `.`/`-` of a
  * version like `5.0.0-rc.1`, so the prerelease suffix must survive for the `/health` handshake.
  */
 export function sdkAztecVersion(): string | undefined {
-  return (sdkPkg.dependencies as Record<string, string | undefined>)["@aztec/stdlib"]?.replace(
+  return (sdkPkg.dependencies as Record<string, string | undefined>)["@aztec-labs/stdlib"]?.replace(
     /^[^0-9]*/,
     "",
   );

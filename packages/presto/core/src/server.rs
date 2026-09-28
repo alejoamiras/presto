@@ -463,7 +463,7 @@ async fn health(
             available.push(v);
         }
     }
-    // An Aztec release and the `@aztec/bb.js` package it ships are one version string by construction;
+    // An Aztec release and the bb.js package it ships are one version string by construction;
     // the pair is spelled out so a Noir developer who only knows a bb.js version has a key to match.
     let version_pairs: Vec<_> = available
         .iter()

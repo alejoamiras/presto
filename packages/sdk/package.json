@@ -29,20 +29,20 @@
   },
   "dependencies": {
     "@alejoamiras/presto-core": "workspace:*",
-    "@aztec/bb-prover": "5.2.0",
-    "@aztec/foundation": "5.2.0",
-    "@aztec/noir-acvm_js": "5.2.0",
-    "@aztec/noir-noirc_abi": "5.2.0",
-    "@aztec/stdlib": "5.2.0",
+    "@aztec-foundation/noir-acvm_js": "6.0.0-rc.1",
+    "@aztec-foundation/noir-noirc_abi": "6.0.0-rc.1",
+    "@aztec-labs/bb-prover": "6.0.0-rc.1",
+    "@aztec-labs/foundation": "6.0.0-rc.1",
+    "@aztec-labs/stdlib": "6.0.0-rc.1",
     "@logtape/logtape": "^2.3.2"
   },
   "devDependencies": {
-    "@aztec/accounts": "5.2.0",
-    "@aztec/aztec.js": "5.2.0",
-    "@aztec/noir-contracts.js": "5.2.0",
-    "@aztec/pxe": "5.2.0",
-    "@aztec/simulator": "5.2.0",
-    "@aztec/wallets": "5.2.0",
+    "@aztec-labs/accounts": "6.0.0-rc.1",
+    "@aztec-labs/aztec.js": "6.0.0-rc.1",
+    "@aztec-labs/noir-contracts.js": "6.0.0-rc.1",
+    "@aztec-labs/pxe": "6.0.0-rc.1",
+    "@aztec-labs/simulator": "6.0.0-rc.1",
+    "@aztec-labs/wallets": "6.0.0-rc.1",
     "vite-plugin-node-polyfills": "^0.28"
   },
   "publishConfig": {

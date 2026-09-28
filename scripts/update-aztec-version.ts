@@ -10,7 +10,7 @@ import { isAztecPackage } from "./aztec-manifest.ts";
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly\.\d{8}|rc\.\d+|aztecnr-rc\.\d+))?$/;
 const AZTEC_VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly|spartan|devnet|aztecnr-rc|rc)[\w.-]*)?$/;
 
-// The Noir adapter's exact `@aztec/bb.js` peer (and its dev copy) move with every Aztec bump; its
+// The Noir adapter's exact bb.js peer (and its dev copy) move with every Aztec bump; its
 // `TESTED_BB_VERSIONS` constant is a separate, deliberate step — the adapter's tests fail loud
 // until the new pairing is declared tested.
 export const PACKAGE_JSON_FILES = [
@@ -24,25 +24,13 @@ export const HOST_DEPENDENCY_FILES = [
   "scripts/tarball-consumer/presto-noir/host-dependencies.json",
 ];
 
-/**
- * Companion packages that must stay in version-lockstep with Aztec's own: their generated
- * code carries undeclared runtime imports of aztec.js resolved against OUR pins,
- * so version skew breaks at runtime, silently. Explicit allowlist — NOT a scope prefix —
- * so unrelated @aztec-foundation packages never get swept up.
- */
-const LOCKSTEP_PACKAGES = new Set(["@aztec-foundation/aztec-standards"]);
-
-export function isAztecManagedDep(key: string): boolean {
-  return isAztecPackage(key) || LOCKSTEP_PACKAGES.has(key);
-}
-
 export function validateVersion(version: string): boolean {
   return VERSION_PATTERN.test(version);
 }
 
 function bumpPins(deps: Record<string, unknown>, newVersion: string, skipPackages?: Set<string>) {
   for (const [key, value] of Object.entries(deps)) {
-    if (isAztecManagedDep(key) && typeof value === "string" && AZTEC_VERSION_PATTERN.test(value)) {
+    if (isAztecPackage(key) && typeof value === "string" && AZTEC_VERSION_PATTERN.test(value)) {
       if (skipPackages?.has(key)) continue;
       deps[key] = newVersion;
     }
@@ -79,11 +67,7 @@ async function findMissingPackages(version: string, packageFiles: string[]): Pro
       const deps = pkg[section];
       if (!deps) continue;
       for (const [key, value] of Object.entries(deps)) {
-        if (
-          isAztecManagedDep(key) &&
-          typeof value === "string" &&
-          AZTEC_VERSION_PATTERN.test(value)
-        ) {
+        if (isAztecPackage(key) && typeof value === "string" && AZTEC_VERSION_PATTERN.test(value)) {
           allAztecPackages.add(key);
         }
       }
@@ -140,18 +124,6 @@ async function main() {
   const skipPackages = await findMissingPackages(newVersion, PACKAGE_JSON_FILES);
   if (skipPackages.size > 0) {
     console.log(`Skipping unpublished packages: ${[...skipPackages].join(", ")}`);
-    // LOCKSTEP packages track @aztec/* releases from a DIFFERENT publisher — a skip here means
-    // the app would run mixed versions (undeclared runtime imports of @aztec/aztec.js make that
-    // lockstep a hard requirement). Loud, not fatal: nightlies stay unblocked, and the CI token
-    // spec is the behavioral gate that catches a truly broken mix.
-    const lockstepSkipped = [...skipPackages].filter((p) => LOCKSTEP_PACKAGES.has(p));
-    if (lockstepSkipped.length > 0) {
-      console.warn(
-        `⚠️  LOCKSTEP PACKAGE(S) NOT PUBLISHED AT ${newVersion}: ${lockstepSkipped.join(", ")} — ` +
-          `left at their previous version; the app will mix versions until they publish. ` +
-          `Verify the CI token spec passes before trusting this bump.`,
-      );
-    }
   }
 
   let updatedFiles = 0;
@@ -183,13 +155,13 @@ async function main() {
 
   console.log("\nNext steps:");
   console.log(
-    "  1. bun install   (a <7-day-old @aztec release is exempted via bunfig.toml's minimumReleaseAgeExcludes;",
+    "  1. bun install   (a <7-day-old Aztec release is exempted via bunfig.toml's minimumReleaseAgeExcludes;",
   );
   console.log(
-    "     if a NEW @aztec transitive trips the min-age gate, add that exact name to the excludes list —",
+    "     if a NEW Aztec transitive trips the min-age gate, add that exact name to the excludes list —",
   );
   console.log(
-    "     @aztec/-scoped names only, prune departed ones; scripts/bunfig-aztec-excludes.test.ts enforces both",
+    "     Aztec-scoped names only, prune departed ones; scripts/bunfig-aztec-excludes.test.ts enforces both",
   );
   console.log(
     "     directions. NEVER --minimum-release-age=0: that regen lifts the 7-day quarantine for every",
@@ -198,7 +170,13 @@ async function main() {
     "     third-party package in the tree — the snappy class the quarantine exists for.)",
   );
   console.log(
-    "  2. bun run --cwd packages/playground typecheck:scripts   (catch @aztec API breaks in the deploy/fund scripts)",
+    "  2. bun run --cwd packages/playground typecheck:scripts   (catch Aztec API breaks in the deploy/fund scripts)",
+  );
+  console.log(
+    "     Review .github/actions/setup-aztec/installer-aztec-packages.txt against the new installer's graph;",
+  );
+  console.log(
+    "     setup-aztec's graph check names every addition and removal (scripts/aztec-installer-graph.ts).",
   );
   console.log(
     "  3. ⚠️  Aztec artifacts may have recompiled → the salt=0 SponsoredFPC address can MOVE. Derive + redeploy on testnet if so:",

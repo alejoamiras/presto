@@ -135,7 +135,7 @@ jobs:
             ${{ runner.os }}-bun-${{ inputs.dist_tag }}-
             ${{ runner.os }}-bun-
 
-      - name: Update @aztec/* versions
+      - name: Update Aztec package versions
         run: bun scripts/update-aztec-version.ts "$NEW_VERSION"
 
       - name: Install dependencies with new versions
@@ -154,7 +154,7 @@ jobs:
         uses: ./.github/actions/bot-push
         with:
           branch: ${{ inputs.branch_prefix }}-${{ needs.check-update.outputs.new_version }}
-          message: "chore: update @aztec/* to ${{ needs.check-update.outputs.new_version }}"
+          message: "chore: update Aztec packages to ${{ needs.check-update.outputs.new_version }}"
           if-exists: skip
           paths: |
             packages/sdk/package.json
@@ -238,7 +238,7 @@ jobs:
           merge-token: ${{ steps.merge-token.outputs.token }}
           branch: ${{ inputs.branch_prefix }}-${{ needs.check-update.outputs.new_version }}
           base: ${{ inputs.target_branch }}
-          title: "chore: update @aztec/* to ${{ needs.check-update.outputs.new_version }}"
+          title: "chore: update Aztec packages to ${{ needs.check-update.outputs.new_version }}"
           body: |
             ## Aztec ${{ inputs.dist_tag }} Update
 

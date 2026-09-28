@@ -1,6 +1,6 @@
 /**
  * Every peer the consumer host installs beside the candidate (`host-dependencies.json`) must be ONE
- * copy in the host's tree: a nested second `@aztec/bb.js` is two WASM runtimes and two
+ * copy in the host's tree: a nested second bb.js is two WASM runtimes and two
  * `Barretenberg` types.
  *
  *   bun scripts/tarball-consumer/assert-singletons.ts <host-dir> <host-dependencies.json>

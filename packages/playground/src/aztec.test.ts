@@ -62,7 +62,7 @@ describe("checkAztecNode", () => {
 // the deployed playground — this closes that loop against an actual node when one is
 // configured (AZTEC_NODE_URL=https://... bun run test:live). Must run with this package as
 // cwd: bunfig's preloaded happydom.ts carries the expect.addEqualityTesters patch that
-// @aztec/foundation's field module needs at import time under bun:test.
+// @aztec-labs/foundation's field module needs at import time under bun:test.
 describe.skipIf(!process.env.AZTEC_NODE_URL)("checkAztecNode (live node)", () => {
   test(
     "real node answers the node_getNodeInfo probe",

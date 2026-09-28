@@ -5,10 +5,10 @@
  * via EmbeddedWallet + Sponsored FPC.
  */
 
-import { NO_FROM } from "@aztec/aztec.js/account";
-import type { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
-import { Fq, Fr } from "@aztec/aztec.js/fields";
-import type { EmbeddedWallet } from "@aztec/wallets/embedded";
+import { NO_FROM } from "@aztec-labs/aztec.js/account";
+import type { SponsoredFeePaymentMethod } from "@aztec-labs/aztec.js/fee";
+import { Fq, Fr } from "@aztec-labs/aztec.js/fields";
+import type { EmbeddedWallet } from "@aztec-labs/wallets/embedded";
 import { getLogger } from "@logtape/logtape";
 
 const logger = getLogger(["presto", "sdk", "e2e", "helpers"]);

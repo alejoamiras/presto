@@ -2,8 +2,8 @@ import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { PrestoHttpError, toBase64 } from "@alejoamiras/presto-core";
-import type { Barretenberg, ProofData } from "@aztec/bb.js";
-import * as bbJs from "@aztec/bb.js";
+import type { Barretenberg, ProofData } from "@aztec-foundation/bb.js";
+import * as bbJs from "@aztec-foundation/bb.js";
 import { PrestoUnavailableError } from "./errors.js";
 import {
   PrestoUltraHonkBackend,
@@ -53,7 +53,7 @@ const healthOk = () =>
   Response.json({
     status: "ok",
     api_version: 1,
-    available_versions: ["5.2.0"],
+    available_versions: ["6.0.0-rc.1"],
     schemes: ["chonk", "ultra_honk"],
   });
 const proveOk = (vk = true) =>
@@ -114,7 +114,7 @@ describe("PrestoUltraHonkBackend", () => {
     expect(proof).toEqual(EXPECTED);
     const [job] = proveJobs(requests);
     expect(job?.headers.get("content-type")).toBe("application/json");
-    expect(job?.headers.get("x-aztec-version")).toBe("5.2.0");
+    expect(job?.headers.get("x-aztec-version")).toBe("6.0.0-rc.1");
     expect(await job?.json()).toEqual({
       bytecode: BYTECODE,
       witness: toBase64(WITNESS),
@@ -325,7 +325,7 @@ describe("PrestoUltraHonkBackend", () => {
     const { backend: b } = backend();
     expect(await b.checkPrestoStatus()).toMatchObject({
       available: true,
-      sdkAztecVersion: "5.2.0",
+      sdkAztecVersion: "6.0.0-rc.1",
       schemes: ["chonk", "ultra_honk"],
     });
   });

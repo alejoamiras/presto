@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { cpus } from "node:os";
 import { toBase64 } from "@alejoamiras/presto-core";
-import { BackendType, Barretenberg, deflattenFields } from "@aztec/bb.js";
+import { BackendType, Barretenberg, deflattenFields } from "@aztec-foundation/bb.js";
 import { PrestoUltraHonkBackend } from "../src/index.js";
 import { FIXTURE_NAMES, fixtureDir, loadFixture, type NoirFixture } from "./e2e-setup.js";
 

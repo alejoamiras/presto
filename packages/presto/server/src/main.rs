@@ -110,7 +110,7 @@ async fn main() {
     let state = AppState::headless(HeadlessState::headless(
         env!("CARGO_PKG_VERSION"),
         // bb-version injected from the runtime env (the Phase-3 CI hook sets AZTEC_BB_VERSION from the
-        // copy-bb.ts @aztec/bb.js resolution). Unset → None → core's "unknown" default; /prove is
+        // copy-bb.ts bb.js resolution). Unset → None → core's "unknown" default; /prove is
         // unaffected (callers pass x-aztec-version). (core-extraction Phase 2)
         std::env::var("AZTEC_BB_VERSION").ok(),
         config,

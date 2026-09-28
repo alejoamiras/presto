@@ -19,7 +19,7 @@ const presto = (deps: Record<string, string> = {}) => ({
   manifest: {
     name: NPM_PACKAGES.presto.name,
     version: "0.0.0",
-    dependencies: { "@aztec/stdlib": "5.2.0", ...deps },
+    dependencies: { "@aztec-labs/stdlib": "5.2.0", ...deps },
   },
   published: ["5.1.0"],
 });
@@ -80,7 +80,7 @@ describe("release plan", () => {
       manifest: {
         name: NPM_PACKAGES.presto.name,
         version: "0.0.0",
-        dependencies: { "@aztec/stdlib": "6.0.0-rc.1", [core.name]: "workspace:*" },
+        dependencies: { "@aztec-labs/stdlib": "6.0.0-rc.1", [core.name]: "workspace:*" },
       },
       published,
     });

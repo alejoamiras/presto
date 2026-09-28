@@ -1,9 +1,9 @@
 /**
  * The bb.js releases this adapter is tested against: the wire contract, the byte identity of native
  * and WASM proofs, and the CLI flags are all verified per version, and an Aztec release ships its
- * `@aztec/bb.js` under the same version string.
+ * `@aztec-foundation/bb.js` under the same version string.
  */
-export const TESTED_BB_VERSIONS: readonly string[] = ["5.2.0"];
+export const TESTED_BB_VERSIONS: readonly string[] = ["6.0.0-rc.1"];
 export const TESTED_BB_VERSION = TESTED_BB_VERSIONS[0] as string;
 
 /**

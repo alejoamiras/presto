@@ -12,7 +12,7 @@ export {
   PrestoHttpError,
   watchLoopbackPermission,
 } from "@alejoamiras/presto-core";
-export type { ProofData, UltraHonkBackendOptions, VerifierTarget } from "@aztec/bb.js";
+export type { ProofData, UltraHonkBackendOptions, VerifierTarget } from "@aztec-foundation/bb.js";
 export { PrestoUnavailableError } from "./lib/errors.js";
 export type {
   BarretenbergSource,

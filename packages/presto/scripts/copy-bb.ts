@@ -1,10 +1,10 @@
 /**
- * Extract the `bb` binary from `@aztec/bb.js` and copy it to `src-tauri/binaries/`
+ * Extract the `bb` binary from `@aztec-foundation/bb.js` and copy it to `src-tauri/binaries/`
  * as a Tauri sidecar with the correct target-triple suffix.
  *
  * Tauri expects sidecars at `binaries/<name>-<target-triple>` (plus `.exe` on Windows).
  *
- * - macOS/Linux: bb ships inside the `@aztec/bb.js` npm package (`build/<arch>-<os>/bb`).
+ * - macOS/Linux: bb ships inside the `@aztec-foundation/bb.js` npm package (`build/<arch>-<os>/bb`).
  * - Windows: bb.js ships NO Windows build, so we fetch the self-contained `bb.exe`
  *   from the matching barretenberg GitHub release tarball and verify it against a
  *   pinned SHA-256. Upstream publishes no checksum file, so this in-repo, review-gated
@@ -33,7 +33,7 @@ export { getTargetTriple };
 
 // --- Windows bb.exe supply chain ---
 // The Windows bb.exe is fetched from the barretenberg release whose tag matches the
-// LIVE @aztec/bb.js version (never the committed AZTEC_VERSION file, which can drift).
+// LIVE @aztec-foundation/bb.js version (never the committed AZTEC_VERSION file, which can drift).
 // Each version's tarball SHA-256 is pinned below; the prebuild fails closed on an
 // unknown version or a hash mismatch — both force a deliberate review whenever bb bumps.
 
@@ -83,6 +83,11 @@ export const WINDOWS_BB_CHECKSUMS: Record<string, WindowsBbPin> = {
     sha256: "17fe17e1cb1109328a266e8ceef28ec3d830073e734b4e93bfb27a20d4a9d2fe",
     provenance: "manual-review",
     note: "v5.2.0 asset, fetched 2026-08-19 from aztec-packages; two-channel verified: downloaded-file sha256sum EQUALS the GitHub API asset digest (5970432 bytes). 2026-09-28: barretenberg's v5.2.0 asset digest is identical. Reproduce: curl -fsSL -o bb.tar.gz https://github.com/AztecProtocol/barretenberg/releases/download/v5.2.0/barretenberg-amd64-windows.tar.gz && sha256sum bb.tar.gz. Change-detector only (SEC-02).",
+  },
+  "6.0.0-rc.1": {
+    sha256: "6335a0369a4774346c170a0a755d7e2d7e8d2ba4ef7cc0933f2097cf1b0a6607",
+    provenance: "manual-review",
+    note: "v6.0.0-rc.1 asset, reviewed 2026-09-28: prerelease published 2026-09-23 by AztecBot, lightweight tag on a GitHub-verified commit (654cc60); downloaded-file sha256sum EQUALS the GitHub API asset digest (7118884 bytes). Diff against the 5.2.0 pin: still a single bb.exe (PE, 39319040 bytes, embeds 6.0.0-rc.1), no bundled DLLs, identical imported-DLL set. Reproduce: curl -fsSL -o bb.tar.gz https://github.com/AztecProtocol/barretenberg/releases/download/v6.0.0-rc.1/barretenberg-amd64-windows.tar.gz && sha256sum bb.tar.gz. Change-detector only (SEC-02).",
   },
 };
 

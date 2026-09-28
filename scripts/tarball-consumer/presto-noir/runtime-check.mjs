@@ -12,7 +12,7 @@ import {
 if (typeof PrestoUltraHonkBackend !== "function") throw new Error("PrestoUltraHonkBackend missing");
 if (typeof PrestoUnavailableError !== "function") throw new Error("PrestoUnavailableError missing");
 if (resolveVerifierTarget() !== "noir-recursive") throw new Error("default target mismatch");
-if (TESTED_BB_VERSION !== "5.2.0") throw new Error("TESTED_BB_VERSION mismatch");
+if (TESTED_BB_VERSION !== "6.0.0-rc.1") throw new Error("TESTED_BB_VERSION mismatch");
 const backend = new PrestoUltraHonkBackend("bytecode", () => Promise.reject(new Error("unused")));
 for (const method of [
   "generateProof",

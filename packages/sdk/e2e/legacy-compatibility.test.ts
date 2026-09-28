@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
-import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
-import { Fr } from "@aztec/aztec.js/fields";
-import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import { SponsoredFPCContract } from "@aztec/noir-contracts.js/SponsoredFPC";
-import { WASMSimulator } from "@aztec/simulator/client";
-import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
-import { EmbeddedWallet } from "@aztec/wallets/embedded";
+import { SponsoredFeePaymentMethod } from "@aztec-labs/aztec.js/fee";
+import { Fr } from "@aztec-labs/aztec.js/fields";
+import { createAztecNodeClient } from "@aztec-labs/aztec.js/node";
+import { SponsoredFPCContract } from "@aztec-labs/noir-contracts.js/SponsoredFPC";
+import { WASMSimulator } from "@aztec-labs/simulator/client";
+import { getContractInstanceFromInstantiationParams } from "@aztec-labs/stdlib/contract";
+import { EmbeddedWallet } from "@aztec-labs/wallets/embedded";
 import legacy from "../../../audit/fixtures/legacy-identity.json";
 import type { PrestoProver } from "../src/index";
 import { deploySchnorrAccount } from "./e2e-helpers";

@@ -2,7 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { toBase64 } from "@alejoamiras/presto-core";
-import { deflattenFields } from "@aztec/bb.js";
+import { deflattenFields } from "@aztec-foundation/bb.js";
 import { decodeUltraHonkResponse, fieldsToHex, toProofData } from "./proof-data.js";
 
 const fixture = (name: string, file: string) =>

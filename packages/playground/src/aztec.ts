@@ -5,21 +5,18 @@ import {
   type PrestoStatus,
   type PrestoStatusCheckOptions,
 } from "@alejoamiras/presto";
-import { NO_FROM } from "@aztec/aztec.js/account";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { NO_WAIT } from "@aztec/aztec.js/contracts";
-import { SponsoredFeePaymentMethod } from "@aztec/aztec.js/fee";
-import { Fq, Fr } from "@aztec/aztec.js/fields";
-import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import type { TxHash } from "@aztec/aztec.js/tx";
-import type { Wallet } from "@aztec/aztec.js/wallet";
-import { SponsoredFPCContract } from "@aztec/noir-contracts.js/SponsoredFPC";
-import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
-import { EmbeddedWallet } from "@aztec/wallets/embedded";
-// Deep-path import: the standards package ships no `exports` map / `main`, and
-// moduleResolution "Bundler" + vite both resolve package-internal paths directly
-// (same pattern the noir-contracts artifacts use internally).
-import { TokenContract } from "@aztec-foundation/aztec-standards/dist/src/artifacts/Token.js";
+import { NO_FROM } from "@aztec-labs/aztec.js/account";
+import type { AztecAddress } from "@aztec-labs/aztec.js/addresses";
+import { NO_WAIT } from "@aztec-labs/aztec.js/contracts";
+import { SponsoredFeePaymentMethod } from "@aztec-labs/aztec.js/fee";
+import { Fq, Fr } from "@aztec-labs/aztec.js/fields";
+import { createAztecNodeClient } from "@aztec-labs/aztec.js/node";
+import type { TxHash } from "@aztec-labs/aztec.js/tx";
+import type { Wallet } from "@aztec-labs/aztec.js/wallet";
+import { SponsoredFPCContract } from "@aztec-labs/noir-contracts.js/SponsoredFPC";
+import { TokenContract } from "@aztec-labs/noir-contracts.js/Token";
+import { getContractInstanceFromInstantiationParams } from "@aztec-labs/stdlib/contract";
+import { EmbeddedWallet } from "@aztec-labs/wallets/embedded";
 
 export type LogFn = (
   msg: string,
@@ -49,7 +46,7 @@ const BLOCK_HEADER_NOT_FOUND = "Block header not found";
  *  because re-simulating may pick up different contract state. */
 const RETRY_STALE_HEADER = !!process.env.E2E_RETRY_STALE_HEADER;
 
-/** @aztec/stdlib version from SDK package.json, embedded at build time */
+/** @aztec-labs/stdlib version from SDK package.json, embedded at build time */
 export const AZTEC_SDK_VERSION = process.env.VITE_AZTEC_SDK_VERSION || "unknown";
 
 export interface AztecState {
@@ -172,15 +169,15 @@ async function clearIndexedDB(): Promise<void> {
 
 /**
  * bb.js caches the CRS in IndexedDB (idb-keyval's `keyval-store`) under keys (`g1Data`/`g2Data`)
- * that are NOT version-suffixed. Across an `@aztec/bb.js` bump the on-disk CRS format can change,
+ * that are NOT version-suffixed. Across an `@aztec-foundation/bb.js` bump the on-disk CRS format can change,
  * but those keys aren't busted — so a returning visitor's stale blob (wrong bytes-per-point) gets
  * fed to `SrsInitSrs` → "invalid points_buf size … got 128". Clear the CRS store once per bb
  * version so a fresh, correctly-formatted CRS is downloaded. Only the bb.js CRS lives in
  * `keyval-store`; current wallet/PXE state is in-memory (ephemeral) — the prefixed-DB clear
- * above only evicts pre-5.0 residue. Bump CRS_CACHE_VERSION whenever `@aztec/bb.js` changes
+ * above only evicts pre-5.0 residue. Bump CRS_CACHE_VERSION whenever `@aztec-foundation/bb.js` changes
  * the CRS format.
  */
-const CRS_CACHE_VERSION = "5.2.0";
+const CRS_CACHE_VERSION = "6.0.0-rc.1";
 async function bustStaleCrsCacheOnce(log: LogFn): Promise<void> {
   if (typeof indexedDB === "undefined" || typeof localStorage === "undefined") return;
   const KEY = "bb-crs-cache-version";
@@ -649,15 +646,9 @@ async function resolveBob(context: TokenFlowContext): Promise<AztecAddress> {
 
 async function deployToken(context: TokenFlowContext): Promise<TokenContract> {
   context.onStep("deploying token");
-  context.log("Deploying TokenContract (minter=Alice)...");
-  const deployment = TokenContract.deployWithOpts(
-    { method: "constructor_with_minter", wallet: state.wallet! },
-    "Presto",
-    "ACEL",
-    18,
-    context.alice,
-    AztecAddress.ZERO,
-  );
+  context.log("Deploying TokenContract (admin=Alice)...");
+  // The admin is the token's minter.
+  const deployment = TokenContract.deploy(state.wallet!, context.alice, "Presto", "ACEL", 18);
   const { timing, txHash } = await executeStep({
     step: "deploy token",
     method: deployment,
@@ -702,7 +693,8 @@ async function mintAndTransfer(
   context.log("Transferring 500 ACEL Alice → Bob...");
   const transfer = await executeStep({
     step: "private transfer",
-    method: token.methods.transfer_private_to_private(context.alice, bob, 500n, 0),
+    // `transfer` spends the sender's own private notes, so no authwit is involved.
+    method: token.methods.transfer(bob, 500n),
     sendOpts: { from: context.alice, fee: context.fee },
     log: context.log,
     onConfirming: () => context.onStep("confirming transfer"),

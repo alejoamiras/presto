@@ -1,7 +1,7 @@
 // Preload for the suites outside the hermetic unit chain: log configuration and the fixture loader.
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { VerifierTarget } from "@aztec/bb.js";
+import type { VerifierTarget } from "@aztec-foundation/bb.js";
 import { configure, getConsoleSink, parseLogLevel } from "@logtape/logtape";
 
 await configure({

@@ -102,6 +102,6 @@ test("production build ships the third-party licence notices it links to", async
   expect(response.headers()["content-type"]).toContain("text/plain");
   const body = await response.text();
   expect(body.startsWith("THIRD-PARTY SOFTWARE NOTICES")).toBe(true);
-  expect(body).toContain("@aztec/stdlib ");
+  expect(body).toContain("@aztec-labs/stdlib ");
   expect(body).toContain("Apache License");
 });

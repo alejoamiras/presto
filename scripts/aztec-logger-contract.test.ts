@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 /**
- * Tripwire for the JEST_WORKER_ID contract the test preloads rely on: @aztec/foundation's logger
+ * Tripwire for the JEST_WORKER_ID contract the test preloads rely on: @aztec-labs/foundation's logger
  * must keep its Jest branch — a truthy JEST_WORKER_ID takes a synchronous fd destination and
  * NEVER constructs the worker-thread transport (which crashes under bun 1.4.0 after happy-dom
  * replaces the global MessagePort — oven-sh/bun#40268). This is unversioned upstream behavior:
@@ -15,8 +15,11 @@ import { dirname, join } from "node:path";
  * construction must live outside that consequent. Resolved from a declaring workspace via
  * Bun.resolveSync so the check survives the isolated linker's node_modules layout.
  */
-describe("@aztec/foundation logger JEST_WORKER_ID contract", () => {
-  const entry = Bun.resolveSync("@aztec/foundation/log", join(import.meta.dir, "../packages/sdk"));
+describe("@aztec-labs/foundation logger JEST_WORKER_ID contract", () => {
+  const entry = Bun.resolveSync(
+    "@aztec-labs/foundation/log",
+    join(import.meta.dir, "../packages/sdk"),
+  );
   const loggerPath = join(dirname(entry), "pino-logger.js");
   const src = readFileSync(loggerPath, "utf8");
 

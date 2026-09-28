@@ -35,7 +35,7 @@ const PROVE_TIMEOUT_MS = ms("10 min");
  * **The default cap is derived, not sampled.** A single observed proof is a lower bound, not a
  * protocol maximum, so it is computed from the chonk protocol's own declared sizes:
  *
- * - `@aztec/stdlib`'s `chonk_proof.ts` documents the proof data itself as **≈52 KB** uncompressed
+ * - `@aztec-labs/stdlib`'s `chonk_proof.ts` documents the proof data itself as **≈52 KB** uncompressed
  *   ("always >= 40KB") and ≈35 KB compressed.
  * - Public inputs ride along on top: `numPublicInputs = fields.length - CHONK_PROOF_LENGTH`, and the
  *   widest relevant kernel output is `PRIVATE_TO_ROLLUP_KERNEL_CIRCUIT_PUBLIC_INPUTS_LENGTH` = 1281

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 /**
- * F-008: report whether the LIVE @aztec/bb.js version has a REVIEWED Windows bb.exe pin.
+ * F-008: report whether the LIVE bb.js version has a REVIEWED Windows bb.exe pin.
  *
  * Run this AFTER `bun install` — it resolves the installed bb.js version (the SAME key the Windows
  * Prebuild/Build Smoke gate uses via resolveWindowsBbChecksum), never the argv/aztec.js version.

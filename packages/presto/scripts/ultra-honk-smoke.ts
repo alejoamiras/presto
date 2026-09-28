@@ -6,7 +6,7 @@
  * `ultra-honk-smoke-checks.ts`, which stays runtime-neutral; this entrypoint is Bun-only.
  *
  *   PRESTO_URL       base URL (default http://127.0.0.1:59833)
- *   BB_BINARY_PATH   the bb used for `bb verify` (default: the installed @aztec/bb.js native binary)
+ *   BB_BINARY_PATH   the bb used for `bb verify` (default: the installed @aztec-foundation/bb.js native binary)
  */
 import { existsSync } from "node:fs";
 import { join } from "node:path";

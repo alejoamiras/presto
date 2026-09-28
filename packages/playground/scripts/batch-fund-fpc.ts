@@ -15,18 +15,17 @@
  *   L1_RPC_URL=https://... Sepolia RPC endpoint
  */
 
-import { NO_FROM } from "@aztec/aztec.js/account";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { L1FeeJuicePortalManager } from "@aztec/aztec.js/ethereum";
-import { FeeJuicePaymentMethodWithClaim } from "@aztec/aztec.js/fee";
-import { Fq, Fr } from "@aztec/aztec.js/fields";
-import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import { BBLazyPrivateKernelProver } from "@aztec/bb-prover/client/lazy";
-import { createLogger } from "@aztec/foundation/log";
-import { FeeJuiceContract } from "@aztec/noir-contracts.js/FeeJuice";
-import { SponsoredFPCContract } from "@aztec/noir-contracts.js/SponsoredFPC";
-import { WASMSimulator } from "@aztec/simulator/client";
-import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
+import { NO_FROM } from "@aztec-labs/aztec.js/account";
+import { L1FeeJuicePortalManager } from "@aztec-labs/aztec.js/ethereum";
+import { FeeJuicePaymentMethodWithClaim } from "@aztec-labs/aztec.js/fee";
+import { Fq, Fr } from "@aztec-labs/aztec.js/fields";
+import { createAztecNodeClient } from "@aztec-labs/aztec.js/node";
+import { FeeJuiceContract } from "@aztec-labs/aztec.js/protocol";
+import { BBLazyPrivateKernelProver } from "@aztec-labs/bb-prover/client/lazy";
+import { createLogger } from "@aztec-labs/foundation/log";
+import { SponsoredFPCContract } from "@aztec-labs/noir-contracts.js/SponsoredFPC";
+import { WASMSimulator } from "@aztec-labs/simulator/client";
+import { getContractInstanceFromInstantiationParams } from "@aztec-labs/stdlib/contract";
 import { createWalletClient, getContract, http, publicActions } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
 import { sepolia } from "viem/chains";
@@ -214,9 +213,6 @@ console.log(`  Bridged ${claim.claimAmount} wei to FPC, leaf: ${claim.messageLea
 // ── Step 3: Bootstrap ephemeral L2 account (for claiming) ───────────
 console.log("Step 3: Bootstrapping ephemeral L2 account...");
 
-// FeeJuice protocol contract — canonical address compacted to 0x03 in Aztec 5.0 (was 0x05)
-const FEE_JUICE_ADDRESS = AztecAddress.fromBigIntUnsafe(3n);
-
 const explorerUrl = (txHash: string) => `https://testnet.aztecscan.xyz/tx-effects/${txHash}`;
 
 async function waitForBlocks(n: number, timeoutMs = 600_000) {
@@ -238,7 +234,7 @@ async function waitForBlocks(n: number, timeoutMs = 600_000) {
   throw new Error(`Timed out waiting for L2 block ${target}`);
 }
 
-const { EmbeddedWallet: EW } = await import("@aztec/wallets/embedded");
+const { EmbeddedWallet: EW } = await import("@aztec-labs/wallets/embedded");
 const wallet = await EW.create(node, {
   ephemeral: true,
   pxe: {
@@ -284,7 +280,7 @@ console.log(`Step 4: Claiming ${fundedFJ.toLocaleString()} FJ for FPC on L2...`)
 // Wait for the FPC bridge message to be processable (may need more blocks)
 await waitForBlocks(2);
 
-const feeJuice = await FeeJuiceContract.at(FEE_JUICE_ADDRESS, wallet as any);
+const feeJuice = FeeJuiceContract.withWallet(wallet as any);
 const { receipt: claimReceipt } = await feeJuice.methods
   .claim(fpcInstance.address, claim.claimAmount, claim.claimSecret, claim.messageLeafIndex)
   .send({ from: deployerAddress });

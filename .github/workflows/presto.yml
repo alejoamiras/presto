@@ -460,7 +460,7 @@ jobs:
           echo "headless tree clean: $(echo "$TREE" | wc -l) packages, no GUI/certificate-serving crates"
       - name: Launch and health check
         run: |
-          # bb-version hook (version-only): this leg skips the full prebuild, so resolve the live @aztec/bb.js
+          # bb-version hook (version-only): this leg skips the full prebuild, so resolve the live bb.js
           # version directly (no bb copy) and surface it to /health via the runtime env — core is build.rs-free,
           # so the server reads AZTEC_BB_VERSION at construct-time. Run the script by ABSOLUTE path (the job's
           # working-dir is src-tauri; a bare `bun run` would also echo a `$ …` line into the capture).

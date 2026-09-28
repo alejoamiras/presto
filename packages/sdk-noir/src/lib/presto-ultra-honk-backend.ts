@@ -13,7 +13,7 @@ import type {
   UltraHonkBackend,
   UltraHonkBackendOptions,
   VerifierTarget,
-} from "@aztec/bb.js";
+} from "@aztec-foundation/bb.js";
 import { PrestoUnavailableError } from "./errors.js";
 import { logger } from "./logger.js";
 import { decodeUltraHonkResponse, toProofData, type UltraHonkResponse } from "./proof-data.js";
@@ -33,7 +33,7 @@ export type BarretenbergSource = Barretenberg | (() => Promise<Barretenberg>);
 
 export interface PrestoUltraHonkBackendOptions {
   /**
-   * The bb release the presto proves with (an Aztec release ships bb and `@aztec/bb.js` under one
+   * The bb release the presto proves with (an Aztec release ships bb and `@aztec-foundation/bb.js` under one
    * version). Defaults to the adapter's tested version; another value is refused unless
    * `allowUntestedBbVersion` is set, because native and WASM proofs would then come from
    * different bb releases.
@@ -261,19 +261,19 @@ export class PrestoUltraHonkBackend implements UltraHonkSurface {
 }
 
 /**
- * The peer is only reached here, so a missing or unexpected `@aztec/bb.js` surfaces as one actionable
+ * The peer is only reached here, so a missing or unexpected `@aztec-foundation/bb.js` surfaces as one actionable
  * error at the first WASM use instead of a bare module-resolution failure deep in a fallback.
  */
 async function loadUltraHonkBackend(): Promise<typeof UltraHonkBackend> {
   const missing = (cause?: unknown) =>
     new Error(
-      `@alejoamiras/presto-noir needs its peer dependency @aztec/bb.js@${TESTED_BB_VERSION} for WASM ` +
+      `@alejoamiras/presto-noir needs its peer dependency @aztec-foundation/bb.js@${TESTED_BB_VERSION} for WASM ` +
         "proving and verification: install it beside this package.",
       cause === undefined ? undefined : { cause },
     );
   let bbJs: { UltraHonkBackend?: unknown };
   try {
-    bbJs = await import("@aztec/bb.js");
+    bbJs = await import("@aztec-foundation/bb.js");
   } catch (error) {
     throw missing(error);
   }

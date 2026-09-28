@@ -79,7 +79,7 @@ export type SecureConnectionDiagnosis =
   | "presto-reachable"
   | "unconfirmed";
 
-/** One Aztec release and the `@aztec/bb.js` version it ships, as advertised by `/health.versions`. */
+/** One Aztec release and the `@aztec-foundation/bb.js` version it ships, as advertised by `/health.versions`. */
 export interface PrestoVersionPair {
   aztecVersion: string;
   bbVersion: string;
@@ -167,7 +167,7 @@ export interface PrestoClientOptions {
   /** Presto connection config (port, host, transport policy). */
   presto?: PrestoConfig;
   /**
-   * The Aztec release this client's proofs belong to (e.g. the adapter's pinned `@aztec/stdlib`
+   * The Aztec release this client's proofs belong to (e.g. the adapter's pinned `@aztec-labs/stdlib`
    * version). Sent as `x-aztec-version` on every prove request and compared against the presto's
    * cached versions for `needsDownload` / `version-mismatch`. Omit it for a route that is
    * version-agnostic.

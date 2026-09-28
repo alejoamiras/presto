@@ -1,4 +1,4 @@
-import type { Barretenberg } from "@aztec/bb.js";
+import type { Barretenberg } from "@aztec-foundation/bb.js";
 import type { NoirFixture } from "./noir";
 
 /**
