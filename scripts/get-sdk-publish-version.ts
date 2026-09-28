@@ -14,7 +14,13 @@
  * Usage: bun scripts/get-sdk-publish-version.ts [--package <key>] [base-version]
  */
 
-import { type NpmPackage, packageFromArgs, readManifest } from "./npm-packages.ts";
+import {
+  isPrerelease,
+  type NpmPackage,
+  packageFromArgs,
+  readManifest,
+  VERSION_PATTERNS,
+} from "./npm-packages.ts";
 
 /**
  * Pure function: given a base version and the list of already-published
@@ -40,19 +46,23 @@ export function resolvePublishVersion(baseVersion: string, publishedVersions: st
 }
 
 /**
- * Comparator for stable `aztec-derived` versions in publish order: `X.Y.Z` ships before
- * `X.Y.Z-revision.N`, which semver sorts the other way.
+ * Comparator for `aztec-derived` versions in publish order: prereleases (semver order among
+ * themselves) < `X.Y.Z` < `X.Y.Z-revision.N`. Semver puts a revision before its own base.
  */
-export function revisionOrder(a: string, b: string): number {
+export function aztecDerivedOrder(a: string, b: string): number {
   const parts = (v: string) => {
-    const m = /^(\d+)\.(\d+)\.(\d+)(?:-revision\.(\d+))?$/.exec(v);
-    if (!m) throw new Error(`${JSON.stringify(v)} is not a stable aztec-derived version`);
-    return [m[1], m[2], m[3], m[4] ?? "0"].map(Number);
+    if (!VERSION_PATTERNS["aztec-derived"].test(v)) {
+      throw new Error(`${JSON.stringify(v)} is not an aztec-derived version`);
+    }
+    const m = /^(\d+)\.(\d+)\.(\d+)(?:-revision\.(\d+))?/.exec(v) as RegExpExecArray;
+    const stage = isPrerelease(v) ? -1 : m[4] === undefined ? 0 : 1;
+    return [m[1], m[2], m[3], stage, m[4] ?? "0"].map(Number);
   };
   const x = parts(a);
   const y = parts(b);
   const i = x.findIndex((n, k) => n !== y[k]);
-  return i < 0 ? 0 : Math.sign((x[i] as number) - (y[i] as number));
+  if (i >= 0) return Math.sign((x[i] as number) - (y[i] as number));
+  return x[3] === -1 ? Bun.semver.order(a, b) : 0;
 }
 
 /** The version to publish for `pkg`; a manifest version already on npm is never suffixed. */

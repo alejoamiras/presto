@@ -648,7 +648,7 @@ down by process group.
 
 Layers: lint · unit · Rust unit · live download (two versions, isolated).
 
-### Phase 2: prerelease versioning and the promotion guard (arc 2)
+### Phase 2: prerelease versioning and the promotion guard (arc 2) ✓
 
 **Validation gate:**
 - `bun run test && bun run lint && bun run lint:actions` exit 0.

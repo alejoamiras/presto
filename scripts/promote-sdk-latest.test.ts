@@ -40,6 +40,22 @@ describe("SDK latest promotion", () => {
     expect(() => parsePromotionOptions(["5.2.0", "--otp"])).toThrow("usage");
   });
 
+  test("a prerelease never reaches latest, forward or as a rollback", () => {
+    for (const args of [
+      ["6.0.0-rc.1"],
+      ["6.0.0-rc.1", "--rollback"],
+      ["6.0.0-rc.1.1", "--rollback"],
+      ["--package", "presto-noir", "2.0.0-rc.1"],
+      ["--package", "presto-noir", "2.0.0-rc.1", "--rollback"],
+    ]) {
+      expect(() => parsePromotionOptions(args)).toThrow("is a prerelease");
+    }
+    expect(parsePromotionOptions(["5.2.0-revision.5", "--rollback"])).toMatchObject({
+      version: "5.2.0-revision.5",
+      rollback: true,
+    });
+  });
+
   test("refuses stale latest or a candidate that moved off testnet", () => {
     expect(() =>
       assertFreshPromotionState(

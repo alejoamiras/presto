@@ -59,11 +59,21 @@ export const DEFAULT_PACKAGE: PackageKey = "presto";
 
 export const CONSUMER_PROFILE_ROOT = "scripts/tarball-consumer";
 
-/** `aztec-derived` versions are stable or stable + `-revision.N`; `manifest` versions are plain semver. */
+/**
+ * `aztec-derived` versions are an Aztec release (stable, or one of its `rc` / `nightly` / `aztecnr-rc`
+ * prereleases) plus an optional republish suffix: `-revision.N` on a stable base, `.N` on a
+ * prerelease. `manifest` versions are plain semver.
+ */
 export const VERSION_PATTERNS: Record<VersionMode, RegExp> = {
-  "aztec-derived": /^\d+\.\d+\.\d+(?:-revision\.\d+)?$/,
+  "aztec-derived":
+    /^\d+\.\d+\.\d+(?:-revision\.\d+|-(?:rc\.\d+|nightly\.\d{8}|aztecnr-rc\.\d+)(?:\.\d+)?)?$/,
   manifest: /^\d+\.\d+\.\d+(?:-(?!revision\.)[0-9A-Za-z.-]+)?$/,
 };
+
+/** Any pre-release suffix except `-revision.N`, which republishes a stable base. */
+export function isPrerelease(version: string): boolean {
+  return /^\d+\.\d+\.\d+-(?!revision\.\d+$)/.test(version);
+}
 
 export function isPackageKey(key: string): key is PackageKey {
   return Object.hasOwn(NPM_PACKAGES, key);

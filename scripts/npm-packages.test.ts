@@ -4,6 +4,7 @@ import { join, resolve } from "node:path";
 import {
   CONSUMER_PROFILE_ROOT,
   DEFAULT_PACKAGE,
+  isPrerelease,
   isValidVersion,
   NPM_PACKAGES,
   packageFromArgs,
@@ -77,11 +78,38 @@ describe("npm package descriptor", () => {
     const manifest = { ...aztec, versionMode: "manifest" as const };
     expect(isValidVersion(aztec, "5.2.0")).toBe(true);
     expect(isValidVersion(aztec, "5.2.0-revision.3")).toBe(true);
-    expect(isValidVersion(aztec, "5.2.0-rc.1")).toBe(false);
     expect(isValidVersion(manifest, "1.0.0")).toBe(true);
     expect(isValidVersion(manifest, "1.0.0-rc.1")).toBe(true);
     expect(isValidVersion(manifest, "1.0.0-revision.1")).toBe(false);
     expect(isValidVersion(manifest, "1.0")).toBe(false);
+  });
+
+  test("aztec-derived versions take Aztec's prerelease shapes and their `.N` republishes", () => {
+    const aztec = NPM_PACKAGES.presto;
+    for (const version of [
+      "6.0.0-rc.1",
+      "6.0.0-rc.1.2",
+      "6.0.0-nightly.20260829",
+      "4.2.0-aztecnr-rc.2",
+    ]) {
+      expect(isValidVersion(aztec, version)).toBe(true);
+    }
+    for (const version of [
+      "6.0.0-foo.1",
+      "6.0.0-rc",
+      "6.0.0-rc.01",
+      "6.0.0-nightly.2026082",
+      "6.0.0-rc.1-revision.1",
+      "6.0.0-revision.1.1",
+    ]) {
+      expect(isValidVersion(aztec, version)).toBe(false);
+    }
+    expect(["6.0.0-rc.1", "2.0.0-rc.1", "6.0.0-rc.1.1"].map(isPrerelease)).toEqual([
+      true,
+      true,
+      true,
+    ]);
+    expect(["6.0.0", "5.2.0-revision.5", "1.2.1"].map(isPrerelease)).toEqual([false, false, false]);
   });
 
   test("provenance subject and release tag are derived from the package name", () => {

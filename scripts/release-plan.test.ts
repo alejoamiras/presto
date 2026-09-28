@@ -75,6 +75,42 @@ describe("release plan", () => {
     expect(outputs).toContain("summary<<EOF\nsummary\nEOF\n");
   });
 
+  test("an Aztec prerelease base plans prerelease publications, suffixed with `.N` on a repeat", () => {
+    const v6 = (published: string[]) => ({
+      manifest: {
+        name: NPM_PACKAGES.presto.name,
+        version: "0.0.0",
+        dependencies: { "@aztec/stdlib": "6.0.0-rc.1", [core.name]: "workspace:*" },
+      },
+      published,
+    });
+    const facts = (prestoPublished: string[]) => ({
+      "presto-core": { ...coreFacts(["1.2.0"]), manifest: { name: core.name, version: "1.2.1" } },
+      "presto-noir": {
+        ...noirFacts(["1.2.0"]),
+        manifest: { ...noirFacts([]).manifest, version: "2.0.0-rc.1" },
+      },
+      presto: v6(prestoPublished),
+    });
+    const order = keys(["presto-core", "presto-noir", "presto"]);
+    const first = planRelease(order, facts(["5.2.0-revision.5"]));
+    expect(
+      Object.values(first).map((e) => [e?.key, e?.version, e?.action, e?.dependencyVersions]),
+    ).toEqual([
+      ["presto-core", "1.2.1", "publish", {}],
+      ["presto-noir", "2.0.0-rc.1", "publish", { [core.name]: "1.2.1" }],
+      ["presto", "6.0.0-rc.1", "publish", { [core.name]: "1.2.1" }],
+    ]);
+    const repeat = planRelease(keys(["presto"]), {
+      presto: v6(["5.2.0-revision.5", "6.0.0-rc.1"]),
+      "presto-core": {
+        ...coreFacts(["1.2.1"], verified),
+        manifest: { name: core.name, version: "1.2.1" },
+      },
+    });
+    expect(repeat.presto).toMatchObject({ version: "6.0.0-rc.1.1", action: "publish" });
+  });
+
   test("a candidate with a leftover tag or release is a collision before anything publishes", () => {
     withSiblings(() => {
       expect(() =>

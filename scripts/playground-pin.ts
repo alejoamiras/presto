@@ -5,7 +5,7 @@
  * An empty variable leaves its package alone. Prints `changed` or `unchanged`.
  */
 import { join, resolve } from "node:path";
-import { revisionOrder } from "./get-sdk-publish-version";
+import { aztecDerivedOrder } from "./get-sdk-publish-version";
 import { isValidVersion, NPM_PACKAGES, type NpmPackage } from "./npm-packages";
 
 export const PIN_FILE = "packages/playground/published-sdk.json";
@@ -53,7 +53,7 @@ export function raisePin(
     const version = updates[pkg.name];
     if (!version) continue;
     assertVersion(pkg, version);
-    const order = pkg.versionMode === "aztec-derived" ? revisionOrder : Bun.semver.order;
+    const order = pkg.versionMode === "aztec-derived" ? aztecDerivedOrder : Bun.semver.order;
     if (order(version, current[pkg.name]) > 0) next[pkg.name] = version;
   }
   return next;

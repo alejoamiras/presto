@@ -50,6 +50,16 @@ describe("raisePin", () => {
     expect(raisePin(current, { [SDK]: "", [NOIR]: "1.2.0" })).toEqual(current);
   });
 
+  test("both adapters move onto Aztec prereleases, and never back off them", () => {
+    const moved = raisePin(pin("5.2.0-revision.5", "1.2.0"), {
+      [SDK]: "6.0.0-rc.1",
+      [NOIR]: "2.0.0-rc.1",
+    });
+    expect(moved).toEqual(pin("6.0.0-rc.1", "2.0.0-rc.1"));
+    expect(raisePin(moved, { [SDK]: "5.2.0-revision.5", [NOIR]: "1.2.0" })).toEqual(moved);
+    expect(raisePin(moved, { [SDK]: "6.0.0-rc.1.1" })[SDK]).toBe("6.0.0-rc.1.1");
+  });
+
   test("an invalid update fails before anything moves", () => {
     expect(() => raisePin(pin("5.2.0", "1.2.0"), { [SDK]: "5.3.0; rm -rf /" })).toThrow("Invalid");
   });
