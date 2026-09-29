@@ -1,0 +1,9 @@
+{
+  "notice": "Published SDK the compatibility gate proves with against the workspace's Presto. It runs only while it targets the workspace's exact Aztec version.",
+  "sdkPackage": "@alejoamiras/presto",
+  "sdkVersion": "6.0.0-rc.1",
+  "sdkIntegrity": "sha512-srVdsRGwCG1nm/lbDpe8jsh85Nt1w8Ko3PlmVXsa2kNEdB1E+OmfeegfhDealASWurnJWJJ41Pj1pDcNAHPhNA==",
+  "proverExport": "PrestoProver",
+  "statusMethod": "checkPrestoStatus",
+  "configOption": "presto"
+}

@@ -42,6 +42,8 @@ jobs:
               # The SDK depends on core: a core change must re-run the SDK's consumer and e2e.
               - 'packages/sdk-core/**'
               - 'scripts/**'
+              # The published SDK the e2e's compatibility gate installs.
+              - 'audit/fixtures/interop-sdk.json'
               - 'tsconfig.json'
               - 'tsconfig.scripts.json'
               - 'biome.json'

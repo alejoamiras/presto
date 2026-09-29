@@ -2,24 +2,18 @@ import { createHash } from "node:crypto";
 import { lstat, mkdir, mkdtemp, readdir, readFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import legacy from "../audit/fixtures/legacy-identity.json";
+import legacy from "../audit/fixtures/interop-sdk.json";
 import { aztecVersionOf } from "./aztec-manifest";
 import { parseNpmPackResult } from "./npm-pack-result";
 
 /**
- * The published legacy SDK and the workspace must speak one Aztec protocol. Across an Aztec major
- * they cannot interoperate at all, so the gate goes dormant and this returns why; within a major any
- * other difference means a stale fixture, and this throws.
+ * The published SDK proves on the workspace's Aztec network, so the gate runs only when both target
+ * the same Aztec version, and otherwise goes dormant and returns why. It never fails on a mismatch:
+ * an Aztec bump always lands before a presto built for it can be published.
  */
 export function legacyGate(legacyAztec: string, currentAztec: string): string | undefined {
   if (legacyAztec === currentAztec) return undefined;
-  const major = (version: string) => version.split(".")[0];
-  if (major(legacyAztec) !== major(currentAztec)) {
-    return `targets Aztec ${legacyAztec}; the workspace targets ${currentAztec}`;
-  }
-  throw new Error(
-    `Legacy interoperability fixture must use the same Aztec protocol version (${legacyAztec} vs ${currentAztec})`,
-  );
+  return `targets Aztec ${legacyAztec}; the workspace targets ${currentAztec}`;
 }
 
 /**

@@ -27,7 +27,11 @@ export interface AztecDependency {
 
 const SCOPES = ["@aztec/", "@aztec-labs/", "@aztec-foundation/"] as const;
 
-/** `@aztec-foundation` also holds unrelated packages; only these are Aztec release artifacts. */
+/**
+ * The `@aztec-foundation` packages the workspace's manifests declare. The scope also holds Aztec's
+ * other release artifacts and unrelated packages, so the readers and the version updater match only
+ * these names: a manifest that adds another must list it here, or bumps skip it.
+ */
 export const FOUNDATION_PACKAGES: ReadonlySet<string> = new Set([
   "@aztec-foundation/bb.js",
   "@aztec-foundation/noir-acvm_js",

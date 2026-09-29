@@ -24,10 +24,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   Apache-2.0 text. The playground now vendors the upstream texts
   (`packages/playground/licensing/license-fallbacks.ts`); each rule there can go once upstream ships
   the file itself. **Verified 2026-09-21.**
-- **The `bb.exe` text-mode I/O bug was never reported upstream.** Barretenberg reads and writes binary
-  files in text mode on Windows, so key reads truncate at the first 0x1A and proof writes expand every
-  0x0A. Presto routes around it with `--output_format json`; every other consumer on Windows silently
-  gets corrupt reads. `archive/presto-noir/lessons/arc-1-review.md`. Not verified against upstream.
 - ~~**`release-sdk.yml --dry_run` has never been exercised.**~~ **Resolved** — dry run
   `34280070511` (`packages=all`) ran after #32 and #33 merged, and real run `34280233253` followed;
   both are recorded in `archive/presto-noir/lessons/audit-fixes.md`. Kept struck through rather than
@@ -47,8 +43,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   - The deploy token was revoked on 2026-09-29, so `down` needs a new Workers Scripts:Edit token in
     `Keyed-Runs/Presto-Cloudflare`. The dashboard can also delete the Worker.
   - `archive/aztec-v6/plan.md` (D36).
-- **Re-arm the legacy SDK gate.** It went dormant on the v5→v6 major mismatch (A6). `presto`
-  6.0.0-rc.1 now exists, so the fixture can target it. `archive/aztec-v6/plan.md` (A6).
 - **Promote to `latest` when Aztec v6 goes stable:** `presto`, `presto-noir` and `presto-core` (all on
   `testnet` today). The promotion guard refuses prereleases, so the stable bump comes first.
 - **The next app release should bundle v6 `bb`.** 1.1.3 downloads it on first use, which needs the
@@ -58,19 +52,19 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   the page correctly fell back to WASM. Users behind CGNAT or a corporate proxy can hit the same.
   The server's hint is `GITHUB_TOKEN`; a non-API digest source would remove the dependency.
   `archive/aztec-v6/lessons/releases.md`.
-- **`FOUNDATION_PACKAGES`' doc comment in `scripts/aztec-manifest.ts` is wrong.** It calls the three
-  names "only these are Aztec release artifacts". The file is in `app.yml`'s `published` filter, so
-  fix it in a PR that may run the published-playground gate.
-- **Vite warns that the root `package.json` lacks `"type": "module"`,** since `vite.config.ts` imports
-  `scripts/aztec-manifest.ts`. It is harmless under today's loader, but will matter under Vite's
-  future `configLoader: 'native'` default.
 
 ## Untested paths, carried from the logs
 
 None of these were re-checked on 2026-09-18.
 
-- **The chonk `/prove` path on Windows was never tested for the same text-mode corruption** that the
-  UltraHonk route was fixed for. `archive/presto-noir/lessons/arc-1-review.md`
+- **On Windows, native chonk proving under Aztec v5 always falls back to WASM.** bb 5.2.0's
+  `write_file` opens without `O_BINARY`, so every 0x0A in the `proof` file becomes 0x0D 0x0A, the
+  write that corrupted UltraHonk proofs (`archive/presto-noir/lessons/arc-1-review.md`). Presto's
+  field-alignment check rejects the file, and in the rare aligned case the shifted fields overflow the
+  modulus and the SDK's decode throws, so users get a WASM proof after a wasted native run, never a
+  bad transaction. bb 6.0.0-rc.1 opens every file in binary mode (aztec-packages#25462), so v6 is
+  unaffected. The v5 fix is the UltraHonk route's: request `--output_format json` and convert; it
+  reaches users only in an app release. **Checked 2026-09-29 against bb's source; no Windows run.**
 - **Windows proof verification is skipped, not passing** — the identity spec skips the sidecar step
   there because `bb verify` has no JSON input form; byte identity is the assertion instead.
   `archive/presto-noir/lessons/arc-1-review.md`

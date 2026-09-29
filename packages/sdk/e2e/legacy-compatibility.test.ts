@@ -6,7 +6,7 @@ import { SponsoredFPCContract } from "@aztec-labs/noir-contracts.js/SponsoredFPC
 import { WASMSimulator } from "@aztec-labs/simulator/client";
 import { getContractInstanceFromInstantiationParams } from "@aztec-labs/stdlib/contract";
 import { EmbeddedWallet } from "@aztec-labs/wallets/embedded";
-import legacy from "../../../audit/fixtures/legacy-identity.json";
+import legacy from "../../../audit/fixtures/interop-sdk.json";
 import type { PrestoProver } from "../src/index";
 import { deploySchnorrAccount } from "./e2e-helpers";
 import { config } from "./e2e-setup";
