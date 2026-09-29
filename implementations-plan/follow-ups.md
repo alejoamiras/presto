@@ -60,9 +60,10 @@ None of these were re-checked on 2026-09-18.
 - **On Windows, native chonk proving under Aztec v5 always falls back to WASM.** bb 5.2.0's
   `write_file` opens without `O_BINARY`, so every 0x0A in the `proof` file becomes 0x0D 0x0A, the
   write that corrupted UltraHonk proofs (`archive/presto-noir/lessons/arc-1-review.md`). Presto's
-  field-alignment check rejects the file, and in the rare aligned case the shifted fields overflow the
-  modulus and the SDK's decode throws, so users get a WASM proof after a wasted native run, never a
-  bad transaction. bb 6.0.0-rc.1 opens every file in binary mode (aztec-packages#25462), so v6 is
+  field-alignment check rejects the file, and in the rare aligned case the shifted fields almost
+  surely exceed the modulus and the SDK's decode throws, so a real proof ends in WASM after a wasted
+  native run. Both checks are structural, not verification, so a bad transaction is unlikely but not
+  ruled out. bb 6.0.0-rc.1 opens every file in binary mode (aztec-packages#25462), so v6 is
   unaffected. The v5 fix is the UltraHonk route's: request `--output_format json` and convert; it
   reaches users only in an app release. **Checked 2026-09-29 against bb's source; no Windows run.**
 - **Windows proof verification is skipped, not passing** — the identity spec skips the sidecar step

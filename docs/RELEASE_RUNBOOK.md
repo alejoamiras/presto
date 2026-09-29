@@ -274,12 +274,12 @@ After a partial publish (a dependency published, an adapter failed), rerun with 
 
 Publish order is core → `presto-noir` → `presto`, each adapter's consumer profile rerun against the registry core before it publishes. `@alejoamiras/presto` keeps the sandbox e2e (native chonk parity) as its gate; `@alejoamiras/presto-noir` has its own production gates at the release SHA, run by the `noir-gates` job through `_ts-package-ci.yml`: bb.js WASM must reproduce the committed Noir fixtures byte for byte, and the adapter must prove natively (`fallback: "none"`) against a headless presto built from that commit with the real `bb`. Either failing blocks the adapter's publish and, through the order above, the SDK's.
 
-The sandbox e2e also proves with the publication named in `audit/fixtures/interop-sdk.json` against
-the Presto built from the tree, so a server change that breaks an SDK already on npm fails the gate.
-It runs only while that publication targets the tree's exact Aztec version; after an Aztec bump the
-e2e logs a "gate dormant" notice instead. Once a release publishes for the new Aztec version, point
-the fixture at it: `sdkVersion`, plus `sdkIntegrity` from
-`npm view @alejoamiras/presto@<version> dist.integrity`.
+The sandbox e2e also proves with the publication named in `audit/fixtures/interop-sdk.json`, over the
+exact `presto-core` publication it depends on, against the Presto built from the tree, so a server
+change that breaks an SDK already on npm fails the gate. It runs only while that publication targets
+the tree's exact Aztec version. After an Aztec bump the e2e logs a "gate dormant" notice, and it fails
+once npm has a `presto` built for the new version, until the fixture points at it: `sdkVersion`,
+`sdkIntegrity` and each `sdkDependencies` entry, from `npm view <package>@<version> dist.integrity`.
 
 ### Deploying the playground: the pin PR
 
