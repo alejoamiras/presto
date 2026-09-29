@@ -96,3 +96,48 @@ Playwright `test-results/` were deleted, since traces can carry the node URL.
 Follow-up for the close-out: `vite.config.ts` now imports `scripts/aztec-manifest.ts`, and Vite
 warns that the root package has no `"type": "module"` for its future `configLoader: 'native'`
 default. It is a warning only; the current loader builds and serves.
+
+## 7b: the forwarder standing in for the public RPC (D36)
+
+Aztec had not published a public v6 RPC. The owner authorized (Aztec acked) a Worker that forwards
+node JSON-RPC to the private RPC, so 7b could commit a URL now.
+
+- **Unit gate:** `packages/testnet-rpc` has 18 tests. A mutation run removed each guard in turn (the
+  upstream-echo scrub, the method allowlist, the origin check, the body cap), and each removal failed
+  a test.
+- **Deploy (keyed run `testnet-rpc-up-8fa2ca55`, HEAD `5d49dc4`):** `forwarder.sh up` deployed
+  `presto-testnet-rpc` (version `5e859b8d`), then set `AZTEC_NODE_URL` from stdin.
+  - The first request (`…ab981be3`) died at `op-remote create`. Every `# op:` directive in a
+    template must name the one item that the run creates. The node URL's item already existed, so
+    its directive came out.
+- **Keyless checks** against `https://presto-testnet-rpc.alejo-amiras.workers.dev`:
+  - `node_getNodeInfo` and `aztec_getNodeInfo` return 200, `nodeVersion` 6.0.0-rc.1 and
+    `l1ChainId` 11155111. The CORS allow-origin header echoes the playground.
+  - A mixed `aztec_`/`node_` batch returns 200.
+  - `p2p_getPeers`, `aztecAdmin_getConfig` and `Origin: https://evil.example` each get 403.
+  - The preflight from the playground gets 204, and a GET gets 405.
+  - No response carries a key-shaped path.
+- **Cutover:** the forwarder URL is in `vite.config.ts`, `dev:testnet`, `test:e2e:remote`,
+  `smoke-playground.yml` and the release-contract assertion. `rg -n 'v5\.testnet\.rpc' packages
+  .github` is empty.
+- **`test:live` first failed (11 of 12).** Under happy-dom the page is `about:blank`, so its fetch
+  sends a CORS preflight with `Origin: null`, which the forwarder refuses by design. Allowing `null`
+  would let any sandboxed iframe through. The live describe now sets happy-dom's URL to
+  `https://playground.presto.build/`, the origin the production bundle calls from, and restores
+  `about:blank` afterwards.
+  - After the fix, `test:live` passes 12 of 12 and the SDK's `test:e2e:remote` passes 3, with no
+    key.
+- **Keyless smoke through the forwarder:**
+  - Setup: the branch `presto-server` on the claimed port 59833 (v6 sidecar,
+    `AZTEC_BB_VERSION=6.0.0-rc.1`) and Vite on 5173, with
+    `AZTEC_NODE_URL=<forwarder>`.
+  - Result: **3 passed, 1 skipped**. The accelerated account deploy passed with "Proving
+    succeeded" in the server log, and the testnet accepted the transaction. That covers the
+    wallet's real call mix (batches, `sendTx` with a Chonk proof) under the allowlist and the body
+    cap. The local WASM deploy and the WASM Noir proof also passed. The native Noir test was skipped,
+    as in 7a.
+  - Dev routes the browser through Vite's `/aztec` proxy, so this smoke does not exercise browser
+    CORS. `test:live` above does.
+  - Teardown: the server's process group was killed, both ports were released, and `test-results/`
+    was deleted.
+- `bun run test` and `bun run lint:actions` exit 0; `git grep -nE '/k/[0-9a-f]{32,}'` is empty.

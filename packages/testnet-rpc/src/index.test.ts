@@ -19,11 +19,15 @@ function mockUpstream(response: () => Response | Promise<Response>) {
     response()) as unknown as typeof fetch);
 }
 
+const escaped = [...TOKEN].map((c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, "0")}`);
+const json = (text: string, status = 200) =>
+  new Response(text, { status, headers: { "Content-Type": "application/json" } });
+
 afterEach(() => {
   (globalThis.fetch as { mockRestore?: () => void }).mockRestore?.();
 });
 
-describe("testnet RPC forwarder", () => {
+describe("testnet RPC forwarder: requests", () => {
   test("forwards one call or a batch unchanged and returns the node's answer", async () => {
     const answer = JSON.stringify({ jsonrpc: "2.0", id: 1, result: { nodeVersion: "6.0.0-rc.1" } });
     const upstream = mockUpstream(
@@ -90,24 +94,46 @@ describe("testnet RPC forwarder", () => {
       expect(upstream).not.toHaveBeenCalled();
     },
   );
+});
 
-  test("passes a node error through but never a body or error naming the upstream", async () => {
+describe("testnet RPC forwarder: upstream answers", () => {
+  test("passes a node error through, and relays only safe headers", async () => {
     const nodeError = JSON.stringify({ jsonrpc: "2.0", id: 1, error: { message: "Tx dropped" } });
-    mockUpstream(() => new Response(nodeError, { status: 400 }));
-    const passed = await handleRequest(post(CALL), ENV);
-    expect(passed.status).toBe(400);
-    expect(await passed.text()).toBe(nodeError);
+    mockUpstream(
+      () =>
+        new Response(nodeError, {
+          status: 400,
+          headers: {
+            "Content-Type": `application/json; key=${TOKEN}`,
+            "x-aztec-rollupVersion": "2914217885",
+            "x-aztec-debug": `upstream ${TOKEN}`,
+          },
+        }),
+    );
+    const response = await handleRequest(post(CALL, PLAYGROUND), ENV);
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe(nodeError);
+    expect(response.headers.get("content-type")).toBe("application/json");
+    expect(response.headers.get("x-aztec-debug")).toBeNull();
+    expect(response.headers.get("access-control-expose-headers")).toBe("x-aztec-rollupversion");
+  });
 
-    mockUpstream(() => new Response(`invalid key ${TOKEN}`, { status: 401 }));
-    const echoed = await handleRequest(post(CALL), ENV);
-    expect(echoed.status).toBe(502);
-    expect(await echoed.text()).not.toContain(TOKEN);
-
-    mockUpstream(() => {
-      throw new Error(`connect failed: ${ENV.AZTEC_NODE_URL}`);
-    });
-    const unreachable = await handleRequest(post(CALL), ENV);
-    expect(unreachable.status).toBe(502);
-    expect(await unreachable.text()).not.toContain(TOKEN);
+  test.each([
+    ["an echoed key", () => json(`{"error":"invalid key ${TOKEN}"}`, 401)],
+    ["a \\u-escaped key", () => json(`{"error":"invalid key ${escaped.join("")}"}`, 401)],
+    ["an upper-cased key", () => json(`{"error":"INVALID KEY ${TOKEN.toUpperCase()}"}`, 401)],
+    ["a non-JSON page", () => new Response("<h1>Sign in</h1>")],
+    ["an answer over 16 MiB", () => json(`"${" ".repeat(16 * 1024 * 1024)}"`)],
+    [
+      "a fetch error naming the upstream",
+      () => {
+        throw new Error(`connect failed: ${ENV.AZTEC_NODE_URL}`);
+      },
+    ],
+  ])("turns %s into a fixed 502", async (_name, answer) => {
+    mockUpstream(answer);
+    const response = await handleRequest(post(CALL), ENV);
+    expect(response.status).toBe(502);
+    expect((await response.text()).toLowerCase()).not.toContain(TOKEN);
   });
 });

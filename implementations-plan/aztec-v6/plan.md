@@ -539,9 +539,11 @@ B does everything in one PR on `main`:
     debug or `p2p_*`); no caller header reaches the node.
   - Browser Origins: the playground, its workers.dev previews and localhost. Callers without an
     Origin (scripts, tests) pass: the list stops other sites' pages, not scripts.
-  - Responses carry only `Content-Type` and `x-aztec-*`. A body containing any piece of the upstream
-    URL (host, path segment, query value, userinfo) becomes a fixed 502, since a gateway rejecting a
-    revoked key can echo it; fetch errors are never forwarded; no logging.
+  - Only a JSON answer of at most 16 MiB comes back, under a fixed `Content-Type`, with the
+    `x-aztec-*` headers. An answer naming any piece of the upstream URL (host, path segment, query
+    value, userinfo), in any letter case or JSON `\u` spelling, becomes a fixed 502, since a gateway
+    rejecting a revoked key can echo it; such a header is dropped. Fetch errors are never
+    forwarded; no logging.
   - Abuse is bounded by the Workers request quota: the worst case is the placeholder going down or
     Aztec throttling the key.
 - **Smart contracts.**
@@ -822,8 +824,9 @@ deleting the Worker is a close-out follow-up.
 - `git grep -nE '/k/[0-9a-f]{32,}'` is empty.
 
 **7b validation gate (the forwarder URL standing in for the public RPC, D36):**
-- The forwarder's unit tests pass, and each of its guards (method and origin allowlists, body cap,
-  upstream-echo scrub) fails a test when removed.
+- The forwarder's unit tests pass, and each of its guards (method and origin allowlists, request
+  and answer caps, the JSON-only answer, the upstream-echo scrub of bodies and headers, its case and
+  escape handling) fails a test when removed.
 - A keyed `forwarder.sh up` deploys it. Keyless, it answers `node_getNodeInfo` with `nodeVersion`
   6.0.0-rc.1, and refuses a `p2p_*` method and a foreign Origin.
 - The forwarder URL appears in the four cutover locations, and no v5 RPC string remains
@@ -1031,10 +1034,10 @@ https://claude.ai/artifact/KDx6bBo6EXS1drihmdSFJg, built from the gitignored
 /goal Phases 4, 5, 6 and 7a marked ✓ in implementations-plan/aztec-v6/plan.md (the phase headers in the file — not the chat, not the task list), each ✓ backed by that phase's validation gate as written in plan.md reported passing in the transcript — phase 6 including the released presto-server 1.1.3 cold-cache run (sanitized env, versioned v6 and v5 requests), phase 7a including the SponsoredFPC state recorded and, if it was unfunded, the anchor check, the disposable key's address and the FPC's FeeJuice balance recorded, with every private-RPC command run only as an env-exec keyed run; for each phase `LESSONS_FILE=implementations-plan/aztec-v6/lessons/phase-N.md` printed; `/code-review` was NOT run; the codex fix loop for arc 3 and a FRESH cross-arc codex pass over 4cdc2f2..HEAD each converged, evidenced by a resumed codex pass quoted in the transcript reporting no new material findings and no CRITICAL or HIGH finding; the arc 3 PR from `aztec-v6-migration` exists, created only after both loops converged, its body stating 7b pending, R2 and the fail-closed playground window, with green `gh pr checks` in the transcript; `git grep -nE '/k/[0-9a-f]{32,}'` prints nothing; `bun run test`, `bun run lint` and `bun run lint:actions` report exit 0. Never force-push a shared branch, commit or print the private RPC, use any L1 key but the disposable one, merge arc 3 before 7b, or expand scope beyond plan.md.
 ```
 
-**Wave 3 (7b, merge, R2, close-out; after the owner supplies the public RPC):**
+**Wave 3 (7b through the forwarder per D36, merge, R2, close-out):**
 
 ```
-/goal Phase 7b marked ✓ in implementations-plan/aztec-v6/plan.md, backed by its validation gate reported passing in the transcript; a resumed codex pass over the 7b delta quoted in the transcript reports no new material findings and no CRITICAL or HIGH finding; the arc 3 PR shows green `gh pr checks` and then `gh pr view --json state` = MERGED; R2 is complete per plan.md's Releases section (release-sdk dry run, then the real dispatch, the pin PR merged, the Workers Builds deploy, smoke-playground green, and `npm view` showing `latest` = 5.2.0-revision.5 and `testnet` = 6.0.0-rc.1 for presto, 1.2.0 and 2.0.0-rc.1 for noir), run IDs in lessons/releases.md; the `aztec-v6-closeout` PR (Outcome block, lessons promoted, follow-ups moved) is MERGED; `bun run test`, `bun run lint` and `bun run lint:actions` report exit 0. Never force-push a shared branch, commit or print the private RPC, or expand scope beyond plan.md.
+/goal Phase 7b marked ✓ in implementations-plan/aztec-v6/plan.md, backed by its validation gate as written in plan.md (D36: the forwarder's unit tests and guard mutations, its keyed deploy, the keyless checks, the four cutover locations, `test:live` and `test:e2e:remote`) reported passing in the transcript; a resumed codex pass over the 7b delta quoted in the transcript reports no new material findings and no CRITICAL or HIGH finding; the arc 3 PR shows green `gh pr checks` and then `gh pr view --json state` = MERGED; R2 is complete per plan.md's Releases section (release-sdk dry run, then the real dispatch, the pin PR merged, the Workers Builds deploy, smoke-playground green against the forwarder, and `npm view` showing `latest` = 5.2.0-revision.5 and `testnet` = 6.0.0-rc.1 for presto, 1.2.0 and 2.0.0-rc.1 for noir), run IDs in lessons/releases.md; the `aztec-v6-closeout` PR (Outcome block, lessons promoted, follow-ups moved, the forwarder's switch-off among them) is MERGED; `git grep -nE '/k/[0-9a-f]{32,}'` prints nothing; `bun run test`, `bun run lint` and `bun run lint:actions` report exit 0. Never force-push a shared branch, commit or print the private RPC, deploy or delete the forwarder outside an env-exec keyed run, or expand scope beyond plan.md.
 ```
 
 **Alternative (any wave): `/loop`**
@@ -1043,7 +1046,7 @@ https://claude.ai/artifact/KDx6bBo6EXS1drihmdSFJg, built from the gitignored
 /loop 15m Drive implementations-plan/aztec-v6 forward. Never idle waiting for my input. Each firing:
 1. Reality check: read implementations-plan/aztec-v6/plan.md and lessons/ (authoritative — not the chat), including Outcome & Quality Bar. If that path is gone, look for implementations-plan/archive/aztec-v6/plan.md — the plan closed: STOP. If plan.md carries an `## Outcome` block: STOP. Task list empty? Rebuild it from plan.md's remaining steps; run `git status` and `git log --oneline -5`; for open PRs `gh pr view --json statusCheckRollup` (no --watch).
 2. Waiting on CI or a release run is fine — confirm it progresses (`gh run watch` up to 10 minutes; stuck → inspect logs, log it as blocked in lessons). Use the wait productively without conflicting changes.
-3. No task in hand? Take the next step in plan.md order: arc 1 → merge → R1, with arc 2 from the updated main alongside → merge → arc 3 from main (phase 6 needs R1 published) → 7a (keyed runs: file `env-exec request`, give me the `op-remote` line, wait) → PR → 7b once I have supplied the public RPC → merge → R2 → close-out. A missing prerequisite holds only that step. After each meaningful edit run `bun run lint` + `bun run test` (or the specific test file first). Commit (signed, conventional) and push the arc's branch.
+3. No task in hand? Take the next step in plan.md order: arc 1 → merge → R1, with arc 2 from the updated main alongside → merge → arc 3 from main (phase 6 needs R1 published) → 7a (keyed runs: file `env-exec request`, give me the `op-remote` line, wait) → PR → 7b (the forwarder URL, D36) → merge → R2 → close-out. A missing prerequisite holds only that step. After each meaningful edit run `bun run lint` + `bun run test` (or the specific test file first). Commit (signed, conventional) and push the arc's branch.
 4. Stuck, or a decision you'd normally bring to me? `/codex high` with full context, reach a defensible decision, act, and log the consult + verdict in lessons/phase-N.md. Hard limits: never force-push a shared branch, commit or print the private RPC, use any L1 key but the disposable one, or expand scope beyond plan.md — surface and hold.
 5. Same step failed 5 times? Stop, reassess with codex, continue down the agreed path.
 6. Phase green (its plan.md validation gate passes)? Paste the result, mark ✓ in plan.md, write lessons/phase-N.md, print `LESSONS_FILE=implementations-plan/aztec-v6/lessons/phase-N.md`, run `agent-worktree status aztec-v6 "phase N green: <next>"`, advance. Arc boundary (after 1, 3, 7a)? `/code-review` is off — run the codex loop per plan.md's Post-implementation (arc diff, plan.md, ledger, arc map, adversarial ask, both verbatim rules) until a round has nothing material; arc 3 also needs the fresh cross-arc pass over 4cdc2f2..HEAD. Then open the PR per Delivery and `gh pr checks --watch`. Merge only when checks are green and the final codex round has no CRITICAL or HIGH finding, then dispatch that arc's release per plan.md's Releases section, each step only after the previous one is green.

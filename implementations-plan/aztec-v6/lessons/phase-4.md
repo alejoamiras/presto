@@ -147,6 +147,6 @@ into the scope an hour ago, which is exactly what the gate exists to stop.
   - the install step was skipped;
   - the same graph check matched (62 names).
 - **Whole PR.** `gh pr checks 73` reported 69 pass, 11 skipping, 0 fail.
-- **New advisory.** `fast-uri` GHSA-qw65-cvwx-89v3 and GHSA-58mr-gqgx-xq4g (published 2026-09-28) failed the dependency audit on `main`'s lock too. The fix bumped `fast-uri` from 3.1.6 to 3.1.8, which is past the 7-day gate.
+- **New advisory.** `fast-uri` GHSA-qw65-cvwx-89v3 and GHSA-58mr-gqgx-xq4g (in the GitHub Advisory Database since 2026-09-28) failed the dependency audit on `main`'s lock too. The fix bumped `fast-uri` from 3.1.6 to 3.1.8, which is past the 7-day gate.
 - **Landing preview.** It failed instantly once, with no build log outside the dashboard, the same shape as #72's. The same build passed locally, and on the next push.
 - The rename sweep still hits exactly the set listed above.

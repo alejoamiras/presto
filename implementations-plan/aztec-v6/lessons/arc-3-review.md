@@ -70,3 +70,26 @@ Codex, resumed session: "no new material findings. **No CRITICAL or HIGH finding
 judged the deferral of the `FOUNDATION_PACKAGES` comment acceptable: the change is comment-only and
 tracked, and touching `aztec-manifest.ts` would trigger the published-playground gate during the
 intended v5/v6 mismatch. Its checks: 23 tests pass, and a malformed version fails the updater CLI.
+
+# 7b delta (`940f6b2^..14167b3`), arc 3 session resumed
+
+## Round 1: 1 HIGH, 1 MEDIUM
+
+| # | Severity | Finding | Disposition | Fix |
+|---|---|---|---|---|
+| 1 | HIGH | The forwarder's echo scrub matched raw text only. A JSON body could spell the key with `\u` escapes, and `Content-Type` parameters and `x-aztec-*` values passed through unchecked. | Accepted | The pattern is case-insensitive and runs on the text with `\uXXXX` and `\/` decoded. Only an `application/json` answer passes, under a fixed `Content-Type`. An `x-aztec-*` header carrying a fragment is dropped. |
+| 2 | MEDIUM | The upstream answer was buffered without a bound, so a small batch could exhaust the isolate's 128 MiB. | Accepted | The answer is read with a 16 MiB cap; overflow cancels the stream and returns a fixed 502. |
+
+Codex's corrections:
+- The Aztec client rejects an oversized single request instead of sending it alone. This is
+  accepted; the forwarder's 8 MiB request cap is unaffected.
+- It gave the fast-uri advisories a publication date of September 2. This is disputed:
+  `gh api /advisories/<id>` gives `published_at` 2026-09-28 for both, and the global database is
+  what `bun audit` reads. `phase-4.md` now says "in the GitHub Advisory Database since".
+
+Gates: the forwarder has 24 tests. A mutation run removed each of 10 guards (the request and answer
+caps, the method and origin allowlists, the JSON-only answer, the fixed content type, the scrub of
+bodies and headers, and the scrub's case and escape handling), and each removal failed a test. The
+first run missed the JSON-only guard: its fixture's upstream status was 502 already, so the fixture
+now uses a 200 HTML page. The hardened Worker is redeployed through a keyed run before the next
+round.
