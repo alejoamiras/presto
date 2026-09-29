@@ -49,3 +49,22 @@ The independent anchor is the networks registry on Sepolia, `0xa0bf…c6ba`, and
   mode-0600 file (in a 0700 directory) outside the repository. The key was never printed.
 - Sepolia gas was about 1 gwei at generation. The run's roughly 6 L1 transactions need about
   0.001 ETH.
+- The owner funded the address with 0.15 Sepolia ETH (seen at 01:36:31Z).
+
+## Funding (keyed run `v6-fpc-fund-b4923310`, HEAD `9ec1800`)
+
+The `--expect-*` values were exactly the anchor-checked manifest's, with `--max-total 2000`.
+- **Six L1 transactions**, each a handler mint, a token approval or a portal deposit, one set for
+  each bridge. Nonces 0–5: `0xa131…98a6`, `0x86e4…0e90f`, `0xe31f…a7c6`, `0x8328…f748`, `0xfb1f…97bf`,
+  `0x8560…5c97`. Gas totalled about 0.0005 ETH.
+- The bootstrap account `0x0737…a0ef` claimed 1000 FJ in its deployment (block 700).
+- The SponsoredFPC was deployed in block 701.
+- The FPC's 1000 FJ was claimed in block 703.
+- `fpc-state.ts --salt 0x0` afterwards: `instancePublished: true`, **FeeJuice 1000 FJ**
+  (1000000000000000000000 wei).
+- **The key file and its directory are deleted.** The roughly 0.1495 ETH left at the disposable
+  address is stranded with it, which is fine for Sepolia.
+- The playground smoke in the same run never launched a browser. The keyed run's sanitized
+  environment drops `PLAYWRIGHT_BROWSERS_PATH`, so Playwright looked in `~/.cache/ms-playwright`,
+  which holds another build (1243), instead of `/opt/ms-playwright` (1234). A keyed Playwright run
+  must set the path in its own command.
