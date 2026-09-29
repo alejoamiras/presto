@@ -1,6 +1,6 @@
 # Implementation plans
 
-- [aztec-v6](aztec-v6/plan.md) — implementing (arc 2 of 3) — Aztec v6 rc.1: `bb` from barretenberg, prerelease release tooling, the scope rename, releases to `testnet`
+- [aztec-v6](aztec-v6/plan.md) — closed 2026-09-29, archive pending — Aztec v6 rc.1: `bb` from barretenberg, prerelease release tooling, the scope rename, releases to `testnet`
 
 Add one line per plan here when it opens; move the line to
 [`archive/index.md`](archive/index.md) when it closes. This file is read at the start of every

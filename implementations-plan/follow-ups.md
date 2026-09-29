@@ -24,8 +24,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   Apache-2.0 text. The playground now vendors the upstream texts
   (`packages/playground/licensing/license-fallbacks.ts`); each rule there can go once upstream ships
   the file itself. **Verified 2026-09-21.**
-- **The next `release-sdk` must bump `presto-core` and `presto-noir` (patch).** Their `files` changed
-  after 1.2.0 was tagged, and the release planner refuses to reuse a version whose package changed.
 - **The `bb.exe` text-mode I/O bug was never reported upstream.** Barretenberg reads and writes binary
   files in text mode on Windows, so key reads truncate at the first 0x1A and proof writes expand every
   0x0A. Presto routes around it with `--output_format json`; every other consumer on Windows silently
@@ -35,6 +33,36 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   both are recorded in `archive/presto-noir/lessons/audit-fixes.md`. Kept struck through rather than
   deleted because an earlier phase log still states the opposite.
   `archive/presto-noir/lessons/phase-9.md`. Not verified.
+
+## From aztec-v6 (closed 2026-09-29)
+
+- **Switch off the testnet RPC forwarder (D36) once Aztec publishes the public v6 RPC.** Until then,
+  `presto-testnet-rpc` makes the private node publicly reachable for `aztec_*`/`node_*` calls (Aztec
+  acked this).
+  - Point five places at the public RPC: `vite.config.ts`, `dev:testnet`, `test:e2e:remote`,
+    `smoke-playground.yml` and the assertion in `sdk-release-contract.test.ts`.
+  - Run a keyed `packages/testnet-rpc/scripts/forwarder.sh down`.
+  - Remove the package and its wiring: the root workspaces and test scripts, `landing.yml`,
+    CLAUDE.md and `docs/CLOUDFLARE_DEPLOYMENT.md`.
+  - Revoke the Cloudflare token (it expires on its own).
+  - `archive/aztec-v6/plan.md` (D36).
+- **Re-arm the legacy SDK gate.** It went dormant on the v5→v6 major mismatch (A6). `presto`
+  6.0.0-rc.1 now exists, so the fixture can target it. `archive/aztec-v6/plan.md` (A6).
+- **Promote to `latest` when Aztec v6 goes stable:** `presto`, `presto-noir` and `presto-core` (all on
+  `testnet` today). The promotion guard refuses prereleases, so the stable bump comes first.
+- **The next app release should bundle v6 `bb`.** 1.1.3 downloads it on first use, which needs the
+  release-metadata call below.
+- **A cold v6 `bb` download fails on a busy shared address.** The digest check reads GitHub's release
+  metadata anonymously (60 calls an hour per address). R2's live-site check hit 403 on this host, and
+  the page correctly fell back to WASM. Users behind CGNAT or a corporate proxy can hit the same.
+  The server's hint is `GITHUB_TOKEN`; a non-API digest source would remove the dependency.
+  `archive/aztec-v6/lessons/releases.md`.
+- **`FOUNDATION_PACKAGES`' doc comment in `scripts/aztec-manifest.ts` is wrong.** It calls the three
+  names "only these are Aztec release artifacts". The file is in `app.yml`'s `published` filter, so
+  fix it in a PR that may run the published-playground gate.
+- **Vite warns that the root `package.json` lacks `"type": "module"`,** since `vite.config.ts` imports
+  `scripts/aztec-manifest.ts`. It is harmless under today's loader, but will matter under Vite's
+  future `configLoader: 'native'` default.
 
 ## Untested paths, carried from the logs
 
@@ -64,13 +92,6 @@ None of these were re-checked on 2026-09-18.
   both on WASM so verification stays circuit-bound, and `fallback: "none"` covers `generateProof`
   only. Documented and tested as such; revisit only with a reason to move verification native.
   `archive/presto-noir/plan.md` (Asks → A-01)
-- **`bump-playground`'s own steps have never run, and a bot auto-merge has never been seen firing**
-  — every `bump-source` run (2026-09-06 to 09-20) opened its PR and then failed with "Auto merge is
-  not allowed for this repository"; the owner merged those by hand and has since enabled the
-  setting. Release Bot Token Check now runs the shared bot path short of the merge itself; its run
-  36356273867 (2026-09-27, throwaway PR #65) was the App's first successful auto-merge enable. The
-  first `release-sdk` run after the cutover is still the first pin PR, and the first bot PR whose
-  auto-merge is expected to fire. `archive/workers-builds/plan.md` (A2, I10)
 
 ## Accepted residual risk — standing decisions, not work
 
@@ -80,12 +101,15 @@ None of these were re-checked on 2026-09-18.
   release-age floor and a repo-scoped GitHub App; since 2026-09-27 the builds use a narrowed custom
   token, which drops KV and R2 but cannot change this boundary. Fork PRs do not build (checked
   2026-09-27). Accepted by the owner 2026-09-25. `archive/workers-builds/plan.md` (Security)
-- **`@aztec/*` is exempt from the seven-day release-age floor** (owner decision 2026-08-18, 31 exact
-  package names in `bunfig.toml`; a glob is silently ignored, and the list must cover the full
-  resolved transitive graph). Aztec releases are consumed same-day by design, so for this scope
-  specifically there is no observation window. Every other scope keeps the full quarantine. This is a
-  permanent exposure on the dependency surface the product leans on hardest.
-  **Verified 2026-09-18.**
+- **Aztec's scopes are exempt from the seven-day release-age floor.** This was an owner decision
+  (2026-08-18, extended to v6's `@aztec-labs/*` and `@aztec-foundation/*` on 2026-09-28).
+  - The names are exact: 42 in `bunfig.toml`, and 62 in `installer-aztec-packages.txt` for
+    `setup-aztec`'s npmrc. A glob is silently ignored.
+  - Each list must cover the full resolved graph. `scripts/aztec-installer-graph.ts` fails on drift
+    and on any version other than the release.
+  - Aztec releases are consumed the same day by design, so these scopes get no observation window.
+  - This is a permanent exposure on the dependency surface the product leans on hardest.
+  **Verified 2026-09-29.**
 - **Automated cumulative age enforcement was reverted during review and is not on `main`** — the
   registry-age checker, its composite action and the thirteen workflow wirings were all removed. What
   remains is bunfig's npm-resolution-time floor plus a 7-day cooldown on the github-actions Dependabot

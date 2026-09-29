@@ -28,6 +28,11 @@ not belong here. Sections are stable; append, never re-sort.
 - **`require.resolve` on a dual package picks the CJS entry, which Rolldown gives Node-mode interop**
   — `.default` became the whole `exports` object. Resolve the ESM entry from the `exports` map.
   (2026-09, Vite 8.3)
+- **An Aztec bump PR must not touch `app.yml`'s `published` filter** — that job builds against the
+  published pin, which no bump matches before its release. `archive/aztec-v6/plan.md`
+- **Aztec's age-gate exemptions are two exact-name lists** — `bunfig.toml` and
+  `installer-aztec-packages.txt`; a new Aztec package needs both. `bb` ships only from
+  `AztecProtocol/barretenberg` since v6. (2026-09, v6) `archive/aztec-v6/plan.md`
 - **Any Wrangler bump fails `release-feed`'s typecheck** — `wrangler types --check` wants
   `worker-configuration.d.ts` regenerated (`bun run --cwd packages/release-feed types`).
   `archive/workers-builds/lessons/phase-1.md`
@@ -74,15 +79,14 @@ not belong here. Sections are stable; append, never re-sort.
   the selection input too. `archive/presto-noir/lessons/arc-4-review.md`
 - **Tool-version files must appear in the paths-filter groups** — `rust-toolchain.toml` matched none,
   so a compiler-only change skipped every Rust job. `archive/presto-cleanup/lessons/review-17.md`
-- **Unauthenticated `api.github.com` calls from hosted runners are rate-limited by shared egress IP** —
-  earlier greens were API luck. `archive/presto-noir/lessons/cross-arc-review.md`
+- **Anonymous `api.github.com` calls share 60/hour per egress address** — runners and busy hosts
+  exhaust it (a released app's cold `bb` download 403'd). `archive/aztec-v6/lessons/releases.md`
+- **A workflow change merged mid-`release-presto` fails its tag push** — the new tag "updates"
+  workflows, which the App token may not. Redispatch from `main`. `archive/aztec-v6/lessons/releases.md`
 - **A ruleset requiring contexts "up to date with main" forces a stack to land one level at a time** —
   those contexts only exist on a PR targeting `main`. `archive/presto-noir/lessons/cross-arc-review.md`
 - **Under `bash -e`, a failing `$(…)` inside an argument does not fail the step** — `echo "x=$(cmd)"`
   succeeds; assign first. `archive/workers-builds/lessons/phase-3.md`
-- **Bot auto-merge needs the repository's "Allow auto-merge"** — every `bump-source` PR failed at
-  `gh pr merge --auto` for two weeks. `--match-head-commit` binds only when enabling.
-  `archive/workers-builds/lessons/post-impl.md`
 
 ## npm publishing
 
