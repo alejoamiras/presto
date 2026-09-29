@@ -48,3 +48,42 @@ branch failed instantly, before any build step ran.
 - The production builds of the bot-authored, verified merge commit on `main` both passed (landing and
   playground). So a bot merge does deploy, which R2's pin PR relies on.
 - The preview failure is unexplained without Cloudflare's build log, which only the dashboard shows.
+
+## R2: SDKs
+
+Arc 3 (#73) merged as `bc3eeee`. Every run below dispatched from `main`.
+
+| Step | Dispatch or event | Run / PR | Commit | Result |
+|---|---|---|---|---|
+| 1. dry run | `release-sdk packages=all dry_run=true` | 36515098849 | `bc3eeee` | success. Plan: core 1.2.1, presto 6.0.0-rc.1 and noir 2.0.0-rc.1 publish; banners 1.2.0 reused. |
+| 2. release | `release-sdk packages=all` | 36515244215 | `bc3eeee` | success. Every gate passed (SDK e2e, audit, noir identity, live and tarball), then core → noir → presto were packed, consumed, published to `testnet` and verified. `bump-playground` opened the pin PR. |
+| 3. pin PR | bot PR, auto-merge | #74 | `07bc6c8` | The release bot's auto-merge fired at 03:23:44Z after 26 checks passed: the first `bump-playground` pin PR to auto-merge (#72 was the first bot PR to). |
+| 4. deploy | Workers Builds on `main` | check runs on `07bc6c8` | `07bc6c8` | `presto-playground` and `presto-landing` both succeeded. |
+| 5. smoke | `smoke-playground.yml` (default: the forwarder) | 36517162965 | `07bc6c8` | success: 3 passed, 1 skipped (the native Noir test, by design). |
+
+`npm view` after the release:
+- `@alejoamiras/presto`: `latest` 5.2.0-revision.5, `testnet` 6.0.0-rc.1.
+- `@alejoamiras/presto-noir`: `latest` 1.2.0, `testnet` 2.0.0-rc.1.
+- `@alejoamiras/presto-core`: `latest` 1.2.0, `testnet` 1.2.1.
+
+The live bundle at `playground.presto.build` contains the forwarder URL and 6.0.0-rc.1, and no v5 RPC.
+
+### Step 7: a native v6 proof on the live site with Presto 1.1.3
+
+The released 1.1.3 `presto-server` ran with a sanitized env, a private home, a cold cache and
+`ALLOWED_ORIGINS=https://playground.presto.build`. It served the demo smoke against the live site.
+
+- **Attempt 1 fell back to WASM.** The server's anonymous release-metadata call got 403: this host's
+  shared address had used all 60 anonymous GitHub API calls for the hour (`core` remaining 0 until
+  04:00:51Z). The digest-first check refused the download, so the page proved in the browser, and
+  `expectNativeProof` failed as it should. Handing the server a token outside a keyed run was ruled
+  out, so the run waited for the reset.
+- **Attempt 2 passed** at 04:01Z, after the quota reset (60 remaining), with a fresh server and a cold
+  cache:
+  - The released 1.1.3 downloaded v6 `bb` from `AztecProtocol/barretenberg` (9,320,781 bytes,
+    digest `a03fae96…7b0e` verified), cached it, and logged "Proving succeeded" for the live
+    playground's `x-aztec-version: 6.0.0-rc.1` request.
+  - The Accelerated deploy passed `expectNativeProof`, and the Local deploy passed: 2 of 2 against
+    `https://playground.presto.build`.
+  - Teardown: the server's process group was killed, the port was released, and the throwaway
+    Playwright config, `test-results/` and the server's home were deleted.

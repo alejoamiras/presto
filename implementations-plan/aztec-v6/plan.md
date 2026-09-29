@@ -4,12 +4,42 @@ tier: mid
 driver: claude-code
 eli5_mode: artifact
 code_review: off
-status: approved 2026-09-28 (A1–A7 answered); implementing
+status: closed 2026-09-29, shipped (arcs 1–3, R1, R2)
 created: 2026-09-28
 worktree: .claude/worktrees/aztec-v6
 branch: worktree-aztec-v6
 base: main @ 4cdc2f2
 ---
+
+## Outcome
+
+**Closed 2026-09-29. Shipped.** Presto runs on Aztec v6 `6.0.0-rc.1`; v5 stays on npm `latest`.
+
+- **Arc 1 (#70):** `bb` downloads from `AztecProtocol/barretenberg`. **R1** published and promoted
+  app 1.1.3; `#72` bumped the source to 1.1.4-rc.1.
+- **Arc 2 (#71):** release tooling for a prerelease Aztec base and one scope-agnostic manifest
+  reader.
+- **Arc 3 (#73, squash `bc3eeee`):** the v6 migration.
+  - v6 packages under exact-name age-gate exemptions, with an installer-graph check on every job.
+  - Regenerated Noir fixtures, the reference `Token` demo and the dormant legacy gate.
+  - SponsoredFPC salt 0 deployed and funded with 1,000 FJ by a disposable key, now deleted.
+  - 7b: the testnet cutover through the `presto-testnet-rpc` forwarder (D36).
+- **R2:** release run 36515244215 published `presto` 6.0.0-rc.1, `presto-noir` 2.0.0-rc.1 and
+  `presto-core` 1.2.1 to `testnet`.
+  - Pin PR #74 auto-merged, and Workers Builds deployed the playground.
+  - `smoke-playground` 36517162965 passed against the forwarder.
+  - The released 1.1.3, starting from a cold cache, proved natively for `playground.presto.build`.
+  - `lessons/releases.md` has every run ID and the live-site check.
+- **Dropped:**
+  - aztec-standards' token (A1: the reference `Token` replaced it).
+  - The `rc` dist-tag channel (D29: `testnet` tracks the network).
+  - The public v6 RPC: Aztec has not published one, so the forwarder stands in (D36).
+- **Open:** in `implementations-plan/follow-ups.md`. That covers the forwarder's switch-off, the
+  legacy gate's re-arm, `latest` promotion once v6 is stable, the next app release bundling v6 `bb`,
+  and two comment and warning nits.
+
+**The seeds below are retired.** This plan is a record; its `/goal` and `/loop` strings are not
+instructions.
 
 ## Summary
 
