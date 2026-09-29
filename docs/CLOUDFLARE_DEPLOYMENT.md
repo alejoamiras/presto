@@ -117,3 +117,12 @@ would otherwise run a deleted script.
 
 The release-feed Worker deploy is manual and uses the protected `release-feed` GitHub environment.
 Feed content promotion remains a separate workflow operation with a KV-only credential.
+
+## Testnet RPC forwarder (temporary)
+
+`presto-testnet-rpc` (`packages/testnet-rpc`, workers.dev only) stands in for Aztec's public v6
+testnet RPC until Aztec publishes one: it forwards node JSON-RPC to the private RPC, held only as
+its `AZTEC_NODE_URL` secret. It is deployed and deleted by owner-approved keyed runs of
+`scripts/forwarder.sh up|down` with `deploy.env.example`, never from Actions or Workers Builds. Its
+token is Workers Scripts Edit with an expiry, so it shares the account-wide boundary above. Once the
+public RPC exists, the playground, SDK and smoke move to it and the Worker is deleted.

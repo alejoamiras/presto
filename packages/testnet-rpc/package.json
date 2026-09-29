@@ -1,0 +1,10 @@
+{
+  "name": "@alejoamiras/presto-testnet-rpc",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit"
+  }
+}

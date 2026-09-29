@@ -137,6 +137,9 @@
         "@aztec-foundation/bb.js": "6.0.0-rc.1",
       },
     },
+    "packages/testnet-rpc": {
+      "name": "@alejoamiras/presto-testnet-rpc",
+    },
   },
   "overrides": {
     "systeminformation": "5.31.7",
@@ -160,6 +163,8 @@
     "@alejoamiras/presto-playground": ["@alejoamiras/presto-playground@workspace:packages/playground"],
 
     "@alejoamiras/presto-release-feed": ["@alejoamiras/presto-release-feed@workspace:packages/release-feed"],
+
+    "@alejoamiras/presto-testnet-rpc": ["@alejoamiras/presto-testnet-rpc@workspace:packages/testnet-rpc"],
 
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
 
