@@ -795,7 +795,7 @@ unchanged. Add the legacy-gate skip (A6).
 Layers: unit · UI-mock e2e · production-bundle smoke · e2e against a local network (branch build and
 released artifact).
 
-### Phase 7: network cutover (arc 3; 7a needs the private RPC, 7b the public one) — 7a ✓, 7b pending
+### Phase 7: network cutover (arc 3; 7a needs the private RPC, 7b the public one) — 7a ✓, 7b ✓
 
 The private RPC arrives only as `AZTEC_NODE_URL` inside keyed runs. Scripts that hardcode a URL
 inline (`sdk` `test:e2e:remote`, `playground` `dev:testnet`) are invoked through their underlying

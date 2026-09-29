@@ -141,3 +141,16 @@ node JSON-RPC to the private RPC, so 7b could commit a URL now.
   - Teardown: the server's process group was killed, both ports were released, and `test-results/`
     was deleted.
 - `bun run test` and `bun run lint:actions` exit 0; `git grep -nE '/k/[0-9a-f]{32,}'` is empty.
+
+### Hardened redeploy (Codex 7b round 1)
+
+- Keyed run `testnet-rpc-harden-35aaadc1` at HEAD `e2c6aa5` deployed version `f781358c` and re-set
+  the secret. The only later change is the wording of two comments.
+- Against that version, keyless:
+  - every check above repeats (200 with 6.0.0-rc.1 and 11155111 on both namespaces, the batch 200,
+    403 for `p2p_*`, `aztecAdmin_*` and a foreign Origin, preflight 204, GET 405);
+  - `test:live` passes 12 and `test:e2e:remote` passes 3;
+  - the smoke passes 3 with 1 skipped, and the native account deploy logs "Proving succeeded".
+    The JSON-only rule and the 16 MiB answer cap refuse nothing the wallet sends.
+- Teardown: the server's process group was killed, both ports were released, and `test-results/`
+  was deleted.

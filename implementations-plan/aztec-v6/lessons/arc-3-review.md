@@ -93,3 +93,13 @@ bodies and headers, and the scrub's case and escape handling), and each removal 
 first run missed the JSON-only guard: its fixture's upstream status was 502 already, so the fixture
 now uses a 200 HTML page. The hardened Worker is redeployed through a keyed run before the next
 round.
+
+## Round 2: converged
+
+Codex, resumed session: "no new material findings … No CRITICAL or HIGH finding remains from this
+review." Its synthetic checks blocked the key with each character `\u`-escaped and when split
+across stream chunks; they also showed escaped header values dropped, status text not copied, an
+overflowing answer cancelled, and the node's normal and error answers labelled JSON. One LOW, taken
+as-is: two comments overstated the checks (escape normalization, not JSON parsing; a JSON-labelled
+answer, not validated JSON). It could not reach the advisory API (403), and accepted the reworded
+date.

@@ -63,7 +63,7 @@ function secretPattern(upstream: URL): RegExp {
   return new RegExp(alternatives.join("|") || "(?!)", "i");
 }
 
-/** Tests text as JSON would read it: `\uXXXX` and `\/` spell the characters they escape. */
+/** Tests text after decoding `\uXXXX` and `\/`, the JSON escapes that could hide a fragment. */
 function carriesSecret(text: string, secret: RegExp): boolean {
   const decoded = text.includes("\\")
     ? text.replace(/\\u([0-9a-fA-F]{4})|\\\//g, (_, hex?: string) =>
@@ -146,7 +146,7 @@ export async function handleRequest(request: Request, env: ForwarderEnv): Promis
   return forward(upstream, bytes, origin);
 }
 
-/** Relays only a bounded JSON answer that names no piece of the upstream URL. */
+/** Relays only a bounded, JSON-labelled answer that names no piece of the upstream URL. */
 async function forward(upstream: URL, bytes: Uint8Array<ArrayBuffer>, origin: string | null) {
   let response: Response;
   let body: Uint8Array | null;
