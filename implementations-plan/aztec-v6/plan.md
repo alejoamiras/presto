@@ -376,7 +376,13 @@ authorization, 2026-09-28, A5):
   with `# op: import` above `AZTEC_NODE_URL=op://Keyed-Runs/Presto-Testnet/AZTEC_NODE_URL`. The
   owner pastes the private RPC once through `op-remote create`.
 - **Network cutover (phase 7b):** the RPC in `playground/vite.config.ts:175`, `playground/package.json`
-  `dev:testnet`, `sdk/package.json` `test:e2e:remote`, `.github/workflows/smoke-playground.yml:14`.
+  `dev:testnet`, `sdk/package.json` `test:e2e:remote`, `.github/workflows/smoke-playground.yml:14`,
+  plus the assertion in `scripts/sdk-release-contract.test.ts`. Until the public RPC exists, the URL
+  is the forwarder's (D36).
+- **RPC forwarder (7b placeholder, D36):** `packages/testnet-rpc/`, a Worker (`presto-testnet-rpc`,
+  workers.dev only) forwarding node JSON-RPC to its `AZTEC_NODE_URL` secret; unit-gated in
+  `landing.yml` next to release-feed. `scripts/forwarder.sh up|down` deploys or deletes it, only as
+  a keyed run from `deploy.env.example`.
 - **Docs:** `CLAUDE.md` and `AGENTS.md` current state; `implementations-plan/follow-ups.md`.
 
 ### Non-obvious mechanics
@@ -517,13 +523,27 @@ B does everything in one PR on `main`:
     is a bounded positive integer.
   - The funds are minted test FJ, so the worst case is Sepolia gas plus at most the approved total,
     sent to the approved addresses.
-- **Least privilege.** No new secrets, workflow permissions or origins. The RPC is HTTPS, supplied by
-  the owner.
+- **Least privilege.** No new workflow permissions or CI secrets. The one new credential is D36's
+  Cloudflare API token: Account › Workers Scripts › Edit, with an expiry, in 1Password, reaching
+  only keyed runs of the committed `forwarder.sh`. Cloudflare cannot scope it to one Worker, so it
+  could rewrite the site and feed Workers too; the feed is Ed25519-signed, so a rewritten feed
+  Worker still cannot ship an update. The RPC is HTTPS, supplied by the owner.
 - **The private RPC.** The owner has a keyed v6 RPC URL that must never become public. It lives in
-  1Password and reaches only keyed runs through `env-exec`, as `AZTEC_NODE_URL`. It never appears in
-  a commit, lessons, a PR, a CI secret or a deployed build. Before every push,
-  `git grep -nE '/k/[0-9a-f]{32,}'` is empty. Only the public RPC, when the owner has it, is
-  committed.
+  1Password and reaches only keyed runs through `env-exec`, as `AZTEC_NODE_URL`, and (D36) the
+  forwarder Worker's encrypted secret. It never appears in a commit, lessons, a PR, a CI secret or
+  a deployed build. Before every push, `git grep -nE '/k/[0-9a-f]{32,}'` is empty. Only the public
+  RPC, or the forwarder URL standing in for it, is committed.
+- **The forwarder (D36)** makes the private node publicly reachable; Aztec acked that. It narrows
+  what passes, and never returns the key:
+  - POST at `/` only, at most 8 MiB and 100 calls, every method `aztec_*` or `node_*` (no admin,
+    debug or `p2p_*`); no caller header reaches the node.
+  - Browser Origins: the playground, its workers.dev previews and localhost. Callers without an
+    Origin (scripts, tests) pass: the list stops other sites' pages, not scripts.
+  - Responses carry only `Content-Type` and `x-aztec-*`. A body containing any piece of the upstream
+    URL (host, path segment, query value, userinfo) becomes a fixed 502, since a gateway rejecting a
+    revoked key can echo it; fetch errors are never forwarded; no logging.
+  - Abuse is bounded by the Workers request quota: the worst case is the placeholder going down or
+    Aztec throttling the key.
 - **Smart contracts.**
   - Salt-0 SponsoredFPC is a public faucet by design; funding stays at A4's cap.
   - Token demo semantics: `constructor(admin=Alice, …)` makes Alice the minter; `transfer(bob, 500)`
@@ -779,6 +799,10 @@ The private RPC arrives only as `AZTEC_NODE_URL` inside keyed runs. Scripts that
 inline (`sdk` `test:e2e:remote`, `playground` `dev:testnet`) are invoked through their underlying
 command in 7a, never edited to carry it. Lessons record node answers, never the URL.
 
+**7b placeholder (D36, owner-acked 2026-09-29).** Aztec has not published a public v6 RPC, so 7b
+commits the URL of the `presto-testnet-rpc` forwarder instead. Moving to the public RPC and
+deleting the Worker is a close-out follow-up.
+
 **7a validation gate (private RPC, keyed runs):**
 - The FPC scripts' keyless tests pass: malformed amounts, a cap breach, a wrong destination, a node
   or L1 chain mismatch, and disagreeing successive node answers are each refused (or pinned to the
@@ -797,8 +821,12 @@ command in 7a, never edited to carry it. Lessons record node answers, never the 
   (the demo smoke asserts `expectNativeProof`), and the SDK's remote-network test all pass.
 - `git grep -nE '/k/[0-9a-f]{32,}'` is empty.
 
-**7b validation gate (public RPC, when the owner has it):**
-- The public RPC appears in the four cutover locations, and no v5 RPC string remains
+**7b validation gate (the forwarder URL standing in for the public RPC, D36):**
+- The forwarder's unit tests pass, and each of its guards (method and origin allowlists, body cap,
+  upstream-echo scrub) fails a test when removed.
+- A keyed `forwarder.sh up` deploys it. Keyless, it answers `node_getNodeInfo` with `nodeVersion`
+  6.0.0-rc.1, and refuses a `p2p_*` method and a foreign Origin.
+- The forwarder URL appears in the four cutover locations, and no v5 RPC string remains
   (`rg -n 'v5\.testnet\.rpc' packages .github` is empty).
 - `test:live` and `test:e2e:remote` pass against it, with no key involved.
 - `bun run test && bun run lint:actions` exit 0.
@@ -823,7 +851,8 @@ Each step runs only when the previous one is green; any red step stops the relea
   3. Watch it through `bump-playground`. The pin PR auto-merges, or the agent merges it once its
      checks pass (A7).
   4. Workers Builds deploys production.
-  5. `gh workflow run smoke-playground.yml -f aztec_node_url=<public rpc>` green.
+  5. `gh workflow run smoke-playground.yml` green (its default is 7b's URL, the forwarder's until
+     the public RPC exists).
   6. Check `npm view @alejoamiras/presto dist-tags`: `latest` = `5.2.0-revision.5` and `testnet` =
      `6.0.0-rc.1`. The same holds for noir (`1.2.0` and `2.0.0-rc.1`).
   7. Verify the live site: a v6 native proof on playground.presto.build with Presto 1.1.3.
@@ -893,11 +922,15 @@ after 7b. PR bodies state:
      comment in `scripts/aztec-manifest.ts`, which wrongly calls the three names "only these are Aztec
      release artifacts" (the file is in the `published` filter, so arc 3 cannot touch it), and Vite's
      warning that the root package has no `"type": "module"`, now that `vite.config.ts` imports
-     `aztec-manifest.ts` (ahead of Vite's future `configLoader: 'native'` default);
+     `aztec-manifest.ts` (ahead of Vite's future `configLoader: 'native'` default), and switching
+     off the forwarder (D36): once Aztec publishes the public v6 RPC, move the four cutover
+     locations to it, run a keyed `forwarder.sh down`, remove `packages/testnet-rpc` and its
+     wiring, and revoke the Cloudflare token;
    - archive after the merge.
 
-**Post-implementation hardening:** no `/harden`. The trust boundaries are unchanged and no secret or
-permission is added; the supply-chain deltas are recorded above and in `docs/SECURITY_MODEL.md`.
+**Post-implementation hardening:** no `/harden`. The only new trust boundary is D36's temporary
+forwarder, threat-modelled in Security and removed at close-out; the supply-chain deltas are
+recorded above and in `docs/SECURITY_MODEL.md`.
 
 ## Decision ledger
 
@@ -938,6 +971,7 @@ permission is added; the supply-chain deltas are recorded above and in `docs/SEC
 | D33 | Reference `Token`, and `aztec-standards` leaves the repo with its `LOCKSTEP_PACKAGES` mechanism | owner (A1) | adopted |
 | D34 | Funding uses an agent-generated disposable L1 key (0600 file outside the repo, never printed, deleted after) and public faucets; a disagreeing anchor stops the run, a non-covering one is recorded | owner (A4) | adopted (refines D30) |
 | D35 | The agent merges the three arc PRs once CI is green and the Codex loop's final round has no CRITICAL or HIGH finding | owner (A7) | adopted |
+| D36 | 7b commits a forwarder URL in place of the public RPC: a Worker holding the private RPC as its secret (method and origin allowlists, key-echo scrub), deployed and deleted only by keyed runs; switching it off is a close-out follow-up | owner (Aztec acked, 2026-09-29) | adopted (amends D31) |
 
 **Still disputed:** none. **Open for the owner:** A1–A7.
 
