@@ -10,14 +10,15 @@ TypeScript SDK that routes Aztec private kernel proving to a local native presto
 ## Installation
 
 ```bash
+# Aztec v6 (6.0.0-rc.1, the Aztec testnet), on the `testnet` dist-tag
+npm install @alejoamiras/presto@testnet
+# Aztec v5 (5.2.0, `@aztec/*` packages), npm `latest`
 npm install @alejoamiras/presto
-# or
-bun add @alejoamiras/presto
 ```
 
-> The SDK's version mirrors the Aztec line it targets — SDK `X.Y.Z` is built against `@aztec/*` `X.Y.Z`. A bare install resolves npm `latest`, the release promoted as current-stable; the `testnet` dist-tag points at the newest release on that track (`npm install @alejoamiras/presto@testnet`). The two are usually the same version, and differ while a newer line is being validated or if `latest` has been rolled back.
+> The SDK's version mirrors the Aztec line it targets — SDK `X.Y.Z` is built against Aztec `X.Y.Z`. A bare install resolves npm `latest`, the release promoted as current-stable, which stays on the v5 line until Aztec v6 is stable; `testnet` carries the newest release, the v6 prerelease today. Native proving for Aztec v6 needs the Presto app **1.1.3 or later**: older apps cannot fetch a v6 `bb` and the SDK falls back to WASM.
 
-The SDK ships its `@aztec/*` packages as exact-pinned **dependencies** (not peer dependencies), so it installs standalone. When your project already depends on the same exact `@aztec` version — the normal case for an Aztec dApp — npm/Bun dedupe them to a single `@aztec` graph.
+The SDK ships its Aztec packages (`@aztec-labs/*` and `@aztec-foundation/*` from v6, `@aztec/*` through v5) as exact-pinned **dependencies** (not peer dependencies), so it installs standalone. When your project already depends on the same exact Aztec version — the normal case for an Aztec dApp — npm/Bun dedupe them to a single graph.
 
 The transport and fallback policy live in [`@alejoamiras/presto-core`](../sdk-core/README.md), an
 exact-pinned dependency shared with [`@alejoamiras/presto-noir`](../sdk-noir/README.md) — the
@@ -41,7 +42,7 @@ For browser-based dApps using Aztec's embedded wallet, inject the prover via the
 
 ```typescript
 import { PrestoProver } from "@alejoamiras/presto";
-import { EmbeddedWallet } from "@aztec/wallets/embedded";
+import { EmbeddedWallet } from "@aztec-labs/wallets/embedded";
 
 const prover = new PrestoProver();
 prover.setForceLocal(true); // until the visitor connects, see "Ask before you probe"
@@ -186,7 +187,7 @@ prompt again. The browser still decides every request, so a site it blocks is ne
 
 ### `PrestoProver`
 
-The main class. Extends `BBLazyPrivateKernelProver` from `@aztec/bb-prover`.
+The main class. Extends `BBLazyPrivateKernelProver` from `@aztec-labs/bb-prover`.
 
 ```typescript
 const prover = new PrestoProver(options?: PrestoProverOptions);
@@ -540,7 +541,7 @@ Practical guidance for integrators:
 
 ## Version Compatibility
 
-The SDK auto-detects its Aztec version from `@aztec/stdlib` in its dependencies and sends it as the `x-aztec-version` header on prove requests. The presto uses this to select (or download) the correct `bb` binary — no manual version matching needed.
+The SDK auto-detects its Aztec version from its pinned Aztec `stdlib` dependency and sends it as the `x-aztec-version` header on prove requests. The presto uses this to select (or download) the correct `bb` binary — no manual version matching needed.
 
 ## Claude Code Skill
 

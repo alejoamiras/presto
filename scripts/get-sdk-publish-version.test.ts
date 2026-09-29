@@ -98,7 +98,7 @@ describe("baseVersionFor", () => {
     expect(
       baseVersionFor(aztecDerived, {
         version: "0.0.0",
-        dependencies: { "@aztec/stdlib": "5.2.0" },
+        dependencies: { "@aztec-labs/stdlib": "5.2.0" },
       }),
     ).toBe("5.2.0");
     expect(() => baseVersionFor(manifestMode, {})).toThrow("has no version");

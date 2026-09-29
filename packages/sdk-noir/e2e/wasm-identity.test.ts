@@ -1,6 +1,11 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { cpus } from "node:os";
-import { BackendType, Barretenberg, deflattenFields, UltraHonkBackend } from "@aztec/bb.js";
+import {
+  BackendType,
+  Barretenberg,
+  deflattenFields,
+  UltraHonkBackend,
+} from "@aztec-foundation/bb.js";
 import { PrestoUltraHonkBackend } from "../src/index.js";
 import { FIXTURE_NAMES, fixtureDir, loadFixture } from "./e2e-setup.js";
 

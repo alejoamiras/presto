@@ -23,26 +23,26 @@
     "dev": "tsc -w",
     "prepublishOnly": "bun run test:lint && bun run build",
     "test:e2e": "bun test --preload ./e2e/e2e-setup.ts e2e/",
-    "test:e2e:remote": "AZTEC_NODE_URL=https://v5.testnet.rpc.aztec-labs.com bun test --preload ./e2e/e2e-setup.ts e2e/remote-network.test.ts",
+    "test:e2e:remote": "AZTEC_NODE_URL=https://presto-testnet-rpc.alejo-amiras.workers.dev bun test --preload ./e2e/e2e-setup.ts e2e/remote-network.test.ts",
     "test:lint": "tsc --noEmit --emitDeclarationOnly false && tsc -p examples",
     "test:unit": "bun test --parallel src/"
   },
   "dependencies": {
     "@alejoamiras/presto-core": "workspace:*",
-    "@aztec/bb-prover": "5.2.0",
-    "@aztec/foundation": "5.2.0",
-    "@aztec/noir-acvm_js": "5.2.0",
-    "@aztec/noir-noirc_abi": "5.2.0",
-    "@aztec/stdlib": "5.2.0",
+    "@aztec-foundation/noir-acvm_js": "6.0.0-rc.1",
+    "@aztec-foundation/noir-noirc_abi": "6.0.0-rc.1",
+    "@aztec-labs/bb-prover": "6.0.0-rc.1",
+    "@aztec-labs/foundation": "6.0.0-rc.1",
+    "@aztec-labs/stdlib": "6.0.0-rc.1",
     "@logtape/logtape": "^2.3.2"
   },
   "devDependencies": {
-    "@aztec/accounts": "5.2.0",
-    "@aztec/aztec.js": "5.2.0",
-    "@aztec/noir-contracts.js": "5.2.0",
-    "@aztec/pxe": "5.2.0",
-    "@aztec/simulator": "5.2.0",
-    "@aztec/wallets": "5.2.0",
+    "@aztec-labs/accounts": "6.0.0-rc.1",
+    "@aztec-labs/aztec.js": "6.0.0-rc.1",
+    "@aztec-labs/noir-contracts.js": "6.0.0-rc.1",
+    "@aztec-labs/pxe": "6.0.0-rc.1",
+    "@aztec-labs/simulator": "6.0.0-rc.1",
+    "@aztec-labs/wallets": "6.0.0-rc.1",
     "vite-plugin-node-polyfills": "^0.28"
   },
   "publishConfig": {

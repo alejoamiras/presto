@@ -6,12 +6,12 @@ describe("consumer host manifest", () => {
     const manifest = hostManifest(
       "@alejoamiras/presto",
       "/tmp/presto.tgz",
-      { "@aztec/bb.js": "5.2.0" },
-      parseAztecPin("@aztec/stdlib@5.2.0"),
+      { "@aztec-foundation/bb.js": "5.2.0" },
+      parseAztecPin("@aztec-labs/stdlib@5.2.0"),
     );
     expect(manifest.dependencies).toEqual({
-      "@aztec/bb.js": "5.2.0",
-      "@aztec/stdlib": "5.2.0",
+      "@aztec-foundation/bb.js": "5.2.0",
+      "@aztec-labs/stdlib": "5.2.0",
       "@alejoamiras/presto": "file:/tmp/presto.tgz",
     });
     expect(manifest.name).toBe("host-5.2.0");
@@ -25,7 +25,7 @@ describe("consumer host manifest", () => {
       "@aztec-labs/stdlib": "6.0.0-rc.1",
       "@alejoamiras/presto": "file:/tmp/p.tgz",
     });
-    for (const bad of ["@aztec/stdlib", "stdlib@", "@6.0.0"]) {
+    for (const bad of ["@aztec-labs/stdlib", "stdlib@", "@6.0.0"]) {
       expect(() => parseAztecPin(bad)).toThrow("expected name@version");
     }
   });

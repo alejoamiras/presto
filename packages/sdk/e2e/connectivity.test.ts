@@ -5,7 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { createAztecNodeClient } from "@aztec/aztec.js/node";
+import { createAztecNodeClient } from "@aztec-labs/aztec.js/node";
 import { getLogger } from "@logtape/logtape";
 import { config } from "./e2e-setup";
 

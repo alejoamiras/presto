@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import { dirname, join, resolve } from "node:path";
 import { defineConfig, loadEnv, type Plugin } from "vite";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
+import { aztecVersionOf } from "../../scripts/aztec-manifest.ts";
 import { LICENSE_POLICY } from "./licensing/license-fallbacks.ts";
 import { thirdPartyLicenses } from "./licensing/third-party-licenses.ts";
 
@@ -26,7 +27,7 @@ function esmEntry(specifier: string): string {
 /**
  * Vite plugin: redirect dependency worker file requests to their real location.
  *
- * bb.js and @aztec/kv-store (sqlite-opfs) spawn Web Workers via:
+ * bb.js and @aztec-labs/kv-store (sqlite-opfs) spawn Web Workers via:
  *   new Worker(new URL('./main.worker.js', import.meta.url), { type: 'module' })
  *
  * When Vite's dep optimizer pre-bundles those packages, import.meta.url changes
@@ -41,10 +42,13 @@ function bbWorkerPlugin(): Plugin {
     name: "bb-worker-redirect",
     configResolved(config) {
       try {
-        const bbProverPath = require.resolve("@aztec/bb-prover");
+        const bbProverPath = require.resolve("@aztec-labs/bb-prover");
         const bbRequire = createRequire(bbProverPath);
-        const bbEntry = bbRequire.resolve("@aztec/bb.js");
-        const bbRoot = bbEntry.slice(0, bbEntry.indexOf("@aztec/bb.js/") + "@aztec/bb.js/".length);
+        const bbEntry = bbRequire.resolve("@aztec-foundation/bb.js");
+        const bbRoot = bbEntry.slice(
+          0,
+          bbEntry.indexOf("@aztec-foundation/bb.js/") + "@aztec-foundation/bb.js/".length,
+        );
         const bbBrowserDir = resolve(bbRoot, "dest", "browser", "barretenberg_wasm");
         workerFiles["main.worker.js"] = resolve(
           bbBrowserDir,
@@ -62,14 +66,18 @@ function bbWorkerPlugin(): Plugin {
         );
         config.logger.info(`[bb-worker-redirect] Resolved worker files in ${bbBrowserDir}`);
       } catch (err) {
-        config.logger.warn(`[bb-worker-redirect] Could not resolve @aztec/bb.js workers: ${err}`);
+        config.logger.warn(
+          `[bb-worker-redirect] Could not resolve @aztec-foundation/bb.js workers: ${err}`,
+        );
       }
       try {
-        const kvEntry = require.resolve("@aztec/kv-store/sqlite-opfs");
+        const kvEntry = require.resolve("@aztec-labs/kv-store/sqlite-opfs");
         workerFiles["worker.js"] = resolve(kvEntry, "..", "worker.js");
         config.logger.info(`[bb-worker-redirect] Resolved kv-store sqlite-opfs worker`);
       } catch (err) {
-        config.logger.warn(`[bb-worker-redirect] Could not resolve @aztec/kv-store worker: ${err}`);
+        config.logger.warn(
+          `[bb-worker-redirect] Could not resolve @aztec-labs/kv-store worker: ${err}`,
+        );
       }
     },
     configureServer(server) {
@@ -94,7 +102,7 @@ function bbWorkerPlugin(): Plugin {
 }
 
 /**
- * Vite plugin: emit UNHASHED copies of @aztec/sqlite3mc-wasm's runtime assets.
+ * Vite plugin: emit UNHASHED copies of @aztec-labs/sqlite3mc-wasm's runtime assets.
  *
  * The emscripten loader inside sqlite3mc resolves `sqlite3.wasm` (and the OPFS
  * async-proxy script) through a dynamic `locateFile` fallback that bundlers can't
@@ -107,15 +115,17 @@ function sqliteWasmAssetsPlugin(): Plugin {
     name: "sqlite3mc-unhashed-assets",
     apply: "build",
     generateBundle() {
-      // Resolve through @aztec/kv-store's own require chain (like bbWorkerPlugin does for
+      // Resolve through @aztec-labs/kv-store's own require chain (like bbWorkerPlugin does for
       // bb.js) so the emitted bytes always match the copy the bundled glue JS came from,
-      // even if hoisting ever leaves two @aztec/sqlite3mc-wasm versions in the tree.
-      const kvRequire = createRequire(require.resolve("@aztec/kv-store/sqlite-opfs"));
+      // even if hoisting ever leaves two @aztec-labs/sqlite3mc-wasm versions in the tree.
+      const kvRequire = createRequire(require.resolve("@aztec-labs/kv-store/sqlite-opfs"));
       for (const file of ["sqlite3.wasm", "sqlite3-opfs-async-proxy.js"]) {
         this.emitFile({
           type: "asset",
           fileName: `assets/${file}`,
-          source: readFileSync(kvRequire.resolve(`@aztec/sqlite3mc-wasm/vendor/jswasm/${file}`)),
+          source: readFileSync(
+            kvRequire.resolve(`@aztec-labs/sqlite3mc-wasm/vendor/jswasm/${file}`),
+          ),
         });
       }
     },
@@ -172,7 +182,7 @@ const crossOriginIsolation = {
   "Cross-Origin-Embedder-Policy": "require-corp",
 };
 
-const TESTNET_AZTEC_NODE_URL = "https://v5.testnet.rpc.aztec-labs.com";
+const TESTNET_AZTEC_NODE_URL = "https://presto-testnet-rpc.alejo-amiras.workers.dev";
 
 export default defineConfig(({ mode, command }) => {
   const allEnv = loadEnv(mode, process.cwd(), "");
@@ -182,11 +192,9 @@ export default defineConfig(({ mode, command }) => {
       allEnv.AZTEC_NODE_URL || (command === "build" ? TESTNET_AZTEC_NODE_URL : undefined),
   };
 
-  // Read @aztec/stdlib version from SDK package.json at build time
-  const sdkPkg = JSON.parse(
-    readFileSync(resolve(import.meta.dirname, "../sdk/package.json"), "utf8"),
+  const aztecSdkVersion = aztecVersionOf(
+    JSON.parse(readFileSync(resolve(import.meta.dirname, "../sdk/package.json"), "utf8")),
   );
-  const aztecSdkVersion: string = sdkPkg.dependencies["@aztec/stdlib"] ?? "unknown";
 
   const licenses = thirdPartyLicenses(LICENSE_POLICY);
 
@@ -205,9 +213,9 @@ export default defineConfig(({ mode, command }) => {
       plugins: () => [licenses.collect()],
     },
     optimizeDeps: {
-      exclude: ["@aztec/noir-acvm_js", "@aztec/noir-noirc_abi"],
+      exclude: ["@aztec-foundation/noir-acvm_js", "@aztec-foundation/noir-noirc_abi"],
       esbuildOptions: {
-        // @aztec/kv-store's sqlite-opfs backend (the 5.0 browser default) uses package-internal
+        // @aztec-labs/kv-store's sqlite-opfs backend (the 5.0 browser default) uses package-internal
         // `#...` subpath imports, which Vite's dep optimizer can't resolve through the package's
         // `imports` map — map them to their browser-condition targets. Production rollup resolves
         // them natively; this only affects the dev-server prebundle. The `msgpackr` devDependency
@@ -223,7 +231,7 @@ export default defineConfig(({ mode, command }) => {
               build.onResolve({ filter: /^#ordered-binary$/ }, () => {
                 // kvEntry is .../dest/sqlite-opfs/index.js — resolve relative to it
                 // (platform-safe; substring-slicing the path breaks on Windows separators).
-                const kvEntry = require.resolve("@aztec/kv-store/sqlite-opfs");
+                const kvEntry = require.resolve("@aztec-labs/kv-store/sqlite-opfs");
                 return {
                   path: resolve(kvEntry, "..", "internal", "ordered-binary-browser.js"),
                 };
@@ -273,7 +281,7 @@ export default defineConfig(({ mode, command }) => {
       },
       // One bb.js for the Aztec prover, the Noir adapter's peer, and the page's own import: two
       // copies would mean two WASM runtimes and two `Barretenberg` types.
-      dedupe: ["@aztec/bb-prover", "@aztec/bb.js"],
+      dedupe: ["@aztec-labs/bb-prover", "@aztec-foundation/bb.js"],
     },
     define: {
       "process.env": JSON.stringify({

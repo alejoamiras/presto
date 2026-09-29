@@ -1,5 +1,5 @@
 import { fromBase64 } from "@alejoamiras/presto-core";
-import type { ProofData } from "@aztec/bb.js";
+import type { ProofData } from "@aztec-foundation/bb.js";
 
 const FIELD_BYTES = 32;
 /** The route's own cap on a supplied key: a larger one would be refused when sent back. */

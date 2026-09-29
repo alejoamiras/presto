@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { PrestoHttpError } from "@alejoamiras/presto-core";
-import { BBLazyPrivateKernelProver } from "@aztec/bb-prover/client/lazy";
-import { WASMSimulator } from "@aztec/simulator/client";
-import * as stdlibKernel from "@aztec/stdlib/kernel";
-import { ChonkProofWithPublicInputs } from "@aztec/stdlib/proofs";
+import { BBLazyPrivateKernelProver } from "@aztec-labs/bb-prover/client/lazy";
+import { WASMSimulator } from "@aztec-labs/simulator/client";
+import * as stdlibKernel from "@aztec-labs/stdlib/kernel";
+import { ChonkProofWithPublicInputs } from "@aztec-labs/stdlib/proofs";
 import sdkPkg from "../../package.json" with { type: "json" };
 import { decodeChonkProof, PrestoProver, sdkAztecVersion } from "./presto-prover.js";
 
@@ -11,7 +11,7 @@ import { decodeChonkProof, PrestoProver, sdkAztecVersion } from "./presto-prover
 // proof, and run WASM for every fallback outcome. Transport policy and the error taxonomy are the
 // client's and are tested in @alejoamiras/presto-core.
 
-const SDK_AZTEC_VERSION = (sdkPkg.dependencies as Record<string, string>)["@aztec/stdlib"];
+const SDK_AZTEC_VERSION = (sdkPkg.dependencies as Record<string, string>)["@aztec-labs/stdlib"];
 const EMPTY_PROOF_B64 = ChonkProofWithPublicInputs.empty().toBuffer().toString("base64");
 
 const fakeStep = {
@@ -239,7 +239,7 @@ describe("PrestoProver", () => {
     expect(fetchedUrls.some((url) => url.includes(":51337"))).toBe(true);
   });
 
-  test("the handshake version is the pinned @aztec/stdlib, prerelease suffix preserved", () => {
+  test("the handshake version is the pinned @aztec-labs/stdlib, prerelease suffix preserved", () => {
     expect(sdkAztecVersion()).toBe(SDK_AZTEC_VERSION.replace(/^[^0-9]*/, ""));
     expect(sdkAztecVersion()).toMatch(/^\d/);
   });

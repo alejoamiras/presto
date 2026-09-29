@@ -71,7 +71,7 @@ Every `/prove` response includes an `x-prove-duration-ms` header with the actual
 
 ### Proving any Noir circuit (`POST /prove/ultra-honk`)
 
-`/prove` is Aztec's client-IVC (`chonk`) path. Since Presto 1.1.0 a second route proves **any compiled Noir circuit** with bb's `ultra_honk` scheme — what `@aztec/bb.js`'s `UltraHonkBackend` does in WASM, run natively. `/health.schemes` lists `["chonk", "ultra_honk"]` when both are served.
+`/prove` is Aztec's client-IVC (`chonk`) path. Since Presto 1.1.0 a second route proves **any compiled Noir circuit** with bb's `ultra_honk` scheme — what bb.js's `UltraHonkBackend` does in WASM, run natively. `/health.schemes` lists `["chonk", "ultra_honk"]` when both are served.
 
 Request: `Content-Type: application/json`, a flat object of strings.
 
@@ -111,7 +111,7 @@ Old versions are evicted automatically — no manual cleanup needed.
 
 ### Version Model — why an Aztec bump doesn't re-release this app
 
-Because the presto downloads `bb` at runtime (above), it is **decoupled from the Aztec protocol version**. When Aztec ships a new release, only the [SDK](../sdk/README.md) is republished — it carries the `@aztec/*` deps and advertises its version via the `x-aztec-version` header. The **already-installed presto** (desktop *and* headless) fetches and caches the matching `bb` on the next prove request; users do nothing. You cut a new presto release only when the presto's **own** code changes (server, tray, updater, or the `bb` download/verification logic) — never merely to track an `@aztec` version bump.
+Because the presto downloads `bb` at runtime (above), it is **decoupled from the Aztec protocol version**. When Aztec ships a new release, only the [SDK](../sdk/README.md) is republished — it carries the Aztec package deps and advertises its version via the `x-aztec-version` header. The **already-installed presto** (desktop *and* headless) fetches and caches the matching `bb` on the next prove request; users do nothing. You cut a new presto release only when the presto's **own** code changes (server, tray, updater, or the `bb` download/verification logic) — never merely to track an Aztec version bump.
 
 ### bb Binary Resolution
 
@@ -389,7 +389,7 @@ aztec install
 # Prerequisites: Rust toolchain, CMake, Tauri CLI
 cargo install tauri-cli
 
-# Copy bb binary for sidecar (reads version from @aztec/bb.js)
+# Copy bb binary for sidecar (reads version from the installed bb.js)
 bun run --filter presto prebuild
 
 # Run in development mode (debug build — the menu additionally shows the Versions submenu + status item)

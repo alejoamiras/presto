@@ -105,6 +105,7 @@ sdk_integration:
   - '.bun-version'
   - 'rust-toolchain.toml'
   - '.github/actions/setup-aztec/**'
+  - 'scripts/aztec-installer-graph.ts'
   - '.github/actions/start-services/**'
   - '.github/workflows/_e2e.yml'
   - '.github/workflows/presto.yml'

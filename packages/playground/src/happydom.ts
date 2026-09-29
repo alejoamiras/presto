@@ -1,4 +1,4 @@
-// @aztec/foundation's logger builds a worker-thread transport at import time unless this env is
+// @aztec-labs/foundation's logger builds a worker-thread transport at import time unless this env is
 // set (its Jest branch: sync fd destination, no Worker). Load-bearing HERE specifically: this
 // preload's GlobalRegistrator.register() replaces globalThis.MessagePort with a DOM-shaped one,
 // and bun 1.4.0's Worker bootstrap reads that mutable global — any Worker constructed afterwards
@@ -11,7 +11,7 @@ import { GlobalRegistrator } from "@happy-dom/global-registrator";
 
 GlobalRegistrator.register();
 
-// Patch expect for @aztec/foundation compatibility (same as SDK/server)
+// Patch expect for @aztec-labs/foundation compatibility (same as SDK/server)
 if (!(expect as unknown as { addEqualityTesters?: unknown }).addEqualityTesters) {
   (expect as unknown as Record<string, unknown>).addEqualityTesters = () => {};
 }

@@ -151,26 +151,27 @@ describe("licence policy", () => {
   });
 
   test("falls back to the vendored upstream text, keeping a declared licence and the note", () => {
-    const stdlib = install("@aztec/stdlib", { name: "@aztec/stdlib", version: "5.2.0" });
-    const bb = install("@aztec/bb.js", { name: "@aztec/bb.js", version: "5.2.0", license: "MIT" });
-    const abi = install("@aztec/noir-noirc_abi", {
-      name: "@aztec/noir-noirc_abi",
-      version: "5.2.0",
-      license: "(MIT OR Apache-2.0)",
-    });
+    const aztec = (name: string, license?: string) =>
+      install(name, { name, version: "6.0.0-rc.1", ...(license ? { license } : {}) });
+    const stdlib = aztec("@aztec-labs/stdlib");
+    const bb = aztec("@aztec-foundation/bb.js", "MIT");
+    const abi = aztec("@aztec-foundation/noir-noirc_abi", "(MIT OR Apache-2.0)");
     // Aztec's own package despite the `noir-` prefix: must not inherit noir-lang's terms.
-    const circuits = install("@aztec/noir-protocol-circuits-types", {
-      name: "@aztec/noir-protocol-circuits-types",
-      version: "5.2.0",
-    });
-    const [bbNotice, abiNotice, circuitsNotice, stdlibNotice] = collectNotices(
-      [stdlib, bb, abi, circuits],
+    const circuits = aztec("@aztec-labs/noir-protocol-circuits-types");
+    const artifacts = aztec("@aztec-foundation/l1-artifacts");
+    const [bbNotice, artifactsNotice, abiNotice, circuitsNotice, stdlibNotice] = collectNotices(
+      [stdlib, bb, abi, circuits, artifacts],
       LICENSE_POLICY,
     );
     expect(circuitsNotice.license).toBe("Apache-2.0");
+    expect(artifactsNotice.license).toBe("Apache-2.0");
+    // Only reviewed foundation names take the Aztec rule; a new one fails the build.
+    expect(() => collectNotices([aztec("@aztec-foundation/new")], LICENSE_POLICY)).toThrow(
+      "@aztec-foundation/new@6.0.0-rc.1",
+    );
 
     expect(stdlibNotice.license).toBe("Apache-2.0");
-    expect(stdlibNotice.texts[0].file).toContain("aztec-packages/blob/v5.2.0/LICENSE");
+    expect(stdlibNotice.texts[0].file).toContain("aztec-packages/blob/v6.0.0-rc.1/LICENSE");
     expect(stdlibNotice.texts[0].text).toContain("Apache License");
 
     expect(bbNotice.license).toBe("MIT");

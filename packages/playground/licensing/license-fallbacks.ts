@@ -12,18 +12,21 @@ const text = (file: string) => readFileSync(join(import.meta.dirname, "licenses"
 const NOIR = "https://github.com/noir-lang/noir";
 const AZTEC = "https://github.com/AztecProtocol/aztec-packages";
 // Reviewed against these upstream revisions; the texts are not re-fetched on a version bump.
-const AZTEC_TAG = "v5.2.0";
-// Aztec's republished builds of noir-lang/noir packages, named one by one: other `@aztec/noir-*`
+const AZTEC_TAG = "v6.0.0-rc.1";
+// Aztec's republished builds of noir-lang/noir packages, named one by one: other `@aztec-labs/noir-*`
 // packages (protocol circuits, contracts) are Aztec's own and fall through to the Aztec rule.
-const NOIR_MIT = new Set(["@aztec/noir-acvm_js"]);
+const NOIR_MIT = new Set(["@aztec-foundation/noir-acvm_js"]);
 const NOIR_DUAL = new Set([
-  "@aztec/noir-noirc_abi",
-  "@aztec/noir-noir_codegen",
-  "@aztec/noir-types",
+  "@aztec-foundation/noir-noirc_abi",
+  "@aztec-foundation/noir-noir_codegen",
+  "@aztec-foundation/noir-types",
 ]);
+// Aztec's own aztec-packages builds published under the foundation scope (Apache-2.0 sources), named
+// one by one so a new foundation package still fails the build until reviewed.
+const AZTEC_FOUNDATION_OWN = new Set(["@aztec-foundation/l1-artifacts"]);
 
 /**
- * Upstream licence texts for bundled packages that publish none. The `@aztec/*` packages built from
+ * Upstream licence texts for bundled packages that publish none. The Aztec packages built from
  * aztec-packages and noir ship without a licence file, and most without a `license` field, so the
  * texts are vendored from those repositories. A package no rule matches fails the build.
  */
@@ -41,14 +44,14 @@ const LICENSE_FALLBACKS: readonly LicenseFallback[] = [
     texts: [text("noir-MIT.txt"), text("noir-APACHE-2.0.txt")],
   },
   {
-    match: (name) => name === "@aztec/bb.js",
+    match: (name) => name === "@aztec-foundation/bb.js",
     license: "Apache-2.0",
     source: `${AZTEC}/blob/${AZTEC_TAG}/barretenberg/LICENSE`,
     note: "the package manifest declares MIT, but the only licence text its source directory publishes is the Apache-2.0 text below.",
     texts: [text("barretenberg-APACHE-2.0.txt")],
   },
   {
-    match: (name) => name === "@aztec/sqlite3mc-wasm",
+    match: (name) => name === "@aztec-labs/sqlite3mc-wasm",
     license: "Apache-2.0 AND MIT AND (MIT OR NCSA)",
     source: `${AZTEC}/blob/${AZTEC_TAG}/LICENSE, https://github.com/utelle/SQLite3MultipleCiphers/blob/main/LICENSE and https://github.com/emscripten-core/emscripten/blob/main/LICENSE`,
     note: "Aztec's packaging of SQLite3 Multiple Ciphers (MIT), built with Emscripten, whose glue code is in the bundled script (MIT or NCSA). The SQLite library itself is public domain.",
@@ -59,7 +62,7 @@ const LICENSE_FALLBACKS: readonly LicenseFallback[] = [
     ],
   },
   {
-    match: (name) => name.startsWith("@aztec/"),
+    match: (name) => name.startsWith("@aztec-labs/") || AZTEC_FOUNDATION_OWN.has(name),
     license: "Apache-2.0",
     source: `${AZTEC}/blob/${AZTEC_TAG}/LICENSE`,
     texts: [text("aztec-packages-APACHE-2.0.txt")],

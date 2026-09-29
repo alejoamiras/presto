@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { cpus } from "node:os";
 import { toBase64 } from "@alejoamiras/presto-core";
-import { BackendType, Barretenberg, deflattenFields } from "@aztec/bb.js";
+import { BackendType, Barretenberg, deflattenFields } from "@aztec-foundation/bb.js";
 import { PrestoUltraHonkBackend } from "../src/index.js";
 import { FIXTURE_NAMES, fixtureDir, loadFixture, type NoirFixture } from "./e2e-setup.js";
 
@@ -90,7 +90,9 @@ describe.skipIf(!endpoint)("PrestoUltraHonkBackend against a live presto", () =>
     const post = async (body: Record<string, string>) => {
       const response = await fetch(new URL("/prove/ultra-honk", PRESTO_URL), {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        // The versioned path the adapter takes: a request without the header would prove with
+        // whatever unversioned bb the presto finds first.
+        headers: { "content-type": "application/json", "x-aztec-version": fixture.bbJs },
         body: JSON.stringify(body),
       });
       expect(response.status).toBe(200);

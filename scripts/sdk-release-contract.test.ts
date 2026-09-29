@@ -223,7 +223,7 @@ describe("playground pin", () => {
   test("the production bundle targets the public testnet node", () => {
     const vite = readFileSync(resolve(repository, "packages/playground/vite.config.ts"), "utf8");
     expect(vite).toContain(
-      'const TESTNET_AZTEC_NODE_URL = "https://v5.testnet.rpc.aztec-labs.com"',
+      'const TESTNET_AZTEC_NODE_URL = "https://presto-testnet-rpc.alejo-amiras.workers.dev"',
     );
     expect(vite).toContain('command === "build" ? TESTNET_AZTEC_NODE_URL : undefined');
   });

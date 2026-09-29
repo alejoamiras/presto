@@ -330,7 +330,8 @@ authorization, 2026-09-28, A5):
   `playground/src/aztec.ts:52-53`.
 - **Playground build config:** `playground/vite.config.ts` (dedupe, optimizeDeps and allowlists at
   :44-48, :68-69, :113, :118, :208, :276), `playground/licensing/license-fallbacks.ts` (rules
-  re-keyed; the bb.js text now sourced from the barretenberg repository at `v6.0.0-rc.1`).
+  re-keyed; bb.js's text from aztec-packages' `barretenberg/LICENSE` at `v6.0.0-rc.1`, since the
+  barretenberg release repository ships none; see D18).
 - **FeeJuice:** `FeeJuiceContract` from `@aztec-labs/aztec.js/protocol` in
   `playground/scripts/{deploy-sponsored-fpc,batch-fund-fpc}.ts` and
   `sdk/e2e/{legacy-compatibility,proving}.test.ts`.
@@ -375,7 +376,13 @@ authorization, 2026-09-28, A5):
   with `# op: import` above `AZTEC_NODE_URL=op://Keyed-Runs/Presto-Testnet/AZTEC_NODE_URL`. The
   owner pastes the private RPC once through `op-remote create`.
 - **Network cutover (phase 7b):** the RPC in `playground/vite.config.ts:175`, `playground/package.json`
-  `dev:testnet`, `sdk/package.json` `test:e2e:remote`, `.github/workflows/smoke-playground.yml:14`.
+  `dev:testnet`, `sdk/package.json` `test:e2e:remote`, `.github/workflows/smoke-playground.yml:14`,
+  plus the assertion in `scripts/sdk-release-contract.test.ts`. Until the public RPC exists, the URL
+  is the forwarder's (D36).
+- **RPC forwarder (7b placeholder, D36):** `packages/testnet-rpc/`, a Worker (`presto-testnet-rpc`,
+  workers.dev only) forwarding node JSON-RPC to its `AZTEC_NODE_URL` secret; unit-gated in
+  `landing.yml` next to release-feed. `scripts/forwarder.sh up|down` deploys or deletes it, only as
+  a keyed run from `deploy.env.example`.
 - **Docs:** `CLAUDE.md` and `AGENTS.md` current state; `implementations-plan/follow-ups.md`.
 
 ### Non-obvious mechanics
@@ -516,13 +523,29 @@ B does everything in one PR on `main`:
     is a bounded positive integer.
   - The funds are minted test FJ, so the worst case is Sepolia gas plus at most the approved total,
     sent to the approved addresses.
-- **Least privilege.** No new secrets, workflow permissions or origins. The RPC is HTTPS, supplied by
-  the owner.
+- **Least privilege.** No new workflow permissions or CI secrets. The one new credential is D36's
+  Cloudflare API token: Account › Workers Scripts › Edit, with an expiry, in 1Password, reaching
+  only keyed runs of the committed `forwarder.sh`. Cloudflare cannot scope it to one Worker, so it
+  could rewrite the site and feed Workers too; the feed is Ed25519-signed, so a rewritten feed
+  Worker still cannot ship an update. The RPC is HTTPS, supplied by the owner.
 - **The private RPC.** The owner has a keyed v6 RPC URL that must never become public. It lives in
-  1Password and reaches only keyed runs through `env-exec`, as `AZTEC_NODE_URL`. It never appears in
-  a commit, lessons, a PR, a CI secret or a deployed build. Before every push,
-  `git grep -nE '/k/[0-9a-f]{32,}'` is empty. Only the public RPC, when the owner has it, is
-  committed.
+  1Password and reaches only keyed runs through `env-exec`, as `AZTEC_NODE_URL`, and (D36) the
+  forwarder Worker's encrypted secret. It never appears in a commit, lessons, a PR, a CI secret or
+  a deployed build. Before every push, `git grep -nE '/k/[0-9a-f]{32,}'` is empty. Only the public
+  RPC, or the forwarder URL standing in for it, is committed.
+- **The forwarder (D36)** makes the private node publicly reachable; Aztec acked that. It narrows
+  what passes, and never returns the key:
+  - POST at `/` only, at most 8 MiB and 100 calls, every method `aztec_*` or `node_*` (no admin,
+    debug or `p2p_*`); no caller header reaches the node.
+  - Browser Origins: the playground, its workers.dev previews and localhost. Callers without an
+    Origin (scripts, tests) pass: the list stops other sites' pages, not scripts.
+  - Only a JSON answer of at most 16 MiB comes back, under a fixed `Content-Type`, with the
+    `x-aztec-*` headers. An answer naming any piece of the upstream URL (host, path segment, query
+    value, userinfo), in any letter case or JSON `\u` spelling, becomes a fixed 502, since a gateway
+    rejecting a revoked key can echo it; such a header is dropped. Fetch errors are never
+    forwarded; no logging.
+  - Abuse is bounded by the Workers request quota: the worst case is the placeholder going down or
+    Aztec throttling the key.
 - **Smart contracts.**
   - Salt-0 SponsoredFPC is a public faucet by design; funding stays at A4's cap.
   - Token demo semantics: `constructor(admin=Alice, …)` makes Alice the minter; `transfer(bob, 500)`
@@ -685,7 +708,7 @@ Layers: lint · typecheck · unit · workflow lint.
 
 Layers: lint · unit · consumer install · workflow lint.
 
-### Phase 4: v6 dependencies, imports and CI installer policy (arc 3)
+### Phase 4: v6 dependencies, imports and CI installer policy (arc 3) ✓
 
 **Validation gate:**
 - `bun install --frozen-lockfile` exit 0 with no min-age skips.
@@ -716,7 +739,7 @@ Layers: lint · unit · consumer install · workflow lint.
 
 Layers: lint · typecheck ×3 · unit · build · consumer install · installer dry run.
 
-### Phase 5: Noir fixtures and adapter gates (arc 3)
+### Phase 5: Noir fixtures and adapter gates (arc 3) ✓
 
 **Validation gate:**
 - After installing `aztec-nargo` 6.0.0-rc.1 and running `bun scripts/noir-fixture.ts --regenerate`,
@@ -731,7 +754,7 @@ Layers: lint · typecheck ×3 · unit · build · consumer install · installer 
 
 Layers: unit · integration (native bb 6 against the committed WASM reference).
 
-### Phase 6: token demo, legacy gate and local-network e2e (arc 3; needs R1 published)
+### Phase 6: token demo, legacy gate and local-network e2e (arc 3; needs R1 published) ✓
 
 Rewrite the token flow for the reference `Token`: `constructor(alice, …)`, `mint_to_private(alice,
 1000n)`, `transfer(bob, 500n)` sent from Alice, and balances of 500/500. The narrative and copy are
@@ -772,11 +795,15 @@ unchanged. Add the legacy-gate skip (A6).
 Layers: unit · UI-mock e2e · production-bundle smoke · e2e against a local network (branch build and
 released artifact).
 
-### Phase 7: network cutover (arc 3; 7a needs the private RPC, 7b the public one)
+### Phase 7: network cutover (arc 3; 7a needs the private RPC, 7b the public one) — 7a ✓, 7b ✓
 
 The private RPC arrives only as `AZTEC_NODE_URL` inside keyed runs. Scripts that hardcode a URL
 inline (`sdk` `test:e2e:remote`, `playground` `dev:testnet`) are invoked through their underlying
 command in 7a, never edited to carry it. Lessons record node answers, never the URL.
+
+**7b placeholder (D36, owner-acked 2026-09-29).** Aztec has not published a public v6 RPC, so 7b
+commits the URL of the `presto-testnet-rpc` forwarder instead. Moving to the public RPC and
+deleting the Worker is a close-out follow-up.
 
 **7a validation gate (private RPC, keyed runs):**
 - The FPC scripts' keyless tests pass: malformed amounts, a cap breach, a wrong destination, a node
@@ -796,8 +823,13 @@ command in 7a, never edited to carry it. Lessons record node answers, never the 
   (the demo smoke asserts `expectNativeProof`), and the SDK's remote-network test all pass.
 - `git grep -nE '/k/[0-9a-f]{32,}'` is empty.
 
-**7b validation gate (public RPC, when the owner has it):**
-- The public RPC appears in the four cutover locations, and no v5 RPC string remains
+**7b validation gate (the forwarder URL standing in for the public RPC, D36):**
+- The forwarder's unit tests pass, and each of its guards (method and origin allowlists, request
+  and answer caps, the JSON-only answer, the upstream-echo scrub of bodies and headers, its case and
+  escape handling) fails a test when removed.
+- A keyed `forwarder.sh up` deploys it. Keyless, it answers `node_getNodeInfo` with `nodeVersion`
+  6.0.0-rc.1, and refuses a `p2p_*` method and a foreign Origin.
+- The forwarder URL appears in the four cutover locations, and no v5 RPC string remains
   (`rg -n 'v5\.testnet\.rpc' packages .github` is empty).
 - `test:live` and `test:e2e:remote` pass against it, with no key involved.
 - `bun run test && bun run lint:actions` exit 0.
@@ -822,7 +854,8 @@ Each step runs only when the previous one is green; any red step stops the relea
   3. Watch it through `bump-playground`. The pin PR auto-merges, or the agent merges it once its
      checks pass (A7).
   4. Workers Builds deploys production.
-  5. `gh workflow run smoke-playground.yml -f aztec_node_url=<public rpc>` green.
+  5. `gh workflow run smoke-playground.yml` green (its default is 7b's URL, the forwarder's until
+     the public RPC exists).
   6. Check `npm view @alejoamiras/presto dist-tags`: `latest` = `5.2.0-revision.5` and `testnet` =
      `6.0.0-rc.1`. The same holds for noir (`1.2.0` and `2.0.0-rc.1`).
   7. Verify the live site: a v6 native proof on playground.presto.build with Presto 1.1.3.
@@ -888,11 +921,19 @@ after 7b. PR bodies state:
      constraint on bumps, the two age gates, barretenberg as the `bb` source;
    - close the core/noir bump follow-up;
    - add follow-ups: the legacy gate re-armed against the previous presto rc, `latest` promotion when
-     Aztec v6 goes stable, the next app release bundling v6 `bb`;
+     Aztec v6 goes stable, the next app release bundling v6 `bb`, `FOUNDATION_PACKAGES`'s doc
+     comment in `scripts/aztec-manifest.ts`, which wrongly calls the three names "only these are Aztec
+     release artifacts" (the file is in the `published` filter, so arc 3 cannot touch it), and Vite's
+     warning that the root package has no `"type": "module"`, now that `vite.config.ts` imports
+     `aztec-manifest.ts` (ahead of Vite's future `configLoader: 'native'` default), and switching
+     off the forwarder (D36): once Aztec publishes the public v6 RPC, move the four cutover
+     locations to it, run a keyed `forwarder.sh down`, remove `packages/testnet-rpc` and its
+     wiring, and revoke the Cloudflare token;
    - archive after the merge.
 
-**Post-implementation hardening:** no `/harden`. The trust boundaries are unchanged and no secret or
-permission is added; the supply-chain deltas are recorded above and in `docs/SECURITY_MODEL.md`.
+**Post-implementation hardening:** no `/harden`. The only new trust boundary is D36's temporary
+forwarder, threat-modelled in Security and removed at close-out; the supply-chain deltas are
+recorded above and in `docs/SECURITY_MODEL.md`.
 
 ## Decision ledger
 
@@ -915,7 +956,7 @@ permission is added; the supply-chain deltas are recorded above and in `docs/SEC
 | D15 | Phase 4 grep without the quote anchor, covering shipped `.md` | Fable MEDIUM | adopted |
 | D16 | Security residual: maintainers, shared account, provenance, exact pins → `SECURITY_MODEL.md` | Fable LOW | adopted |
 | D17 | Prune Windows pins absent from barretenberg; test URL fixture to 5.2.0 | Fable LOW | adopted |
-| D18 | bb.js licence text re-sourced from barretenberg | Fable LOW | adopted |
+| D18 | bb.js licence text re-sourced from barretenberg | Fable LOW | adopted, then superseded: barretenberg has no LICENSE at `v6.0.0-rc.1`, so the text is aztec-packages' `barretenberg/LICENSE` at the same tag (`lessons/phase-4.md`) |
 | D19 | `noir-fixture.ts` reuses `resolveAztecBb()` | Codex MEDIUM (scope edit), dedup | adopted |
 | D20 | A dual-source app (barretenberg, then aztec-packages) | draft alternative | rejected: no supported version needs it |
 | D21 | Released-artifact gate reworked: the headless archive has no bundled `bb`; `native.test.ts` sends `x-aztec-version`; `BB_BINARY_PATH`, `~/.bb` and `PATH` `bb` excluded; coexistence proven by a versioned 5.2.0 request with the v5 fixture | final Codex HIGH | adopted (supersedes D10's wording) |
@@ -933,6 +974,7 @@ permission is added; the supply-chain deltas are recorded above and in `docs/SEC
 | D33 | Reference `Token`, and `aztec-standards` leaves the repo with its `LOCKSTEP_PACKAGES` mechanism | owner (A1) | adopted |
 | D34 | Funding uses an agent-generated disposable L1 key (0600 file outside the repo, never printed, deleted after) and public faucets; a disagreeing anchor stops the run, a non-covering one is recorded | owner (A4) | adopted (refines D30) |
 | D35 | The agent merges the three arc PRs once CI is green and the Codex loop's final round has no CRITICAL or HIGH finding | owner (A7) | adopted |
+| D36 | 7b commits a forwarder URL in place of the public RPC: a Worker holding the private RPC as its secret (method and origin allowlists, key-echo scrub), deployed and deleted only by keyed runs; switching it off is a close-out follow-up | owner (Aztec acked, 2026-09-29) | adopted (amends D31) |
 
 **Still disputed:** none. **Open for the owner:** A1–A7.
 
@@ -992,10 +1034,10 @@ https://claude.ai/artifact/KDx6bBo6EXS1drihmdSFJg, built from the gitignored
 /goal Phases 4, 5, 6 and 7a marked ✓ in implementations-plan/aztec-v6/plan.md (the phase headers in the file — not the chat, not the task list), each ✓ backed by that phase's validation gate as written in plan.md reported passing in the transcript — phase 6 including the released presto-server 1.1.3 cold-cache run (sanitized env, versioned v6 and v5 requests), phase 7a including the SponsoredFPC state recorded and, if it was unfunded, the anchor check, the disposable key's address and the FPC's FeeJuice balance recorded, with every private-RPC command run only as an env-exec keyed run; for each phase `LESSONS_FILE=implementations-plan/aztec-v6/lessons/phase-N.md` printed; `/code-review` was NOT run; the codex fix loop for arc 3 and a FRESH cross-arc codex pass over 4cdc2f2..HEAD each converged, evidenced by a resumed codex pass quoted in the transcript reporting no new material findings and no CRITICAL or HIGH finding; the arc 3 PR from `aztec-v6-migration` exists, created only after both loops converged, its body stating 7b pending, R2 and the fail-closed playground window, with green `gh pr checks` in the transcript; `git grep -nE '/k/[0-9a-f]{32,}'` prints nothing; `bun run test`, `bun run lint` and `bun run lint:actions` report exit 0. Never force-push a shared branch, commit or print the private RPC, use any L1 key but the disposable one, merge arc 3 before 7b, or expand scope beyond plan.md.
 ```
 
-**Wave 3 (7b, merge, R2, close-out; after the owner supplies the public RPC):**
+**Wave 3 (7b through the forwarder per D36, merge, R2, close-out):**
 
 ```
-/goal Phase 7b marked ✓ in implementations-plan/aztec-v6/plan.md, backed by its validation gate reported passing in the transcript; a resumed codex pass over the 7b delta quoted in the transcript reports no new material findings and no CRITICAL or HIGH finding; the arc 3 PR shows green `gh pr checks` and then `gh pr view --json state` = MERGED; R2 is complete per plan.md's Releases section (release-sdk dry run, then the real dispatch, the pin PR merged, the Workers Builds deploy, smoke-playground green, and `npm view` showing `latest` = 5.2.0-revision.5 and `testnet` = 6.0.0-rc.1 for presto, 1.2.0 and 2.0.0-rc.1 for noir), run IDs in lessons/releases.md; the `aztec-v6-closeout` PR (Outcome block, lessons promoted, follow-ups moved) is MERGED; `bun run test`, `bun run lint` and `bun run lint:actions` report exit 0. Never force-push a shared branch, commit or print the private RPC, or expand scope beyond plan.md.
+/goal Phase 7b marked ✓ in implementations-plan/aztec-v6/plan.md, backed by its validation gate as written in plan.md (D36: the forwarder's unit tests and guard mutations, its keyed deploy, the keyless checks, the four cutover locations, `test:live` and `test:e2e:remote`) reported passing in the transcript; a resumed codex pass over the 7b delta quoted in the transcript reports no new material findings and no CRITICAL or HIGH finding; the arc 3 PR shows green `gh pr checks` and then `gh pr view --json state` = MERGED; R2 is complete per plan.md's Releases section (release-sdk dry run, then the real dispatch, the pin PR merged, the Workers Builds deploy, smoke-playground green against the forwarder, and `npm view` showing `latest` = 5.2.0-revision.5 and `testnet` = 6.0.0-rc.1 for presto, 1.2.0 and 2.0.0-rc.1 for noir), run IDs in lessons/releases.md; the `aztec-v6-closeout` PR (Outcome block, lessons promoted, follow-ups moved, the forwarder's switch-off among them) is MERGED; `git grep -nE '/k/[0-9a-f]{32,}'` prints nothing; `bun run test`, `bun run lint` and `bun run lint:actions` report exit 0. Never force-push a shared branch, commit or print the private RPC, deploy or delete the forwarder outside an env-exec keyed run, or expand scope beyond plan.md.
 ```
 
 **Alternative (any wave): `/loop`**
@@ -1004,7 +1046,7 @@ https://claude.ai/artifact/KDx6bBo6EXS1drihmdSFJg, built from the gitignored
 /loop 15m Drive implementations-plan/aztec-v6 forward. Never idle waiting for my input. Each firing:
 1. Reality check: read implementations-plan/aztec-v6/plan.md and lessons/ (authoritative — not the chat), including Outcome & Quality Bar. If that path is gone, look for implementations-plan/archive/aztec-v6/plan.md — the plan closed: STOP. If plan.md carries an `## Outcome` block: STOP. Task list empty? Rebuild it from plan.md's remaining steps; run `git status` and `git log --oneline -5`; for open PRs `gh pr view --json statusCheckRollup` (no --watch).
 2. Waiting on CI or a release run is fine — confirm it progresses (`gh run watch` up to 10 minutes; stuck → inspect logs, log it as blocked in lessons). Use the wait productively without conflicting changes.
-3. No task in hand? Take the next step in plan.md order: arc 1 → merge → R1, with arc 2 from the updated main alongside → merge → arc 3 from main (phase 6 needs R1 published) → 7a (keyed runs: file `env-exec request`, give me the `op-remote` line, wait) → PR → 7b once I have supplied the public RPC → merge → R2 → close-out. A missing prerequisite holds only that step. After each meaningful edit run `bun run lint` + `bun run test` (or the specific test file first). Commit (signed, conventional) and push the arc's branch.
+3. No task in hand? Take the next step in plan.md order: arc 1 → merge → R1, with arc 2 from the updated main alongside → merge → arc 3 from main (phase 6 needs R1 published) → 7a (keyed runs: file `env-exec request`, give me the `op-remote` line, wait) → PR → 7b (the forwarder URL, D36) → merge → R2 → close-out. A missing prerequisite holds only that step. After each meaningful edit run `bun run lint` + `bun run test` (or the specific test file first). Commit (signed, conventional) and push the arc's branch.
 4. Stuck, or a decision you'd normally bring to me? `/codex high` with full context, reach a defensible decision, act, and log the consult + verdict in lessons/phase-N.md. Hard limits: never force-push a shared branch, commit or print the private RPC, use any L1 key but the disposable one, or expand scope beyond plan.md — surface and hold.
 5. Same step failed 5 times? Stop, reassess with codex, continue down the agreed path.
 6. Phase green (its plan.md validation gate passes)? Paste the result, mark ✓ in plan.md, write lessons/phase-N.md, print `LESSONS_FILE=implementations-plan/aztec-v6/lessons/phase-N.md`, run `agent-worktree status aztec-v6 "phase N green: <next>"`, advance. Arc boundary (after 1, 3, 7a)? `/code-review` is off — run the codex loop per plan.md's Post-implementation (arc diff, plan.md, ledger, arc map, adversarial ask, both verbatim rules) until a round has nothing material; arc 3 also needs the fresh cross-arc pass over 4cdc2f2..HEAD. Then open the PR per Delivery and `gh pr checks --watch`. Merge only when checks are green and the final codex round has no CRITICAL or HIGH finding, then dispatch that arc's release per plan.md's Releases section, each step only after the previous one is green.

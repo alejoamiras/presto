@@ -83,7 +83,7 @@ export function matchesFixture(data: ProofData, fixture: NoirFixture): boolean {
 
 /** bb.js WASM in the browser: `Barretenberg.new()` picks the multi-threaded worker backend there. */
 async function browserBarretenberg() {
-  const { Barretenberg } = await import("@aztec/bb.js");
+  const { Barretenberg } = await import("@aztec-foundation/bb.js");
   return Barretenberg.new({ threads: Math.max(1, navigator.hardwareConcurrency - 1) });
 }
 

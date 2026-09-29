@@ -1,5 +1,21 @@
 # Migration guide
 
+## Aztec v6 (`6.0.0-rc.1`)
+
+Aztec v6 renames its npm scopes: most `@aztec/<name>` packages become `@aztec-labs/<name>`, while
+bb.js, the Noir packages and the L1 artifacts move to `@aztec-foundation/` (for example
+`@aztec-foundation/bb.js` and `@aztec-foundation/noir-acvm_js`). Rename your imports and
+dependencies, then install the SDK built for v6:
+
+```bash
+npm install @alejoamiras/presto@testnet   # Aztec v6, 6.0.0-rc.1
+npm install @alejoamiras/presto           # Aztec v5 (5.2.0), npm `latest`
+```
+
+`latest` stays on v5 until Aztec v6 is stable. The SDK API is unchanged. Native proving for v6 needs
+the Presto app 1.1.3 or later, which downloads `bb` from `AztecProtocol/barretenberg`; an older app
+cannot fetch a v6 `bb`, so the SDK falls back to WASM there.
+
 ## `@alejoamiras/presto-core` is a dependency
 
 The transport, status, and fallback policy now live in `@alejoamiras/presto-core`, which this
@@ -38,7 +54,7 @@ The SDK has no deprecated aliases:
 
 `nativeAztecVersion` describes the native Aztec/bb version; `appVersion` describes the
 application version. Rename product-specific `AZTEC_ACCELERATOR_*` environment variables
-to `PRESTO_*`. Keep ecosystem names such as `AZTEC_NODE_URL`, `@aztec/*`,
+to `PRESTO_*`. Keep ecosystem names such as `AZTEC_NODE_URL`, the Aztec package names,
 `x-aztec-version`, and `sdkAztecVersion` unchanged.
 
 The health/prove wire protocol remains compatible in both directions. Switching SDKs does

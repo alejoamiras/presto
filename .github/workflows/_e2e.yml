@@ -108,9 +108,12 @@ jobs:
       - name: Install integrity-pinned published legacy SDK for compatibility gate
         if: inputs.build_presto
         run: |
+          # Empty output: the fixture targets another Aztec major, and the script logged a notice.
           LEGACY_SDK_ENTRY=$(bun scripts/install-legacy-sdk.ts)
-          test -f "$LEGACY_SDK_ENTRY"
-          echo "LEGACY_SDK_ENTRY=$LEGACY_SDK_ENTRY" >> "$GITHUB_ENV"
+          if [ -n "$LEGACY_SDK_ENTRY" ]; then
+            test -f "$LEGACY_SDK_ENTRY"
+            echo "LEGACY_SDK_ENTRY=$LEGACY_SDK_ENTRY" >> "$GITHUB_ENV"
+          fi
 
       - name: Run SDK E2E tests
         env:

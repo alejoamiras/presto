@@ -19,8 +19,8 @@ describe("public contract", () => {
     expect(typeof noir.resolveVerifierTarget).toBe("function");
     expect(typeof noir.loopbackPermission).toBe("function");
     expect(typeof noir.watchLoopbackPermission).toBe("function");
-    expect(noir.TESTED_BB_VERSION).toBe("5.2.0");
-    expect(noir.TESTED_BB_VERSIONS).toEqual(["5.2.0"]);
+    expect(noir.TESTED_BB_VERSION).toBe("6.0.0-rc.1");
+    expect(noir.TESTED_BB_VERSIONS).toEqual(["6.0.0-rc.1"]);
     expect(noir.VERIFIER_TARGETS).toContain("noir-recursive-no-zk");
     const target: VerifierTarget = "evm";
     const options: PrestoUltraHonkBackendOptions = { fallback: "none" };
@@ -36,7 +36,7 @@ describe("public contract", () => {
       'fallback: "none"',
       "PrestoUnavailableError",
       "TESTED_BB_VERSION",
-      "@aztec/bb.js@5.2.0",
+      "@aztec-foundation/bb.js@6.0.0-rc.1",
       "verifyProof",
     ]) {
       expect(readme).toContain(needle);
@@ -46,10 +46,12 @@ describe("public contract", () => {
   test("the manifest pins the bb.js peer to the tested version and depends on core", () => {
     const pkg = JSON.parse(read("../../package.json"));
     expect(pkg.name).toBe("@alejoamiras/presto-noir");
-    expect(pkg.peerDependencies).toEqual({ "@aztec/bb.js": noir.TESTED_BB_VERSION });
-    expect(pkg.devDependencies["@aztec/bb.js"]).toBe(noir.TESTED_BB_VERSION);
+    expect(pkg.peerDependencies).toEqual({ "@aztec-foundation/bb.js": noir.TESTED_BB_VERSION });
+    expect(pkg.devDependencies["@aztec-foundation/bb.js"]).toBe(noir.TESTED_BB_VERSION);
     expect(pkg.dependencies["@alejoamiras/presto-core"]).toBe("workspace:*");
-    expect(Object.keys(pkg.dependencies).some((name) => name.startsWith("@aztec/"))).toBe(false);
+    expect(
+      Object.keys(pkg.dependencies).some((name) => /^@aztec(?:-labs|-foundation)?\//.test(name)),
+    ).toBe(false);
     expect(pkg.publishConfig).toEqual({ access: "public" });
     expect(pkg.files).toEqual(["src", "!src/**/*.test.ts", "dist"]);
   });

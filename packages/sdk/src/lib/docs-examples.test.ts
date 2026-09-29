@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { BBLazyPrivateKernelProver } from "@aztec/bb-prover/client/lazy";
-import { WASMSimulator } from "@aztec/simulator/client";
-import * as stdlibKernel from "@aztec/stdlib/kernel";
+import { BBLazyPrivateKernelProver } from "@aztec-labs/bb-prover/client/lazy";
+import { WASMSimulator } from "@aztec-labs/simulator/client";
+import * as stdlibKernel from "@aztec-labs/stdlib/kernel";
 import { askBeforeConnecting } from "../../examples/consent.js";
 import { PrestoProver } from "./presto-prover.js";
 

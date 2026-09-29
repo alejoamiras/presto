@@ -16,7 +16,7 @@ const src = {
   version: "0.0.0",
   exports: "./src/index.ts",
   files: ["src", "dist", ".claude", "MIGRATION.md"],
-  dependencies: { "@aztec/stdlib": "5.0.1" },
+  dependencies: { "@aztec-labs/stdlib": "5.0.1" },
   publishConfig: { access: "public", exports: "./src/index.ts" },
 };
 
@@ -79,7 +79,7 @@ describe("preparePublishManifest (SDK publish rewrite)", () => {
     const out = preparePublishManifest(
       {
         ...src,
-        dependencies: { "@alejoamiras/presto-core": "workspace:*", "@aztec/stdlib": "5.0.1" },
+        dependencies: { "@alejoamiras/presto-core": "workspace:*", "@aztec-labs/stdlib": "5.0.1" },
         peerDependencies: { "@alejoamiras/presto-core": "workspace:^" },
       },
       "1.0.0",
@@ -87,7 +87,7 @@ describe("preparePublishManifest (SDK publish rewrite)", () => {
     );
     expect(out.dependencies).toEqual({
       "@alejoamiras/presto-core": "1.2.3",
-      "@aztec/stdlib": "5.0.1",
+      "@aztec-labs/stdlib": "5.0.1",
     });
     expect(out.peerDependencies).toEqual({ "@alejoamiras/presto-core": "1.2.3" });
   });

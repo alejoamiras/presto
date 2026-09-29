@@ -33,7 +33,7 @@ dApp → adapter SDK → presto-core → loopback HTTP/HTTPS → local bb proces
   Windows first-install packages are intentionally unsigned. All updater payloads are Ed25519-signed
   and verified independently of any OS package signature.
 - **npm packages are published by this project** through GitHub OIDC with provenance, and verified
-  after publish.
+  after publish. Their Aztec dependencies are published upstream (see decision 6).
 
 The main confidential asset is the **private witness** sent to `/prove` or `/prove/ultra-honk`.
 Approved-origin state, locally generated TLS private keys, updater state, and cached executable
@@ -211,6 +211,33 @@ It is narrower than it sounds, in three ways:
 
 So the honest claim is fairness between *browser* origins on *one* route. Availability against a
 local process running as the user is not something this design provides.
+
+### 6. Trust Aztec's npm scopes, including same-day publishes
+
+From v6 the SDKs and the playground depend on `@aztec-labs/*` and `@aztec-foundation/*` (through v5,
+`@aztec/*`). As of 2026-09-28:
+
+- `@aztec-labs` is maintained by the npm users `nchamo` and `charlielye`;
+- `@aztec-foundation` by a shared service account, `aztec-foundation-user-account`, and `ludamad`.
+
+`@aztec-foundation/bb.js` carries SLSA provenance; the `@aztec-labs/*` packages carry none, as the
+`@aztec/*` 5.x packages did not.
+
+Every other dependency waits out a 7-day release-age quarantine. The Aztec names are exempt, in both
+`bunfig.toml` (the workspace install) and `setup-aztec`'s npm configuration (the CLI installer's
+separate, unlocked graph), because Aztec releases are consumed the day they ship. The exemption is
+**exact names only**; a scope glob would let any new package under the scope skip quarantine
+unreviewed. `scripts/bunfig-aztec-excludes.test.ts` holds the bunfig list equal to the lock, and
+`scripts/aztec-installer-graph.ts` holds the installer list equal to what the installer resolved, on a
+cache hit too, and fails any exempt `@aztec-labs` or `@aztec-foundation` package at a version other
+than the release being installed. The residual risk is accepted: a compromised publish from either scope, including one
+from the shared account, installs without an observation window.
+
+Versions are held by **exact pins**, not dist-tags: `@aztec-foundation/bb.js`'s `prerelease` tag
+already points at a v7 nightly. The SDK's published manifests keep those pins exact, and the playground's
+production build installs only the adapter and core publications named in `published-sdk.json`, whose
+provenance is verified. Upstream Aztec packages in that bundle are verified by lockfile integrity
+only.
 
 ## Not accepted
 

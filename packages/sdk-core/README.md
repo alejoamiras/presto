@@ -2,7 +2,7 @@
 
 The transport and policy layer every Presto SDK adapter shares: how to find the local
 [Presto](../presto/README.md) native prover on loopback, which protocol to trust, when a proof may go
-native and when it must fall back, and the status a UI can show. It has no `@aztec/*` dependency, so
+native and when it must fall back, and the status a UI can show. It has no Aztec package dependency, so
 adapters for different proof systems can build on it without pulling in each other's toolchains.
 
 [![SDK Core](https://github.com/alejoamiras/presto/actions/workflows/sdk-core.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/sdk-core.yml)

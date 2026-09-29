@@ -11,7 +11,7 @@ on:
         description: Aztec node the playground talks to
         required: false
         type: string
-        default: https://v5.testnet.rpc.aztec-labs.com
+        default: https://presto-testnet-rpc.alejo-amiras.workers.dev
 
 permissions:
   contents: read

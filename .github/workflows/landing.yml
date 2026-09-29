@@ -29,6 +29,7 @@ jobs:
             relevant:
               - 'packages/landing/**'
               - 'packages/release-feed/**'
+              - 'packages/testnet-rpc/**'
               - 'biome.json'
               - 'package.json'
               - 'bun.lock'
@@ -64,8 +65,11 @@ jobs:
       - run: bun run --cwd packages/landing build
       - run: bun run --cwd packages/release-feed typecheck
       - run: bun run --cwd packages/release-feed test
+      - run: bun run --cwd packages/testnet-rpc typecheck
+      - run: bun run --cwd packages/testnet-rpc test
       - run: bunx wrangler deploy --dry-run --config packages/landing/wrangler.jsonc
       - run: bunx wrangler deploy --dry-run --config packages/release-feed/wrangler.jsonc
+      - run: bunx wrangler deploy --dry-run --config packages/testnet-rpc/wrangler.jsonc
 
   landing-status:
     name: Landing Status

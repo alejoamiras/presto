@@ -3,8 +3,8 @@
   "name": "nopub",
   "verifierTarget": "noir-recursive-no-zk",
   "toolchain": {
-    "nargo": "1.0.0-beta.25",
-    "bbJs": "5.2.0",
+    "nargo": "1.0.0-rc.3",
+    "bbJs": "6.0.0-rc.1",
     "backend": "WasmWorker"
   },
   "files": {
@@ -21,8 +21,8 @@
       "bytes": 135
     },
     "circuit.json": {
-      "sha256": "a56ec64159b2bec2fe4471add214400bb2a2762a7012dd6533e0adfc564875c4",
-      "bytes": 962
+      "sha256": "7595e63a81e23ad5330ddecb858516383766a4d9b7802c54ccd957617b6a4f90",
+      "bytes": 996
     },
     "witness.gz": {
       "sha256": "11948f85ece12f6634a0c0f32e88fec9800c40efc614fb1fdda2ef1acfed8db0",
@@ -33,7 +33,7 @@
       "bytes": 3680
     },
     "proof": {
-      "sha256": "7b4cf32c461b3b80eef05fad9f52f10a3d75ec478c7f879593832901a0da9193",
+      "sha256": "8819b0af121e62a0040351fdab7116d94e44a68219b324c27cfd95063f92a1cc",
       "bytes": 13120,
       "fields": 410
     },

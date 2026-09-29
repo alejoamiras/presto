@@ -110,9 +110,14 @@ echo "--- npm ls ${STDLIB_NAME} (exact host) ---"
 EXACT_COUNT="$(count_stdlib "$EXACT")"
 echo "exact host ${STDLIB_NAME} install locations: $EXACT_COUNT"
 
-echo "=== conflicting host (5.0.0): informational ==="
+# Any published stdlib of the artifact's own scope that differs from its pin.
+case "$STDLIB_NAME" in
+  @aztec/*) CONFLICT_VERSION=5.0.0 ;;
+  *) CONFLICT_VERSION=6.0.0-nightly.20260829 ;;
+esac
+echo "=== conflicting host (${CONFLICT_VERSION}): informational ==="
 CONFLICT="$WORK/conflict-host"
-make_host "$CONFLICT" "${STDLIB_NAME}@5.0.0"
+make_host "$CONFLICT" "${STDLIB_NAME}@${CONFLICT_VERSION}"
 ( cd "$CONFLICT" && npm install --ignore-scripts --no-audit --no-fund --loglevel=error ) || echo "conflict host install returned non-zero (ERESOLVE?) — recorded"
 echo "--- npm ls ${STDLIB_NAME} (conflict host) ---"
 ( cd "$CONFLICT" && { npm ls "$STDLIB_NAME" || true; } )

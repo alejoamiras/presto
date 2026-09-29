@@ -1,6 +1,6 @@
 // Typechecked inside the consumer host against the PACKED dist: exercises the published surface,
 // runtime values and types, so a broken barrel, exports map, or types condition fails here. The
-// host installs the `@aztec/bb.js` peer, so the bb.js types the surface re-exports must resolve.
+// host installs the adapter's bb.js peer, so the bb.js types the surface re-exports must resolve.
 
 import type {
   LoopbackPermissionState,
@@ -16,7 +16,7 @@ import {
   TESTED_BB_VERSION,
   watchLoopbackPermission,
 } from "@alejoamiras/presto-noir";
-import type { Barretenberg, ProofData, VerifierTarget } from "@aztec/bb.js";
+import type { Barretenberg, ProofData, VerifierTarget } from "@aztec-foundation/bb.js";
 
 const options: PrestoUltraHonkBackendOptions = { fallback: "none", bbVersion: TESTED_BB_VERSION };
 const backend = new PrestoUltraHonkBackend(

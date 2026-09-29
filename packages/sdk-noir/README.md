@@ -1,7 +1,7 @@
 # @alejoamiras/presto-noir
 
 Native UltraHonk proving for **any Noir circuit** through the local [Presto](../presto/README.md)
-app. `PrestoUltraHonkBackend` is a drop-in for `@aztec/bb.js`'s `UltraHonkBackend`: same
+app. `PrestoUltraHonkBackend` is a drop-in for bb.js's `UltraHonkBackend`: same
 constructor shape, the same public methods, same `ProofData`. `generateProof` runs on the machine's
 native `bb` when Presto is installed and approved, and on the WASM backend otherwise. (bb.js's class
 has private fields, so code typed to the class itself should type against its methods — e.g.
@@ -12,7 +12,7 @@ has private fields, so code typed to the class itself should type against its me
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ```ts
-import { Barretenberg } from "@aztec/bb.js";
+import { Barretenberg } from "@aztec-foundation/bb.js";
 import { PrestoUltraHonkBackend } from "@alejoamiras/presto-noir";
 import circuit from "./target/circuit.json";
 
@@ -34,19 +34,23 @@ suggested copy.
 ## Installation
 
 ```bash
+# Aztec v6 bb.js (6.0.0-rc.1), on the `testnet` dist-tag
+npm install @alejoamiras/presto-noir@testnet @aztec-foundation/bb.js@6.0.0-rc.1
+# Aztec v5 bb.js (5.2.0), npm `latest`
 npm install @alejoamiras/presto-noir @aztec/bb.js@5.2.0
 ```
 
-`@aztec/bb.js` is a peer dependency pinned **exactly** to the release this adapter is tested against
-(`TESTED_BB_VERSION`, see [Compatibility](#compatibility)); a project already on that bb.js keeps
-its single copy. The transport comes from [`@alejoamiras/presto-core`](../sdk-core/README.md), an
-exact-pinned dependency. Native proving needs Presto **1.1.0** or newer; an older app does not
-advertise `ultra_honk` in `/health.schemes`, so nothing is sent and the backend proves in WASM
-(`scheme-unsupported`).
+The bb.js peer (`@aztec-foundation/bb.js` from 2.0.0, `@aztec/bb.js` before) is pinned **exactly** to
+the release this adapter is tested against (`TESTED_BB_VERSION`, see [Compatibility](#compatibility));
+a project already on that bb.js keeps its single copy. `latest` stays on the 1.x line for bb.js 5.2.0
+until Aztec v6 is stable. The transport comes from [`@alejoamiras/presto-core`](../sdk-core/README.md),
+an exact-pinned dependency. Native proving needs Presto **1.1.0** or newer, and **1.1.3** or newer for
+bb 6, which older apps cannot download. An app older than 1.1.0 does not advertise `ultra_honk` in
+`/health.schemes`, so nothing is sent and the backend proves in WASM (`scheme-unsupported`).
 
 Browser bundling is whatever bb.js already needs (cross-origin isolation for its worker threads, its
 worker files served); the adapter adds no asset of its own. The
-[playground](../playground/vite.config.ts) shows the Vite setup and dedupes `@aztec/bb.js` so the
+[playground](../playground/vite.config.ts) shows the Vite setup and dedupes bb.js so the
 adapter and the page share one WASM runtime.
 
 ## Constructor
@@ -57,7 +61,8 @@ adapter and the page share one WASM runtime.
 - `api` — a `Barretenberg` instance, or a factory `() => Promise<Barretenberg>`. A factory is called
   only when WASM is needed (a fallback, `verifyProof`, a cold `getVerificationKey`), so a dApp with a
   running Presto never pays WASM + CRS initialisation; an instance is yours and is never destroyed.
-- `options.bbVersion` — the bb release Presto proves with; defaults to `TESTED_BB_VERSION` (`5.2.0`).
+- `options.bbVersion` — the bb release Presto proves with; defaults to `TESTED_BB_VERSION`, the bb.js release
+  this version pins.
   Another value is refused unless `allowUntestedBbVersion: true`.
 - `options.presto` — connection config (`port`, `host`, `httpsOnly`, `allowInsecureDowngrade`), as in
   `@alejoamiras/presto`.
@@ -134,10 +139,11 @@ Tested pairs — the wire contract, the CLI flags, and the byte identity of nati
 verified per pair in CI (`sdk-noir.yml`: bb.js WASM must reproduce the committed fixtures, and the
 adapter must prove natively against a headless presto built with the real `bb`):
 
-| `@alejoamiras/presto-noir` | `@aztec/bb.js` (peer, exact) | `bbVersion` (default) | Presto |
+| `@alejoamiras/presto-noir` | bb.js (peer, exact) | `bbVersion` (default) | Presto |
 |---|---|---|---|
-| 1.2.0 | 5.2.0 | 5.2.0 | ≥ 1.1.0 |
-| 1.1.0 | 5.2.0 | 5.2.0 | ≥ 1.1.0 |
+| 2.0.0-rc.1 | `@aztec-foundation/bb.js` 6.0.0-rc.1 | 6.0.0-rc.1 | ≥ 1.1.3 |
+| 1.2.0 | `@aztec/bb.js` 5.2.0 | 5.2.0 | ≥ 1.1.0 |
+| 1.1.0 | `@aztec/bb.js` 5.2.0 | 5.2.0 | ≥ 1.1.0 |
 | 1.0.1 | 5.2.0 | 5.2.0 | ≥ 1.1.0 |
 | 1.0.0 | 5.2.0 | 5.2.0 | ≥ 1.1.0 |
 

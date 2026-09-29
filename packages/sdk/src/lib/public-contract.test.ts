@@ -67,7 +67,7 @@ describe("public contract (F-05 doc-sync guard)", () => {
       expect(doc).toContain("version-mismatch");
     }
     // F13 verdict is KEEP DEPS — the docs must NOT claim peer-dependency semantics the manifest doesn't
-    // have (they used to say "Peer dependency: @aztec/...").
+    // have (they used to name Aztec packages as peer dependencies).
     expect(readme).not.toContain("Peer dependency");
     expect(skill).not.toContain("Peer dependency");
   });

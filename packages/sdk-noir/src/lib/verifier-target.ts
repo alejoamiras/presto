@@ -1,4 +1,4 @@
-import type { UltraHonkBackendOptions, VerifierTarget } from "@aztec/bb.js";
+import type { UltraHonkBackendOptions, VerifierTarget } from "@aztec-foundation/bb.js";
 
 /** bb's `-t` values, which are also the wire `verifier_target` and bb.js's `verifierTarget`. */
 export const VERIFIER_TARGETS: readonly VerifierTarget[] = [

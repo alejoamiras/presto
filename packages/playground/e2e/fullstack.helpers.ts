@@ -144,7 +144,7 @@ export async function runTokenFlowAndAssert(
     "Token flow failed:",
   );
   // Behavioral assertion, not just flow completion: mint 1000 → transfer 500 must land
-  // exactly 500/500 (guards the standards-token semantics, not only the UI plumbing).
+  // exactly 500/500 (guards the token semantics, not only the UI plumbing).
   // Occurrence-counted so a stale line from an earlier run can't satisfy it.
   const nowMatches = flowLog?.match(/Balances — Alice: 500, Bob: 500/g)?.length ?? 0;
   expect(nowMatches, "a NEW 500/500 balance line must appear for THIS run").toBe(priorMatches + 1);

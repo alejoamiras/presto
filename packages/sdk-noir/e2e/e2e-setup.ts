@@ -1,7 +1,7 @@
 // Preload for the suites outside the hermetic unit chain: log configuration and the fixture loader.
 import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import type { VerifierTarget } from "@aztec/bb.js";
+import type { VerifierTarget } from "@aztec-foundation/bb.js";
 import { configure, getConsoleSink, parseLogLevel } from "@logtape/logtape";
 
 await configure({
@@ -26,6 +26,8 @@ export interface NoirFixture {
   proof: Uint8Array;
   publicInputs: Uint8Array;
   verifierTarget: VerifierTarget;
+  /** The bb.js version that produced the reference bytes, which the presto must prove with. */
+  bbJs: string;
 }
 
 /** One committed fixture (`fixtures/noir/<name>`), or any directory with the same file layout. */
@@ -41,6 +43,7 @@ export function loadFixture(dir: string, name = dir.split("/").at(-1) ?? dir): N
     proof: read("proof"),
     publicInputs: read("public_inputs"),
     verifierTarget: manifest.verifierTarget,
+    bbJs: manifest.toolchain.bbJs,
   };
 }
 

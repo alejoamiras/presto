@@ -109,9 +109,8 @@ async fn main() {
 
     let state = AppState::headless(HeadlessState::headless(
         env!("CARGO_PKG_VERSION"),
-        // bb-version injected from the runtime env (the Phase-3 CI hook sets AZTEC_BB_VERSION from the
-        // copy-bb.ts @aztec/bb.js resolution). Unset → None → core's "unknown" default; /prove is
-        // unaffected (callers pass x-aztec-version). (core-extraction Phase 2)
+        // Names the bb found without a download: /health lists it, and a request for that version
+        // proves with it instead of the version cache. Unset reports "unknown".
         std::env::var("AZTEC_BB_VERSION").ok(),
         config,
         auth_manager,

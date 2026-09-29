@@ -1,240 +1,90 @@
 /**
- * All-in-one setup: deploy + fund a private SponsoredFPC on Aztec testnet.
+ * Deploy a SponsoredFPC (unless it exists) and fund it, bounded and bound to approved destinations.
  *
- * Both paths (deploy and fund-only) bootstrap an ephemeral Schnorr account
- * funded via L1 bridge. This account pays for all L2 transactions including
- * the FeeJuice.claim() that credits the FPC's balance.
+ * 1. Preflight, no L1 key: prints the manifest (node version, L1 chain, fee juice portal, token, mint
+ *    handler, the FPC address the salt gives, amounts) for approval.
  *
- * Usage:
- *   bun run packages/playground/scripts/deploy-sponsored-fpc.ts
+ *      AZTEC_NODE_URL=... bun packages/playground/scripts/deploy-sponsored-fpc.ts --preflight \
+ *        --salt 0x0 --bootstrap-amount 1000 --fpc-amount 1000 --max-total 2000
  *
- *   # Reuse a known salt:
- *   bun run packages/playground/scripts/deploy-sponsored-fpc.ts --salt 0x1234...
+ * 2. The funding run: the same flags plus `--l1-key-file <0600 file>` and every approved value as
+ *    `--expect-{chain,portal,token,handler,fpc}`; `L1_RPC_URL` names the signer's L1 RPC. Any mismatch
+ *    is refused before the key is read. `--fund-only` skips the deployment.
  *
- *   # Skip deploy (FPC already exists), just bridge + claim more Fee Juice:
- *   bun run packages/playground/scripts/deploy-sponsored-fpc.ts --salt 0x1234... --fund-only
- *
- * Environment (or .env file in packages/playground/scripts/):
- *   L1_PRIVATE_KEY=0x...   Sepolia private key (for minting test FJ on L1)
- *   L1_RPC_URL=https://... Sepolia RPC endpoint
+ * The bootstrap account, funded with `--bootstrap-amount`, pays for the L2 transactions, including the
+ * FeeJuice claim that credits the FPC with exactly `--fpc-amount`.
  */
 
-import { NO_FROM } from "@aztec/aztec.js/account";
-import { AztecAddress } from "@aztec/aztec.js/addresses";
-import { L1FeeJuicePortalManager } from "@aztec/aztec.js/ethereum";
-import { FeeJuicePaymentMethodWithClaim } from "@aztec/aztec.js/fee";
-import { Fq, Fr } from "@aztec/aztec.js/fields";
-import { createAztecNodeClient } from "@aztec/aztec.js/node";
-import { BBLazyPrivateKernelProver } from "@aztec/bb-prover/client/lazy";
-import { createLogger } from "@aztec/foundation/log";
-import { FeeJuiceContract } from "@aztec/noir-contracts.js/FeeJuice";
-import { SponsoredFPCContract } from "@aztec/noir-contracts.js/SponsoredFPC";
-import { WASMSimulator } from "@aztec/simulator/client";
-import { getContractInstanceFromInstantiationParams } from "@aztec/stdlib/contract";
-import type { EmbeddedWallet } from "@aztec/wallets/embedded";
-import { createWalletClient, http, publicActions } from "viem";
+import { Fr } from "@aztec-labs/aztec.js/fields";
+import { createAztecNodeClient } from "@aztec-labs/aztec.js/node";
+import { createLogger } from "@aztec-labs/foundation/log";
+import { SponsoredFPCContract } from "@aztec-labs/noir-contracts.js/SponsoredFPC";
+import { getContractInstanceFromInstantiationParams } from "@aztec-labs/stdlib/contract";
+import { createPublicClient, createWalletClient, http, publicActions } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { sepolia } from "viem/chains";
+import {
+  bootstrapAccount,
+  checkL1Chain,
+  checkManifest,
+  claimForFpc,
+  fundingBudget,
+  manifestOf,
+  parseFundingArgs,
+  portalManagerFrom,
+  readKeyFile,
+  readSnapshot,
+  waitForClaim,
+} from "./fpc-funding";
 
-// ── CLI args ──────────────────────────────────────────────────────────
-const cliArgs = process.argv.slice(2);
-const fundOnly = cliArgs.includes("--fund-only");
-const saltIndex = cliArgs.indexOf("--salt");
-const salt = saltIndex !== -1 ? Fr.fromHexString(cliArgs[saltIndex + 1]) : Fr.random();
-
-// ── Environment ───────────────────────────────────────────────────────
-const nodeUrl = process.env.AZTEC_NODE_URL || "https://v5.testnet.rpc.aztec-labs.com";
-const l1RpcUrl = process.env.L1_RPC_URL;
-const l1PrivateKey = process.env.L1_PRIVATE_KEY;
-const bridgeAmount = process.env.BRIDGE_AMOUNT ? BigInt(process.env.BRIDGE_AMOUNT) : undefined;
-
-if (!l1RpcUrl || !l1PrivateKey) {
-  console.error("L1_RPC_URL and L1_PRIVATE_KEY are required.\n");
-  console.error("  L1_PRIVATE_KEY=0x... L1_RPC_URL=https://... \\");
-  console.error("    bun run packages/playground/scripts/deploy-sponsored-fpc.ts\n");
-  process.exit(1);
-}
-
-// ── L1 wallet ────────────────────────────────────────────────────────
-const l1Account = privateKeyToAccount(l1PrivateKey as `0x${string}`);
-const l1Client = createWalletClient({
-  account: l1Account,
-  chain: sepolia,
-  transport: http(l1RpcUrl),
-}).extend(publicActions);
-
-const logger = createLogger("deploy-fpc");
-const node = createAztecNodeClient(nodeUrl);
-
-// ── Derive FPC address ────────────────────────────────────────────────
-const fpcInstance = await getContractInstanceFromInstantiationParams(
-  SponsoredFPCContract.artifact,
-  {
-    salt,
-  },
+const argv = process.argv.slice(2);
+const fundOnly = argv.includes("--fund-only");
+const args = parseFundingArgs(
+  argv.filter((arg) => arg !== "--fund-only"),
+  process.env,
 );
-
-console.log("\n  SponsoredFPC Setup");
-console.log("  ══════════════════");
-console.log(`  Mode:        ${fundOnly ? "fund-only" : "deploy + fund"}`);
-console.log(`  L2 Node:     ${nodeUrl}`);
-console.log(`  L1 Account:  ${l1Account.address}`);
-console.log(`  Salt:        ${salt.toString()}`);
-console.log(`  FPC Address: ${fpcInstance.address.toString()}`);
-console.log("");
-
-const nodeInfo = await node.getNodeInfo();
-console.log(`  Connected — chain ${nodeInfo.l1ChainId}, version ${nodeInfo.nodeVersion}`);
-
-// Wrap L1 client to boost gas for portal transactions (devnet Inbox needs more gas than estimation provides)
-const boostedL1Client = new Proxy(l1Client, {
-  get(target, prop, receiver) {
-    if (prop === "writeContract") {
-      return (args: any) =>
-        target.writeContract({ ...args, gas: args.gas ? args.gas * 2n : 500_000n });
-    }
-    return Reflect.get(target, prop, receiver);
-  },
+const node = createAztecNodeClient(args.nodeUrl);
+const fpc = await getContractInstanceFromInstantiationParams(SponsoredFPCContract.artifact, {
+  salt: Fr.fromHexString(args.salt),
 });
-const portalManager = await L1FeeJuicePortalManager.new(
-  node,
-  // http() transport vs the FallbackTransport ExtendedViemWalletClient is typed for — runtime-compatible.
-  boostedL1Client as unknown as Parameters<typeof L1FeeJuicePortalManager.new>[1],
-  logger,
+const snapshot = await readSnapshot(node);
+const manifest = manifestOf(snapshot, fpc.address, args);
+if (!args.keyed) {
+  console.log(JSON.stringify(manifest, null, 2));
+  process.exit(0);
+}
+
+checkManifest(manifest, args.keyed.expect);
+const { l1RpcUrl, keyFile, expect } = args.keyed;
+const chain = await checkL1Chain(createPublicClient({ transport: http(l1RpcUrl) }), expect.chain);
+const account = privateKeyToAccount(readKeyFile(keyFile));
+const l1Client = createWalletClient({ account, chain, transport: http(l1RpcUrl) }).extend(
+  publicActions,
 );
-console.log(`  Fee Juice token: ${portalManager.getTokenManager().tokenAddress.toString()}\n`);
+const manager = portalManagerFrom(
+  snapshot,
+  // viem's http() transport vs the FallbackTransport the manager is typed for: runtime-compatible.
+  l1Client as unknown as Parameters<typeof portalManagerFrom>[1],
+  createLogger("deploy-fpc"),
+);
+const bridge = await fundingBudget(manager, account.address, args.maxTotalFj, [
+  args.bootstrapFj,
+  args.fpcFj,
+]);
 
-// FeeJuice protocol contract — canonical address compacted to 0x03 in Aztec 5.0 (was 0x05)
-const FEE_JUICE_ADDRESS = AztecAddress.fromBigIntUnsafe(3n);
+console.log(
+  `  SponsoredFPC ${fpc.address} on chain ${snapshot.chainId}, L1 signer ${account.address}`,
+);
+const { wallet, address } = await bootstrapAccount(node, bridge, args.bootstrapFj);
 
-const explorerUrl = (txHash: string) => `https://testnet.aztecscan.xyz/tx-effects/${txHash}`;
-
-// ── Helper: wait for L2 to advance N blocks ───────────────────────────
-async function waitForBlocks(n: number, timeoutMs = 600_000) {
-  const startBlock = await node.getBlockNumber();
-  const target = startBlock + n;
-  console.log(`  Waiting for L2 block ${target} (currently ${startBlock})...`);
-
-  const pollStart = Date.now();
-  while (Date.now() - pollStart < timeoutMs) {
-    const current = await node.getBlockNumber();
-    if (current >= target) {
-      console.log(`  L2 at block ${current} — ready.`);
-      return;
-    }
-    const elapsed = ((Date.now() - pollStart) / 1000).toFixed(0);
-    console.log(`  Block ${current} / ${target}... (${elapsed}s)`);
-    await Bun.sleep(15_000);
-  }
-  throw new Error(`Timed out waiting for L2 block ${target}`);
+if (!fundOnly && !(await node.getContract(fpc.address))) {
+  const { receipt } = await SponsoredFPCContract.deploy(wallet, {
+    salt: Fr.fromHexString(args.salt),
+    universalDeploy: true,
+  }).send({ from: address });
+  console.log(`  SponsoredFPC deployed in block ${receipt.blockNumber} (tx ${receipt.txHash})`);
 }
 
-// ── Helper: bootstrap an ephemeral funded account ─────────────────────
-// Bridges Fee Juice from L1, deploys a Schnorr account that claims in the same tx.
-// Returns the wallet and deployer address for subsequent L2 transactions.
-async function bootstrapAccount(): Promise<{
-  wallet: EmbeddedWallet;
-  deployerAddress: AztecAddress;
-}> {
-  console.log("  Bootstrapping ephemeral funded account...");
-  const { EmbeddedWallet: EW } = await import("@aztec/wallets/embedded");
-  const wallet = await EW.create(node, {
-    ephemeral: true,
-    pxe: {
-      proverEnabled: true,
-      // WASM proving (no presto in a script): the lazy BB prover loads bb.js on first use — same prover the SDK PrestoProver extends.
-      proverOrOptions: new BBLazyPrivateKernelProver(new WASMSimulator()),
-    },
-  });
-  const accountManager = await wallet.createSchnorrAccount(Fr.random(), Fr.random(), Fq.random());
-  const deployerAddress = accountManager.address;
-  console.log(`  Deployer: ${deployerAddress.toString()}`);
-
-  console.log("  Bridging Fee Juice to deployer on L1 (minting)...");
-  const claim = await portalManager.bridgeTokensPublic(deployerAddress, bridgeAmount, true);
-  console.log(`  Bridged ${claim.claimAmount} to deployer, leaf: ${claim.messageLeafIndex}`);
-
-  await waitForBlocks(3);
-
-  console.log("  Deploying deployer account (WASM proving)...");
-  const deployMethod = await accountManager.getDeployMethod();
-  const feeMethod = new FeeJuicePaymentMethodWithClaim(deployerAddress, {
-    claimAmount: claim.claimAmount,
-    claimSecret: claim.claimSecret,
-    messageLeafIndex: claim.messageLeafIndex,
-  });
-  const { receipt } = await deployMethod.send({
-    from: NO_FROM,
-    fee: { paymentMethod: feeMethod },
-  });
-  console.log(`  Account deployed in block ${receipt.blockNumber}`);
-  console.log(`  TX: ${explorerUrl(receipt.txHash.toString())}\n`);
-
-  return { wallet: wallet as EmbeddedWallet, deployerAddress };
-}
-
-// ── Helper: bridge Fee Juice to FPC and claim it on L2 ────────────────
-async function bridgeAndClaimForFpc(wallet: EmbeddedWallet, deployerAddress: AztecAddress) {
-  console.log("  Bridging Fee Juice to FPC on L1 (minting)...");
-  const claim = await portalManager.bridgeTokensPublic(fpcInstance.address, bridgeAmount, true);
-  console.log(`  Bridged ${claim.claimAmount} to FPC, leaf: ${claim.messageLeafIndex}`);
-
-  await waitForBlocks(3);
-
-  console.log("  Claiming bridged Fee Juice for FPC on L2...");
-  const feeJuice = await FeeJuiceContract.at(FEE_JUICE_ADDRESS, wallet as any);
-  const { receipt } = await feeJuice.methods
-    .claim(fpcInstance.address, claim.claimAmount, claim.claimSecret, claim.messageLeafIndex)
-    .send({ from: deployerAddress });
-  console.log(`  Claimed! tx fee: ${receipt.transactionFee}, block: ${receipt.blockNumber}`);
-  console.log(`  TX: ${explorerUrl(receipt.txHash.toString())}\n`);
-}
-
-// ── Main flow ─────────────────────────────────────────────────────────
-if (!fundOnly) {
-  console.log("Step 1: Deploying SponsoredFPC on L2...");
-
-  // Check if already deployed
-  let alreadyDeployed = false;
-  try {
-    const existing = await node.getContract(fpcInstance.address);
-    if (existing) {
-      console.log("  Already deployed! Skipping to funding.\n");
-      alreadyDeployed = true;
-    }
-  } catch {
-    // Not deployed
-  }
-
-  const { wallet, deployerAddress } = await bootstrapAccount();
-
-  if (!alreadyDeployed) {
-    console.log("  Deploying SponsoredFPC (WASM proving)...");
-    const startTime = Date.now();
-    // 5.0: salt + universalDeploy move to construction-time instantiation options.
-    const deployMethod = SponsoredFPCContract.deploy(wallet, { salt, universalDeploy: true });
-    console.log("  Sending deploy tx...");
-    const { receipt } = await deployMethod.send({
-      from: deployerAddress,
-    });
-    const elapsed = ((Date.now() - startTime) / 1000).toFixed(0);
-    console.log(`  SponsoredFPC deployed in block ${receipt.blockNumber} (${elapsed}s)`);
-    console.log(`  TX: ${explorerUrl(receipt.txHash.toString())}\n`);
-  }
-
-  console.log("Step 2: Funding FPC...");
-  await bridgeAndClaimForFpc(wallet, deployerAddress);
-}
-
-if (fundOnly) {
-  console.log("Fund-only mode: bridging + claiming Fee Juice for FPC...\n");
-  const { wallet, deployerAddress } = await bootstrapAccount();
-  await bridgeAndClaimForFpc(wallet, deployerAddress);
-}
-
-// ── Done ──────────────────────────────────────────────────────────────
-console.log("  ══════════════════════════════════════════════════");
-console.log("  DONE!");
-console.log(`  Salt:    ${salt.toString()}`);
-console.log(`  Address: ${fpcInstance.address.toString()}`);
-console.log("  ══════════════════════════════════════════════════\n");
+const claim = await bridge(fpc.address, args.fpcFj);
+await waitForClaim(node, claim);
+await claimForFpc(wallet, address, fpc.address, claim);
+console.log(`  Done: ${args.fpcFj} FJ claimed for ${fpc.address}`);

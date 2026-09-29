@@ -61,7 +61,7 @@ describe("public contract", () => {
     expect(pkg.publishConfig).toEqual({ access: "public" });
     expect(pkg.files).toEqual(["src", "!src/**/*.test.ts", "dist"]);
     for (const name of Object.keys({ ...pkg.dependencies, ...pkg.peerDependencies })) {
-      expect(name.startsWith("@aztec/")).toBe(false);
+      expect(name).not.toMatch(/^@aztec(?:-labs|-foundation)?\//);
     }
   });
 });
