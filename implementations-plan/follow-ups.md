@@ -44,7 +44,8 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   - Run a keyed `packages/testnet-rpc/scripts/forwarder.sh down`.
   - Remove the package and its wiring: the root workspaces and test scripts, `landing.yml`,
     CLAUDE.md and `docs/CLOUDFLARE_DEPLOYMENT.md`.
-  - Revoke the Cloudflare token (it expires on its own).
+  - The deploy token was revoked on 2026-09-29, so `down` needs a new Workers Scripts:Edit token in
+    `Keyed-Runs/Presto-Cloudflare`. The dashboard can also delete the Worker.
   - `archive/aztec-v6/plan.md` (D36).
 - **Re-arm the legacy SDK gate.** It went dormant on the v5→v6 major mismatch (A6). `presto`
   6.0.0-rc.1 now exists, so the fixture can target it. `archive/aztec-v6/plan.md` (A6).
