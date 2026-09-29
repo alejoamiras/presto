@@ -6,7 +6,7 @@
     "build": "vite build",
     "dev": "vite",
     "dev:localhost": "AZTEC_NODE_URL=http://localhost:8080 vite",
-    "dev:testnet": "AZTEC_NODE_URL=https://v5.testnet.rpc.aztec-labs.com vite",
+    "dev:testnet": "AZTEC_NODE_URL=https://presto-testnet-rpc.alejo-amiras.workers.dev vite",
     "preview": "vite preview",
     "test": "bun test",
     "test:e2e": "bunx playwright test --project=mocked",

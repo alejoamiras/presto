@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, mock, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, mock, test } from "bun:test";
 import type { PrestoProver } from "@alejoamiras/presto";
 import {
   checkAztecNode,
@@ -62,8 +62,13 @@ describe("checkAztecNode", () => {
 // the deployed playground — this closes that loop against an actual node when one is
 // configured (AZTEC_NODE_URL=https://... bun run test:live). Must run with this package as
 // cwd: bunfig's preloaded happydom.ts carries the expect.addEqualityTesters patch that
-// @aztec-labs/foundation's field module needs at import time under bun:test.
+// @aztec-labs/foundation's field module needs at import time under bun:test. happy-dom enforces
+// CORS from the page's origin, so the probe runs from the deployed playground's, not `about:blank`.
 describe.skipIf(!process.env.AZTEC_NODE_URL)("checkAztecNode (live node)", () => {
+  const page = (globalThis as unknown as { happyDOM: { setURL(url: string): void } }).happyDOM;
+  beforeAll(() => page.setURL("https://playground.presto.build/"));
+  afterAll(() => page.setURL("about:blank"));
+
   test(
     "real node answers the node_getNodeInfo probe",
     async () => {
