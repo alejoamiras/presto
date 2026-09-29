@@ -347,6 +347,9 @@ async fn prove_with_timeout(
 
     // Exit success is insufficient: read once through a cap, then reject empty, oversized, or
     // non-field-aligned proof bytes without a metadata/read race.
+    // On Windows, bb 5.2.0 (Aztec v5) writes `proof` in text mode, turning each 0x0A into 0x0D 0x0A,
+    // so its proofs are expected to fail these checks or the SDK's decode and fall back to WASM. bb
+    // 6.0.0-rc.1 writes in binary mode (aztec-packages#25462); v5 on Windows is not supported.
     let proof_path = workspace.output_dir.join("proof");
     let raw_proof = read_capped(&proof_path, MAX_PROOF_BYTES)?;
     validate_proof_len(raw_proof.len() as u64)?;
