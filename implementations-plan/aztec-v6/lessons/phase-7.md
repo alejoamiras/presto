@@ -55,7 +55,7 @@ The independent anchor is the networks registry on Sepolia, `0xa0bf…c6ba`, and
 
 The `--expect-*` values were exactly the anchor-checked manifest's, with `--max-total 2000`.
 - **Six L1 transactions**, each a handler mint, a token approval or a portal deposit, one set for
-  each bridge. Nonces 0–5: `0xa131…98a6`, `0x86e4…0e90f`, `0xe31f…a7c6`, `0x8328…f748`, `0xfb1f…97bf`,
+  each bridge. Nonces 0–5: `0xa131…98a6`, `0x86e4…e90f`, `0xe31f…a7c6`, `0x8328…f748`, `0xfb1f…97bf`,
   `0x8560…5c97`. Gas totalled about 0.0005 ETH.
 - The bootstrap account `0x0737…a0ef` claimed 1000 FJ in its deployment (block 700).
 - The SponsoredFPC was deployed in block 701.
@@ -68,3 +68,31 @@ The `--expect-*` values were exactly the anchor-checked manifest's, with `--max-
   environment drops `PLAYWRIGHT_BROWSERS_PATH`, so Playwright looked in `~/.cache/ms-playwright`,
   which holds another build (1243), instead of `/opt/ms-playwright` (1234). A keyed Playwright run
   must set the path in its own command.
+
+## Playground smoke (keyed run `v6-smoke-36e64687`, HEAD `32ec567`)
+
+The branch `presto-server` (commit `be8e23f`'s server code) ran on the claimed port 59833, with a
+private `PRESTO_HOME`, the v6 sidecar through `BB_BINARY_PATH`, and `AZTEC_BB_VERSION=6.0.0-rc.1`.
+The command set `PLAYWRIGHT_BROWSERS_PATH=/opt/ms-playwright`, and Vite ran on the claimed port 5173.
+
+`test:e2e:smoke`: **3 passed, 1 skipped** (1.6 min).
+- **Accelerated deploys account.** The spec asserts `expectNativeProof`. The server log shows the
+  playground's `x-aztec-version: 6.0.0-rc.1` request running bundled bb over 7 circuits with the
+  Chonk scheme, and "Proving succeeded". The testnet then accepted the account deployment, whose
+  fee the newly funded SponsoredFPC paid.
+- Local (WASM) deploys account.
+- The real bb.js WASM Noir proof matches the fixture.
+- Skipped by design: the native Noir proof, because an `http:` `PRESTO_URL` names the headless
+  server, which the Noir backend does not use.
+
+`test:live` (12 pass) and the SDK's `remote-network.test.ts` (3 pass) ran in the recon run, before
+the server was up. Neither contacts Presto: the live test calls only `checkAztecNode`, and the
+remote test calls only the node's JSON-RPC. So the server's absence does not change what they
+prove.
+
+Teardown: the server's process group was killed and 59833 and 5173 were released. The local
+Playwright `test-results/` were deleted, since traces can carry the node URL.
+
+Follow-up for the close-out: `vite.config.ts` now imports `scripts/aztec-manifest.ts`, and Vite
+warns that the root package has no `"type": "module"` for its future `configLoader: 'native'`
+default. It is a warning only; the current loader builds and serves.

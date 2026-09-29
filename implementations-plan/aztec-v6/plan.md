@@ -773,7 +773,7 @@ unchanged. Add the legacy-gate skip (A6).
 Layers: unit · UI-mock e2e · production-bundle smoke · e2e against a local network (branch build and
 released artifact).
 
-### Phase 7: network cutover (arc 3; 7a needs the private RPC, 7b the public one)
+### Phase 7: network cutover (arc 3; 7a needs the private RPC, 7b the public one) — 7a ✓, 7b pending
 
 The private RPC arrives only as `AZTEC_NODE_URL` inside keyed runs. Scripts that hardcode a URL
 inline (`sdk` `test:e2e:remote`, `playground` `dev:testnet`) are invoked through their underlying
@@ -889,9 +889,11 @@ after 7b. PR bodies state:
      constraint on bumps, the two age gates, barretenberg as the `bb` source;
    - close the core/noir bump follow-up;
    - add follow-ups: the legacy gate re-armed against the previous presto rc, `latest` promotion when
-     Aztec v6 goes stable, the next app release bundling v6 `bb`, and `FOUNDATION_PACKAGES`'s doc
+     Aztec v6 goes stable, the next app release bundling v6 `bb`, `FOUNDATION_PACKAGES`'s doc
      comment in `scripts/aztec-manifest.ts`, which wrongly calls the three names "only these are Aztec
-     release artifacts" (the file is in the `published` filter, so arc 3 cannot touch it);
+     release artifacts" (the file is in the `published` filter, so arc 3 cannot touch it), and Vite's
+     warning that the root package has no `"type": "module"`, now that `vite.config.ts` imports
+     `aztec-manifest.ts` (ahead of Vite's future `configLoader: 'native'` default);
    - archive after the merge.
 
 **Post-implementation hardening:** no `/harden`. The trust boundaries are unchanged and no secret or
