@@ -57,7 +57,7 @@ Arc 3 (#73) merged as `bc3eeee`. Every run below dispatched from `main`.
 |---|---|---|---|---|
 | 1. dry run | `release-sdk packages=all dry_run=true` | 36515098849 | `bc3eeee` | success. Plan: core 1.2.1, presto 6.0.0-rc.1 and noir 2.0.0-rc.1 publish; banners 1.2.0 reused. |
 | 2. release | `release-sdk packages=all` | 36515244215 | `bc3eeee` | success. Every gate passed (SDK e2e, audit, noir identity, live and tarball), then core → noir → presto were packed, consumed, published to `testnet` and verified. `bump-playground` opened the pin PR. |
-| 3. pin PR | bot PR, auto-merge | #74 | `07bc6c8` | The release bot's auto-merge fired at 03:23:44Z after 26 checks passed: the first bot auto-merge seen firing. |
+| 3. pin PR | bot PR, auto-merge | #74 | `07bc6c8` | The release bot's auto-merge fired at 03:23:44Z after 26 checks passed: the first `bump-playground` pin PR to auto-merge (#72 was the first bot PR to). |
 | 4. deploy | Workers Builds on `main` | check runs on `07bc6c8` | `07bc6c8` | `presto-playground` and `presto-landing` both succeeded. |
 | 5. smoke | `smoke-playground.yml` (default: the forwarder) | 36517162965 | `07bc6c8` | success: 3 passed, 1 skipped (the native Noir test, by design). |
 

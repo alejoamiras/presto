@@ -30,8 +30,9 @@ not belong here. Sections are stable; append, never re-sort.
   (2026-09, Vite 8.3)
 - **An Aztec bump PR must not touch `app.yml`'s `published` filter** — that job builds against the
   published pin, which no bump matches before its release. `archive/aztec-v6/plan.md`
-- **Aztec's age-gate exemptions are two exact-name lists** — `bunfig.toml` and
-  `installer-aztec-packages.txt`; a new Aztec package needs both. `bb` ships only from
+- **Aztec's age-gate exemptions are two exact-name lists over different graphs** — `bunfig.toml`
+  (workspace) and `installer-aztec-packages.txt` (CLI install); add a name only to the list whose
+  graph resolves it, since both checks reject stale names. `bb` ships only from
   `AztecProtocol/barretenberg` since v6. (2026-09, v6) `archive/aztec-v6/plan.md`
 - **Any Wrangler bump fails `release-feed`'s typecheck** — `wrangler types --check` wants
   `worker-configuration.d.ts` regenerated (`bun run --cwd packages/release-feed types`).

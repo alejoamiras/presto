@@ -105,8 +105,11 @@ None of these were re-checked on 2026-09-18.
   (2026-08-18, extended to v6's `@aztec-labs/*` and `@aztec-foundation/*` on 2026-09-28).
   - The names are exact: 42 in `bunfig.toml`, and 62 in `installer-aztec-packages.txt` for
     `setup-aztec`'s npmrc. A glob is silently ignored.
-  - Each list must cover the full resolved graph. `scripts/aztec-installer-graph.ts` fails on drift
-    and on any version other than the release.
+  - Each list must equal its own resolved graph, and each has a separate check.
+    `scripts/bunfig-aztec-excludes.test.ts` checks the workspace list against the lock.
+    `scripts/aztec-installer-graph.ts` checks the installer's tree on every job, and fails on drift
+    and on any version other than the release. The one exception is the `@aztec/viem` fork, which is
+    held to its own pin, 2.38.3.
   - Aztec releases are consumed the same day by design, so these scopes get no observation window.
   - This is a permanent exposure on the dependency surface the product leans on hardest.
   **Verified 2026-09-29.**
