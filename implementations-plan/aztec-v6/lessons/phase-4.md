@@ -134,3 +134,19 @@ into the scope an hour ago, which is exactly what the gate exists to stop.
   - the graph test's named addition and removal;
   - an empty `published` intersection.
 - Open: the graph check on this PR's CI, on a cache miss and on a cache hit.
+
+## CI evidence on PR #73
+
+- **Cache miss.** Run 36498426854 at `4999936`, SDK E2E job:
+  - "Cache not found for input keys: Linux-aztec-6.0.0-rc.1-minage7-npm12-exactexempt-allowscripts7";
+  - the install step ran with no ETARGET and no blocked-packages warning;
+  - the graph check then reported "Aztec installer graph matches … at 6.0.0-rc.1 (62 names)";
+  - the SDK e2e passed 7, failed 0.
+- **Cache hit.** Run 36499861024 at `940f6b2`:
+  - "Cache hit for: Linux-aztec-6.0.0-rc.1-minage7-npm12-exactexempt-allowscripts7";
+  - the install step was skipped;
+  - the same graph check matched (62 names).
+- **Whole PR.** `gh pr checks 73` reported 69 pass, 11 skipping, 0 fail.
+- **New advisory.** `fast-uri` GHSA-qw65-cvwx-89v3 and GHSA-58mr-gqgx-xq4g (published 2026-09-28) failed the dependency audit on `main`'s lock too. The fix bumped `fast-uri` from 3.1.6 to 3.1.8, which is past the 7-day gate.
+- **Landing preview.** It failed instantly once, with no build log outside the dashboard, the same shape as #72's. The same build passed locally, and on the next push.
+- The rename sweep still hits exactly the set listed above.

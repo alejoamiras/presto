@@ -686,7 +686,7 @@ Layers: lint · typecheck · unit · workflow lint.
 
 Layers: lint · unit · consumer install · workflow lint.
 
-### Phase 4: v6 dependencies, imports and CI installer policy (arc 3)
+### Phase 4: v6 dependencies, imports and CI installer policy (arc 3) ✓
 
 **Validation gate:**
 - `bun install --frozen-lockfile` exit 0 with no min-age skips.
