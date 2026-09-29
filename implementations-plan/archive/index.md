@@ -29,3 +29,8 @@ with `rg --no-ignore` / `git grep`.
   presto.build and the playground (production on `main`, a preview per branch), the production
   playground builds from the pinned, provenance-verified SDK raised by an auto-merging bot PR, and
   GitHub holds no site credential (PRs #61, #66, #68).
+- [aztec-v6](aztec-v6/plan.md) — closed 2026-09-29 — Presto on Aztec v6 `6.0.0-rc.1`: `bb` from
+  `AztecProtocol/barretenberg` (app 1.1.3), release tooling for a prerelease Aztec base, the scope
+  rename, a funded SponsoredFPC, and the testnet cutover through the temporary `presto-testnet-rpc`
+  forwarder. presto 6.0.0-rc.1, noir 2.0.0-rc.1 and core 1.2.1 are on `testnet`, and v5 stays on
+  `latest` (PRs #70–#75).
