@@ -55,6 +55,7 @@ all shared state intact and reports why. Config and approved origins are never r
 - **Auto-update** via Ed25519-signed artifacts (tauri-plugin-updater)
 - **Encrypted connection (HTTPS)** via the CurrentUser `Root` store — see [Encrypted Connection (HTTPS)](#encrypted-connection-https). The NSIS uninstaller removes the trust anchor on a real uninstall (guarded so it never fires during an auto-update)
 - **Start on Login** via the autostart Run key; crash recovery via a Task Scheduler repeating trigger
+- **Native proving needs Aztec v6.** bb 5.2.0 (Aztec v5) writes proofs in text mode on Windows, so v5 native proofs are expected to fall back to WASM. bb 6.0.0-rc.1 fixed this upstream (aztec-packages#25462). Aztec v5 on Windows is not supported.
 
 ## Linux Details
 
