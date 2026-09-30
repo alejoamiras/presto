@@ -720,7 +720,7 @@ This is the canonical test list. Phase **Tests** sections cite row IDs instead o
 - **Pass:** all exit 0; every existing `updater_state` test passes unmodified; every 🧬 red→green is logged.
 - **Layers:** lint, unit, integration (real filesystem).
 
-### Phase 2 — Classify-only check, record-then-act, the slot, snooze
+### Phase 2 — Classify-only check, record-then-act, the slot, snooze ✓
 
 **Assumes:** F2, F3, F6, F9, F13, F17, F19, F20, A4, A5, A6.
 
