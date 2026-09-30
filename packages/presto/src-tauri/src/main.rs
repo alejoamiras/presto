@@ -1279,7 +1279,6 @@ mod tests {
         );
     }
 
-    /// I13: the update item routes to its action, and the existing ids keep theirs.
     #[test]
     fn i13_tray_ids_route_to_their_actions() {
         let table = [

@@ -8,7 +8,11 @@ const dir = mkdtempSync(path.join(tmpdir(), "no-test-hooks-"));
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 function run(...targets: string[]): { code: number; out: string } {
-  const r = Bun.spawnSync(["bash", SCRIPT, ...targets]);
+  return runWith({}, ...targets);
+}
+
+function runWith(env: Record<string, string>, ...targets: string[]): { code: number; out: string } {
+  const r = Bun.spawnSync(["bash", SCRIPT, ...targets], { env: { ...process.env, ...env } });
   return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
 }
 
@@ -46,6 +50,7 @@ describe("assert-no-test-hooks", () => {
       "hooked/Presto",
       Buffer.concat([Buffer.from([0, 0]), Buffer.from("PRESTO_E2E_TRAY_REPORT")]),
     );
+    file("Hooked.app/Contents/MacOS/Presto", "release bytes");
     const bundle = file("Hooked.app/Contents/Resources/lib", "x PRESTO_E2E_TRAY_REPORT y");
     for (const target of [
       binary,
@@ -55,6 +60,32 @@ describe("assert-no-test-hooks", () => {
       const r = run(target);
       expect(r.code, target).toBe(1);
       expect(r.out).toContain("contains PRESTO_E2E_TRAY_REPORT");
+    }
+  });
+
+  test("fails when grep cannot finish the scan", () => {
+    const bin = path.join(dir, "fakebin");
+    chmodSync(file("fakebin/grep", "#!/usr/bin/env bash\nexit 2\n"), 0o755);
+    const r = runWith(
+      { PATH: `${bin}:${process.env.PATH}` },
+      file("unscanned/Presto", "release bytes"),
+    );
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain("grep exit 2");
+  });
+
+  test("fails on empty inputs instead of passing them vacuously", () => {
+    mkdirSync(path.join(dir, "Empty.app/Contents/MacOS"), { recursive: true });
+    file("Stub.app/Contents/MacOS/Presto", "");
+    file("NoExe.app/Contents/Resources/icon", "bytes");
+    for (const target of [
+      file("zero/Presto.exe", ""),
+      path.join(dir, "Empty.app"),
+      path.join(dir, "Stub.app"),
+      path.join(dir, "NoExe.app"),
+      appImage("empty.AppImage", ""),
+    ]) {
+      expect(run(target).code, target).toBe(1);
     }
   });
 

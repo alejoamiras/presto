@@ -67,7 +67,6 @@ fn build_versions_submenu(
     Ok(builder.build()?)
 }
 
-/// One entry of the tray menu.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Entry {
     Status,
@@ -81,10 +80,8 @@ pub enum Entry {
     Quit,
 }
 
-/// The menu's order. The status line and the Versions submenu are dev-only: in production the
-/// status item still exists, since `on_status` also sets the tooltip. "Show Logs" is in every build,
-/// as the only in-app path to a user's own logs. "Check for Updates…" sits below the version line
-/// whenever the item exists.
+/// In production the status item exists unlisted, since `on_status` also sets the tooltip. "Show
+/// Logs" is in every build, as the only in-app path to a user's own logs.
 pub fn menu_layout(dev_mode: bool, has_check: bool) -> Vec<Entry> {
     let mut entries = Vec::new();
     if dev_mode {

@@ -176,7 +176,7 @@ async fn i3_a_click_during_a_check_sends_nothing() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn i4_a_full_or_closed_channel_fails_at_once() {
+async fn i4_a_full_or_closed_channel_fails_at_once_and_still_reverts() {
     let (check, recorder, queue, tx, _rx) = controller(1);
     let (stuck, _) = tokio::sync::oneshot::channel();
     tx.try_send(stuck).unwrap();
@@ -184,12 +184,27 @@ async fn i4_a_full_or_closed_channel_fails_at_once() {
     assert_eq!(check.state(), State::Failed);
     state_of(&recorder, State::Failed);
     assert_eq!(queue.len(), 0);
+    reverts_after_five_minutes(&check, &recorder, &queue).await;
 
-    let (check, recorder, _queue, tx, rx) = controller(4);
+    let (check, recorder, queue, tx, rx) = controller(4);
     drop(rx);
     check.click(&tx);
     assert_eq!(check.state(), State::Failed);
     state_of(&recorder, State::Failed);
+    reverts_after_five_minutes(&check, &recorder, &queue).await;
+}
+
+async fn reverts_after_five_minutes(check: &Controller, recorder: &Recorder, queue: &Queue) {
+    settle().await;
+    tokio::time::advance(REVERT_AFTER.saturating_sub(Duration::from_secs(1))).await;
+    settle().await;
+    queue.drain();
+    assert_eq!(check.state(), State::Failed);
+
+    tokio::time::advance(Duration::from_secs(1)).await;
+    settle().await;
+    queue.drain();
+    state_of(recorder, State::Idle);
 }
 
 /// 🧬 Without the reply timeout, the item reads "Checking…" forever.

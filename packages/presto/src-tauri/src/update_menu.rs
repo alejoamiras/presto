@@ -91,6 +91,8 @@ pub type Task = Pin<Box<dyn Future<Output = ()> + Send>>;
 
 /// Where the controller's work runs: label writes on the main thread, waits on the async runtime.
 pub trait UiThread: Send + Sync + 'static {
+    /// Jobs run one at a time on the thread `click` runs on, which is what lets `apply` release the
+    /// state lock before writing the label.
     fn post(&self, job: Job);
     fn spawn(&self, task: Task);
 }
@@ -110,7 +112,6 @@ impl UiThread for TauriUi {
     }
 }
 
-/// The managed controller behind the tray item.
 pub type TrayManualCheck = Arc<ManualCheck<tauri::menu::MenuItem<tauri::Wry>, TauriUi>>;
 
 pub struct ManualCheck<S, U> {
@@ -149,6 +150,7 @@ impl<S: LabelSink, U: UiThread> ManualCheck<S, U> {
                 TrySendError::Closed(_) => tracing::warn!("Update task is not running"),
             }
             self.apply(generation, State::Failed);
+            self.ui.spawn(Box::pin(Arc::clone(self).revert(generation)));
             return;
         }
         let this = Arc::clone(self);
@@ -174,16 +176,18 @@ impl<S: LabelSink, U: UiThread> ManualCheck<S, U> {
     async fn settle(self: Arc<Self>, generation: u64, next: State) {
         let this = Arc::clone(&self);
         self.ui.post(Box::new(move || this.apply(generation, next)));
-        if next == State::Idle {
-            return;
+        if next != State::Idle {
+            self.revert(generation).await;
         }
+    }
+
+    async fn revert(self: Arc<Self>, generation: u64) {
         tokio::time::sleep(self.revert_after).await;
         let this = Arc::clone(&self);
         self.ui
             .post(Box::new(move || this.apply(generation, State::Idle)));
     }
 
-    /// Writes `next` only if no later click has happened since `generation`.
     fn apply(&self, generation: u64, next: State) {
         {
             let mut state = self.lock();

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Fails if a built artifact carries the WebDriver-only tray hooks. Each argument is a binary, a
-# directory (an .app) or an AppImage, whose compressed payload is extracted first. A missing path
-# fails, so a wrong path can never pass.
+# directory (an .app) or an AppImage, whose compressed payload is extracted first. Only a completed
+# scan of a non-empty Presto executable passes: a missing or empty target, a directory without the
+# executable, and a grep error all fail.
 set -euo pipefail
 
 NEEDLE="PRESTO_E2E_TRAY_REPORT"
@@ -22,9 +23,26 @@ for target in "$@"; do
     scan="$work/squashfs-root"
     [ -d "$scan" ] || { echo "::error::$target did not extract"; exit 1; }
   fi
-  if grep -rqa "$NEEDLE" "$scan"; then
-    echo "::error::$target contains $NEEDLE: a WebDriver-only build reached a shipped artifact"
+  if [ -d "$scan" ]; then
+    if [ -z "$(find "$scan" -type f -name Presto -size +0c -print -quit)" ]; then
+      echo "::error::$target holds no non-empty Presto executable"
+      exit 1
+    fi
+  elif [ ! -s "$scan" ]; then
+    echo "::error::$target is empty"
     exit 1
   fi
-  echo "no test hooks in $target"
+  status=0
+  grep -rqa -- "$NEEDLE" "$scan" || status=$?
+  case "$status" in
+    0)
+      echo "::error::$target contains $NEEDLE: a WebDriver-only build reached a shipped artifact"
+      exit 1
+      ;;
+    1) echo "no test hooks in $target" ;;
+    *)
+      echo "::error::could not scan $target (grep exit $status)"
+      exit 1
+      ;;
+  esac
 done
