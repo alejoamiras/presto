@@ -23,8 +23,11 @@ for target in "$@"; do
     scan="$work/squashfs-root"
     [ -d "$scan" ] || { echo "::error::$target did not extract"; exit 1; }
   fi
+  exe="$scan"
   if [ -d "$scan" ]; then
-    if [ -z "$(find "$scan" -type f -name Presto -size +0c -print -quit)" ]; then
+    # -L: the entrypoint may be a symlink, which `grep -r` would skip inside the tree.
+    exe=$(find -L "$scan" -type f -name Presto -size +0c -print -quit)
+    if [ -z "$exe" ]; then
       echo "::error::$target holds no non-empty Presto executable"
       exit 1
     fi
@@ -33,7 +36,7 @@ for target in "$@"; do
     exit 1
   fi
   status=0
-  grep -rqa -- "$NEEDLE" "$scan" || status=$?
+  grep -rqa -- "$NEEDLE" "$scan" "$exe" || status=$?
   case "$status" in
     0)
       echo "::error::$target contains $NEEDLE: a WebDriver-only build reached a shipped artifact"

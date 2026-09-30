@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -60,6 +60,19 @@ describe("assert-no-test-hooks", () => {
       const r = run(target);
       expect(r.code, target).toBe(1);
       expect(r.out).toContain("contains PRESTO_E2E_TRAY_REPORT");
+    }
+  });
+
+  test("follows a symlinked entrypoint, clean or hooked", () => {
+    for (const [name, body, code] of [
+      ["LinkedClean", "release bytes", 0],
+      ["LinkedHooked", "x PRESTO_E2E_TRAY_REPORT y", 1],
+    ] as const) {
+      file(`${name}/usr/lib/presto-bin`, body);
+      mkdirSync(path.join(dir, name, "usr/bin"), { recursive: true });
+      symlinkSync("../lib/presto-bin", path.join(dir, name, "usr/bin/Presto"));
+      const r = run(path.join(dir, name));
+      expect(r.code, r.out).toBe(code);
     }
   });
 
