@@ -51,9 +51,8 @@ pub const IDLE_WAIT_CAP: Duration = Duration::from_secs(30 * 60);
 
 const SCHEMA: u32 = 1;
 const MAX_FILE_BYTES: usize = 4096;
-/// A write that cannot take the file lock within this fails, and the mirror carries the session.
-/// The lock is held for microseconds, so only a stopped holder reaches it; "Later" runs on the
-/// main thread and must not wait on one.
+/// Bounds how long "Later", which runs on the main thread, can wait on another process's write (a
+/// stopped holder never releases). A write that times out fails, and the mirror carries the session.
 const LOCK_WAIT: Duration = Duration::from_secs(1);
 /// One byte past the cap, so an oversized file is detected rather than silently truncated.
 const READ_LIMIT: u64 = 4097;

@@ -376,6 +376,7 @@ try {
 
   # ── Launch N-1; it should auto-update to N and relaunch ──
   Log "launching N-1 (expecting auto-update → $NVersion)"
+  $N1Mark = Get-LogMark
   $AppProc = Start-Process -FilePath $Exe.FullName -PassThru
 
   # ── N-1 launch proof: the installed fixture must actually RUN and report ITS version before any
@@ -404,8 +405,9 @@ try {
       Dump-Logs; Write-Error "NEGATIVE inconclusive — the updater never downloaded the artifact, so signature rejection wasn't exercised."; exit 1
     }
     # A transport error after the request also leaves N-1 healthy; only the refusal itself counts:
-    # minisign's verdict inside the plugin, or the signed-size check behind it.
-    if (-not (Select-String -Path (Join-Path $LogDir "*.log") -Pattern "signature verification failed|does not match the signed size" -Quiet)) {
+    # minisign's verdict inside the plugin, or the signed-size check behind it. This launch's lines
+    # only: an earlier run's refusal must not vouch for this one.
+    if ((Get-LaunchLog $N1Mark) -notmatch "signature verification failed|does not match the signed size") {
       Dump-Logs; Write-Error "NEGATIVE inconclusive — N-1 never logged a signature or signed-size refusal; the download may have failed for another reason."; exit 1
     }
     # Rejecting is only proven by a LIVE N-1 still reporting its own version — a crash after the

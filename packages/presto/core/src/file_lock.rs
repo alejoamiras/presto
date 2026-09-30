@@ -84,7 +84,12 @@ pub(crate) fn try_lock_exclusive(lock_path: &Path) -> std::io::Result<Option<Fil
             )
         };
         if ok == 0 {
-            return Ok(None); // held elsewhere → would block
+            let e = std::io::Error::last_os_error();
+            if e.raw_os_error() == Some(windows_sys::Win32::Foundation::ERROR_LOCK_VIOLATION as i32)
+            {
+                return Ok(None);
+            }
+            return Err(e);
         }
     }
     Ok(Some(file))

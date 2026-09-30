@@ -18,3 +18,15 @@ the phase lessons.
 clippy (both feature sets), the Windows `cargo check`, the UI e2e, `bun run lint` and `bun run test`
 exit 0 (a first run failed only on rustfmt's layout of `b14b`'s asserts). The Rust and script
 changes mean the Phase 5 dispatches re-run on the fixed head.
+
+## Round 2 — no blocker or major finding
+
+| # | Finding | Verified | Disposition |
+|---|---|---|---|
+| 1 | **Minor.** The Windows negative oracle searched every file in the log directory, so an earlier run's refusal could vouch for a later transport failure. | Yes: `Select-String` over `$LogDir\*.log`. A fresh CI runner has no earlier logs, but a reused machine would. | **Fixed:** the mark is taken before N-1 launches, and only that launch's lines are searched (`Get-LaunchLog`, which fails on a rotation). |
+| 2 | **Minor.** `try_lock_exclusive` on Windows read every `LockFileEx` failure as contention, so a real locking error became a 1 s retry and a misleading "another process holds the lock". | Yes. The function was test-only before round 1 made it production code. | **Fixed:** only `ERROR_LOCK_VIOLATION` is contention; any other error is returned. Checked with the Windows `cargo check`; the lock tests run on the Windows CI lane. |
+| 3 | **Comment.** `LOCK_WAIT`'s "held for microseconds, so only a stopped holder reaches it" ignores the fsyncs inside the critical section. | Yes. | **Fixed:** the comment now states the purpose (bound how long "Later" can wait) without the timing claim. |
+
+Also noted, no change: a failed snooze write is not re-flushed by a later successful write, so
+another instance or a restart can prompt inside that snooze. That is the accepted session-only
+fallback; the "until the next successful write" overstatement was in the review prompt, not in the code.
