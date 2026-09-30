@@ -30,3 +30,14 @@ changes mean the Phase 5 dispatches re-run on the fixed head.
 Also noted, no change: a failed snooze write is not re-flushed by a later successful write, so
 another instance or a restart can prompt inside that snooze. That is the accepted session-only
 fallback; the "until the next successful write" overstatement was in the review prompt, not in the code.
+
+## Round 3 — converged
+
+Verdict, verbatim: "No new material findings in the three fixes (high confidence)." It confirmed
+`ERROR_LOCK_VIOLATION` as the only contention result under `LOCKFILE_FAIL_IMMEDIATELY` on a
+synchronous handle, and that the log mark excludes earlier runs' refusals (an instance appending
+after the mark would need a shared runner, which neither workflow uses).
+
+The round-2 fixes change Windows-only code (the lock's error path, the `.ps1` negative oracle) and a
+comment, so the three Windows smokes re-ran on `ea493f5`; the unix smokes from `a791d5c` stand,
+since nothing they build or run changed.
