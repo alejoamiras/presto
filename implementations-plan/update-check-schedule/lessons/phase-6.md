@@ -11,8 +11,8 @@
 
 - `CLAUDE.md`: the tray **Check for Updates…** item in the Presto bullet; the hook scan in both
   smokes and `webdriver-only-hooks.test.ts` in the CI bullet; counts recounted from the tree
-  (Rust 550, 539 non-ignored on Linux: core 362/4 ignored, server 13, src-tauri 175/7; presto
-  scripts 141 TS tests; 26 WebDriver tests).
+  (Rust 551, 540 non-ignored on Linux: core 362/4 ignored, server 13, src-tauri 176/7; presto
+  scripts 145 TS tests; 26 WebDriver tests), recounted after the review loops.
 - `UPDATER_TESTING.md`: the ephemeral smokes' hook scan.
 - `follow-ups.md`: consolidating the ephemeral smoke setup; the update-scheduling residuals under
   accepted risk.

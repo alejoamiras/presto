@@ -93,8 +93,10 @@ None of these were re-checked on 2026-09-18.
   times out on a stopped lock holder) lasts only for the session, so another instance or a restart
   can prompt inside it; a "Later" recorded after the automatic install's decision does not stop that
   install; a proof admitted between the idle-prover wait's last sample and quiesce is killed, as in
-  1.1.3. No lane suspends a machine, clicks a prompt in a release binary, or drives a real tray
-  under Wayland.
+  1.1.3; "Update Now" on a just-withdrawn prompt holds the install gate for an instant, and a tray
+  reply read inside it shows "Installing update…" until the 5 min revert (claim-before-take in the
+  pending slot is deliberate). No lane suspends a machine, clicks a prompt in a release binary, or
+  drives a real tray under Wayland.
 
 - **Every site build runs next to an account-wide Workers token (workers-builds A3)** — Workers
   Scripts Edit cannot be narrowed below the account, so build-time code on any branch of this repo

@@ -47,4 +47,6 @@ else.
 Before the round 1 fixes, the arc's dispatches at `4909ce5` were green: presto.yml `36785186315`, with
 `tray-update.spec.ts` passing on the Linux, macOS and Windows dev legs and on built-debug, and the
 unix positive smoke `36785189946`. The fixes touch Rust and the K5 script, so Phase 4's dispatches
-re-run on the fixed head.
+re-ran. At `e2196dc` (round 1), presto.yml `36786693077` and unix `36786694990` were green. The
+gating pass is at `1bcfd2a`, after the cross-arc fix: presto.yml `36788162010`, unix `36788164952`
+and Windows `36788167545`, all green (`phase-4.md`).

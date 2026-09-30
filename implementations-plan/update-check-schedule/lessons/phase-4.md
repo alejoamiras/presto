@@ -69,4 +69,15 @@
   menu variant, L4) under Xvfb; the report
   `{"complete":true,"launch_calls":1,"menu_has_item":true,"steps":[…6 states…],"stub_calls":2}`.
 - Local gate: core and src-tauri tests, `bun run lint:rust`, `bun run lint:clippy`, clippy with `--features webdriver`, the Windows `cargo check`, `test:e2e:ui`, `bun run test` and `bun run lint:actions` — all exit 0.
-- CI: CI_RESULT.
+- CI, gating pass at `1bcfd2a` (after the arc and cross-arc review fixes):
+  - `presto.yml` dispatch 36788162010 ✓. `tray-update.spec.ts` PASSED on the Linux, macOS and
+    Windows dev legs and on Linux built-debug. Each leg ran "Assert the WebDriver binary carries the
+    tray hooks" and the `Showing update prompt` guard.
+  - `smoke-updater-unix.yml` positive 36788164952 ✓. "no test hooks in" both `Presto.app` bundles
+    and both AppImages (N-1 0.0.1, N 9.9.9); `update schedule: checked by 9.9.9` on both legs.
+  - `smoke-updater-windows.yml` positive 36788167545 ✓. "no test hooks in" N-1's and N's
+    `Presto.exe`.
+- The production menu variant was re-run locally at `1bcfd2a` (`--release --features webdriver`,
+  Xvfb) with the same six-state report.
+- Earlier passes, superseded by the review fixes: `4909ce5` (presto.yml 36785186315, unix
+  36785189946) and `e2196dc` (presto.yml 36786693077, unix 36786694990).

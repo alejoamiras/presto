@@ -5,12 +5,41 @@ driver: claude-code
 claude_model: opus
 eli5_mode: artifact
 code_review: off
-status: r11 — approved 2026-09-30; delivered as a bootstrap PR plus two stacked arcs; seeds final
+status: delivered 2026-09-30 as a bootstrap PR (#79) plus two stacked arcs, awaiting merge; seeds retired
 created: 2026-09-30
 worktree: .claude/worktrees/update-check-schedule
 branch: worktree-update-check-schedule
 base: main @ da476fa
 ---
+
+## Outcome
+
+**Delivered 2026-09-30, pending the owner's merge.** The bootstrap merged as #79 (`77b5f50`). Arc 1
+(`worktree-update-check-schedule`) and arc 2 (`update-check-schedule-tray`) were opened as a stack
+with `gh stack submit`. This plan's `/goal` and `/loop` seeds are retired; do not re-run them. Per
+Post-implementation step 5, the archive move waits until both PRs merge.
+
+**Shipped:**
+- **Arc 1:**
+  - One update task that checks at launch, then every 6 h of wall-clock time; it wakes every 15 min, so sleep no longer stretches the cadence.
+  - "Later" as a persisted 24 h per-version snooze.
+  - An install gate, a 60 s download stall watchdog, and an automatic install that waits (up to 30 min) for an idle prover.
+  - A classify-only check with a separate decision; the pending slot keeps its single extractor.
+- **Arc 2:**
+  - The tray **Check for Updates…** item: generation-checked labels posted to the main thread, a 90 s reply timeout, a 5 min revert, and "Installing update…" whenever an install holds the gate.
+  - The WebDriver-only tray E2E through the production menu dispatch.
+  - Static guards plus a release-binary scan that keep the hooks out of shipped builds.
+
+**Evidence:**
+- Phase 5 smokes on three OSes, in positive, negative, prompt and stall modes.
+- Phase 4 at `1bcfd2a`: presto.yml 36788162010, with the tray spec on four legs; positive smokes 36788164952 and 36788167545, with the hook scan on six release binaries.
+- The production menu variant, run locally.
+- Every 🧬 test was shown red against its mutant; see `lessons/`.
+- Codex: the arc 1 loop converged at round 3. The arc 2 loop hit its 3-round cap, and its last finding concerned only a reverted change. The fresh cross-arc pass converged at round 3 with "No new material findings".
+
+**Dropped:**
+- The same-length tamper follow-up (L7). Its premise was wrong: the plugin verifies the signature inside `download()`.
+- One cross-arc finding was declined with Codex's agreement: an instant-long "Installing update…" after "Update Now" on a withdrawn prompt. It is listed as a residual in `follow-ups.md`.
 
 # Update checks that survive sleep, a 6 h cadence, and a tray "Check for Updates…"
 
@@ -768,7 +797,7 @@ This is the canonical test list. Phase **Tests** sections cite row IDs instead o
 **Validation gate:** the Phase 2 gate, with the new tests green and every 🧬 logged.
 - **Layers:** lint, typecheck, unit.
 
-### Phase 4 — WebDriver tray E2E and static guard
+### Phase 4 — WebDriver tray E2E and static guard ✓
 
 **Assumes:** F4, F8, F11, I2, I4.
 
@@ -845,7 +874,7 @@ This is the canonical test list. Phase **Tests** sections cite row IDs instead o
   - run IDs are recorded.
 - **Layers:** e2e on real release-profile binaries, three OSes, local HTTPS feed.
 
-### Phase 6 — Docs and follow-ups
+### Phase 6 — Docs and follow-ups ✓
 
 Each arc documents what it ships.
 
