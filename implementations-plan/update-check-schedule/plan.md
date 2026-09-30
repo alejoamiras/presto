@@ -671,7 +671,7 @@ This is the canonical test list. Phase **Tests** sections cite row IDs instead o
 - Row IDs from the matrix go in each test's name or doc line, so a reviewer can map tests back to rows.
 - No test may self-skip.
 
-### Phase 0 — Bootstrap PR (a separate branch from `main`)
+### Phase 0 — Bootstrap PR (a separate branch from `main`) ✓
 
 **Assumes:** F10, F12, A2.
 
@@ -697,7 +697,7 @@ This is the canonical test list. Phase **Tests** sections cite row IDs instead o
 - **Pass:** the post-merge dispatch on `main` is green on both legs. That is the workflow's first real run; it cannot run before merge, and it proves the harness against *current* code, the "before" picture. Record the run ID. A harness failure is fixed in arc 1, since a dispatch with `--ref` uses that branch's copy.
 - **Layers:** lint; e2e on real binaries (macOS, Linux).
 
-### Phase 1 — `update_schedule` in presto-core
+### Phase 1 — `update_schedule` in presto-core ✓
 
 **Assumes:** F1, F5, F14, F20.
 
