@@ -369,7 +369,6 @@ pub(crate) fn write_private_atomic(path: &Path, body: &[u8], prefix: &str) -> st
         std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
     }
 
-    // Random same-dir temp (owner-only from creation), write, fsync, then atomic rename.
     let mut tmp = tempfile::Builder::new()
         .prefix(prefix)
         .tempfile_in(parent)?;

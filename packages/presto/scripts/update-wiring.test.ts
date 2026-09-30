@@ -93,4 +93,12 @@ describe("update wiring", () => {
     const commands = await source("commands.rs");
     expect(commands).not.toContain("perform_update(");
   });
+
+  // D1's Rust test proves `with_feed_timeout` fires; this pins that the plugin's fetch is the future
+  // it wraps, so awaiting `check()` first cannot slip past it.
+  test("D1: the only feed fetch runs inside the feed timeout", async () => {
+    const updater = await source("updater.rs");
+    expect(count(updater, ".check()")).toBe(1);
+    expect(fnBody(updater, "fetch_feed")).toContain("with_feed_timeout(updater.check()).await");
+  });
 });

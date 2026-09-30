@@ -15,7 +15,7 @@ health_listener() {
 
 # The version /health reports, or nothing.
 health_version() {
-  curl -sf "$HEALTH" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true
+  curl -sf --max-time 5 "$HEALTH" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true
 }
 
 # Starts the app as its own process-group leader, so stop_app ends exactly this app (the AppImage
@@ -44,7 +44,7 @@ stop_app() {
   kill -KILL -"$APP_PID" 2>/dev/null || true
   wait "$APP_PID" 2>/dev/null || true
   for _ in $(seq 1 30); do
-    curl -sf "$HEALTH" >/dev/null 2>&1 || return 0
+    curl -sf --max-time 3 "$HEALTH" >/dev/null 2>&1 || return 0
     sleep 1
   done
   echo "::error::/health still answers after the app's process group was killed"

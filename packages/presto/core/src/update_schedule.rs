@@ -7,7 +7,8 @@
 //! while the machine sleeps, so the persisted wall-clock time is what makes the cadence survive it.
 //!
 //! Release builds abort on panic, and crash recovery would turn a startup panic into a crash loop,
-//! so this module is panic-free by lint.
+//! so this module denies the lints below. They cannot see panics inside library calls; the one
+//! reachable here, a zero `tick` in [`run_updates`], is excluded by its contract.
 #![deny(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -50,6 +51,10 @@ pub const IDLE_WAIT_CAP: Duration = Duration::from_secs(30 * 60);
 
 const SCHEMA: u32 = 1;
 const MAX_FILE_BYTES: usize = 4096;
+/// A write that cannot take the file lock within this fails, and the mirror carries the session.
+/// The lock is held for microseconds, so only a stopped holder reaches it; "Later" runs on the
+/// main thread and must not wait on one.
+const LOCK_WAIT: Duration = Duration::from_secs(1);
 /// One byte past the cap, so an oversized file is detected rather than silently truncated.
 const READ_LIMIT: u64 = 4097;
 
@@ -231,7 +236,8 @@ impl ScheduleStore {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let _cross_process = crate::file_lock::lock_exclusive(&path.with_extension("json.lock"))?;
+        let _cross_process =
+            crate::file_lock::lock_exclusive_within(&path.with_extension("json.lock"), LOCK_WAIT)?;
         let mut state = load_file(path);
         change(&mut state);
         #[cfg(test)]
@@ -438,7 +444,7 @@ pub struct InstallOpts {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InstallCaller {
-    /// Installed without a click; it must not kill a proof in flight.
+    /// Installed without a click; waits up to [`IDLE_WAIT_CAP`] for running proofs to finish.
     Auto,
     /// "Update Now" is explicit consent, so it does not wait.
     UpdateNow,
@@ -525,6 +531,7 @@ thread_local! {
 /// `check` and `act`, so acting (an install may exit the process) never skips or moves it. While
 /// `busy()` (an install holds the gate), requests reach `act` as [`Observation::in_progress`]
 /// without a fetch. Returns [`Infallible`]: the loop has no exit, and adding one fails to compile.
+/// `tick` must be nonzero (tokio's interval panics on zero).
 #[allow(clippy::too_many_arguments)]
 pub async fn run_updates<R, O, C, CF, A, AF>(
     store: &ScheduleStore,

@@ -475,6 +475,38 @@ fn b14_the_file_lock_serialises_instances() {
 }
 
 #[test]
+fn b14b_a_stopped_lock_holder_delays_recording_by_at_most_the_lock_wait() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = Arc::new(store_at(&dir, "9.9.9"));
+    let _held = crate::file_lock::try_lock_exclusive(&dir.path().join("update-schedule.json.lock"))
+        .unwrap()
+        .unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+    let recorder = Arc::clone(&store);
+    std::thread::spawn(move || {
+        let checked = recorder.record_checked(NOW).map_err(|e| e.kind());
+        let snoozed = recorder
+            .record_snooze(Snooze::starting(v("1.2.0"), NOW))
+            .map_err(|e| e.kind());
+        let _ = tx.send((checked, snoozed));
+    });
+    let (checked, snoozed) = rx
+        .recv_timeout(Duration::from_secs(10))
+        .expect("recording waited on the stopped holder");
+    assert_eq!(checked, Err(std::io::ErrorKind::TimedOut));
+    assert_eq!(snoozed, Err(std::io::ErrorKind::TimedOut));
+    assert_eq!(
+        store.last_checked(NOW),
+        Some(NOW),
+        "the mirror holds the check"
+    );
+    assert!(
+        store.is_snoozed(&v("1.2.0"), NOW),
+        "the mirror holds the snooze"
+    );
+}
+
+#[test]
 fn b15_a_failed_snooze_write_applies_for_the_session_whatever_the_file_holds() {
     let target = v("1.2.0");
     let session = NOW + SNOOZE_SECS;
@@ -490,7 +522,7 @@ fn b15_a_failed_snooze_write_applies_for_the_session_whatever_the_file_holds() {
             session,
         ),
         (
-            Some(format!(r#"{{"version":"1.2.0","until":{}}}"#, NOW - 2 * H)),
+            Some(format!(r#"{{"version":"1.2.0","until":{}}}"#, NOW + 2 * H)),
             session,
         ),
         (
@@ -788,6 +820,19 @@ async fn c1_the_launch_check_always_runs() {
         assert_eq!(rig.script.checks(), vec![("launch", 5)]);
         rig.stop().await;
     }
+}
+
+#[tokio::test(start_paused = true)]
+async fn c1b_a_held_schedule_lock_still_lets_the_launch_result_through() {
+    let dir = tempfile::tempdir().unwrap();
+    let _held = crate::file_lock::try_lock_exclusive(&dir.path().join("update-schedule.json.lock"))
+        .unwrap()
+        .unwrap();
+    let rig = Rig::start(store_at(&dir, "9.9.9"), &[true]);
+    run_for(6).await;
+    assert_eq!(rig.script.checks(), vec![("launch", 5)]);
+    assert_eq!(rig.script.acts(), vec![("launch", 5)]);
+    rig.stop().await;
 }
 
 #[tokio::test(start_paused = true)]

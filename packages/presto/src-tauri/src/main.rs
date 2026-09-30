@@ -281,7 +281,7 @@ fn schedule_store() -> ScheduleStore {
 /// Acts on one check, on the update task, and answers a tray request still waiting for it.
 ///
 /// Not compiled for `webdriver` builds: the prompt window would steal the active WebDriver browsing
-/// context mid-test (see implementations-plan/ci-reliability-2026-05-29/diagnosis.md).
+/// context mid-test.
 #[cfg(not(feature = "webdriver"))]
 fn act(
     app: &AppHandle,

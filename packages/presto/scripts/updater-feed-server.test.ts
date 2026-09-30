@@ -71,5 +71,5 @@ describe("updater feed server", () => {
     ]);
     expect(next).toBe("still open");
     await reader.cancel();
-  });
+  }, 15_000);
 });

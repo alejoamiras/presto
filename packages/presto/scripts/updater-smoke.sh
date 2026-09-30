@@ -184,7 +184,7 @@ dump_logs() {
     echo "── $(basename "$f") ──"; cat "$f" 2>/dev/null || true
   done
   echo "── feed log ──"; cat "$WORK/feed.log" 2>/dev/null || true
-  echo "── last /health ──"; curl -s "$HEALTH" 2>/dev/null || true
+  echo "── last /health ──"; curl -s --max-time 5 "$HEALTH" 2>/dev/null || true
 }
 
 mkdir -p "$CONFIG_DIR"
@@ -229,6 +229,13 @@ if [ "$MODE" = "negative" ]; then
   # which our own readiness probe above curls, so it can't prove the app ran.
   if ! grep -q "/releases/download/" "$WORK/feed.log" 2>/dev/null; then
     echo "::error::NEGATIVE inconclusive — the updater never downloaded the artifact (no download/ hit), so signature rejection was not actually exercised."
+    dump_logs
+    exit 1
+  fi
+  # A transport error after the request also leaves N-1 healthy; only the refusal itself counts:
+  # minisign's verdict inside the plugin, or the signed-size check behind it.
+  if ! grep -qE "signature verification failed|does not match the signed size" "$WORK/app.log"; then
+    echo "::error::NEGATIVE inconclusive — N-1 never logged a signature or signed-size refusal; the download may have failed for another reason."
     dump_logs
     exit 1
   fi

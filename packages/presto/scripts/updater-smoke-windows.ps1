@@ -403,6 +403,11 @@ try {
     if (-not (Select-String -Path (Join-Path $Work "feed.log") -Pattern "/releases/download/" -Quiet)) {
       Dump-Logs; Write-Error "NEGATIVE inconclusive — the updater never downloaded the artifact, so signature rejection wasn't exercised."; exit 1
     }
+    # A transport error after the request also leaves N-1 healthy; only the refusal itself counts:
+    # minisign's verdict inside the plugin, or the signed-size check behind it.
+    if (-not (Select-String -Path (Join-Path $LogDir "*.log") -Pattern "signature verification failed|does not match the signed size" -Quiet)) {
+      Dump-Logs; Write-Error "NEGATIVE inconclusive — N-1 never logged a signature or signed-size refusal; the download may have failed for another reason."; exit 1
+    }
     # Rejecting is only proven by a LIVE N-1 still reporting its own version — a crash after the
     # download would also "never report N" and pass vacuously.
     try { $got = (Invoke-RestMethod -Uri $HealthUrl -TimeoutSec 3).version } catch { $got = $null }

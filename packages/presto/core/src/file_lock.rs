@@ -51,9 +51,7 @@ pub(crate) fn lock_exclusive(lock_path: &Path) -> std::io::Result<File> {
     Ok(file)
 }
 
-/// Test-only non-blocking acquire, so a test can prove exclusivity without timing: `Ok(None)` means
-/// another handle holds the lock.
-#[cfg(test)]
+/// Non-blocking acquire: `Ok(None)` means another handle holds the lock.
 pub(crate) fn try_lock_exclusive(lock_path: &Path) -> std::io::Result<Option<File>> {
     let file = open_lock_file(lock_path)?;
     #[cfg(unix)]
@@ -90,4 +88,25 @@ pub(crate) fn try_lock_exclusive(lock_path: &Path) -> std::io::Result<Option<Fil
         }
     }
     Ok(Some(file))
+}
+
+/// [`lock_exclusive`] that gives up with `ErrorKind::TimedOut` after `wait`: a stopped holder (a
+/// suspended process) keeps its lock indefinitely.
+pub(crate) fn lock_exclusive_within(
+    lock_path: &Path,
+    wait: std::time::Duration,
+) -> std::io::Result<File> {
+    let start = std::time::Instant::now();
+    loop {
+        if let Some(file) = try_lock_exclusive(lock_path)? {
+            return Ok(file);
+        }
+        if start.elapsed() >= wait {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::TimedOut,
+                "another process holds the lock",
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
 }
