@@ -53,6 +53,13 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   The server's hint is `GITHUB_TOKEN`; a non-API digest source would remove the dependency.
   `archive/aztec-v6/lessons/releases.md`.
 
+## From update-check-schedule (closed 2026-09-30)
+
+- **Consolidate the ephemeral updater smoke setup.** `smoke-updater-unix.yml` and
+  `smoke-updater-windows.yml` each generate a throwaway key, patch version and pubkey, build N-1
+  and N, scan both for test hooks, and sign a local feed, step for step in parallel copies. A shared
+  composite action would hold one copy. **Verified 2026-09-30.**
+
 ## Untested paths, carried from the logs
 
 None of these were re-checked on 2026-09-18.
@@ -81,6 +88,13 @@ None of these were re-checked on 2026-09-18.
   `archive/presto-noir/plan.md` (Asks → A-01)
 
 ## Accepted residual risk — standing decisions, not work
+
+- **Update scheduling residuals (update-check-schedule)** — a "Later" whose file write fails (or
+  times out on a stopped lock holder) lasts only for the session, so another instance or a restart
+  can prompt inside it; a "Later" recorded after the automatic install's decision does not stop that
+  install; a proof admitted between the idle-prover wait's last sample and quiesce is killed, as in
+  1.1.3. No lane suspends a machine, clicks a prompt in a release binary, or drives a real tray
+  under Wayland.
 
 - **Every site build runs next to an account-wide Workers token (workers-builds A3)** — Workers
   Scripts Edit cannot be narrowed below the account, so build-time code on any branch of this repo
