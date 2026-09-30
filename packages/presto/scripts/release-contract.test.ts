@@ -119,6 +119,75 @@ test("ephemeral Windows updater smoke prepares its signed feed before running th
   expect(workflow.replace(/^\s*#.*$/gm, "")).not.toMatch(/\$\{\{ secrets\./);
 });
 
+type SmokeStep = { name?: string; run?: string; uses?: string; env?: unknown } & Record<
+  string,
+  unknown
+>;
+type SmokeWorkflow = {
+  permissions?: unknown;
+  jobs: Record<string, { permissions?: unknown; env?: Record<string, string>; steps: SmokeStep[] }>;
+};
+
+// Free-form `mode` strings let a branch dispatch modes `main` does not know yet, so each workflow
+// must allowlist the value before any other step and hand inputs to shell only through `env:`.
+const MANUAL_SMOKE_MODES = {
+  "smoke-updater-unix.yml": ["positive", "negative"],
+  "smoke-updater-windows.yml": ["barrier", "copy-initiator", "positive", "negative"],
+};
+for (const [file, modes] of Object.entries(MANUAL_SMOKE_MODES)) {
+  const source = fs.readFileSync(path.join(REPO, ".github/workflows", file), "utf8");
+  const workflow = Bun.YAML.parse(source) as SmokeWorkflow;
+  const jobs = Object.values(workflow.jobs);
+  const steps = jobs.flatMap((job) => job.steps);
+
+  test(`${file}: inputs reach shell only through env, after a first-step allowlist`, () => {
+    // Any `inputs` reference in an expression: `inputs.x`, `inputs['x']`, `github.event.inputs`.
+    const inputExpression = /\$\{\{[^}]*\binputs\b/;
+    for (const { name: _name, env: _env, ...rest } of steps) {
+      expect(JSON.stringify(rest)).not.toMatch(inputExpression);
+    }
+    for (const job of jobs) {
+      const [validate] = job.steps;
+      expect(validate?.name).toBe("Validate inputs");
+      expect(validate?.if).toBeUndefined();
+      expect(validate?.["continue-on-error"]).toBeUndefined();
+      expect(validate?.run).toContain(`${modes.join("|")}) ;;`);
+      expect(job.env?.UPDATER_SMOKE_MODE).toMatch(/^\$\{\{ inputs\.mode \|\| '[a-z-]+' \}\}$/);
+    }
+  });
+
+  test(`${file}: the validator accepts exactly the supported modes and versions above N-1`, () => {
+    const script = jobs[0]?.steps[0]?.run ?? "";
+    const validate = (mode: string, version: string) => {
+      const run = Bun.spawnSync(["bash", "-c", script], {
+        env: { ...process.env, UPDATER_SMOKE_MODE: mode, N_VERSION: version, N1_VERSION: "0.0.1" },
+      });
+      return { ok: run.exitCode === 0, output: `${run.stdout}${run.stderr}` };
+    };
+    for (const mode of modes) expect(validate(mode, "9.9.9").ok).toBe(true);
+    for (const version of ["1.2.3-rc.1", "0.0.2", "0.1.0"]) {
+      expect(validate(modes[0] ?? "", version).ok).toBe(true);
+    }
+    for (const mode of ["", "bogus", `${modes[0]} x`, "prompt"]) {
+      expect(validate(mode, "9.9.9").ok).toBe(false);
+    }
+    const smuggled = validate("::warning::smuggled", "9.9.9");
+    expect(smuggled.ok).toBe(false);
+    expect(smuggled.output).not.toContain("smuggled");
+    const badVersions = ["01.2.3", "1.2.3-rc..1", "1.2.3-01", "1.2.3+build", "1.2", "0.0.0"];
+    for (const version of [...badVersions, "0.0.1", "0.0.1-rc.1", '9.9.9"/e']) {
+      expect(validate(modes[0] ?? "", version).ok).toBe(false);
+    }
+  });
+
+  test(`${file}: read-only, secretless, and uploads nothing`, () => {
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    for (const job of jobs) expect(job.permissions).toBeUndefined();
+    expect(source.replace(/^\s*#.*$/gm, "")).not.toMatch(/\bsecrets\./);
+    for (const step of steps) expect(step.uses ?? "").not.toContain("upload-artifact");
+  });
+}
+
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("release-presto.yml — B6 publish/promote contract", () => {
   test("least privilege: `promote` is the only leg that writes the feed", () => {

@@ -1,0 +1,223 @@
+name: Smoke Updater Unix (manual)
+
+# Manually-dispatched macOS + Linux updater smoke — the EPHEMERAL sibling of _e2e-updater.yml and
+# _e2e-updater-linux.yml, as smoke-updater-windows.yml is for Windows. Builds BOTH ends from the
+# dispatched ref (synthetic N-1 at 0.0.1, N at `n-version`), signs both and the feed manifest with a
+# run-local throwaway key, and runs the platform's release smoke script against them. This is the
+# only way to prove unreleased updater code as the OLD side of an update before it ships: the
+# release lanes install a real published N-1.
+#
+# Secretless by construction: no `${{ secrets.* }}` expression exists in this file, and no bundle is
+# uploaded (each carries the throwaway pubkey, so an installed copy could never update again).
+# `mode` is a free-form string so a branch can add modes without editing `main`'s copy; the first
+# step allowlists it, and inputs reach shell only through `env:`.
+#
+# NOT a PR gate: two Tauri builds per leg.
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Smoke scenario (positive | negative)
+        required: false
+        default: positive
+        type: string
+      n-version:
+        description: Version to stamp on the in-job N build
+        required: false
+        default: "9.9.9"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke-ephemeral:
+    name: Ephemeral both-ends smoke (${{ matrix.platform-key }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-latest
+            target: aarch64-apple-darwin
+            platform-key: darwin-aarch64
+          - runner: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            platform-key: linux-x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 70 # TWO in-job Tauri builds (N-1 and N; the second is mostly incremental) + the smoke
+    env:
+      N_VERSION: ${{ inputs.n-version || '9.9.9' }}
+      N1_VERSION: "0.0.1"
+      UPDATER_SMOKE_MODE: ${{ inputs.mode || 'positive' }}
+      TARGET: ${{ matrix.target }}
+      PLATFORM_KEY: ${{ matrix.platform-key }}
+    steps:
+      # Never echo a rejected value: a crafted input could smuggle a `::` workflow command.
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$UPDATER_SMOKE_MODE" in
+            positive|negative) ;;
+            *) echo "::error::mode is not supported on this ref (allowed: positive, negative)"; exit 1 ;;
+          esac
+          # Canonical SemVer without build metadata, above N-1: anything else fails a later parse or
+          # never qualifies as an update.
+          num='(0|[1-9][0-9]*)'
+          pre='(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+          if ! [[ "$N_VERSION" =~ ^$num\.$num\.$num(-$pre(\.$pre)*)?$ ]]; then
+            echo "::error::n-version must be a canonical SemVer version without build metadata"; exit 1
+          fi
+          if [ "${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" = "0.0" ] && [ "${BASH_REMATCH[3]}" -le 1 ]; then
+            echo "::error::n-version must be above N-1 ($N1_VERSION)"; exit 1
+          fi
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-target: ${{ matrix.target }}
+          rust-cache-key: presto-desktop-${{ matrix.target }}
+          rust-workspaces: packages/presto/src-tauri -> target
+          rust-components: ""
+
+      # Same runtime set as _e2e-updater-linux.yml: FUSE so the AppImage runs natively (the updater
+      # swaps $APPIMAGE in place), plus a headless display, a tray host and a session bus. The GUI
+      # libraries come from setup-presto.
+      - name: Install FUSE + display + tray deps (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
+          sudo apt-get install -y xvfb stalonetray dbus-x11
+
+      - name: Setup display (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          # GITHUB_ENV reaches later steps only; the tray host needs the display now.
+          export DISPLAY=:99
+          Xvfb :99 -screen 0 1280x1024x24 &
+          sleep 1
+          eval "$(dbus-launch --sh-syntax)"
+          stalonetray -d none --geometry 1x1+0+0 --kludges force_icons_size &
+          sleep 1
+          {
+            echo "DISPLAY=:99"
+            echo "NO_AT_BRIDGE=1"
+            echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
+            echo "DBUS_SESSION_BUS_PID=$DBUS_SESSION_BUS_PID"
+          } >> "$GITHUB_ENV"
+
+      # One ephemeral key signs N-1's artifacts, N's artifacts and the feed manifest. Its pubkey is
+      # patched into tauri.conf.json for BOTH builds; swapping only the private key fails verification.
+      - name: Generate ephemeral signing key
+        shell: bash
+        working-directory: packages/presto
+        run: |
+          set -euo pipefail
+          bunx tauri signer generate --ci -p "" -w ./eph.key
+          # Environment-file values are not masked, and the runner prints later steps' env.
+          echo "::add-mask::$(cat ./eph.key)"
+          {
+            echo "TAURI_SIGNING_PRIVATE_KEY=$(cat ./eph.key)"
+            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD="
+            # The .pub file is already the base64 document tauri.conf.json expects.
+            echo "EPHEMERAL_PUBKEY=$(cat ./eph.key.pub)"
+          } >> "$GITHUB_ENV"
+          rm -f ./eph.key ./eph.key.pub
+
+      - name: Build synthetic N-1 (0.0.1, ephemeral pubkey)
+        shell: bash
+        working-directory: packages/presto/src-tauri
+        run: |
+          set -euo pipefail
+          sed -i.bak "s/^version = \".*\"/version = \"$N1_VERSION\"/" Cargo.toml && rm -f Cargo.toml.bak
+          bun -e "const f='tauri.conf.json';const c=JSON.parse(await Bun.file(f).text());c.version=process.env.N1_VERSION;c.plugins.updater.pubkey=process.env.EPHEMERAL_PUBKEY;await Bun.write(f,JSON.stringify(c,null,2)+'\n')"
+          BUNDLE="target/$TARGET/release/bundle"
+          mkdir -p "$RUNNER_TEMP/n1"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            ( cd .. && bunx tauri build --target "$TARGET" --bundles app )
+            # updater-smoke.sh installs N-1 from a DMG. A plain `hdiutil create` avoids tauri's
+            # Finder-scripted DMG layout, the chronically flaky part of DMG bundling on runners.
+            mkdir -p "$RUNNER_TEMP/n1-stage"
+            ditto "$BUNDLE/macos/Presto.app" "$RUNNER_TEMP/n1-stage/Presto.app"
+            for attempt in 1 2 3; do
+              if hdiutil create -volname Presto -srcfolder "$RUNNER_TEMP/n1-stage" -ov -format UDZO "$RUNNER_TEMP/n1/Presto-N1.dmg"; then
+                break
+              fi
+              if [ "$attempt" = 3 ]; then echo "::error::hdiutil create failed 3 times"; exit 1; fi
+              sleep 10
+            done
+          else
+            ( cd .. && bunx tauri build --target "$TARGET" --bundles appimage )
+            cp "$BUNDLE"/appimage/*.AppImage "$RUNNER_TEMP/n1/"
+          fi
+          ls -la "$RUNNER_TEMP/n1"
+
+      - name: Build N (ephemeral pubkey)
+        shell: bash
+        working-directory: packages/presto/src-tauri
+        run: |
+          set -euo pipefail
+          BUNDLE="target/$TARGET/release/bundle"
+          # Drop N-1's bundle output so N's collection cannot pick up 0.0.1 files.
+          rm -rf "$BUNDLE"
+          sed -i.bak "s/^version = \".*\"/version = \"$N_VERSION\"/" Cargo.toml && rm -f Cargo.toml.bak
+          bun -e "const f='tauri.conf.json';const c=JSON.parse(await Bun.file(f).text());c.version=process.env.N_VERSION;c.plugins.updater.pubkey=process.env.EPHEMERAL_PUBKEY;await Bun.write(f,JSON.stringify(c,null,2)+'\n')"
+          mkdir -p "$RUNNER_TEMP/n"
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            ( cd .. && bunx tauri build --target "$TARGET" --bundles app )
+            cp "$BUNDLE"/macos/*.app.tar.gz "$BUNDLE"/macos/*.app.tar.gz.sig "$RUNNER_TEMP/n/"
+          else
+            ( cd .. && bunx tauri build --target "$TARGET" --bundles appimage )
+            cp "$BUNDLE"/appimage/*.AppImage "$BUNDLE"/appimage/*.AppImage.sig "$RUNNER_TEMP/n/"
+          fi
+          ls -la "$RUNNER_TEMP/n"
+
+      - name: Sign and verify the ephemeral smoke feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            payloads=("$RUNNER_TEMP"/n/*.app.tar.gz)
+          else
+            payloads=("$RUNNER_TEMP"/n/*.AppImage)
+          fi
+          [ "${#payloads[@]}" -eq 1 ] || { echo "::error::expected exactly one N updater payload"; exit 1; }
+          PAYLOAD="${payloads[0]}"
+          FEED="$RUNNER_TEMP/n/smoke-latest.json"
+          FEED_HOST=$(jq -er '.plugins.updater.endpoints[0] | capture("^https://(?<host>[A-Za-z0-9.-]+)/").host' packages/presto/src-tauri/tauri.conf.json)
+          jq -n --arg version "$N_VERSION" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --arg key "$PLATFORM_KEY" \
+            --arg signature "$(tr -d '\r\n' < "$PAYLOAD.sig")" \
+            --arg url "https://$FEED_HOST/releases/download/$(basename "$PAYLOAD")" \
+            --argjson size "$(wc -c < "$PAYLOAD" | tr -d ' ')" \
+            '{version:$version,notes:"ephemeral updater smoke",pub_date:$date,
+              platforms:{($key):{signature:$signature,url:$url,size:$size}}}' > "$FEED"
+          bash packages/presto/scripts/sign-smoke-feed.sh "$FEED" "$GITHUB_WORKSPACE"
+          jq -er '.plugins.updater.pubkey' packages/presto/src-tauri/tauri.conf.json > "$RUNNER_TEMP/smoke-pubkey.b64"
+          cargo run --locked --manifest-path packages/presto/core/Cargo.toml --example update-manifest -- \
+            verify --feed "$FEED" --pubkey "$RUNNER_TEMP/smoke-pubkey.b64"
+
+      - name: Updater smoke (ephemeral chain)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            bash packages/presto/scripts/updater-smoke.sh \
+              "$N_VERSION" "$PLATFORM_KEY" "$RUNNER_TEMP/n" "$RUNNER_TEMP/n1/Presto-N1.dmg" "$GITHUB_WORKSPACE"
+          else
+            n1=("$RUNNER_TEMP"/n1/*.AppImage)
+            [ -f "${n1[0]}" ] || { echo "::error::N-1 AppImage not found"; exit 1; }
+            bash packages/presto/scripts/updater-smoke-linux.sh \
+              "$N_VERSION" "$PLATFORM_KEY" "$RUNNER_TEMP/n" "${n1[0]}" "$GITHUB_WORKSPACE"
+          fi
+
+      - name: Result summary
+        if: success()
+        shell: bash
+        run: |
+          echo "✅ Ephemeral $PLATFORM_KEY updater smoke PASSED ($UPDATER_SMOKE_MODE): current-ref N-1 → current-ref N." >> "$GITHUB_STEP_SUMMARY"
