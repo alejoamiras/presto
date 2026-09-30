@@ -96,6 +96,10 @@ mode=stall` run 36779426165 → **red on both legs for the right reason**: the f
     36779289465 ✓
   - `smoke-updater-unix.yml`: positive 36779293362 ✓, negative 36779297104 ✓, prompt 36779300676 ✓,
     stall 36779303917 ✓
-- CI, gating pass on FIXED_HEAD (the review's fixes touch the Rust store and all three scripts):
-  - `smoke-updater-windows.yml`: positive RUN_WP, negative RUN_WN, prompt RUN_WPR
-  - `smoke-updater-unix.yml`: positive RUN_UP, negative RUN_UN, prompt RUN_UPR, stall RUN_US
+- CI, gating pass after the arc review's fixes (they touch the Rust store and all three scripts):
+  - `smoke-updater-windows.yml` on `ea493f5`: positive 36782754051 ✓, negative 36782757485 ✓,
+    prompt 36782760585 ✓
+  - `smoke-updater-unix.yml` on `a791d5c`: positive 36781821589 ✓, negative 36781824472 ✓, prompt
+    36781827996 ✓, stall 36781831180 ✓. Both positive legs log `update schedule: checked by 9.9.9`.
+    `ea493f5` differs from `a791d5c` only in a Windows-only lock branch, the Windows smoke script and
+    a comment, so the unix runs stand for it.

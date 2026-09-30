@@ -806,7 +806,7 @@ This is the canonical test list. Phase **Tests** sections cite row IDs instead o
 - **Mutations:** 🧬 removing the `check_updates` arm fails the spec, run locally or in one dispatched run. 🧬 Deleting the cfg line, or adding `webdriver` to `default`, fails the static guard.
 - **Layers:** lint, unit, e2e (real app, three OSes).
 
-### Phase 5 — Updater smokes
+### Phase 5 — Updater smokes ✓
 
 **Assumes:** F2, F10, F15, F21, I3.
 
