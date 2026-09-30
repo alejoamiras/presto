@@ -125,8 +125,7 @@ async fn script(
     observe(item, State::Failed, steps).await
 }
 
-/// Posts the production menu dispatch to the main thread, where a native click runs it, and waits
-/// for it to have run.
+/// A native click runs the dispatch on the main thread, so the driver must too.
 async fn click(app: &AppHandle) {
     let (done, ran) = oneshot::channel();
     let handle = app.clone();

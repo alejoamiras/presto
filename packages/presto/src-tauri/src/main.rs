@@ -245,8 +245,8 @@ fn reset_https_enabled(state: &AppState) {
 ///
 /// A non-production build must never poll the prod updater feed or pop the
 /// update-prompt window:
-/// - `webdriver` builds are handled at compile time (this fn + the spawn site
-///   are `#[cfg(not(feature = "webdriver"))]`), so the task cannot exist there.
+/// - `webdriver` builds are handled at compile time: this fn does not exist
+///   there, and their update task runs a stub check, never the real feed.
 /// - `debug_assertions` (a developer's `cargo tauri dev`, and the `_e2e.yml`
 ///   `cargo run` desktop app) are disabled by default — opt back in with
 ///   `PRESTO_FORCE_UPDATE_CHECK=1`.
@@ -288,8 +288,11 @@ fn act(
     let (mode, reply) = presto::updater::mode_and_reply(reason);
     let result = act_on(app, mode, outcome);
     if let Some(reply) = reply {
+        let busy = app
+            .try_state::<Arc<InstallGate>>()
+            .is_some_and(|gate| gate.is_busy());
         // The tray may have given up since the check ended; nothing to tell it then.
-        let _ = reply.send(result);
+        let _ = reply.send(presto::updater::manual_reply(result, busy));
     }
 }
 

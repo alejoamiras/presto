@@ -122,7 +122,6 @@ mod tests {
         semver::Version::parse(s).unwrap()
     }
 
-    /// H1.
     #[test]
     fn h1_later_on_the_pending_version_snoozes_it_and_keeps_it_pending() {
         let dir = tempfile::tempdir().unwrap();
@@ -139,7 +138,7 @@ mod tests {
         ));
     }
 
-    /// H2: only the version Rust verified and the prompt shows can be snoozed.
+    /// Only the version Rust verified and the prompt shows can be snoozed.
     #[test]
     fn h2_later_on_another_version_reprompts_and_writes_nothing() {
         for displayed in ["9.9.9", "1.1.0", "1.2.0+build", "1.2.0-rc.1"] {
@@ -157,7 +156,6 @@ mod tests {
         }
     }
 
-    /// H3.
     #[test]
     fn h3_later_with_nothing_pending_closes() {
         let dir = tempfile::tempdir().unwrap();
@@ -169,7 +167,7 @@ mod tests {
         assert!(!dir.path().join("update-schedule.json").exists());
     }
 
-    /// H4: the parent of the schedule path is a regular file, so the write fails.
+    /// The parent of the schedule path is a regular file, so the write fails.
     #[test]
     fn h4_later_with_a_failing_write_still_defers_for_the_session() {
         let dir = tempfile::tempdir().unwrap();
@@ -184,7 +182,7 @@ mod tests {
         assert!(store.is_snoozed(&v("1.2.0"), NOW + 60));
     }
 
-    /// H5: the snooze survives a restart, covers that version only, and the launch check honours it.
+    /// The snooze survives a restart, covers that version only, and the launch check honours it.
     #[test]
     fn h5_a_restart_keeps_the_snooze_for_that_version_only() {
         let dir = tempfile::tempdir().unwrap();
@@ -210,7 +208,6 @@ mod tests {
         assert_eq!(launch, CheckMode::Launch);
     }
 
-    /// F3.
     #[test]
     fn f3_update_now_while_installing_leaves_the_pending_item() {
         let gate = Arc::new(InstallGate::default());
@@ -226,7 +223,6 @@ mod tests {
         ));
     }
 
-    /// F4.
     #[test]
     fn f4_update_now_claims_only_when_it_installs() {
         let gate = Arc::new(InstallGate::default());
@@ -255,7 +251,7 @@ mod tests {
         assert!(!gate.is_busy(), "empty: the claim is released");
     }
 
-    /// G5: one URL rewrite for re-pointing, on both platforms' asset origins.
+    /// One URL rewrite for re-pointing, on both platforms' asset origins.
     #[test]
     fn g5_repointing_keeps_the_origin_and_path_and_encodes_the_query() {
         for base in [

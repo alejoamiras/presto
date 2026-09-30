@@ -1,7 +1,7 @@
 /**
  * The WebDriver-only tray hooks never reach a shipped build: they sit behind one `cfg`, the feature
  * is never on by default, and no release artifact is built with it. The shipped binaries' own bytes
- * are checked in the updater smokes (K5).
+ * are checked in the updater smokes.
  */
 import { describe, expect, test } from "bun:test";
 import { readdirSync } from "node:fs";

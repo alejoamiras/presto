@@ -213,7 +213,7 @@ pub fn start_animation_loop(tray: TrayIcon, handle: AppHandle, is_animating: Arc
 mod tests {
     use super::*;
 
-    /// 🧬 I9: the item sits right below the version line in both variants, and without it each
+    /// 🧬 The item sits right below the version line in both variants, and without it each
     /// variant keeps the order it shipped with.
     #[test]
     fn i9_check_for_updates_sits_below_the_version_line() {

@@ -1816,7 +1816,7 @@ async fn an_allow_whose_persist_fails_still_proves_and_re_prompts_later() {
     );
 }
 
-/// F12: the prover is idle only when every admission permit is back, so an automatic install
+/// The prover is idle only when every admission permit is back, so an automatic install
 /// cannot kill a second proof just because the first one finished.
 #[test]
 fn prover_idle_tracks_every_admitted_proof() {

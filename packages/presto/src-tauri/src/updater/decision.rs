@@ -152,6 +152,16 @@ impl Presentation {
     }
 }
 
+/// An install holding the gate when the reply is sent outranks what the check found: "Update Now"
+/// on a prompt left open can claim the gate while a manual check is in flight.
+pub fn manual_reply(result: ManualCheckResult, busy: bool) -> ManualCheckResult {
+    if busy {
+        ManualCheckResult::Installing
+    } else {
+        result
+    }
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
@@ -184,7 +194,7 @@ mod tests {
         })
     }
 
-    /// D3, D4: "nothing new" and a refused candidate count as a check; a failure does not.
+    /// "Nothing new" and a refused candidate count as a check; a failure does not.
     #[test]
     fn d3_d4_only_an_answer_from_the_feed_counts_as_a_check() {
         let reached: Vec<_> = KINDS.into_iter().filter(|k| k.reached_feed()).collect();
@@ -198,7 +208,6 @@ mod tests {
         );
     }
 
-    /// E1–E10: the rows that matter.
     #[test]
     fn e_decide_rows() {
         use CheckMode::{Launch, Manual, Scheduled};
@@ -206,29 +215,23 @@ mod tests {
         use OutcomeKind::*;
         #[rustfmt::skip]
         let rows = [
-            // E1
             (UpToDate, Some(true), Scheduled, false, false, Clear),
             (Rejected, None, Manual { live: true }, false, false, Clear),
-            // E2
             (Failed, Some(true), Launch, false, false, Unchanged),
-            // E3: live manual, any pref, snoozed or not
+            // Live manual, any pref, snoozed or not
             (Available, Some(true), Manual { live: true }, true, false, SetAndPresent { focus: true }),
             (Available, None, Manual { live: true }, false, false, SetAndPresent { focus: true }),
-            // E4: expired manual never installs
+            // Expired manual never installs
             (Available, Some(true), Manual { live: false }, false, false, SetAndPresent { focus: false }),
-            // E5
             (Available, Some(true), Scheduled, false, false, ClearAndInstall),
             (Available, Some(true), Launch, false, false, ClearAndInstall),
-            // E6: the snooze also defers the automatic install
+            // The snooze also defers the automatic install
             (Available, Some(true), Scheduled, true, false, SetOnly),
-            // E7
             (Available, None, Scheduled, false, false, SetAndPresent { focus: false }),
             (Available, Some(false), Launch, false, false, SetAndPresent { focus: false }),
-            // E8
             (Available, Some(false), Scheduled, true, false, SetOnly),
-            // E9: a restart does not re-prompt a snoozed version
+            // A restart does not re-prompt a snoozed version
             (Available, None, Launch, true, false, SetOnly),
-            // E10
             (Available, Some(true), Scheduled, false, true, InProgress),
             (Available, None, Manual { live: true }, false, true, InProgress),
             (InstallInProgress, None, Manual { live: true }, false, false, InProgress),
@@ -242,7 +245,7 @@ mod tests {
         }
     }
 
-    /// E: invariants over all 240 inputs.
+    /// Invariants over all 240 inputs.
     #[test]
     fn e_decide_invariants() {
         use CheckMode::{Launch, Manual, Scheduled};
@@ -268,23 +271,27 @@ mod tests {
         }
     }
 
-    /// G1–G3.
     #[test]
     fn g1_g3_presenting_rechecks_the_gate_and_the_snooze() {
         let manual = CheckMode::Manual { live: true };
-        assert!(!should_present(manual, false, true), "G1");
-        assert!(!should_present(CheckMode::Scheduled, false, true), "G1");
-        assert!(!should_present(CheckMode::Scheduled, true, false), "G2");
-        assert!(!should_present(CheckMode::Launch, true, false), "G2");
-        assert!(should_present(manual, true, false), "G3");
+        assert!(!should_present(manual, false, true), "busy");
+        assert!(!should_present(CheckMode::Scheduled, false, true), "busy");
+        assert!(
+            !should_present(CheckMode::Scheduled, true, false),
+            "snoozed"
+        );
+        assert!(!should_present(CheckMode::Launch, true, false), "snoozed");
+        assert!(
+            should_present(manual, true, false),
+            "manual ignores the snooze"
+        );
         assert!(
             should_present(CheckMode::Manual { live: false }, true, false),
-            "G3"
+            "manual ignores the snooze"
         );
         assert!(should_present(CheckMode::Scheduled, false, false));
     }
 
-    /// G4.
     #[test]
     fn g4_the_version_on_screen_is_never_reloaded() {
         assert_eq!(prompt_action(None, "1.2.0", false), PromptAction::Open);
@@ -307,7 +314,7 @@ mod tests {
         );
     }
 
-    /// G6: a failed window call answers "Couldn't check", never "presented".
+    /// A failed window call answers "Couldn't check", never "presented".
     #[test]
     fn g6_the_tray_hears_how_presenting_went() {
         assert_eq!(
@@ -324,7 +331,15 @@ mod tests {
         );
     }
 
-    /// G7.
+    #[test]
+    fn a_busy_gate_outranks_the_manual_result() {
+        use ManualCheckResult::*;
+        for result in [UpToDate, Presented, Failed, Installing] {
+            assert_eq!(manual_reply(result, true), Installing, "{result:?}");
+            assert_eq!(manual_reply(result, false), result, "{result:?}");
+        }
+    }
+
     #[test]
     fn g7_the_presenter_refuses_the_main_thread() {
         let main = std::thread::current().id();

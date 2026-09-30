@@ -264,7 +264,6 @@ mod pending_update {
             assert!(matches!(slot.take_or_reprompt("2.0.0"), TakeOutcome::Empty));
         }
 
-        /// E11.
         #[test]
         fn e11_a_cleared_slot_installs_nothing() {
             let slot = PendingUpdateSlot::<Dummy>::default();
@@ -274,7 +273,7 @@ mod pending_update {
             assert!(matches!(slot.match_displayed("2.0.0"), MatchOutcome::Empty));
         }
 
-        /// E12: the rollback lever's lower version displaces the withdrawn one.
+        /// The rollback lever's lower version displaces the withdrawn one.
         #[test]
         fn e12_the_latest_fetch_wins_not_the_highest_version() {
             let slot = PendingUpdateSlot::<Dummy>::default();
