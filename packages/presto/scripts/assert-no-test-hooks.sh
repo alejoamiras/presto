@@ -2,7 +2,8 @@
 # Fails if a built artifact carries the WebDriver-only tray hooks. Each argument is a binary, a
 # directory (an .app) or an AppImage, whose compressed payload is extracted first. Only a completed
 # scan of a non-empty Presto executable passes: a missing or empty target, a directory without the
-# executable, and a grep error all fail.
+# executable as a regular file, and a grep error all fail. No symlink is followed, so nothing
+# outside the target is ever scanned or counted.
 set -euo pipefail
 
 NEEDLE="PRESTO_E2E_TRAY_REPORT"
@@ -23,11 +24,8 @@ for target in "$@"; do
     scan="$work/squashfs-root"
     [ -d "$scan" ] || { echo "::error::$target did not extract"; exit 1; }
   fi
-  exe="$scan"
   if [ -d "$scan" ]; then
-    # -L: the entrypoint may be a symlink, which `grep -r` would skip inside the tree.
-    exe=$(find -L "$scan" -type f -name Presto -size +0c -print -quit)
-    if [ -z "$exe" ]; then
+    if [ -z "$(find "$scan" -type f -name Presto -size +0c -print -quit)" ]; then
       echo "::error::$target holds no non-empty Presto executable"
       exit 1
     fi
@@ -36,7 +34,7 @@ for target in "$@"; do
     exit 1
   fi
   status=0
-  grep -rqa -- "$NEEDLE" "$scan" "$exe" || status=$?
+  grep -rqa -- "$NEEDLE" "$scan" || status=$?
   case "$status" in
     0)
       echo "::error::$target contains $NEEDLE: a WebDriver-only build reached a shipped artifact"

@@ -26,6 +26,22 @@ paths with spaces intact, and that a universal macOS binary needs no special han
 |---|---|---|---|
 | 1 | **Low.** A clean artifact whose `Presto` entrypoint is a symlink (say `usr/bin/Presto → ../lib/presto-bin`) failed: `find -type f` does not follow the link. | Yes, as a fixture. Whether any shipped layout does this is unverified. It fails closed, so the cost was a spurious smoke failure, not a vacuous pass. | **Fixed:** `find -L` locates the entrypoint, and grep scans it by name alongside the tree (GNU `grep -r` follows symlinks only on the command line). A new test covers a symlinked entrypoint, clean (passes) and hooked (fails). 🧬 dropping `-L` → that test red. |
 
+## Round 3 — the round 2 fix reopened the scan (3-round cap reached)
+
+Codex confirmed that scanning the entrypoint twice changes no outcome, and that `find` errors
+propagate.
+
+| # | Finding | Verified | Disposition |
+|---|---|---|---|
+| 1 | **Low.** `find -L` follows *every* directory link. An unrelated symlink cycle aborts the scan (a spurious failure), and a link escaping the tree can let a host file named `Presto` satisfy the executable check (a vacuous pass for a bundle missing its executable). | Yes, by reading. | **Fixed by reverting round 2.** Discovery is `find -type f` again and grep scans only the tree: no link is followed, so nothing outside the target is scanned or counted. A symlinked entrypoint now fails closed by design. The test pins that: a clean `usr/bin/Presto → ../lib/presto-bin` fails with "holds no non-empty Presto executable". 🧬 `find -L` → that test red. The script's logic is again the one at `e2196dc`, which the Phase 4 smokes dispatched against, so they exercise the final scanner. |
+
+**Lesson.** Round 2's finding described a hypothetical layout. Adopting it traded a loud, fail-closed
+false alarm for complexity with a (contrived) fail-open path. For a guard whose whole job is to
+never pass vacuously, a spurious failure on a layout we don't ship is the cheaper error; decline
+such findings with that reason. The loop hit its 3-round cap here. The last finding concerned only
+code that no longer exists, and the fresh cross-arc pass reviews the final script with everything
+else.
+
 ## Dispatches
 
 Before the round 1 fixes, the arc's dispatches at `4909ce5` were green: presto.yml `36785186315`, with

@@ -63,17 +63,13 @@ describe("assert-no-test-hooks", () => {
     }
   });
 
-  test("follows a symlinked entrypoint, clean or hooked", () => {
-    for (const [name, body, code] of [
-      ["LinkedClean", "release bytes", 0],
-      ["LinkedHooked", "x PRESTO_E2E_TRAY_REPORT y", 1],
-    ] as const) {
-      file(`${name}/usr/lib/presto-bin`, body);
-      mkdirSync(path.join(dir, name, "usr/bin"), { recursive: true });
-      symlinkSync("../lib/presto-bin", path.join(dir, name, "usr/bin/Presto"));
-      const r = run(path.join(dir, name));
-      expect(r.code, r.out).toBe(code);
-    }
+  test("fails closed on a symlinked entrypoint, even a clean one", () => {
+    file("Linked/usr/lib/presto-bin", "release bytes");
+    mkdirSync(path.join(dir, "Linked/usr/bin"), { recursive: true });
+    symlinkSync("../lib/presto-bin", path.join(dir, "Linked/usr/bin/Presto"));
+    const r = run(path.join(dir, "Linked"));
+    expect(r.code, r.out).toBe(1);
+    expect(r.out).toContain("holds no non-empty Presto executable");
   });
 
   test("fails when grep cannot finish the scan", () => {
