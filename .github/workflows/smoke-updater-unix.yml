@@ -18,7 +18,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Smoke scenario (positive | negative)
+        description: Smoke scenario (positive | negative | prompt | stall)
         required: false
         default: positive
         type: string
@@ -59,8 +59,8 @@ jobs:
         run: |
           set -euo pipefail
           case "$UPDATER_SMOKE_MODE" in
-            positive|negative) ;;
-            *) echo "::error::mode is not supported on this ref (allowed: positive, negative)"; exit 1 ;;
+            positive|negative|prompt|stall) ;;
+            *) echo "::error::mode is not supported on this ref (allowed: positive, negative, prompt, stall)"; exit 1 ;;
           esac
           # Canonical SemVer without build metadata, above N-1: anything else fails a later parse or
           # never qualifies as an update.
@@ -83,14 +83,14 @@ jobs:
 
       # Same runtime set as _e2e-updater-linux.yml: FUSE so the AppImage runs natively (the updater
       # swaps $APPIMAGE in place), plus a headless display, a tray host and a session bus. The GUI
-      # libraries come from setup-presto.
+      # libraries come from setup-presto. `stall` mode finds the /health listener's PID with lsof.
       - name: Install FUSE + display + tray deps (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get install -y libfuse2t64 || sudo apt-get install -y libfuse2
-          sudo apt-get install -y xvfb stalonetray dbus-x11
+          sudo apt-get install -y xvfb stalonetray dbus-x11 lsof
 
       - name: Setup display (Linux)
         if: runner.os == 'Linux'

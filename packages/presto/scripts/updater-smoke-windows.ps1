@@ -26,7 +26,10 @@
     updater-smoke-windows.ps1 -NVersion 9.9.9 -NArtifactsDir <dir> -N1Installer <setup.exe> -RepoRoot <root>
     -NArtifactsDir : dir with N's *-setup.nsis.zip, .sig, and pre-signed smoke-latest.json
     -N1Installer   : path to N-1's *-setup.exe
-  UPDATER_SMOKE_MODE = positive (default) | negative (tamper the served zip, expect rejection)
+  UPDATER_SMOKE_MODE = positive (default: update, then N records its own check)
+                     | negative (tamper the served zip, expect rejection with N-1 still alive)
+                     | prompt   (auto-update off: the prompt is presented, held back by a snooze
+                       for N across a restart, and presented again under another version's snooze)
                      | barrier  (piece-3 L8: hold the update open mid-NSIS via the sentinel baked
                        into N's NSIS_HOOK_PREINSTALL — a PRE-MUTATION barrier at the top of
                        Section Install (2.8.1 silent updates never run the old uninstaller);
@@ -57,6 +60,16 @@ $NBinaryName = "Presto.exe"
 
 $ErrorActionPreference = "Stop"
 $Mode = if ($env:UPDATER_SMOKE_MODE) { $env:UPDATER_SMOKE_MODE } else { "positive" }
+# Every mode the release and manual workflows pass. Never echo a rejected value: it could carry a
+# `::` workflow command.
+if (@("positive", "negative", "barrier", "copy-initiator", "prompt") -cnotcontains $Mode) {
+  Write-Error "UPDATER_SMOKE_MODE is not a supported mode"
+  exit 1
+}
+if ($Mode -eq "negative" -and -not $N1Version) {
+  Write-Error "negative mode requires -N1Version: only a live N-1 proves the refusal"
+  exit 1
+}
 $TauriConfig = Get-Content (Join-Path $RepoRoot "packages/presto/src-tauri/tauri.conf.json") -Raw | ConvertFrom-Json
 $FeedUri = [uri]$TauriConfig.plugins.updater.endpoints[0]
 if ($FeedUri.Scheme -ne "https" -or -not $FeedUri.Host) { throw "Invalid updater endpoint" }
@@ -86,6 +99,63 @@ $TaskName = "Presto Crash Recovery"
 
 function Log($m) { Write-Host "── $m ──" }
 Log "mode: $Mode"
+
+$LogDir = "$env:LOCALAPPDATA\build.presto.presto\logs"
+$Schedule = Join-Path $ConfigDir "update-schedule.json"
+
+# Where the next launch's lines begin: the newest daily log file and its current length.
+function Get-LogMark {
+  $f = Get-ChildItem $LogDir -Filter "presto.*.log" -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
+  if ($f) { @{ Name = $f.Name; Offset = $f.Length } } else { @{ Name = $null; Offset = 0 } }
+}
+
+# One launch's lines, read from its mark. A daily rotation since the mark throws, so a check that
+# spans midnight fails rather than passing on a partial read.
+function Get-LaunchLog($Mark) {
+  $files = @(Get-ChildItem $LogDir -Filter "presto.*.log" -ErrorAction SilentlyContinue | Sort-Object Name)
+  if ($files.Count -eq 0) { return "" }
+  $current = $files[-1]
+  if (($Mark.Name -and $current.Name -ne $Mark.Name) -or (-not $Mark.Name -and $files.Count -gt 1)) {
+    throw "the app's log rotated during this launch; rerun the smoke"
+  }
+  $stream = [System.IO.File]::Open($current.FullName, 'Open', 'Read', 'ReadWrite')
+  try {
+    [void]$stream.Seek($Mark.Offset, 'Begin')
+    (New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)).ReadToEnd()
+  } finally { $stream.Dispose() }
+}
+
+function Wait-LaunchLine($Mark, $Pattern, $Seconds) {
+  for ($i = 0; $i -lt $Seconds; $i++) {
+    if ((Get-LaunchLog $Mark) -match $Pattern) { return $true }
+    if ($script:AppProc.HasExited) { return $false }
+    Start-Sleep -Seconds 1
+  }
+  $false
+}
+
+function Start-App {
+  $mark = Get-LogMark
+  $script:AppProc = Start-Process -FilePath $script:Exe.FullName -PassThru
+  $mark
+}
+
+# Ends the launched app and its children (the WebView2 processes), then waits for :59833 to close.
+function Stop-App {
+  & taskkill /PID $script:AppProc.Id /T /F *> $null
+  [void]$script:AppProc.WaitForExit(30000)
+  for ($i = 0; $i -lt 30; $i++) {
+    try { Invoke-RestMethod -Uri $HealthUrl -TimeoutSec 2 | Out-Null } catch { return }
+    Start-Sleep -Seconds 1
+  }
+  throw "/health still answers after the app was stopped"
+}
+
+# A schedule file holding only a 24 h snooze, in the shape the app writes.
+function Write-Snooze($Version) {
+  $until = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 86400
+  "{`"schema`":1,`"snooze`":{`"version`":`"$Version`",`"until`":$until}}" | Set-Content -Path $Schedule -Encoding utf8NoBOM
+}
 
 function Cleanup {
   if ($QProc) { Stop-Process -Id $QProc.Id -Force -ErrorAction SilentlyContinue }
@@ -117,7 +187,7 @@ function Dump-Logs {
   Write-Host "── feed log ──"; Get-Content (Join-Path $Work "feed.log") -ErrorAction SilentlyContinue
   Write-Host "── feed err ──"; Get-Content (Join-Path $Work "feed.err") -ErrorAction SilentlyContinue
   Write-Host "── app log (what the updater actually did) ──"
-  Get-ChildItem "$env:LOCALAPPDATA\build.presto.presto\logs" -ErrorAction SilentlyContinue |
+  Get-ChildItem $LogDir -ErrorAction SilentlyContinue |
     ForEach-Object { Write-Host "-- $($_.Name) --"; Get-Content $_.FullName -Tail 80 -ErrorAction SilentlyContinue }
   Write-Host "── last /health ──"; try { Invoke-RestMethod -Uri $HealthUrl -TimeoutSec 3 | ConvertTo-Json -Compress } catch { "unreachable" }
 }
@@ -211,8 +281,42 @@ try {
   $Exe = Get-ChildItem -Path $InstallRoot -Recurse -Filter $NBinaryName -ErrorAction SilentlyContinue | Select-Object -First 1
   if (-not $Exe) { Write-Error "installed N-1 exe ($NBinaryName) not found under $InstallRoot"; exit 1 }
 
-  # ── Pre-seed auto-update so N-1 updates without UI ──
   New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
+  if ($Mode -eq "prompt") {
+    # ── Auto-update off and onboarding done, so the prompt is the only window N-1 opens ──
+    '{"config_version":1,"https_enabled":false,"approved_origins":[],"speed":"full","auto_update":false,"onboarding_version":1}' | Set-Content (Join-Path $ConfigDir "config.json")
+    Remove-Item $Schedule -Force -ErrorAction SilentlyContinue
+    $VRe = [regex]::Escape($NVersion)
+    $Presented = "(?m)Update prompt presented version=$VRe\r?$"
+    $Snoozed = "(?m)Update snoozed; prompt suppressed version=$VRe "
+
+    Log "PROMPT 1/3: N-1 presents $NVersion"
+    $mark = Start-App
+    if (-not (Wait-LaunchLine $mark $Presented 120)) { Dump-Logs; Write-Error "PROMPT FAILED — this launch never logged 'Update prompt presented version=$NVersion'."; exit 1 }
+    try { $got = (Invoke-RestMethod -Uri $HealthUrl -TimeoutSec 3).version } catch { $got = $null }
+    if ($got -ne $N1Version) { Dump-Logs; Write-Error "PROMPT FAILED — /health reports '$got', not N-1 ($N1Version), while the prompt is up."; exit 1 }
+    Stop-App
+
+    Log "PROMPT 2/3: a snooze for $NVersion holds the prompt back after a restart"
+    Write-Snooze $NVersion
+    $mark = Start-App
+    if (-not (Wait-LaunchLine $mark $Snoozed 120)) { Dump-Logs; Write-Error "PROMPT FAILED — this launch never logged 'Update snoozed; prompt suppressed version=$NVersion'."; exit 1 }
+    Start-Sleep -Seconds 30
+    if ((Get-LaunchLog $mark) -match "Showing update prompt|Update prompt presented") { Dump-Logs; Write-Error "PROMPT FAILED — the prompt was shown within 30s although $NVersion is snoozed."; exit 1 }
+    try { $got = (Invoke-RestMethod -Uri $HealthUrl -TimeoutSec 3).version } catch { $got = $null }
+    if ($got -ne $N1Version) { Dump-Logs; Write-Error "PROMPT FAILED — N-1 ($N1Version) stopped answering /health during the snoozed launch (got '$got')."; exit 1 }
+    Stop-App
+
+    Log "PROMPT 3/3: a snooze for another version does not hold $NVersion back"
+    Write-Snooze "0.0.0"
+    $mark = Start-App
+    if (-not (Wait-LaunchLine $mark $Presented 120)) { Dump-Logs; Write-Error "PROMPT FAILED — a snooze for 0.0.0 held back $NVersion's prompt."; exit 1 }
+    Stop-App
+    Log "SUCCESS (prompt) — presented, held back by its snooze across a restart, presented again under another version's snooze"
+    exit 0
+  }
+
+  # ── Pre-seed auto-update so N-1 updates without UI ──
   '{"config_version":1,"https_enabled":false,"approved_origins":[],"speed":"full","auto_update":true}' | Set-Content (Join-Path $ConfigDir "config.json")
 
   # ── (#96) Arm crash-recovery the way the app does, so the update runs THROUGH the
@@ -301,10 +405,8 @@ try {
     }
     # Rejecting is only proven by a LIVE N-1 still reporting its own version — a crash after the
     # download would also "never report N" and pass vacuously.
-    if ($N1Version) {
-      try { $got = (Invoke-RestMethod -Uri $HealthUrl -TimeoutSec 3).version } catch { $got = $null }
-      if ($got -ne $N1Version) { Dump-Logs; Write-Error "NEGATIVE inconclusive — N-1 is not alive at $N1Version after the rejection window (got '$got'); it may have crashed rather than refused."; exit 1 }
-    }
+    try { $got = (Invoke-RestMethod -Uri $HealthUrl -TimeoutSec 3).version } catch { $got = $null }
+    if ($got -ne $N1Version) { Dump-Logs; Write-Error "NEGATIVE inconclusive — N-1 is not alive at $N1Version after the rejection window (got '$got'); it may have crashed rather than refused."; exit 1 }
     Log "SUCCESS (negative) — updater downloaded the tampered artifact and refused to update"
     Dump-Logs; exit 0
   }
@@ -534,7 +636,7 @@ try {
   $updated = $false
   for ($i = 0; $i -lt 150; $i++) {
     try { $got = (Invoke-RestMethod -Uri $HealthUrl -TimeoutSec 3).version } catch { $got = $null }
-    if ($got -eq $NVersion) { $updated = $true; break }
+    if ($got -eq $NVersion) { $updated = $true; $TN = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds(); break }
     Start-Sleep -Seconds 2
   }
   if (-not $updated) {
@@ -543,7 +645,11 @@ try {
   if (-not (Select-String -Path (Join-Path $Work "feed.log") -Pattern "/releases/download/" -Quiet)) {
     Dump-Logs; Write-Error "/health reports $NVersion but the feed log has no download hit — the update didn't flow through our feed."; exit 1
   }
-  Log "SUCCESS — updated to $NVersion via the local feed (artifact downloaded + relaunched)"
+  # N's own launch check must be on disk: N-1 wrote the same file before installing, so only
+  # N's version with a time after /health first reported N counts.
+  & bun (Join-Path $RepoRoot "packages/presto/scripts/assert-update-schedule.ts") $Schedule --by $NVersion --since $TN --wait 90 2>&1 | ForEach-Object { "$_" }
+  if ($LASTEXITCODE -ne 0) { Dump-Logs; Write-Error "$NVersion did not record its own update check."; exit 1 }
+  Log "SUCCESS — updated to $NVersion via the local feed (artifact downloaded + relaunched); N recorded its own check"
 
   # End-state: no update-transaction file survives N's startup. A same-key 3.x N-1's marker must
   # have been reconciled away by now; /health == N happens after startup reconciliation.
