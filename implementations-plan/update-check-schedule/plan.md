@@ -752,7 +752,7 @@ This is the canonical test list. Phase **Tests** sections cite row IDs instead o
 - **Pass:** all exit 0; `update-prompt.spec.ts` is green unedited; clippy is clean under both feature sets.
 - **Layers:** lint, typecheck, unit, integration, UI e2e (mocked IPC).
 
-### Phase 3 — Tray "Check for Updates…"
+### Phase 3 — Tray "Check for Updates…" ✓
 
 **Assumes:** F7, I2.
 

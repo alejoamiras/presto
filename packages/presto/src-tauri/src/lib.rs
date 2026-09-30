@@ -15,5 +15,6 @@ pub mod server;
 pub mod trust;
 pub mod uninstall;
 pub mod update_marker;
+pub mod update_menu;
 pub mod updater;
 pub mod verified_sites;

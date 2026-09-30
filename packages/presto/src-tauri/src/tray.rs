@@ -4,7 +4,7 @@ use presto::versions;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tauri::menu::{MenuBuilder, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
+use tauri::menu::{MenuBuilder, MenuItem, MenuItemBuilder, PredefinedMenuItem, SubmenuBuilder};
 use tauri::tray::{TrayIcon, TrayIconBuilder};
 use tauri::AppHandle;
 
@@ -67,13 +67,50 @@ fn build_versions_submenu(
     Ok(builder.build()?)
 }
 
-/// Build the tray menu. Used both for initial setup and for rebuilding when versions change.
-/// The `status` item is passed in because it's shared state (text updated by callbacks).
+/// One entry of the tray menu.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Entry {
+    Status,
+    Versions,
+    ShowLogs,
+    Settings,
+    Separator,
+    VersionInfo,
+    CheckUpdates,
+    GitHub,
+    Quit,
+}
+
+/// The menu's order. The status line and the Versions submenu are dev-only: in production the
+/// status item still exists, since `on_status` also sets the tooltip. "Show Logs" is in every build,
+/// as the only in-app path to a user's own logs. "Check for Updates…" sits below the version line
+/// whenever the item exists.
+pub fn menu_layout(dev_mode: bool, has_check: bool) -> Vec<Entry> {
+    let mut entries = Vec::new();
+    if dev_mode {
+        entries.extend([Entry::Status, Entry::Versions]);
+    }
+    entries.extend([
+        Entry::ShowLogs,
+        Entry::Settings,
+        Entry::Separator,
+        Entry::VersionInfo,
+    ]);
+    if has_check {
+        entries.push(Entry::CheckUpdates);
+    }
+    entries.extend([Entry::GitHub, Entry::Quit]);
+    entries
+}
+
+/// Build the tray menu, at setup and on every dev-mode rebuild. `status` and `check_updates` are
+/// passed in because their text is updated after the build.
 pub fn build_tray_menu(
     app: &AppHandle,
     dev_mode: bool,
     bundled_version: &str,
-    status: &tauri::menu::MenuItem<tauri::Wry>,
+    status: &MenuItem<tauri::Wry>,
+    check_updates: Option<&MenuItem<tauri::Wry>>,
 ) -> Result<tauri::menu::Menu<tauri::Wry>, Box<dyn std::error::Error>> {
     let settings = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
     let app_version = env!("CARGO_PKG_VERSION");
@@ -87,40 +124,34 @@ pub fn build_tray_menu(
     let github = MenuItemBuilder::with_id("open_github", "GitHub").build(app)?;
     let quit = MenuItemBuilder::with_id("quit", "Quit").build(app)?;
     let separator = PredefinedMenuItem::separator(app)?;
-    // B3 (observability): "Show Logs" is now in EVERY build's menu — it is the only in-app path to a
-    // user's own logs (its handler `open_in_browser(&log_dir())` was never dev-gated), which matters for
-    // field diagnostics on a released build. The status item + Versions submenu stay dev-only.
     let show_logs = MenuItemBuilder::with_id("show_logs", "Show Logs").build(app)?;
-
-    if dev_mode {
-        let versions_submenu = build_versions_submenu(app, bundled_version)?;
-        Ok(MenuBuilder::new(app)
-            .items(&[
-                status,
-                &versions_submenu,
-                &show_logs,
-                &settings,
-                &separator,
-                &version_text,
-                &github,
-                &quit,
-            ])
-            .build()?)
+    let versions = if dev_mode {
+        Some(build_versions_submenu(app, bundled_version)?)
     } else {
-        // Production mode: no status item or Versions submenu in the menu.
-        // The status MenuItem still exists and is updated by on_status — this is
-        // intentional because on_status also sets the tray tooltip, which IS visible.
-        Ok(MenuBuilder::new(app)
-            .items(&[
-                &show_logs,
-                &settings,
-                &separator,
-                &version_text,
-                &github,
-                &quit,
-            ])
-            .build()?)
+        None
+    };
+
+    let mut menu = MenuBuilder::new(app);
+    for entry in menu_layout(dev_mode, check_updates.is_some()) {
+        menu = match entry {
+            Entry::Status => menu.item(status),
+            Entry::Versions => match &versions {
+                Some(submenu) => menu.item(submenu),
+                None => menu,
+            },
+            Entry::ShowLogs => menu.item(&show_logs),
+            Entry::Settings => menu.item(&settings),
+            Entry::Separator => menu.item(&separator),
+            Entry::VersionInfo => menu.item(&version_text),
+            Entry::CheckUpdates => match check_updates {
+                Some(item) => menu.item(item),
+                None => menu,
+            },
+            Entry::GitHub => menu.item(&github),
+            Entry::Quit => menu.item(&quit),
+        };
     }
+    Ok(menu.build()?)
 }
 
 /// Build the tray icon with the idle icon and initial menu.
@@ -179,4 +210,41 @@ pub fn start_animation_loop(tray: TrayIcon, handle: AppHandle, is_animating: Arc
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 🧬 I9: the item sits right below the version line in both variants, and without it each
+    /// variant keeps the order it shipped with.
+    #[test]
+    fn i9_check_for_updates_sits_below_the_version_line() {
+        use Entry::*;
+        let production = [ShowLogs, Settings, Separator, VersionInfo, GitHub, Quit];
+        let dev = [
+            Status,
+            Versions,
+            ShowLogs,
+            Settings,
+            Separator,
+            VersionInfo,
+            GitHub,
+            Quit,
+        ];
+        assert_eq!(menu_layout(false, false), production);
+        assert_eq!(menu_layout(true, false), dev);
+        for dev_mode in [false, true] {
+            let layout = menu_layout(dev_mode, true);
+            let version = layout.iter().position(|e| *e == VersionInfo).unwrap();
+            assert_eq!(
+                layout.get(version + 1),
+                Some(&CheckUpdates),
+                "dev={dev_mode}"
+            );
+            let mut without = layout.clone();
+            without.retain(|e| *e != CheckUpdates);
+            assert_eq!(without, menu_layout(dev_mode, false));
+        }
+    }
 }

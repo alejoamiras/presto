@@ -101,4 +101,20 @@ describe("update wiring", () => {
     expect(count(updater, ".check()")).toBe(1);
     expect(fnBody(updater, "fetch_feed")).toContain("with_feed_timeout(updater.check()).await");
   });
+
+  // The menu callback runs with no Tokio context, where a Tokio spawn panics and `panic = "abort"`
+  // ends the app. A lexical tripwire only: the WebDriver tray spec's real click is the safety net.
+  test("I12: the tray click path never reaches for Tokio's runtime", async () => {
+    const menu = await source("update_menu.rs");
+    const handler = fnBody(await source("main.rs"), "on_tray_menu");
+    for (const [name, code] of [
+      ["update_menu.rs", menu],
+      ["on_tray_menu", handler],
+    ]) {
+      for (const call of ["tokio::spawn(", "tokio::task::spawn(", "Handle::current()"]) {
+        expect(code, `${call} in ${name}`).not.toContain(call);
+      }
+    }
+    expect(menu).toContain("tauri::async_runtime::spawn(");
+  });
 });
