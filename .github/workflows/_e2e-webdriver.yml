@@ -75,6 +75,9 @@ jobs:
       # ── Launch app (single step, no platform conditionals) ──
       - name: Launch app
         run: |
+          # The app's WebDriver-only tray driver writes here, and tray-update.spec.ts reads it.
+          export PRESTO_E2E_TRAY_REPORT="$RUNNER_TEMP/tray-report.json"
+          echo "PRESTO_E2E_TRAY_REPORT=$PRESTO_E2E_TRAY_REPORT" >> "$GITHUB_ENV"
           EXE=""
           [ "$RUNNER_OS" = "Windows" ] && EXE=".exe"
           case "${{ inputs.mode }}" in
@@ -115,12 +118,29 @@ jobs:
           cat "$RUNNER_TEMP/tauri.log" 2>/dev/null || true
           exit 1
 
+      # The updater smokes prove shipped binaries lack this string; that check means something only
+      # if a build with the hooks demonstrably contains it.
+      - name: Assert the WebDriver binary carries the tray hooks
+        env:
+          MODE: ${{ inputs.mode }}
+        run: |
+          EXE=""
+          [ "$RUNNER_OS" = "Windows" ] && EXE=".exe"
+          PROFILE=debug
+          [ "$MODE" = "release" ] && PROFILE=release
+          BIN="src-tauri/target/$PROFILE/Presto$EXE"
+          if ! grep -qa PRESTO_E2E_TRAY_REPORT "$BIN"; then
+            echo "::error::$BIN does not contain PRESTO_E2E_TRAY_REPORT, so the smokes' absence check proves nothing"
+            exit 1
+          fi
+
       # ── Run tests ──
       - name: Run WebDriver E2E tests
         run: bun run test:e2e:webdriver
 
-      # ── Regression guard: the background update check MUST be compiled out
-      #    of webdriver builds. If the prompt window ever appears, it steals the
+      # ── Regression guard: the real feed check MUST be compiled out of webdriver
+      #    builds (their update task runs on a stub that never finds an update).
+      #    If the prompt window ever appears, it steals the
       #    active WebDriver context mid-test (see the 1.0.2 CI flake). Runs even
       #    on test failure so it always gives signal.
       - name: Assert no update prompt fired
@@ -140,7 +160,9 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: webdriver-e2e-logs-${{ runner.os }}-${{ inputs.mode }}
-          path: ${{ runner.temp }}/tauri.log
+          path: |
+            ${{ runner.temp }}/tauri.log
+            ${{ runner.temp }}/tray-report.json
           if-no-files-found: ignore
           retention-days: 7
 
