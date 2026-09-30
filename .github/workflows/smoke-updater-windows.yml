@@ -21,16 +21,19 @@ name: Smoke Updater Windows (manual)
 #
 # NOT a PR gate: two Windows Tauri builds. Run it manually before a release, or when updater/
 # marker/NSIS-hook code changes.
+#
+# `mode` is a free-form string so a branch can add modes without editing `main`'s copy (a dispatch
+# validates `choice` inputs against the options on the ref it runs). The first step allowlists it,
+# and inputs reach shell only through `env:`.
 
 on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Smoke scenario
+        description: Smoke scenario (barrier | copy-initiator | positive | negative)
         required: false
         default: barrier
-        type: choice
-        options: [barrier, copy-initiator, positive, negative]
+        type: string
       n-version:
         description: Version to stamp on the in-job N build
         required: false
@@ -52,6 +55,19 @@ jobs:
       # under a "barrier" job title (run 30471013752).
       UPDATER_SMOKE_MODE: ${{ inputs.mode || 'barrier' }}
     steps:
+      # Never echo a rejected value: a crafted input could smuggle a `::` workflow command.
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          case "$UPDATER_SMOKE_MODE" in
+            barrier|copy-initiator|positive|negative) ;;
+            *) echo "::error::mode is not supported on this ref (allowed: barrier, copy-initiator, positive, negative)"; exit 1 ;;
+          esac
+          if ! [[ "$N_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::n-version must be a plain semver version"; exit 1
+          fi
+
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-presto
         with:

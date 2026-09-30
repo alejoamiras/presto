@@ -119,6 +119,45 @@ test("ephemeral Windows updater smoke prepares its signed feed before running th
   expect(workflow.replace(/^\s*#.*$/gm, "")).not.toMatch(/\$\{\{ secrets\./);
 });
 
+type SmokeStep = { name?: string; run?: string; uses?: string; with?: Record<string, unknown> };
+type SmokeWorkflow = {
+  permissions?: unknown;
+  jobs: Record<string, { permissions?: unknown; env?: Record<string, string>; steps: SmokeStep[] }>;
+};
+
+// Free-form `mode` strings let a branch dispatch modes `main` does not know yet, so each workflow
+// must allowlist the value before any other step and hand inputs to shell only through `env:`.
+const MANUAL_SMOKE_MODES = {
+  "smoke-updater-unix.yml": ["positive", "negative"],
+  "smoke-updater-windows.yml": ["barrier", "copy-initiator", "positive", "negative"],
+};
+for (const [file, modes] of Object.entries(MANUAL_SMOKE_MODES)) {
+  const source = fs.readFileSync(path.join(REPO, ".github/workflows", file), "utf8");
+  const workflow = Bun.YAML.parse(source) as SmokeWorkflow;
+  const jobs = Object.values(workflow.jobs);
+  const steps = jobs.flatMap((job) => job.steps);
+
+  test(`${file}: inputs reach shell only through env, after a first-step allowlist`, () => {
+    const inputExpression = /\$\{\{[^}]*\binputs\./;
+    for (const step of steps) {
+      expect(step.run ?? "").not.toMatch(inputExpression);
+      expect(JSON.stringify(step.with ?? {})).not.toMatch(inputExpression);
+    }
+    for (const job of jobs) {
+      expect(job.steps[0]?.name).toBe("Validate inputs");
+      expect(job.steps[0]?.run).toContain(`${modes.join("|")}) ;;`);
+      expect(job.env?.UPDATER_SMOKE_MODE).toMatch(/^\$\{\{ inputs\.mode \|\| '[a-z-]+' \}\}$/);
+    }
+  });
+
+  test(`${file}: read-only, secretless, and uploads nothing`, () => {
+    expect(workflow.permissions).toEqual({ contents: "read" });
+    for (const job of jobs) expect(job.permissions).toBeUndefined();
+    expect(source.replace(/^\s*#.*$/gm, "")).not.toMatch(/\bsecrets\./);
+    for (const step of steps) expect(step.uses ?? "").not.toContain("upload-artifact");
+  });
+}
+
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("release-presto.yml — B6 publish/promote contract", () => {
   test("least privilege: `promote` is the only leg that writes the feed", () => {
