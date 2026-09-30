@@ -10,8 +10,10 @@
 pub mod authorization;
 pub mod bb;
 pub mod config;
+pub(crate) mod file_lock;
 pub mod server;
 pub mod update_manifest;
+pub mod update_schedule;
 pub mod updater_state;
 pub mod versions;
 /// F-003 Windows tail — owner-only ACL helpers (Windows-only; the module is `#![cfg(windows)]`).

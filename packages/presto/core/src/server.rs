@@ -213,6 +213,13 @@ impl Default for HeadlessState {
 }
 
 impl HeadlessState {
+    /// True when no proof holds an admission permit. Both prove routes hold one for the whole
+    /// request, a killed bb's reap included; the tray's status flag cannot answer this, because each
+    /// finishing request resets it while others may still run.
+    pub fn prover_idle(&self) -> bool {
+        self.prove_waiters.available_permits() == MAX_INFLIGHT_PROVE
+    }
+
     /// Construct headless server state. `app_version` is injected by the binary (its release-patched
     /// version); `config`/`auth_manager`/`bundled_version` stay optional (the headless binary runs with
     /// `config: None` when no origin gating is configured). (F-01)

@@ -465,44 +465,7 @@ pub fn on_disk_is_overwritable() -> bool {
 /// Not enforced by the already-shipped 1.0.7 (the documented downgrade residual); this closes v2.0.0+ ⇄
 /// future-build concurrency.
 fn acquire_config_write_lock(path: &std::path::Path) -> std::io::Result<std::fs::File> {
-    let lock_path = path.with_extension("json.lock");
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .truncate(false)
-        .open(&lock_path)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::AsRawFd;
-        // flock(LOCK_EX): blocks until no other open-file-description holds the lock; released on close/exit.
-        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::io::AsRawHandle;
-        use windows_sys::Win32::Storage::FileSystem::{LockFileEx, LOCKFILE_EXCLUSIVE_LOCK};
-        use windows_sys::Win32::System::IO::OVERLAPPED;
-        // LockFileEx (no LOCKFILE_FAIL_IMMEDIATELY) blocks for an exclusive byte-range lock over the whole
-        // file; released on CloseHandle (guard drop) / process exit. OVERLAPPED is zeroed (offset 0).
-        let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
-        let ok = unsafe {
-            LockFileEx(
-                file.as_raw_handle() as _,
-                LOCKFILE_EXCLUSIVE_LOCK,
-                0,
-                u32::MAX,
-                u32::MAX,
-                &mut overlapped,
-            )
-        };
-        if ok == 0 {
-            return Err(std::io::Error::last_os_error());
-        }
-    }
-    Ok(file)
+    crate::file_lock::lock_exclusive(&path.with_extension("json.lock"))
 }
 
 /// Test-only NON-BLOCKING acquire of the same lock, so a test can PROVE exclusivity + release-on-drop without
@@ -512,47 +475,7 @@ fn acquire_config_write_lock(path: &std::path::Path) -> std::io::Result<std::fs:
 fn try_acquire_config_write_lock_nb(
     path: &std::path::Path,
 ) -> std::io::Result<Option<std::fs::File>> {
-    let lock_path = path.with_extension("json.lock");
-    let file = std::fs::OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .truncate(false)
-        .open(&lock_path)?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::AsRawFd;
-        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } != 0 {
-            let e = std::io::Error::last_os_error();
-            if e.kind() == std::io::ErrorKind::WouldBlock {
-                return Ok(None);
-            }
-            return Err(e);
-        }
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::io::AsRawHandle;
-        use windows_sys::Win32::Storage::FileSystem::{
-            LockFileEx, LOCKFILE_EXCLUSIVE_LOCK, LOCKFILE_FAIL_IMMEDIATELY,
-        };
-        use windows_sys::Win32::System::IO::OVERLAPPED;
-        let mut overlapped: OVERLAPPED = unsafe { std::mem::zeroed() };
-        let ok = unsafe {
-            LockFileEx(
-                file.as_raw_handle() as _,
-                LOCKFILE_EXCLUSIVE_LOCK | LOCKFILE_FAIL_IMMEDIATELY,
-                0,
-                u32::MAX,
-                u32::MAX,
-                &mut overlapped,
-            )
-        };
-        if ok == 0 {
-            return Ok(None); // held elsewhere → would block
-        }
-    }
-    Ok(Some(file))
+    crate::file_lock::try_lock_exclusive(&path.with_extension("json.lock"))
 }
 
 /// Save config to disk (to the default `config_path()`). Creates parent dirs; 0o600 on Unix.
