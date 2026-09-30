@@ -1,6 +1,6 @@
 # Implementation plans
 
-No active plans.
+- [update-check-schedule](update-check-schedule/plan.md) — approved, not started (bootstrap PR + 2 stacked arcs) — update checks that survive sleep (6 h wall clock), a tray "Check for Updates…", and a 24 h per-version snooze
 
 Add one line per plan here when it opens; move the line to
 [`archive/index.md`](archive/index.md) when it closes. This file is read at the start of every
