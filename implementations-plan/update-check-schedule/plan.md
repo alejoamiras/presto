@@ -15,7 +15,7 @@ base: main @ da476fa
 ## Outcome
 
 **Delivered 2026-09-30, pending the owner's merge.** The bootstrap merged as #79 (`77b5f50`). Arc 1
-(`worktree-update-check-schedule`) and arc 2 (`update-check-schedule-tray`) were opened as a stack
+(`worktree-update-check-schedule`, #80) and arc 2 (`update-check-schedule-tray`, #81) were opened as a stack
 with `gh stack submit`. This plan's `/goal` and `/loop` seeds are retired; do not re-run them. Per
 Post-implementation step 5, the archive move waits until both PRs merge.
 
