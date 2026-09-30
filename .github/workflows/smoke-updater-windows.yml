@@ -64,8 +64,15 @@ jobs:
             barrier|copy-initiator|positive|negative) ;;
             *) echo "::error::mode is not supported on this ref (allowed: barrier, copy-initiator, positive, negative)"; exit 1 ;;
           esac
-          if ! [[ "$N_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
-            echo "::error::n-version must be a plain semver version"; exit 1
+          # Canonical SemVer without build metadata, above N-1: anything else fails a later parse or
+          # never qualifies as an update.
+          num='(0|[1-9][0-9]*)'
+          pre='(0|[1-9][0-9]*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)'
+          if ! [[ "$N_VERSION" =~ ^$num\.$num\.$num(-$pre(\.$pre)*)?$ ]]; then
+            echo "::error::n-version must be a canonical SemVer version without build metadata"; exit 1
+          fi
+          if [ "${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" = "0.0" ] && [ "${BASH_REMATCH[3]}" -le 1 ]; then
+            echo "::error::n-version must be above N-1 ($N1_VERSION)"; exit 1
           fi
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -84,6 +91,8 @@ jobs:
         run: |
           set -euo pipefail
           bunx tauri signer generate --ci -p "" -w ./eph.key
+          # Environment-file values are not masked, and the runner prints later steps' env.
+          echo "::add-mask::$(cat ./eph.key)"
           {
             echo "TAURI_SIGNING_PRIVATE_KEY=$(cat ./eph.key)"
             echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD="

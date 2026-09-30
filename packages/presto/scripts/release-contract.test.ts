@@ -119,7 +119,10 @@ test("ephemeral Windows updater smoke prepares its signed feed before running th
   expect(workflow.replace(/^\s*#.*$/gm, "")).not.toMatch(/\$\{\{ secrets\./);
 });
 
-type SmokeStep = { name?: string; run?: string; uses?: string; with?: Record<string, unknown> };
+type SmokeStep = { name?: string; run?: string; uses?: string; env?: unknown } & Record<
+  string,
+  unknown
+>;
 type SmokeWorkflow = {
   permissions?: unknown;
   jobs: Record<string, { permissions?: unknown; env?: Record<string, string>; steps: SmokeStep[] }>;
@@ -138,15 +141,42 @@ for (const [file, modes] of Object.entries(MANUAL_SMOKE_MODES)) {
   const steps = jobs.flatMap((job) => job.steps);
 
   test(`${file}: inputs reach shell only through env, after a first-step allowlist`, () => {
-    const inputExpression = /\$\{\{[^}]*\binputs\./;
-    for (const step of steps) {
-      expect(step.run ?? "").not.toMatch(inputExpression);
-      expect(JSON.stringify(step.with ?? {})).not.toMatch(inputExpression);
+    // Any `inputs` reference in an expression: `inputs.x`, `inputs['x']`, `github.event.inputs`.
+    const inputExpression = /\$\{\{[^}]*\binputs\b/;
+    for (const { name: _name, env: _env, ...rest } of steps) {
+      expect(JSON.stringify(rest)).not.toMatch(inputExpression);
     }
     for (const job of jobs) {
-      expect(job.steps[0]?.name).toBe("Validate inputs");
-      expect(job.steps[0]?.run).toContain(`${modes.join("|")}) ;;`);
+      const [validate] = job.steps;
+      expect(validate?.name).toBe("Validate inputs");
+      expect(validate?.if).toBeUndefined();
+      expect(validate?.["continue-on-error"]).toBeUndefined();
+      expect(validate?.run).toContain(`${modes.join("|")}) ;;`);
       expect(job.env?.UPDATER_SMOKE_MODE).toMatch(/^\$\{\{ inputs\.mode \|\| '[a-z-]+' \}\}$/);
+    }
+  });
+
+  test(`${file}: the validator accepts exactly the supported modes and versions above N-1`, () => {
+    const script = jobs[0]?.steps[0]?.run ?? "";
+    const validate = (mode: string, version: string) => {
+      const run = Bun.spawnSync(["bash", "-c", script], {
+        env: { ...process.env, UPDATER_SMOKE_MODE: mode, N_VERSION: version, N1_VERSION: "0.0.1" },
+      });
+      return { ok: run.exitCode === 0, output: `${run.stdout}${run.stderr}` };
+    };
+    for (const mode of modes) expect(validate(mode, "9.9.9").ok).toBe(true);
+    for (const version of ["1.2.3-rc.1", "0.0.2", "0.1.0"]) {
+      expect(validate(modes[0] ?? "", version).ok).toBe(true);
+    }
+    for (const mode of ["", "bogus", `${modes[0]} x`, "prompt"]) {
+      expect(validate(mode, "9.9.9").ok).toBe(false);
+    }
+    const smuggled = validate("::warning::smuggled", "9.9.9");
+    expect(smuggled.ok).toBe(false);
+    expect(smuggled.output).not.toContain("smuggled");
+    const badVersions = ["01.2.3", "1.2.3-rc..1", "1.2.3-01", "1.2.3+build", "1.2", "0.0.0"];
+    for (const version of [...badVersions, "0.0.1", "0.0.1-rc.1", '9.9.9"/e']) {
+      expect(validate(modes[0] ?? "", version).ok).toBe(false);
     }
   });
 
