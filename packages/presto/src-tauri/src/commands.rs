@@ -1,6 +1,7 @@
 use crate::authorization::{AuthDecision, AuthorizationManager, ResolveOutcome};
 use crate::config::{self, PrestoConfig};
 use crate::verified_sites::VerifiedSitesRegistry;
+use presto_core::update_schedule::{install_opts, InstallCaller, InstallGate, ScheduleStore};
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -78,6 +79,13 @@ mod pending_update {
 
     use tauri::Manager;
 
+    /// Outcome of [`PendingUpdateSlot::match_displayed`].
+    pub enum MatchOutcome {
+        Matches,
+        Reprompt(Reprompt),
+        Empty,
+    }
+
     /// Outcome of [`PendingUpdateSlot::take_or_reprompt`].
     pub enum TakeOutcome<T> {
         /// The displayed version matched the pending one; the item is CONSUMED and returned.
@@ -107,8 +115,8 @@ mod pending_update {
         /// Reloading re-renders the version AND fires `pageshow`, re-arming the click-steal guard for the
         /// fresh decision. Consumes `self`, so the capability is one-shot. Every failure path CLOSES the
         /// prompt: the command returns `Ok`, so `wireButton` leaves the clicked control disabled — a
-        /// silent early-return would strand the user with a permanently-disabled window that future 12h
-        /// checks dedup against. A successful navigate reloads the page, re-enabling the controls itself.
+        /// silent early-return would strand the user with a permanently-disabled window that later
+        /// checks never reload. A successful navigate reloads the page, re-enabling the controls itself.
         pub fn navigate(
             self,
             app: &tauri::AppHandle,
@@ -118,24 +126,21 @@ mod pending_update {
             tracing::warn!(
                 displayed = %displayed_version,
                 pending = %self.pending_version,
-                "SECURITY: update-prompt version mismatch — refusing the stale-displayed install; re-prompting for the pending version"
+                "SECURITY: update-prompt version mismatch — refusing an answer for a version that is not pending; re-prompting for the pending version"
             );
             let Some(window) = app.get_webview_window("update-prompt") else {
                 return; // already gone — nothing to strand
             };
-            let mut url = match window.url() {
-                Ok(url) => url,
+            let url = match window.url() {
+                Ok(url) => {
+                    super::update_prompt::prompt_url(url, current_version, &self.pending_version)
+                }
                 Err(e) => {
                     tracing::warn!(error = %e, "Could not read the update prompt URL to re-point it; closing it");
                     let _ = window.close();
                     return;
                 }
             };
-            url.set_query(Some(&format!(
-                "current={}&version={}",
-                urlencoding::encode(current_version),
-                urlencoding::encode(&self.pending_version)
-            )));
             if let Err(e) = window.navigate(url) {
                 tracing::warn!(error = %e, "Failed to re-point the update prompt after a version mismatch; closing it");
                 let _ = window.close();
@@ -179,9 +184,30 @@ mod pending_update {
     }
 
     impl<T: PendingVersion> PendingUpdateSlot<T> {
-        /// Store a freshly-verified item, replacing any prior pending one.
+        /// Store a freshly-verified item, replacing any prior pending one. The latest fetch wins,
+        /// never the highest version, so a rollback displaces a withdrawn release.
         pub fn set(&self, item: T) {
             *self.inner.lock() = Some(item);
+        }
+
+        /// Drops the pending item: the latest fetch found nothing installable.
+        pub fn clear(&self) {
+            *self.inner.lock() = None;
+        }
+
+        /// Whether `displayed` is the pending version, without consuming the item. On a mismatch
+        /// the pending version stays sealed inside a [`Reprompt`].
+        pub fn match_displayed(&self, displayed: &str) -> MatchOutcome {
+            match self
+                .inner
+                .lock()
+                .as_ref()
+                .map(PendingVersion::version_string)
+            {
+                Some(v) if v == displayed => MatchOutcome::Matches,
+                Some(pending_version) => MatchOutcome::Reprompt(Reprompt { pending_version }),
+                None => MatchOutcome::Empty,
+            }
         }
 
         /// B2 (F8): consume the pending item ONLY IF its version equals `displayed`. On mismatch the item
@@ -237,10 +263,58 @@ mod pending_update {
             // Consumed exactly once.
             assert!(matches!(slot.take_or_reprompt("2.0.0"), TakeOutcome::Empty));
         }
+
+        /// E11.
+        #[test]
+        fn e11_a_cleared_slot_installs_nothing() {
+            let slot = PendingUpdateSlot::<Dummy>::default();
+            slot.set(Dummy("2.0.0"));
+            slot.clear();
+            assert!(matches!(slot.take_or_reprompt("2.0.0"), TakeOutcome::Empty));
+            assert!(matches!(slot.match_displayed("2.0.0"), MatchOutcome::Empty));
+        }
+
+        /// E12: the rollback lever's lower version displaces the withdrawn one.
+        #[test]
+        fn e12_the_latest_fetch_wins_not_the_highest_version() {
+            let slot = PendingUpdateSlot::<Dummy>::default();
+            slot.set(Dummy("3.0.0"));
+            slot.set(Dummy("2.0.0"));
+            assert!(matches!(
+                slot.match_displayed("2.0.0"),
+                MatchOutcome::Matches
+            ));
+            match slot.take_or_reprompt("3.0.0") {
+                TakeOutcome::Reprompt(cap) => assert_eq!(cap.version(), "2.0.0"),
+                _ => panic!("the withdrawn version must not install"),
+            }
+        }
+
+        #[test]
+        fn matching_never_consumes_and_seals_a_mismatch() {
+            let slot = PendingUpdateSlot::<Dummy>::default();
+            slot.set(Dummy("2.0.0"));
+            assert!(matches!(
+                slot.match_displayed("2.0.0"),
+                MatchOutcome::Matches
+            ));
+            match slot.match_displayed("1.0.0") {
+                MatchOutcome::Reprompt(cap) => assert_eq!(cap.version(), "2.0.0"),
+                _ => panic!("a mismatch must return a Reprompt"),
+            }
+            assert!(matches!(
+                slot.take_or_reprompt("2.0.0"),
+                TakeOutcome::Took(_)
+            ));
+        }
     }
 }
 
-use pending_update::{PendingUpdateSlot, PendingVersion, TakeOutcome};
+mod update_prompt;
+
+use pending_update::{PendingUpdateSlot, PendingVersion};
+use update_prompt::{handle_later, handle_update_now, LaterOutcome, UpdateNowOutcome};
+pub use update_prompt::{prompt_url, prompt_version};
 
 impl PendingVersion for crate::updater::VerifiedUpdate {
     fn version_string(&self) -> String {
@@ -1038,8 +1112,14 @@ pub fn set_auto_update(
 }
 
 /// Called from the update prompt.
-/// - action="update": install the DISPLAYED update (if still pending), best-effort save the preference
-/// - action="later": dismiss, auto_update stays None (prompt returns next launch)
+/// - action="update": install the DISPLAYED update (if still pending and no install is running),
+///   best-effort save the preference
+/// - action="later": snooze the DISPLAYED version for a day if it is still pending; auto_update
+///   stays unchanged
+///
+/// The schedule store and install gate are read through `try_state`, never as `State` parameters:
+/// an unmanaged `State` fails the whole command, while a missing one here falls back to closing the
+/// prompt ("later") or an uncoordinated gate ("update", `updater.lock` still guards).
 #[expect(
     clippy::cognitive_complexity,
     reason = "the command keeps consent matching, preference persistence, and update handoff together"
@@ -1064,8 +1144,17 @@ pub fn respond_update_prompt(
             // prompt rendered cannot be installed on the stale click. On mismatch we get an opaque
             // `Reprompt` capability that re-points the window at the real version WITHOUT ever exposing
             // that version to this code, so it can't be turned back into a forced take.
-            match pending.take_or_reprompt(&displayed_version) {
-                TakeOutcome::Took(update) => {
+            let gate = app.try_state::<Arc<InstallGate>>().map_or_else(
+                || {
+                    tracing::warn!(
+                        "No install gate is managed; installing without in-process coordination"
+                    );
+                    Arc::new(InstallGate::default())
+                },
+                |gate| Arc::clone(&gate),
+            );
+            match handle_update_now(&gate, &pending, &displayed_version) {
+                UpdateNowOutcome::Install(claim, update) => {
                     // The displayed version matched — this IS the consented install. Persist the
                     // auto-update preference as BEST-EFFORT FIRST, then spawn (codex B2 round-3): on
                     // Windows a successful `install()` exits the process, so spawning before the
@@ -1086,28 +1175,56 @@ pub fn respond_update_prompt(
                     } else {
                         tracing::info!(version = %version, auto_update, "User clicked Update Now, downloading the displayed update");
                     }
-                    let handle = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        crate::updater::perform_update(&handle, update).await;
-                        // If perform_update returns (error), close the prompt
-                        close_update_prompt(&handle);
-                    });
+                    // "Update Now" is explicit consent, so it does not wait for a running proof.
+                    crate::updater::spawn_install(
+                        &app,
+                        claim,
+                        update,
+                        install_opts(InstallCaller::UpdateNow),
+                        close_update_prompt,
+                    );
                 }
-                TakeOutcome::Reprompt(cap) => {
+                UpdateNowOutcome::Busy => {
+                    tracing::info!("An update is already installing; closing the prompt");
+                    close_update_prompt(&app);
+                }
+                UpdateNowOutcome::Reprompt(cap) => {
                     // Version mismatch: the opaque capability logs + re-points the prompt at the pending
                     // version inside `pending_update`; the version never reaches this code.
                     cap.navigate(&app, env!("CARGO_PKG_VERSION"), &displayed_version);
                 }
-                TakeOutcome::Empty => {
+                UpdateNowOutcome::Empty => {
                     tracing::warn!("No pending update found — may have expired. Closing prompt.");
                     close_update_prompt(&app);
                 }
             }
         }
-        "later" => {
-            close_update_prompt(&app);
-            tracing::info!("User clicked Remind Me Later");
-        }
+        "later" => match app.try_state::<Arc<ScheduleStore>>() {
+            Some(store) => match handle_later(
+                &pending,
+                &store,
+                &displayed_version,
+                presto_core::updater_state::now_unix(),
+            ) {
+                LaterOutcome::Snoozed(snooze) => {
+                    tracing::info!(version = %snooze.version, until = snooze.until, "User clicked Remind Me Later; version snoozed");
+                    close_update_prompt(&app);
+                }
+                LaterOutcome::Reprompt(cap) => {
+                    cap.navigate(&app, env!("CARGO_PKG_VERSION"), &displayed_version);
+                }
+                LaterOutcome::Closed => {
+                    tracing::info!("User clicked Remind Me Later; nothing pending to snooze");
+                    close_update_prompt(&app);
+                }
+            },
+            None => {
+                tracing::warn!(
+                    "No update schedule is managed; Remind Me Later only closes the prompt"
+                );
+                close_update_prompt(&app);
+            }
+        },
         _ => {
             close_update_prompt(&app);
         }

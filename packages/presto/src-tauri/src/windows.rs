@@ -327,30 +327,68 @@ pub fn show_auth_popup_window(
     }
 }
 
-/// Show the update prompt window.
+/// Present the update prompt for `new_version`, returning whether the window now shows it. An open
+/// prompt showing another version is re-pointed; one already showing it is only focused (when
+/// `focus`), never reloaded. Runs on the update task, never the main thread, where creating a window
+/// deadlocks on Windows.
 ///
-/// Only called from the background update check, which is compiled out for
-/// `webdriver` builds — so this is too, to keep those builds warning-clean.
+/// Compiled out for `webdriver` builds: the prompt window would steal the active WebDriver browsing
+/// context mid-test.
 #[cfg(not(feature = "webdriver"))]
-pub fn show_update_prompt_window(app: &AppHandle, current_version: &str, new_version: &str) {
-    let url = format!(
-        "update-prompt.html?current={}&version={}",
-        urlencoding::encode(current_version),
-        urlencoding::encode(new_version)
-    );
-    open_or_focus_window(
-        app,
-        WindowConfig {
-            label: "update-prompt",
-            url,
-            title: "Presto Update",
-            width: 420.0,
-            height: 280.0,
-            always_on_top: false,
-            focus_if_open: false,
-            focus_on_create: true,
-        },
-    );
+pub fn show_update_prompt_window(
+    app: &AppHandle,
+    current_version: &str,
+    new_version: &str,
+    focus: bool,
+) -> bool {
+    use presto::updater::{prompt_action, PromptAction};
+
+    if !presto::updater::may_create_windows_here() {
+        tracing::error!("Refusing to create the update prompt on the main thread");
+        return false;
+    }
+    let open = app.get_webview_window("update-prompt");
+    let open_version = open
+        .as_ref()
+        .and_then(|window| window.url().ok())
+        .and_then(|url| commands::prompt_version(&url));
+    match prompt_action(open_version.as_deref(), new_version, focus) {
+        PromptAction::Open => {
+            let url = format!(
+                "update-prompt.html?current={}&version={}",
+                urlencoding::encode(current_version),
+                urlencoding::encode(new_version)
+            );
+            open_or_focus_window(
+                app,
+                WindowConfig {
+                    label: "update-prompt",
+                    url,
+                    title: "Presto Update",
+                    width: 420.0,
+                    height: 280.0,
+                    always_on_top: false,
+                    focus_if_open: false,
+                    focus_on_create: true,
+                },
+            )
+            .is_some()
+        }
+        PromptAction::Repoint => {
+            let Some((window, url)) = open.and_then(|w| w.url().ok().map(|url| (w, url))) else {
+                return false;
+            };
+            let repointed = window
+                .navigate(commands::prompt_url(url, current_version, new_version))
+                .is_ok();
+            if repointed && focus {
+                focus_window(&window);
+            }
+            repointed
+        }
+        PromptAction::FocusOnly => open.is_some_and(|window| window.set_focus().is_ok()),
+        PromptAction::Nothing => true,
+    }
 }
 
 #[cfg(test)]
