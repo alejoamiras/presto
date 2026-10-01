@@ -437,6 +437,9 @@ fn b14_the_file_lock_serialises_instances() {
     let lock_path = dir.path().join("update-schedule.json.lock");
     let first = Arc::new(store_at(&dir, "9.9.9"));
     let second = Arc::new(store_at(&dir, "9.9.9"));
+    // The snoozer waits out the 300 ms pause below plus the writer's write, which a loaded Windows
+    // runner (private DACL, rename) has stretched past the production 1 s; b14b pins that bound.
+    *second.lock_wait.lock() = Duration::from_secs(30);
     let (paused_tx, paused_rx) = std::sync::mpsc::channel();
     let (resume_tx, resume_rx) = std::sync::mpsc::channel::<()>();
     let resume_rx = parking_lot::Mutex::new(resume_rx);

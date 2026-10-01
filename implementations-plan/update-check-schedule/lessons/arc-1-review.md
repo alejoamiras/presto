@@ -41,3 +41,19 @@ after the mark would need a shared runner, which neither workflow uses).
 The round-2 fixes change Windows-only code (the lock's error path, the `.ps1` negative oracle) and a
 comment, so the three Windows smokes re-ran on `ea493f5`; the unix smokes from `a791d5c` stand,
 since nothing they build or run changed.
+
+## After delivery: B14 flaked on Windows (2026-10-01)
+
+Re-run at arc 1's head `888cf99`, the unix smokes passed: positive 36853586007 (attempt 2, after a
+DNS failure on the macOS runner), negative 36853589769, prompt 36853593040 and stall 36853596035.
+
+Presto run 36854631149's Cert Trust (windows) job then failed `b14_the_file_lock_serialises_instances`.
+The snoozer got `TimedOut: "another process holds the lock"`. Round 1's "a 300 ms hold is inside the
+wait" left the writer only about 700 ms of the 1 s `LOCK_WAIT` for its resumed
+`write_private_atomic` (private DACL, then rename), and a loaded runner exceeded that.
+- Production behaviour is the designed one: a "Later" that times out holds for the session. The test
+  was wrong to rely on the write's speed.
+- **Fixed** with a test-only `lock_wait` on the store; B14's snoozer gets 30 s. `b14b` still pins the
+  production 1 s bound.
+- 🧬 With a 900 ms sleep in the writer's resumed hook, B14 without the override fails with CI's exact
+  `TimedOut`, and passes with it. Dropping the file lock still turns B14 red.

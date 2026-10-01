@@ -153,6 +153,8 @@ pub struct ScheduleStore {
     fail_writes: AtomicBool,
     #[cfg(test)]
     between_read_and_write: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
+    #[cfg(test)]
+    lock_wait: Mutex<Duration>,
 }
 
 impl ScheduleStore {
@@ -168,6 +170,8 @@ impl ScheduleStore {
             fail_writes: AtomicBool::new(false),
             #[cfg(test)]
             between_read_and_write: Mutex::new(None),
+            #[cfg(test)]
+            lock_wait: Mutex::new(LOCK_WAIT),
         }
     }
 
@@ -235,8 +239,12 @@ impl ScheduleStore {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
+        #[cfg(not(test))]
+        let wait = LOCK_WAIT;
+        #[cfg(test)]
+        let wait = *self.lock_wait.lock();
         let _cross_process =
-            crate::file_lock::lock_exclusive_within(&path.with_extension("json.lock"), LOCK_WAIT)?;
+            crate::file_lock::lock_exclusive_within(&path.with_extension("json.lock"), wait)?;
         let mut state = load_file(path);
         change(&mut state);
         #[cfg(test)]
