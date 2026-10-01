@@ -63,10 +63,18 @@ describe("checkAztecNode", () => {
 // configured (AZTEC_NODE_URL=https://... bun run test:live). Must run with this package as
 // cwd: bunfig's preloaded happydom.ts carries the expect.addEqualityTesters patch that
 // @aztec-labs/foundation's field module needs at import time under bun:test. happy-dom enforces
-// CORS from the page's origin, so the probe runs from the deployed playground's, not `about:blank`.
+// CORS from the page's origin, so the probe runs from a real page origin, not `about:blank`: the
+// deployed playground's, or the dev server's for an http node, which happy-dom would otherwise
+// block as mixed content before sending.
 describe.skipIf(!process.env.AZTEC_NODE_URL)("checkAztecNode (live node)", () => {
   const page = (globalThis as unknown as { happyDOM: { setURL(url: string): void } }).happyDOM;
-  beforeAll(() => page.setURL("https://playground.presto.build/"));
+  beforeAll(() =>
+    page.setURL(
+      process.env.AZTEC_NODE_URL?.startsWith("http:")
+        ? "http://localhost:5173/"
+        : "https://playground.presto.build/",
+    ),
+  );
   afterAll(() => page.setURL("about:blank"));
 
   test(
