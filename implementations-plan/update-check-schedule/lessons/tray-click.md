@@ -60,6 +60,11 @@ bundle gate needs a green run at arc 2's head. The test now probes an `http:` no
 server's origin (`http://localhost:5173/`) and anything else from the deployed playground's.
 - 🧬 Against the local http stub, the unfixed test fails and the fixed one passes (12/12).
 - The https path keeps its URL.
+- CI at `4710b0a`: `build-test-bundle.yml` platform=all 36848558688 ✓ on attempt 2. Packaged E2E
+  (linux, http) passed both attempts. Attempt 1 lost the https leg before any test ran, when the
+  sandbox's L1 deploy hit a connection reset downloading `solc`.
+- The playground change routed the App gate for the first time on this stack. Its Mocked E2E
+  failed once on a cold dev server (36848555687) and passed on re-run; see `follow-ups.md`.
 
 ## Unrelated flake: Windows `auth-flow.spec.ts` Deny
 

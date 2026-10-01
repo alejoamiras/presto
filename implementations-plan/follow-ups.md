@@ -64,6 +64,11 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   WebDriver run 36796778684 then failed the next test, `auth-flow.spec.ts`'s Deny, because a prove
   from the still-approved origin opened no consent window. It should wait for the origin to appear,
   then for it to disappear. `update-check-schedule/lessons/tray-click.md` **Verified 2026-10-01.**
+- **The playground's first mocked test can assert before `main.ts` runs.** `loaded()` waits only
+  for `#embedded-ui`, which is static HTML, but `data-active` is set by `updateModeUI` once the
+  module graph loads. App run 36848555687 failed `page loads in-browser and asks before connecting`
+  on a cold CI dev server, with `data-active` still null after 5 s. It passed 3/3 locally. `loaded()`
+  should wait for a marker that `main.ts` sets. **Verified 2026-10-01.**
 
 ## Untested paths, carried from the logs
 
