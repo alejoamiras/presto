@@ -34,3 +34,7 @@ with `rg --no-ignore` / `git grep`.
   rename, a funded SponsoredFPC, and the testnet cutover through the temporary `presto-testnet-rpc`
   forwarder. presto 6.0.0-rc.1, noir 2.0.0-rc.1 and core 1.2.1 are on `testnet`, and v5 stays on
   `latest` (PRs #70–#75).
+- [update-check-schedule](update-check-schedule/plan.md) — closed 2026-10-01 — update checks that
+  survive sleep (a launch check, then every 6 h of wall-clock time), a 24 h per-version "Remind Me
+  Later", install safety (one install gate, a stall watchdog, an idle-prover wait), and a tray
+  "Check for Updates…" item, plus the macOS/Linux ephemeral updater smoke (PRs #79–#81).

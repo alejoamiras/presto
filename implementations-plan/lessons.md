@@ -18,7 +18,7 @@ not belong here. Sections are stable; append, never re-sort.
   blow length and complexity limits. `archive/presto-cleanup/lessons/phase-3.md`
 - **Tauri menu callbacks have no Tokio context** — `tokio::spawn` there aborts a release build; use
   `tauri::async_runtime::spawn`. Menu setters block on the main thread: hold no lock across one.
-  `update-check-schedule/lessons/phase-3.md`
+  `archive/update-check-schedule/lessons/phase-3.md`
 - **An unfulfilled `#[expect]` is an error under `-D warnings`** — verify suppressions from a clean
   build, under every feature set. `archive/presto-cleanup/lessons/review-18.md`
 
@@ -88,7 +88,7 @@ not belong here. Sections are stable; append, never re-sort.
   first. `archive/workers-builds/lessons/phase-3.md`
 - **tauri-plugin-updater checks the minisign signature inside `download()`** — a tampered payload
   fails there, before any size check of ours; negatives must assert which refusal fired.
-  (2026-09, plugin 2.11) `update-check-schedule/lessons/phase-6.md`
+  (2026-09, plugin 2.11) `archive/update-check-schedule/lessons/phase-6.md`
 
 ## npm publishing
 
