@@ -53,6 +53,23 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   The server's hint is `GITHUB_TOKEN`; a non-API digest source would remove the dependency.
   `archive/aztec-v6/lessons/releases.md`.
 
+## From update-check-schedule (closed 2026-09-30)
+
+- **Consolidate the ephemeral updater smoke setup.** `smoke-updater-unix.yml` and
+  `smoke-updater-windows.yml` each generate a throwaway key, patch version and pubkey, build N-1
+  and N, scan both for test hooks, and sign a local feed, step for step in parallel copies. A shared
+  composite action would hold one copy. **Verified 2026-09-30.**
+- **`removeOriginViaUI` can skip the removal silently.** It reads `.origin-item` 500 ms after a
+  refresh; if the list has not loaded yet, nothing is removed and the origin stays approved. Windows
+  WebDriver run 36796778684 then failed the next test, `auth-flow.spec.ts`'s Deny, because a prove
+  from the still-approved origin opened no consent window. It should wait for the origin to appear,
+  then for it to disappear. `update-check-schedule/lessons/tray-click.md` **Verified 2026-10-01.**
+- **The playground's first mocked test can assert before `main.ts` runs.** `loaded()` waits only
+  for `#embedded-ui`, which is static HTML, but `data-active` is set by `updateModeUI` once the
+  module graph loads. App run 36848555687 failed `page loads in-browser and asks before connecting`
+  on a cold CI dev server, with `data-active` still null after 5 s. It passed 3/3 locally. `loaded()`
+  should wait for a marker that `main.ts` sets. **Verified 2026-10-01.**
+
 ## Untested paths, carried from the logs
 
 None of these were re-checked on 2026-09-18.
@@ -81,6 +98,17 @@ None of these were re-checked on 2026-09-18.
   `archive/presto-noir/plan.md` (Asks → A-01)
 
 ## Accepted residual risk — standing decisions, not work
+
+- **Update scheduling residuals (update-check-schedule)** — a "Later" whose file write fails (or
+  times out on a stopped lock holder) lasts only for the session, so another instance or a restart
+  can prompt inside it; a "Later" recorded after the automatic install's decision does not stop that
+  install; a proof admitted between the idle-prover wait's last sample and quiesce is killed, as in
+  1.1.3; "Update Now" on a just-withdrawn prompt holds the install gate for an instant, and a tray
+  reply read inside it shows "Installing update…" until the 5 min revert (claim-before-take in the
+  pending slot is deliberate). No lane suspends a machine, clicks a prompt's buttons in a release
+  binary, or drives a real tray under Wayland. A real tray click in a release binary is exercised
+  on Linux only (X11, through the D-Bus menu); on macOS and Windows the click path is covered only
+  by the WebDriver dispatch.
 
 - **Every site build runs next to an account-wide Workers token (workers-builds A3)** — Workers
   Scripts Edit cannot be narrowed below the account, so build-time code on any branch of this repo

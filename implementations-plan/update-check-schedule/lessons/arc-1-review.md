@@ -57,3 +57,12 @@ wait" left the writer only about 700 ms of the 1 s `LOCK_WAIT` for its resumed
   production 1 s bound.
 - 🧬 With a 900 ms sleep in the writer's resumed hook, B14 without the override fails with CI's exact
   `TimedOut`, and passes with it. Dropping the file lock still turns B14 red.
+
+Resumed review of `e815046`, verbatim: "No new material findings (high confidence); the override
+separates serialization correctness from production's responsiveness policy."
+- It confirmed that only the duration differs between test and production.
+- B14 still proves serialization.
+- Strictly, `b14b` proves a bounded failure (a 10 s deadline), not exactly 1 s.
+- It advised against raising the production 1 s wait: a longer wait trades a rare session-only
+  "Later" for longer freezes on the main thread.
+- B14 passed on Windows at `6d6fa40` (presto.yml 36857595463).

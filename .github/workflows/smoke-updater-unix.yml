@@ -139,6 +139,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/n1"
           if [ "$RUNNER_OS" = "macOS" ]; then
             ( cd .. && bunx tauri build --target "$TARGET" --bundles app )
+            bash ../scripts/assert-no-test-hooks.sh "$BUNDLE/macos/Presto.app"
             # updater-smoke.sh installs N-1 from a DMG. A plain `hdiutil create` avoids tauri's
             # Finder-scripted DMG layout, the chronically flaky part of DMG bundling on runners.
             mkdir -p "$RUNNER_TEMP/n1-stage"
@@ -153,6 +154,7 @@ jobs:
           else
             ( cd .. && bunx tauri build --target "$TARGET" --bundles appimage )
             cp "$BUNDLE"/appimage/*.AppImage "$RUNNER_TEMP/n1/"
+            bash ../scripts/assert-no-test-hooks.sh "$RUNNER_TEMP"/n1/*.AppImage
           fi
           ls -la "$RUNNER_TEMP/n1"
 
@@ -169,10 +171,12 @@ jobs:
           mkdir -p "$RUNNER_TEMP/n"
           if [ "$RUNNER_OS" = "macOS" ]; then
             ( cd .. && bunx tauri build --target "$TARGET" --bundles app )
+            bash ../scripts/assert-no-test-hooks.sh "$BUNDLE/macos/Presto.app"
             cp "$BUNDLE"/macos/*.app.tar.gz "$BUNDLE"/macos/*.app.tar.gz.sig "$RUNNER_TEMP/n/"
           else
             ( cd .. && bunx tauri build --target "$TARGET" --bundles appimage )
             cp "$BUNDLE"/appimage/*.AppImage "$BUNDLE"/appimage/*.AppImage.sig "$RUNNER_TEMP/n/"
+            bash ../scripts/assert-no-test-hooks.sh "$RUNNER_TEMP"/n/*.AppImage
           fi
           ls -la "$RUNNER_TEMP/n"
 

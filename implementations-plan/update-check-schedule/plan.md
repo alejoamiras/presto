@@ -5,12 +5,51 @@ driver: claude-code
 claude_model: opus
 eli5_mode: artifact
 code_review: off
-status: r11 — approved 2026-09-30; delivered as a bootstrap PR plus two stacked arcs; seeds final
+status: delivered 2026-09-30 as a bootstrap PR (#79) plus two stacked arcs, awaiting merge; seeds retired
 created: 2026-09-30
 worktree: .claude/worktrees/update-check-schedule
 branch: worktree-update-check-schedule
 base: main @ da476fa
 ---
+
+## Outcome
+
+**Delivered 2026-09-30, pending the owner's merge.** The bootstrap merged as #79 (`77b5f50`). Arc 1
+(`worktree-update-check-schedule`, #80) and arc 2 (`update-check-schedule-tray`, #81) were opened as a stack
+with `gh stack submit`. This plan's `/goal` and `/loop` seeds are retired; do not re-run them. Per
+Post-implementation step 5, the archive move waits until both PRs merge.
+
+**Shipped:**
+- **Arc 1:**
+  - One update task that checks at launch, then every 6 h of wall-clock time; it wakes every 15 min, so sleep no longer stretches the cadence.
+  - "Later" as a persisted 24 h per-version snooze.
+  - An install gate, a 60 s download stall watchdog, and an automatic install that waits (up to 30 min) for an idle prover.
+  - A classify-only check with a separate decision; the pending slot keeps its single extractor.
+- **Arc 2:**
+  - The tray **Check for Updates…** item: generation-checked labels posted to the main thread, a 90 s reply timeout, a 5 min revert, and "Installing update…" whenever an install holds the gate.
+  - The WebDriver-only tray E2E through the production menu dispatch.
+  - Static guards plus a release-binary scan that keep the hooks out of shipped builds.
+  - Outside the plan, by owner decision (2026-10-01): a one-line fix to the playground live-node
+    test, which since #73 could not reach an http node. Without it the bundle gate can never go
+    green (`lessons/tray-click.md`).
+
+**Evidence:**
+- Phase 5 smokes on three OSes, in positive, negative, prompt and stall modes.
+- Phase 4 at `1bcfd2a`: presto.yml 36788162010, with the tray spec on four legs; positive smokes 36788164952 and 36788167545, with the hook scan on six release binaries.
+- A real tray click in the shipped Linux AppImage (owner request): the prompt smoke 36794011299 clicks **Check for Updates…** over D-Bus during a snoozed launch and gets the prompt (`lessons/tray-click.md`).
+- Arc 1 at `888cf99`: unix positive 36853586007, negative 36853589769, prompt 36853593040 and stall 36853596035. The follow-up `e815046` changes only test code (B14's lock wait; `lessons/arc-1-review.md`).
+- At `6d6fa40`, arc 2's last code commit (rebased onto `e815046`):
+  - presto.yml 36857595463, with the tray spec on macOS, Linux and Windows and B14 green on Windows.
+  - Positive smokes 36857602482 (unix) and 36857608794 (windows), with K5 holding on every release binary.
+  - The prompt smoke 36857605650, including the Linux tray click.
+  - `build-test-bundle.yml` platform=all 36857598940, every job green.
+- The production menu variant, run locally.
+- Every 🧬 test was shown red against its mutant; see `lessons/`.
+- Codex: the arc 1 loop converged at round 3. The arc 2 loop hit its 3-round cap, and its last finding concerned only a reverted change. The fresh cross-arc pass converged at round 3 with "No new material findings". The same arc 2 session then reviewed the post-delivery delta. It found two low harness issues in `tray-menu.ts` (menu ownership, unbounded waits), both fixed, and its second pass reported "No new material findings" (`lessons/arc-2-review.md`).
+
+**Dropped:**
+- The same-length tamper follow-up (L7). Its premise was wrong: the plugin verifies the signature inside `download()`.
+- One cross-arc finding was declined with Codex's agreement: an instant-long "Installing update…" after "Update Now" on a withdrawn prompt. It is listed as a residual in `follow-ups.md`.
 
 # Update checks that survive sleep, a 6 h cadence, and a tray "Check for Updates…"
 
@@ -752,7 +791,7 @@ This is the canonical test list. Phase **Tests** sections cite row IDs instead o
 - **Pass:** all exit 0; `update-prompt.spec.ts` is green unedited; clippy is clean under both feature sets.
 - **Layers:** lint, typecheck, unit, integration, UI e2e (mocked IPC).
 
-### Phase 3 — Tray "Check for Updates…"
+### Phase 3 — Tray "Check for Updates…" ✓
 
 **Assumes:** F7, I2.
 
@@ -768,7 +807,7 @@ This is the canonical test list. Phase **Tests** sections cite row IDs instead o
 **Validation gate:** the Phase 2 gate, with the new tests green and every 🧬 logged.
 - **Layers:** lint, typecheck, unit.
 
-### Phase 4 — WebDriver tray E2E and static guard
+### Phase 4 — WebDriver tray E2E and static guard ✓
 
 **Assumes:** F4, F8, F11, I2, I4.
 
@@ -845,7 +884,7 @@ This is the canonical test list. Phase **Tests** sections cite row IDs instead o
   - run IDs are recorded.
 - **Layers:** e2e on real release-profile binaries, three OSes, local HTTPS feed.
 
-### Phase 6 — Docs and follow-ups
+### Phase 6 — Docs and follow-ups ✓
 
 Each arc documents what it ships.
 

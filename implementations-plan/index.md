@@ -1,6 +1,6 @@
 # Implementation plans
 
-- [update-check-schedule](update-check-schedule/plan.md) — in progress: phases 0–2 done; arc 1 underway — update checks that survive sleep (6 h wall clock), a tray "Check for Updates…", and a 24 h per-version snooze
+- [update-check-schedule](update-check-schedule/plan.md) — delivered 2026-09-30, awaiting merge (archive after) — update checks that survive sleep (6 h wall clock), a tray "Check for Updates…", and a 24 h per-version snooze
 
 Add one line per plan here when it opens; move the line to
 [`archive/index.md`](archive/index.md) when it closes. This file is read at the start of every

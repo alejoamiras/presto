@@ -30,7 +30,7 @@ function count(haystack: string, needle: string): number {
 }
 
 describe("update wiring", () => {
-  // H7: an unmanaged `State` parameter fails the whole command, so the prompt's command reads the
+  // An unmanaged `State` parameter fails the whole command, so the prompt's command reads the
   // schedule store and install gate through `try_state`, and both are managed in the `Builder`
   // chain beside the pending slot rather than in `setup`.
   test("H7: the update state is managed in the Builder chain, never as command State", async () => {
@@ -66,7 +66,7 @@ describe("update wiring", () => {
     expect(command).toContain("try_state::<Arc<InstallGate>>()");
   });
 
-  // G7: creating a window on the main thread deadlocks on Windows. Lexical only: the guard must be
+  // Creating a window on the main thread deadlocks on Windows. Lexical only: the guard must be
   // the presenter's first check, and the presenter has one caller, the update task's `present`.
   test("G7: the prompt presenter refuses the main thread and has a single caller", async () => {
     const windows = await source("windows.rs");
@@ -94,11 +94,38 @@ describe("update wiring", () => {
     expect(commands).not.toContain("perform_update(");
   });
 
-  // D1's Rust test proves `with_feed_timeout` fires; this pins that the plugin's fetch is the future
+  // A Rust test proves `with_feed_timeout` fires; this pins that the plugin's fetch is the future
   // it wraps, so awaiting `check()` first cannot slip past it.
   test("D1: the only feed fetch runs inside the feed timeout", async () => {
     const updater = await source("updater.rs");
     expect(count(updater, ".check()")).toBe(1);
     expect(fnBody(updater, "fetch_feed")).toContain("with_feed_timeout(updater.check()).await");
+  });
+
+  // The menu callback runs with no Tokio context, where a Tokio spawn panics and `panic = "abort"`
+  // ends the app. A lexical tripwire only: the WebDriver tray spec's real click is the safety net.
+  test("I12: the tray click path never reaches for Tokio's runtime", async () => {
+    const menu = await source("update_menu.rs");
+    const handler = fnBody(await source("main.rs"), "on_tray_menu");
+    for (const [name, code] of [
+      ["update_menu.rs", menu],
+      ["on_tray_menu", handler],
+    ]) {
+      for (const call of ["tokio::spawn(", "tokio::task::spawn(", "Handle::current()"]) {
+        expect(code, `${call} in ${name}`).not.toContain(call);
+      }
+    }
+    expect(menu).toContain("tauri::async_runtime::spawn(");
+  });
+
+  // "Update Now" can claim the install gate while a manual check is in flight, so the tray's reply
+  // reads the gate after the check is acted on, not the check's own view of it.
+  test("the tray's reply reads the install gate after acting on the check", async () => {
+    const act = fnBody(await source("main.rs"), "act");
+    const acted = act.indexOf("act_on(");
+    const busy = act.indexOf(".is_busy()");
+    expect(acted).toBeGreaterThanOrEqual(0);
+    expect(busy).toBeGreaterThan(acted);
+    expect(act).toMatch(/reply\.send\(presto::updater::manual_reply\(result, busy\)\)/);
   });
 });

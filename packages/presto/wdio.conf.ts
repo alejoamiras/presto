@@ -23,6 +23,7 @@ export const config: WebdriverIO.Config = {
     "./e2e-webdriver/trust-boundary.spec.ts",
     "./e2e-webdriver/auth-flow.spec.ts",
     "./e2e-webdriver/ultra-honk.spec.ts",
+    "./e2e-webdriver/tray-update.spec.ts",
     "./e2e-webdriver/autostart.spec.ts",
   ],
 

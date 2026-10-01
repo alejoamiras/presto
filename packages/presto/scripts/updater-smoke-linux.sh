@@ -76,6 +76,9 @@ log() { echo "── $* ──"; }
 
 # shellcheck disable=SC1091  # linted on its own
 source "$(dirname "${BASH_SOURCE[0]}")/updater-smoke-modes.sh"
+# libappindicator exports the tray menu on the workflow's session bus, so prompt mode clicks it.
+# shellcheck disable=SC2034  # read by updater-smoke-modes.sh
+TRAY_CLICK=1
 
 # shellcheck disable=SC2317,SC2329  # invoked indirectly via `trap cleanup EXIT`; SC2317 is only
 # emitted by shellcheck < 0.10 (the CI runner's), which doesn't trace trap targets — every command

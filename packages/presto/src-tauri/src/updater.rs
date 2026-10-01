@@ -846,7 +846,7 @@ mod tests {
     use super::{with_feed_timeout, CrashRecoveryGuard, FEED_TIMEOUT};
     use std::time::Duration;
 
-    /// D1: a feed that never answers fails at 30 s instead of holding the update task.
+    /// A feed that never answers fails at 30 s instead of holding the update task.
     #[tokio::test(start_paused = true)]
     async fn d1_a_silent_feed_fails_at_thirty_seconds() {
         let start = tokio::time::Instant::now();

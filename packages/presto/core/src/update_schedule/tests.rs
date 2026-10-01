@@ -58,15 +58,12 @@ fn warnings_during<T>(f: impl FnOnce() -> T) -> (T, usize) {
 
 #[test]
 fn a1_a2_a4_due_boundaries() {
-    assert!(check_due(None, NOW), "A1");
-    assert!(
-        !check_due(Some(NOW - 6 * H + 1), NOW),
-        "A2: one second short"
-    );
-    assert!(check_due(Some(NOW - 6 * H), NOW), "A2: exactly six hours");
+    assert!(check_due(None, NOW), "never checked");
+    assert!(!check_due(Some(NOW - 6 * H + 1), NOW), "one second short");
+    assert!(check_due(Some(NOW - 6 * H), NOW), "exactly six hours");
     assert!(
         !check_due(Some(NOW + 10 * 60), NOW),
-        "A4: forward skew within tolerance"
+        "forward skew within tolerance"
     );
 }
 

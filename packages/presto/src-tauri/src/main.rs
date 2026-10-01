@@ -4,6 +4,9 @@
 mod tray;
 mod windows;
 
+#[cfg(feature = "webdriver")]
+mod e2e_tray;
+
 use presto::authorization::AuthorizationManager;
 use presto::commands::{AuthState, ConfigState, PendingUpdate, SharedAppState};
 use presto::server::{AppState, HeadlessState, ServerStatus};
@@ -17,10 +20,8 @@ use std::sync::Arc;
 #[cfg(not(feature = "webdriver"))]
 use std::time::Duration;
 use tauri::menu::MenuItemBuilder;
-use tauri::Manager;
-// AppHandle is only referenced by the (webdriver-gated) update task.
-#[cfg(not(feature = "webdriver"))]
 use tauri::AppHandle;
+use tauri::Manager;
 use tracing_subscriber::fmt;
 use tracing_subscriber::layer::SubscriberExt;
 use tracing_subscriber::util::SubscriberInitExt;
@@ -244,8 +245,8 @@ fn reset_https_enabled(state: &AppState) {
 ///
 /// A non-production build must never poll the prod updater feed or pop the
 /// update-prompt window:
-/// - `webdriver` builds are handled at compile time (this fn + the spawn site
-///   are `#[cfg(not(feature = "webdriver"))]`), so the task cannot exist there.
+/// - `webdriver` builds are handled at compile time: this fn does not exist
+///   there, and their update task runs a stub check, never the real feed.
 /// - `debug_assertions` (a developer's `cargo tauri dev`, and the `_e2e.yml`
 ///   `cargo run` desktop app) are disabled by default — opt back in with
 ///   `PRESTO_FORCE_UPDATE_CHECK=1`.
@@ -279,10 +280,6 @@ fn schedule_store() -> ScheduleStore {
 }
 
 /// Acts on one check, on the update task, and answers a tray request still waiting for it.
-///
-/// Not compiled for `webdriver` builds: the prompt window would steal the active WebDriver browsing
-/// context mid-test.
-#[cfg(not(feature = "webdriver"))]
 fn act(
     app: &AppHandle,
     reason: presto_core::update_schedule::CheckReason<presto::updater::ManualReply>,
@@ -291,12 +288,14 @@ fn act(
     let (mode, reply) = presto::updater::mode_and_reply(reason);
     let result = act_on(app, mode, outcome);
     if let Some(reply) = reply {
+        let busy = app
+            .try_state::<Arc<InstallGate>>()
+            .is_some_and(|gate| gate.is_busy());
         // The tray may have given up since the check ended; nothing to tell it then.
-        let _ = reply.send(result);
+        let _ = reply.send(presto::updater::manual_reply(result, busy));
     }
 }
 
-#[cfg(not(feature = "webdriver"))]
 fn act_on(
     app: &AppHandle,
     mode: presto::updater::CheckMode,
@@ -353,7 +352,6 @@ fn act_on(
 }
 
 /// Holds a snoozed update for an open prompt's "Update Now" without showing anything.
-#[cfg(not(feature = "webdriver"))]
 fn hold_snoozed(
     slot: &PendingUpdate,
     store: &ScheduleStore,
@@ -371,7 +369,6 @@ fn hold_snoozed(
 
 /// A "Later" recorded after `decide` read the snooze does not stop this install. A lost claim means
 /// "Update Now" is already installing.
-#[cfg(not(feature = "webdriver"))]
 fn install_automatically(
     app: &AppHandle,
     gate: &Arc<InstallGate>,
@@ -429,6 +426,22 @@ fn present(
     } else {
         Presentation::Failed
     }
+}
+
+/// A prompt window would steal the active WebDriver browsing context mid-test, and the stub check
+/// never finds an update, so reaching this is a bug.
+#[cfg(feature = "webdriver")]
+fn present(
+    _app: &AppHandle,
+    _store: &ScheduleStore,
+    _gate: &InstallGate,
+    _mode: presto::updater::CheckMode,
+    version: &semver::Version,
+    _focus: bool,
+    _pref: Option<bool>,
+) -> presto::updater::Presentation {
+    tracing::error!(version = %version, "Update prompt reached in a WebDriver build; not shown");
+    presto::updater::Presentation::Failed
 }
 
 // ── Exit handling ────────────────────────────────────────────────────────
@@ -516,8 +529,13 @@ fn spawn_http_server(
 
 /// Spawn the update task: the launch check, then a check once 6 h of wall-clock time have passed
 /// (sampled every 15 min, so sleep cannot stretch the cadence), plus tray requests, one at a time.
-#[cfg(not(feature = "webdriver"))]
-fn spawn_update_task(app: AppHandle, manual: ManualCheckReceiver) {
+fn spawn_update_task<C, F>(app: AppHandle, manual: ManualCheckReceiver, check: C)
+where
+    C: FnMut(&presto_core::update_schedule::CheckReason<presto::updater::ManualReply>) -> F
+        + Send
+        + 'static,
+    F: std::future::Future<Output = presto::updater::CheckOutcome> + Send + 'static,
+{
     use presto_core::update_schedule::{run_updates, LAUNCH_DELAY, WAKE_TICK};
 
     tauri::async_runtime::spawn(async move {
@@ -529,7 +547,6 @@ fn spawn_update_task(app: AppHandle, manual: ManualCheckReceiver) {
             tracing::error!("Update state is not managed; update checks are disabled");
             return;
         };
-        let check_app = app.clone();
         match run_updates(
             &store,
             presto_core::updater_state::now_unix,
@@ -537,10 +554,7 @@ fn spawn_update_task(app: AppHandle, manual: ManualCheckReceiver) {
             WAKE_TICK,
             manual,
             || gate.is_busy(),
-            move |_| {
-                let app = check_app.clone();
-                async move { presto::updater::check_for_update(&app).await }
-            },
+            check,
             |reason, outcome| {
                 act(&app, reason, outcome);
                 std::future::ready(())
@@ -607,10 +621,48 @@ fn build_tray(
     dev_mode: bool,
     bundled_version: &str,
     status: &tauri::menu::MenuItem<tauri::Wry>,
-) -> Result<tauri::tray::TrayIcon, Box<dyn std::error::Error>> {
-    let menu = tray::build_tray_menu(&app.handle().clone(), dev_mode, bundled_version, status)?;
-    tray::build_tray_icon(app, &menu, move |app, event| match event.id().as_ref() {
-        "quit" => {
+    check_updates: Option<&tauri::menu::MenuItem<tauri::Wry>>,
+) -> Result<(tauri::tray::TrayIcon, tauri::menu::Menu<tauri::Wry>), Box<dyn std::error::Error>> {
+    let menu = tray::build_tray_menu(
+        &app.handle().clone(),
+        dev_mode,
+        bundled_version,
+        status,
+        check_updates,
+    )?;
+    let icon = tray::build_tray_icon(app, &menu, |app, event| {
+        on_tray_menu(app, event.id().as_ref());
+    })?;
+    Ok((icon, menu))
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TrayAction {
+    Quit,
+    ShowLogs,
+    OpenGithub,
+    Settings,
+    CheckUpdates,
+}
+
+fn tray_action(id: &str) -> Option<TrayAction> {
+    match id {
+        "quit" => Some(TrayAction::Quit),
+        "show_logs" => Some(TrayAction::ShowLogs),
+        "open_github" => Some(TrayAction::OpenGithub),
+        "settings" => Some(TrayAction::Settings),
+        presto::update_menu::ITEM_ID => Some(TrayAction::CheckUpdates),
+        _ => None,
+    }
+}
+
+/// Every native tray menu event lands here, on the main thread.
+fn on_tray_menu(app: &AppHandle, id: &str) {
+    let Some(action) = tray_action(id) else {
+        return;
+    };
+    match action {
+        TrayAction::Quit => {
             // The repeating-trigger crash-recovery task relaunches anything not
             // running, so an intentional quit must delete it first or the app
             // returns within ~1 min. A crash skips this path → the task survives
@@ -625,13 +677,52 @@ fn build_tray(
             presto::autostart::quit_disarm();
             app.exit(0);
         }
-        "show_logs" => open_in_browser(&log_dir()),
-        "open_github" => {
+        TrayAction::ShowLogs => open_in_browser(&log_dir()),
+        TrayAction::OpenGithub => {
             open_in_browser(&"https://github.com/alejoamiras/presto");
         }
-        "settings" => windows::open_settings_window(app),
-        _ => {}
-    })
+        TrayAction::Settings => windows::open_settings_window(app),
+        TrayAction::CheckUpdates => {
+            let (Some(check), Some(requests)) = (
+                app.try_state::<presto::update_menu::TrayManualCheck>(),
+                app.try_state::<ManualCheckSender>(),
+            ) else {
+                tracing::error!("Update item clicked without its state; ignoring");
+                return;
+            };
+            check.click(&requests);
+        }
+    }
+}
+
+/// Created once, with its managed controller, and passed into every menu build. A failure is
+/// logged and the tray is built without the item.
+fn check_updates_item(
+    app: &tauri::App,
+    poll_allowed: bool,
+) -> Option<tauri::menu::MenuItem<tauri::Wry>> {
+    use presto::update_menu::{tray_item_enabled, ManualCheck, State, TauriUi, ITEM_ID};
+
+    if !tray_item_enabled(poll_allowed, cfg!(feature = "webdriver")) {
+        return None;
+    }
+    let item = match MenuItemBuilder::with_id(ITEM_ID, State::Idle.label()).build(app) {
+        Ok(item) => item,
+        Err(error) => {
+            tracing::error!(%error, "Could not create the update item; the tray is built without it");
+            return None;
+        }
+    };
+    #[cfg(not(feature = "webdriver"))]
+    let revert = presto::update_menu::REVERT_AFTER;
+    #[cfg(feature = "webdriver")]
+    let revert = e2e_tray::REVERT;
+    app.manage::<presto::update_menu::TrayManualCheck>(ManualCheck::new(
+        item.clone(),
+        TauriUi(app.handle().clone()),
+        revert,
+    ));
+    Some(item)
 }
 
 /// Wire the desktop `AppState`: the versions-changed tray rebuild, the auth popup, and the
@@ -644,6 +735,7 @@ fn build_desktop_state(
     dev_mode: bool,
     bundled_version: String,
     status: tauri::menu::MenuItem<tauri::Wry>,
+    check_updates: Option<tauri::menu::MenuItem<tauri::Wry>>,
     tray: &tauri::tray::TrayIcon,
     is_animating: &Arc<AtomicBool>,
     config_state: &ConfigState,
@@ -654,6 +746,7 @@ fn build_desktop_state(
         dev_mode,
         bundled_version.clone(),
         status.clone(),
+        check_updates,
         tray.clone(),
     );
     let show_auth_popup = auth_popup_callback(app.handle().clone(), auth_manager.clone());
@@ -673,13 +766,20 @@ fn versions_changed_callback(
     dev_mode: bool,
     bundled_version: String,
     status: tauri::menu::MenuItem<tauri::Wry>,
+    check_updates: Option<tauri::menu::MenuItem<tauri::Wry>>,
     tray_icon: tauri::tray::TrayIcon,
 ) -> presto::server::VersionsChangedCallback {
     Arc::new(move || {
         if !dev_mode {
             return;
         }
-        match tray::build_tray_menu(&app, dev_mode, &bundled_version, &status) {
+        match tray::build_tray_menu(
+            &app,
+            dev_mode,
+            &bundled_version,
+            &status,
+            check_updates.as_ref(),
+        ) {
             Ok(menu) => {
                 let _ = tray_icon.set_menu(Some(menu));
                 tracing::info!("Tray menu rebuilt (versions changed)");
@@ -921,9 +1021,13 @@ fn maybe_show_renewal_window(app: &tauri::AppHandle) {
 }
 
 #[cfg(not(feature = "webdriver"))]
-fn start_background_tasks(app: &tauri::AppHandle, manual: ManualCheckReceiver) {
-    if should_poll_for_updates() {
-        spawn_update_task(app.clone(), manual);
+fn start_background_tasks(app: &tauri::AppHandle, poll_allowed: bool, manual: ManualCheckReceiver) {
+    if poll_allowed {
+        let check_app = app.clone();
+        spawn_update_task(app.clone(), manual, move |_| {
+            let app = check_app.clone();
+            async move { presto::updater::check_for_update(&app).await }
+        });
         spawn_floor_tracker();
     }
 }
@@ -945,7 +1049,20 @@ fn setup_desktop(
         .build(app)?;
     reconcile_startup_autostart(app.handle());
 
-    let tray_icon = build_tray(app, dev_mode, &bundled_version, &status)?;
+    #[cfg(not(feature = "webdriver"))]
+    let poll_allowed = should_poll_for_updates();
+    #[cfg(feature = "webdriver")]
+    let poll_allowed = false;
+    let check_updates = check_updates_item(app, poll_allowed);
+    let (tray_icon, menu) = build_tray(
+        app,
+        dev_mode,
+        &bundled_version,
+        &status,
+        check_updates.as_ref(),
+    )?;
+    #[cfg(not(feature = "webdriver"))]
+    drop(menu);
     let is_animating = Arc::new(AtomicBool::new(false));
     tray::start_animation_loop(
         tray_icon.clone(),
@@ -960,6 +1077,7 @@ fn setup_desktop(
         dev_mode,
         bundled_version,
         status,
+        check_updates,
         &tray_icon,
         &is_animating,
         config_state,
@@ -977,9 +1095,9 @@ fn setup_desktop(
         app.handle().clone(),
     );
     #[cfg(not(feature = "webdriver"))]
-    start_background_tasks(app.handle(), manual_checks);
+    start_background_tasks(app.handle(), poll_allowed, manual_checks);
     #[cfg(feature = "webdriver")]
-    drop(manual_checks);
+    e2e_tray::start(app.handle(), manual_checks, menu);
     Ok(())
 }
 
@@ -1162,5 +1280,22 @@ mod tests {
             classify_launch_https(true, || true, || true),
             LaunchHttpsGate::Ready
         );
+    }
+
+    #[test]
+    fn i13_tray_ids_route_to_their_actions() {
+        let table = [
+            ("quit", Some(TrayAction::Quit)),
+            ("show_logs", Some(TrayAction::ShowLogs)),
+            ("open_github", Some(TrayAction::OpenGithub)),
+            ("settings", Some(TrayAction::Settings)),
+            ("check_updates", Some(TrayAction::CheckUpdates)),
+            ("status", None),
+            ("version_info", None),
+            ("version_5.2.0", None),
+        ];
+        for (id, want) in table {
+            assert_eq!(tray_action(id), want, "{id}");
+        }
     }
 }

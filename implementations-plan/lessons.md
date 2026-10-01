@@ -16,6 +16,9 @@ not belong here. Sections are stable; append, never re-sort.
   time out; use a spawned task with a cancel signal. `archive/presto-noir/lessons/arc-1-review.md`
 - **Clippy scores macro-expanded code and `#[test]` bodies under `--all-targets`** — `tracing!` calls
   blow length and complexity limits. `archive/presto-cleanup/lessons/phase-3.md`
+- **Tauri menu callbacks have no Tokio context** — `tokio::spawn` there aborts a release build; use
+  `tauri::async_runtime::spawn`. Menu setters block on the main thread: hold no lock across one.
+  `update-check-schedule/lessons/phase-3.md`
 - **An unfulfilled `#[expect]` is an error under `-D warnings`** — verify suppressions from a clean
   build, under every feature set. `archive/presto-cleanup/lessons/review-18.md`
 
@@ -28,12 +31,6 @@ not belong here. Sections are stable; append, never re-sort.
 - **`require.resolve` on a dual package picks the CJS entry, which Rolldown gives Node-mode interop**
   — `.default` became the whole `exports` object. Resolve the ESM entry from the `exports` map.
   (2026-09, Vite 8.3)
-- **An Aztec bump PR must not touch `app.yml`'s `published` filter** — that job builds against the
-  published pin, which no bump matches before its release. `archive/aztec-v6/plan.md`
-- **Aztec's age-gate exemptions are two exact-name lists over different graphs** — `bunfig.toml`
-  (workspace) and `installer-aztec-packages.txt` (CLI install); add a name only to the list whose
-  graph resolves it, since both checks reject stale names. `bb` ships only from
-  `AztecProtocol/barretenberg` since v6. (2026-09, v6) `archive/aztec-v6/plan.md`
 - **Any Wrangler bump fails `release-feed`'s typecheck** — `wrangler types --check` wants
   `worker-configuration.d.ts` regenerated (`bun run --cwd packages/release-feed types`).
   `archive/workers-builds/lessons/phase-1.md`
@@ -86,8 +83,12 @@ not belong here. Sections are stable; append, never re-sort.
   workflows, which the App token may not. Redispatch from `main`. `archive/aztec-v6/lessons/releases.md`
 - **A ruleset requiring contexts "up to date with main" forces a stack to land one level at a time** —
   those contexts only exist on a PR targeting `main`. `archive/presto-noir/lessons/cross-arc-review.md`
-- **Under `bash -e`, a failing `$(…)` inside an argument does not fail the step** — `echo "x=$(cmd)"`
-  succeeds; assign first. `archive/workers-builds/lessons/phase-3.md`
+- **`bash -e` covers neither an `if` condition nor a `$(…)` inside an argument** — `if grep` reads
+  grep's error (2) as "no match", and `echo "x=$(cmd)"` succeeds. Branch on the exact status; assign
+  first. `archive/workers-builds/lessons/phase-3.md`
+- **tauri-plugin-updater checks the minisign signature inside `download()`** — a tampered payload
+  fails there, before any size check of ours; negatives must assert which refusal fired.
+  (2026-09, plugin 2.11) `update-check-schedule/lessons/phase-6.md`
 
 ## npm publishing
 

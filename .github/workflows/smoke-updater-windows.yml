@@ -110,6 +110,8 @@ jobs:
           sed -i "s/^version = \".*\"/version = \"$N1_VERSION\"/" Cargo.toml
           bun -e "const f='tauri.conf.json';const c=JSON.parse(await Bun.file(f).text());c.version=process.env.N1_VERSION;c.plugins.updater.pubkey=process.env.EPHEMERAL_PUBKEY;await Bun.write(f,JSON.stringify(c,null,2)+'\n')"
           ( cd .. && bunx tauri build --bundles nsis )
+          # The installer is LZMA-compressed; the binary it packs is this one.
+          bash ../scripts/assert-no-test-hooks.sh target/release/Presto.exe
           mkdir -p "$RUNNER_TEMP/n1"
           cp target/release/bundle/nsis/*-setup.exe "$RUNNER_TEMP/n1/"
 
@@ -191,6 +193,7 @@ jobs:
           sed -i "s/^version = \".*\"/version = \"$N_VERSION\"/" Cargo.toml
           bun -e "const f='tauri.conf.json';const c=JSON.parse(await Bun.file(f).text());c.version=process.env.N_VERSION;c.plugins.updater.pubkey=process.env.EPHEMERAL_PUBKEY;await Bun.write(f,JSON.stringify(c,null,2)+'\n')"
           ( cd .. && bunx tauri build --bundles nsis )
+          bash ../scripts/assert-no-test-hooks.sh target/release/Presto.exe
           mkdir -p "$RUNNER_TEMP/n"
           cp target/release/bundle/nsis/*-setup.nsis.zip target/release/bundle/nsis/*-setup.nsis.zip.sig "$RUNNER_TEMP/n/"
           ls -la "$RUNNER_TEMP/n"

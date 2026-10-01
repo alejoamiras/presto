@@ -1,0 +1,70 @@
+# Arc 2 review loop (codex high, GPT-6 Astra)
+
+Session `01a0f46c-b411-75f0-aa25-cd279e298d9f`, over `b5145d0..HEAD` with `plan.md`, `recon.md` and
+the phase 3, 4 and 6 lessons.
+
+## Round 1 — "fix K5's fail-open scan and one label-lifecycle bug"
+
+No production deadlock, panic or consent bypass found. Codex also confirmed the three stated
+inferences: a click during "Checking…" cannot produce a stale result, a failed post at shutdown
+is harmless, and the WebDriver stub never returns `Available`.
+
+| # | Finding | Verified | Disposition |
+|---|---|---|---|
+| 1 | **Medium.** K5 could pass without scanning anything. `if grep …` read a grep error (status 2) as clean, and `set -e` does not cover an `if` condition. An empty `.app`, an empty extracted payload or a zero-byte `.exe` also passed the existence check. | Yes, by reading `assert-no-test-hooks.sh`. | **Fixed.** Only grep status 1 counts as clean: 0 fails as a hit, anything else fails as `could not scan`. A file target must be non-empty. A directory, or an AppImage's extracted payload, must hold a non-empty regular file named `Presto`. The `.app` (`Contents/MacOS/Presto`, which `_e2e-packaged.yml` and `uninstall.sh` already rely on) and the AppImage's payload both qualify: the unix smoke `36786694990` passed the strict scan on the real N-1 and N AppImages and `.app` bundles. The hooked-bundle fixture gained its executable. New tests: a fake `grep` exiting 2, and five empty inputs (zero-byte `.exe`, empty `.app`, `.app` with an empty executable, `.app` without one, AppImage with an empty payload). 🧬 `if grep` → the grep-error test red. 🧬 no executable check → the empty-input test red. |
+| 2 | **Low.** A full or closed channel wrote Failed inline and never scheduled the revert, so "Couldn't check" stayed until the next click. | Yes: `click` returned right after `apply`. | **Fixed.** The revert is now its own `revert(generation)` step: `settle` awaits it, and the inline failure spawns it. It still re-checks the generation, so a later click cancels it. I4 now advances `REVERT_AFTER` in both cases and expects Idle. 🧬 removing the spawn → I4 red (`("Couldn't check — try again", true)` vs `("Check for Updates…", true)`). |
+| 3 | **Comments.** Redundant: the `Entry` doc, the menu-order half of `menu_layout`'s doc, the `TrayManualCheck` alias doc, `apply`'s doc and I13's doc. Missing: the serial-execution invariant that makes it safe for `apply` to release the lock before `show`. | Yes. | **Fixed.** Those docs are deleted or trimmed to the tooltip and log-access rationale. `UiThread::post` now states that jobs run one at a time on the thread `click` runs on. |
+
+## Round 2 — one new low finding
+
+Codex found the revert fix sound: the inline Failed write finishes before the spawn, the timer is
+created inside the async body, and `apply` checks the generation inside the posted closure. It
+also found that the grep-status fix closes the error bypass, that quoted arguments keep Windows
+paths with spaces intact, and that a universal macOS binary needs no special handling.
+
+| # | Finding | Verified | Disposition |
+|---|---|---|---|
+| 1 | **Low.** A clean artifact whose `Presto` entrypoint is a symlink (say `usr/bin/Presto → ../lib/presto-bin`) failed: `find -type f` does not follow the link. | Yes, as a fixture. Whether any shipped layout does this is unverified. It fails closed, so the cost was a spurious smoke failure, not a vacuous pass. | **Fixed:** `find -L` locates the entrypoint, and grep scans it by name alongside the tree (GNU `grep -r` follows symlinks only on the command line). A new test covers a symlinked entrypoint, clean (passes) and hooked (fails). 🧬 dropping `-L` → that test red. |
+
+## Round 3 — the round 2 fix reopened the scan (3-round cap reached)
+
+Codex confirmed that scanning the entrypoint twice changes no outcome, and that `find` errors
+propagate.
+
+| # | Finding | Verified | Disposition |
+|---|---|---|---|
+| 1 | **Low.** `find -L` follows *every* directory link. An unrelated symlink cycle aborts the scan (a spurious failure), and a link escaping the tree can let a host file named `Presto` satisfy the executable check (a vacuous pass for a bundle missing its executable). | Yes, by reading. | **Fixed by reverting round 2.** Discovery is `find -type f` again and grep scans only the tree: no link is followed, so nothing outside the target is scanned or counted. A symlinked entrypoint now fails closed by design. The test pins that: a clean `usr/bin/Presto → ../lib/presto-bin` fails with "holds no non-empty Presto executable". 🧬 `find -L` → that test red. The script's logic is again the one at `e2196dc`, which the Phase 4 smokes dispatched against, so they exercise the final scanner. |
+
+**Lesson.** Round 2's finding described a hypothetical layout. Adopting it traded a loud, fail-closed
+false alarm for complexity with a (contrived) fail-open path. For a guard whose whole job is to
+never pass vacuously, a spurious failure on a layout we don't ship is the cheaper error; decline
+such findings with that reason. The loop hit its 3-round cap here. The last finding concerned only
+code that no longer exists, and the fresh cross-arc pass reviews the final script with everything
+else.
+
+## Dispatches
+
+Before the round 1 fixes, the arc's dispatches at `4909ce5` were green: presto.yml `36785186315`, with
+`tray-update.spec.ts` passing on the Linux, macOS and Windows dev legs and on built-debug, and the
+unix positive smoke `36785189946`. The fixes touch Rust and the K5 script, so Phase 4's dispatches
+re-ran. At `e2196dc` (round 1), presto.yml `36786693077` and unix `36786694990` were green. The
+gating pass is at `1bcfd2a`, after the cross-arc fix: presto.yml `36788162010`, unix `36788164952`
+and Windows `36788167545`, all green (`phase-4.md`).
+
+## Post-delivery delta (same session, 2026-10-01) — "No new material findings." (converged)
+
+After delivery, arc 2 gained the tray-click smoke (`tray-menu.ts`, step 2b) and the playground
+live-node fix. Neither had been reviewed, so the same session reviewed `1bcfd2a..6ed1cec`.
+
+**First pass.** Codex found two **Low** issues, both in the test harness, and confirmed there was no
+shipped-code or https regression.
+
+| # | Finding | Verified | Disposition |
+|---|---|---|---|
+| 1 | Uniqueness is not ownership. If Presto's menu is missing, another app's sole menu would be clicked. | Yes, by reading. | **Fixed.** Only connections whose owner (`GetConnectionUnixProcessID`) runs an executable named `Presto` are considered, judged by the resolved `/proc/<pid>/exe`. A probe through an `AppRun.wrapped` symlink, as the AppImage runs it, showed that `comm` names the link, so a `comm` check would have broken the CI smoke. 🧬 Dropping the check turns the ownership test red. |
+| 2 | `wait N` is not an N-second bound. Discovery runs before the deadline, and each `busctl` call can take 25 s. | Yes. | **Fixed.** `--timeout=5` on every call, and the deadline starts before discovery. A recheck before accepting a late match was declined, because a late observation still proves the reversion. |
+
+**Second pass.** On `8a05189`, Codex's verdict was, verbatim: "No new material findings (high
+confidence within the stated private-session-bus setup)." It agreed the decline was reasonable. It
+noted that basename matching is not binary authentication, and that 5 s bounds each call rather than
+the whole command. Neither warrants more machinery for a controlled CI setup.
