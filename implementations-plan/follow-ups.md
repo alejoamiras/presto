@@ -53,17 +53,12 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   The server's hint is `GITHUB_TOKEN`; a non-API digest source would remove the dependency.
   `archive/aztec-v6/lessons/releases.md`.
 
-## From update-check-schedule (closed 2026-09-30)
+## From update-check-schedule (closed 2026-10-01)
 
 - **Consolidate the ephemeral updater smoke setup.** `smoke-updater-unix.yml` and
   `smoke-updater-windows.yml` each generate a throwaway key, patch version and pubkey, build N-1
   and N, scan both for test hooks, and sign a local feed, step for step in parallel copies. A shared
   composite action would hold one copy. **Verified 2026-09-30.**
-- **`removeOriginViaUI` can skip the removal silently.** It reads `.origin-item` 500 ms after a
-  refresh; if the list has not loaded yet, nothing is removed and the origin stays approved. Windows
-  WebDriver run 36796778684 then failed the next test, `auth-flow.spec.ts`'s Deny, because a prove
-  from the still-approved origin opened no consent window. It should wait for the origin to appear,
-  then for it to disappear. `update-check-schedule/lessons/tray-click.md` **Verified 2026-10-01.**
 - **The playground's first mocked test can assert before `main.ts` runs.** `loaded()` waits only
   for `#embedded-ui`, which is static HTML, but `data-active` is set by `updateModeUI` once the
   module graph loads. App run 36848555687 failed `page loads in-browser and asks before connecting`
