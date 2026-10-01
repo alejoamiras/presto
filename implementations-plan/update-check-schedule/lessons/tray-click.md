@@ -41,4 +41,16 @@ presented from the launch check, not from a click.
 ## Validation
 
 - `bun run test`, `bun run lint:actions` and shellcheck 0.9 (CI's version) exit 0.
-- CI: CI_RESULT.
+- CI: `smoke-updater-unix.yml` prompt 36794011299 at `f4b9d94` ✓.
+  - **Linux:** logged `PROMPT 2b/3`, then `clicked "Check for Updates…"`. Its middle
+    `Update prompt presented version=9.9.9` (00:13:53) is the snoozed launch's click-driven prompt,
+    in the shipped AppImage with stalonetray as the host.
+  - **macOS:** logged the step as skipped.
+
+## Unrelated finding: the test bundle's Linux HTTP leg
+
+Packaged E2E (linux, http) failed twice (36790281980 and its re-run) on
+`checkAztecNode (live node)`. The leg sets `AZTEC_NODE_URL=http://localhost:8080`. Since #73, the
+test pins happy-dom's page to `https://playground.presto.build/`, and happy-dom then blocks the http
+request before it is sent. A CORS-open local stub received no request from the test. The break
+belongs to `main`; this stack does not touch `packages/playground`. It is logged in `follow-ups.md`.
