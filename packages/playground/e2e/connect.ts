@@ -4,9 +4,10 @@ export const PRESTO_ORIGINS = ["http://127.0.0.1:59833", "https://127.0.0.1:5983
 
 /**
  * Waits for startup: `main.ts` drops `#embedded-ui`'s `hidden` class once the mode buttons are set and
- * the browser's stored decision is applied. Visibility is not proof: the dev server's stylesheet comes
- * with the module graph, so a page whose graph never ran shows the panel unstyled, as when a cold Vite
- * fails a stale dependency with a 504 and reloads the page seconds later.
+ * the browser's stored decision is applied. Visibility is not proof: on the dev server the stylesheet
+ * comes with the module graph, so if that graph fails to load (a cold Vite can 504 a stale dependency,
+ * then reload) the panel shows unstyled while `main.ts` never ran. A reload after this returns is not
+ * covered.
  */
 export async function appReady(page: Page, timeout: number): Promise<void> {
   await expect(page.locator("#embedded-ui")).not.toContainClass("hidden", { timeout });

@@ -41,7 +41,7 @@ async function mockHealth(page: Page, handler: (route: Route) => Promise<void> |
 const healthy = (route: Route) =>
   route.fulfill({ status: 200, contentType: "application/json", body: HEALTHY });
 
-/** A cold dev server can take seconds to serve the module graph to the first test. */
+/** Room for a failed first module load on a cold dev server and the reload that recovers it. */
 const loaded = (page: Page) => appReady(page, 20_000);
 
 // ── JS error safety net — catches runtime errors across all mocked tests ──
