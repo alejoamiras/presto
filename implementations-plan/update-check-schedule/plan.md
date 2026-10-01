@@ -5,7 +5,7 @@ driver: claude-code
 claude_model: opus
 eli5_mode: artifact
 code_review: off
-status: delivered 2026-09-30 as a bootstrap PR (#79) plus two stacked arcs, awaiting merge; seeds retired
+status: closed 2026-10-01 — merged as #79, #80 and #81; seeds retired
 created: 2026-09-30
 worktree: .claude/worktrees/update-check-schedule
 branch: worktree-update-check-schedule
@@ -14,10 +14,10 @@ base: main @ da476fa
 
 ## Outcome
 
-**Delivered 2026-09-30, pending the owner's merge.** The bootstrap merged as #79 (`77b5f50`). Arc 1
-(`worktree-update-check-schedule`, #80) and arc 2 (`update-check-schedule-tray`, #81) were opened as a stack
-with `gh stack submit`. This plan's `/goal` and `/loop` seeds are retired; do not re-run them. Per
-Post-implementation step 5, the archive move waits until both PRs merge.
+**Closed 2026-10-01.** The bootstrap merged as #79 (`77b5f50`). Arc 1 (#80) and arc 2 (#81) were
+squash-merged together with `gh stack merge` on 2026-10-01, as `2332181` and `5dd21c8`. This plan's
+`/goal` and `/loop` seeds are retired; do not re-run them. It was archived in the follow-up PR that
+fixed the Windows consent-popup and origin-removal races in the WebDriver suite.
 
 **Shipped:**
 - **Arc 1:**
