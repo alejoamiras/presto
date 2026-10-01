@@ -130,11 +130,31 @@ type SmokeWorkflow = {
 
 // Free-form `mode` strings let a branch dispatch modes `main` does not know yet, so each workflow
 // must allowlist the value before any other step and hand inputs to shell only through `env:`.
+// `foreign` is the other workflow's mode, which this one must refuse.
 const MANUAL_SMOKE_MODES = {
-  "smoke-updater-unix.yml": ["positive", "negative"],
-  "smoke-updater-windows.yml": ["barrier", "copy-initiator", "positive", "negative"],
+  "smoke-updater-unix.yml": {
+    modes: ["positive", "negative", "prompt", "stall"],
+    foreign: "barrier",
+    scripts: ["updater-smoke.sh", "updater-smoke-linux.sh"],
+  },
+  "smoke-updater-windows.yml": {
+    modes: ["barrier", "copy-initiator", "positive", "negative", "prompt"],
+    foreign: "stall",
+    scripts: ["updater-smoke-windows.ps1"],
+  },
 };
-for (const [file, modes] of Object.entries(MANUAL_SMOKE_MODES)) {
+
+/** The modes a smoke script's own allowlist accepts. */
+function scriptModes(script: string): string[] {
+  const source = fs.readFileSync(path.join(import.meta.dir, script), "utf8");
+  const list = script.endsWith(".ps1")
+    ? source.match(/if \(@\(([^)]*)\) -cnotcontains \$Mode\)/)?.[1]?.replaceAll(/[" ]/g, "")
+    : source.match(/case "\$MODE" in\n\s+([a-z|-]+)\) ;;/)?.[1]?.replaceAll("|", ",");
+  if (!list) throw new Error(`${script}: no mode allowlist`);
+  return list.split(",").sort();
+}
+
+for (const [file, { modes, foreign, scripts }] of Object.entries(MANUAL_SMOKE_MODES)) {
   const source = fs.readFileSync(path.join(REPO, ".github/workflows", file), "utf8");
   const workflow = Bun.YAML.parse(source) as SmokeWorkflow;
   const jobs = Object.values(workflow.jobs);
@@ -168,7 +188,7 @@ for (const [file, modes] of Object.entries(MANUAL_SMOKE_MODES)) {
     for (const version of ["1.2.3-rc.1", "0.0.2", "0.1.0"]) {
       expect(validate(modes[0] ?? "", version).ok).toBe(true);
     }
-    for (const mode of ["", "bogus", `${modes[0]} x`, "prompt"]) {
+    for (const mode of ["", "bogus", `${modes[0]} x`, foreign]) {
       expect(validate(mode, "9.9.9").ok).toBe(false);
     }
     const smuggled = validate("::warning::smuggled", "9.9.9");
@@ -178,6 +198,10 @@ for (const [file, modes] of Object.entries(MANUAL_SMOKE_MODES)) {
     for (const version of [...badVersions, "0.0.1", "0.0.1-rc.1", '9.9.9"/e']) {
       expect(validate(modes[0] ?? "", version).ok).toBe(false);
     }
+  });
+
+  test(`${file}: its scripts accept exactly the modes it lets through`, () => {
+    for (const script of scripts) expect(scriptModes(script)).toEqual([...modes].sort());
   });
 
   test(`${file}: read-only, secretless, and uploads nothing`, () => {

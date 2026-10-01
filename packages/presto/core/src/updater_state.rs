@@ -334,15 +334,31 @@ pub fn commit_successful_launch(path: &Path, current: &Version) -> std::io::Resu
     }
 }
 
-/// Atomically write the state with owner-only perms: random temp name in the SAME dir (via
-/// `tempfile`), explicit `0600`, `fsync` of the file AND the parent dir on Unix, chmod/durability
-/// failures are HARD errors (not ignored — L8).
 fn write_state(
     path: &Path,
     floor: &Version,
     pending: Option<&Version>,
     pending_at: Option<u64>,
 ) -> std::io::Result<()> {
+    let body = serde_json::to_vec(&StateFile {
+        schema: SCHEMA,
+        floor: floor.to_string(),
+        pending: pending.map(ToString::to_string),
+        pending_at: pending.and(pending_at),
+    })?;
+    write_private_atomic(path, &body, ".updater-state-")
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Fails the directory fsync after the rename, pinning the file → rename → directory order.
+    pub(crate) static FAIL_DIR_FSYNC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Atomically write `body` with owner-only perms: random temp name in the SAME dir (via
+/// `tempfile`), explicit `0600`, `fsync` of the file AND the parent dir on Unix, chmod/durability
+/// failures are HARD errors (not ignored — L8).
+pub(crate) fn write_private_atomic(path: &Path, body: &[u8], prefix: &str) -> std::io::Result<()> {
     let parent = path.parent().ok_or_else(|| {
         std::io::Error::new(std::io::ErrorKind::InvalidInput, "state path has no parent")
     })?;
@@ -353,16 +369,8 @@ fn write_state(
         std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700))?;
     }
 
-    let body = serde_json::to_vec(&StateFile {
-        schema: SCHEMA,
-        floor: floor.to_string(),
-        pending: pending.map(ToString::to_string),
-        pending_at: pending.and(pending_at),
-    })?;
-
-    // Random same-dir temp (owner-only from creation), write, fsync, then atomic rename.
     let mut tmp = tempfile::Builder::new()
-        .prefix(".updater-state-")
+        .prefix(prefix)
         .tempfile_in(parent)?;
     #[cfg(unix)]
     {
@@ -370,7 +378,7 @@ fn write_state(
         tmp.as_file()
             .set_permissions(std::fs::Permissions::from_mode(0o600))?;
     }
-    tmp.write_all(&body)?;
+    tmp.write_all(body)?;
     tmp.as_file().sync_all()?;
     tmp.persist(path)
         .map_err(|e| std::io::Error::other(e.error))?;
@@ -379,6 +387,10 @@ fn write_state(
     // failure could let a crash restore an older/missing dir entry and lower or erase the floor.
     #[cfg(unix)]
     {
+        #[cfg(test)]
+        if FAIL_DIR_FSYNC.with(std::cell::Cell::get) {
+            return Err(std::io::Error::other("test: directory fsync failure"));
+        }
         let dir = std::fs::File::open(parent)?;
         dir.sync_all()?;
     }

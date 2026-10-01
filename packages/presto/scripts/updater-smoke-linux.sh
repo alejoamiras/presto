@@ -43,13 +43,15 @@ N_ARTIFACTS_DIR="$3"
 N1_APPIMAGE="$4"
 REPO_ROOT="$5"
 
-# positive (default): expect the update to apply (/health reports N).
-# negative: serve a TAMPERED AppImage and assert the update is REJECTED. Set via
-#           UPDATER_SMOKE_MODE.
+# positive (default): expect the update to apply (/health reports N) and N to record its own check.
+# negative: serve a TAMPERED AppImage and assert the update is REJECTED.
+# prompt:   auto-update off; the prompt is presented, then held back by a snooze (ephemeral lane).
+# stall:    the feed goes silent mid-artifact; the download watchdog abandons it (ephemeral lane).
+# Set via UPDATER_SMOKE_MODE.
 MODE="${UPDATER_SMOKE_MODE:-positive}"
 case "$MODE" in
-  positive|negative) ;;
-  *) echo "::error::unknown UPDATER_SMOKE_MODE '$MODE'"; exit 1 ;;
+  positive|negative|prompt|stall) ;;
+  *) echo "::error::UPDATER_SMOKE_MODE is not a supported mode"; exit 1 ;;
 esac
 
 HEALTH="http://127.0.0.1:59833/health"
@@ -72,12 +74,15 @@ APP_PID=""
 
 log() { echo "── $* ──"; }
 
+# shellcheck disable=SC1091  # linted on its own
+source "$(dirname "${BASH_SOURCE[0]}")/updater-smoke-modes.sh"
+
 # shellcheck disable=SC2317,SC2329  # invoked indirectly via `trap cleanup EXIT`; SC2317 is only
 # emitted by shellcheck < 0.10 (the CI runner's), which doesn't trace trap targets — every command
 # in the body reads as unreachable there. Harmless on newer shellcheck, so pin both codes.
 cleanup() {
   set +e
-  [ -n "$APP_PID" ] && kill "$APP_PID" 2>/dev/null
+  [ -n "$APP_PID" ] && kill -KILL -"$APP_PID" 2>/dev/null
   # Kill the (possibly relaunched) app by its AppImage path ONLY, dot escaped.
   # A broad `pkill -f presto` ALSO matches THIS script's own argv —
   # the repo checkout path contains "presto" — so it SIGTERMs the
@@ -165,12 +170,15 @@ log "latest.json:"; cat "$WORK/latest.json"
 
 # ── Start the local HTTPS feed on :443 ──
 log "starting feed server on :443"
+FEED_STALL=()
+[ "$MODE" = "stall" ] && FEED_STALL=(--stall-after "$STALL_AFTER_BYTES")
 # sudo for :443; the redirect is opened by this (user) shell so feed.log lands in
 # the user-owned workdir — intended, hence SC2024 is not a concern here.
 # shellcheck disable=SC2024
 sudo "$(command -v bun)" "$REPO_ROOT/packages/presto/scripts/updater-feed-server.ts" \
   --cert "$WORK/leaf.pem" --key "$WORK/leaf.key" \
-  --latest-json "$WORK/latest.json" --serve-dir "$SERVE_DIR" > "$WORK/feed.log" 2>&1 &
+  --latest-json "$WORK/latest.json" --serve-dir "$SERVE_DIR" \
+  ${FEED_STALL[@]+"${FEED_STALL[@]}"} > "$WORK/feed.log" 2>&1 &
 FEED_PID=$!
 for _ in $(seq 1 20); do
   curl -sf "https://$HOST/releases/latest.json" >/dev/null 2>&1 && break
@@ -193,19 +201,12 @@ chmod +x "$APP_BIN"
 N1_SUM="$(sha256sum "$APP_BIN" | awk '{print $1}')"
 log "N-1 on-disk sha256=$N1_SUM"
 
-# ── Pre-seed auto-update so N-1 updates without UI ──
-mkdir -p "$CONFIG_DIR"
-echo '{"config_version":1,"safari_support":false,"approved_origins":[],"speed":"full","auto_update":true}' > "$CONFIG_DIR/config.json"
-
-# ── Launch N-1; it should auto-update to N and relaunch ──
-log "launching N-1 (expecting auto-update → N)"
-"$APP_BIN" > "$WORK/app.log" 2>&1 &
-APP_PID=$!
-
 dump_logs() {
-  echo "── app log ──"; cat "$WORK/app.log" 2>/dev/null || true
+  for f in "$WORK"/app*.log; do
+    echo "── $(basename "$f") ──"; cat "$f" 2>/dev/null || true
+  done
   echo "── feed log ──"; cat "$WORK/feed.log" 2>/dev/null || true
-  echo "── last /health ──"; curl -s "$HEALTH" 2>/dev/null || true
+  echo "── last /health ──"; curl -s --max-time 5 "$HEALTH" 2>/dev/null || true
   # AppImage/FUSE failures surface here (e.g. "dlopen(): error loading libfuse")
   # — distinguishes a harness/FUSE problem from a genuine updater rejection.
   if ! kill -0 "$APP_PID" 2>/dev/null; then
@@ -213,12 +214,36 @@ dump_logs() {
   fi
 }
 
+mkdir -p "$CONFIG_DIR"
+if [ "$MODE" = "prompt" ]; then
+  # ── Auto-update off and onboarding done, so the prompt is the only window N-1 opens ──
+  echo '{"config_version":1,"safari_support":false,"approved_origins":[],"speed":"full","auto_update":false,"onboarding_version":1}' > "$CONFIG_DIR/config.json"
+  run_prompt_mode || { dump_logs; exit 1; }
+  dump_logs
+  exit 0
+fi
+
+# ── Pre-seed auto-update so N-1 updates without UI ──
+echo '{"config_version":1,"safari_support":false,"approved_origins":[],"speed":"full","auto_update":true}' > "$CONFIG_DIR/config.json"
+
+# ── Launch N-1; it should auto-update to N and relaunch ──
+log "launching N-1 (expecting auto-update → N)"
+launch_app "$WORK/app.log" || { dump_logs; exit 1; }
+
+if [ "$MODE" = "stall" ]; then
+  run_stall_mode || { dump_logs; exit 1; }
+  dump_logs
+  exit 0
+fi
+
 if [ "$MODE" = "negative" ]; then
   # Teeth check: the tampered AppImage MUST be rejected. /health must NEVER report
   # N (no swap). If it ever does, signature verification has no teeth.
   log "NEGATIVE: asserting /health never reports $N_VERSION (tampered artifact rejected), 120s"
+  N1_SEEN=""
   for _ in $(seq 1 60); do
-    GOT="$(curl -sf "$HEALTH" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true)"
+    GOT="$(health_version)"
+    [ -z "$N1_SEEN" ] && N1_SEEN="$GOT"
     if [ "$GOT" = "$N_VERSION" ]; then
       echo "::error::NEGATIVE FAILED — a TAMPERED artifact was ACCEPTED; app updated to $N_VERSION. The updater is not verifying signatures."
       dump_logs
@@ -231,6 +256,19 @@ if [ "$MODE" = "negative" ]; then
     dump_logs
     exit 1
   fi
+  # A transport error after the request also leaves N-1 healthy; only the refusal itself counts:
+  # minisign's verdict inside the plugin, or the signed-size check behind it.
+  if ! grep -qE "signature verification failed|does not match the signed size" "$WORK/app.log"; then
+    echo "::error::NEGATIVE inconclusive — N-1 never logged a signature or signed-size refusal; the download may have failed for another reason."
+    dump_logs
+    exit 1
+  fi
+  # A crash after the download also never reports N: only a live N-1 proves the refusal.
+  if [ -z "$N1_SEEN" ] || [ "$(health_version)" != "$N1_SEEN" ]; then
+    echo "::error::NEGATIVE inconclusive — N-1 (${N1_SEEN:-never seen}) is not answering /health after the rejection window; it may have crashed rather than refused."
+    dump_logs
+    exit 1
+  fi
   log "SUCCESS (negative) — updater downloaded the tampered artifact and refused to update to $N_VERSION"
   dump_logs
   exit 0
@@ -240,8 +278,9 @@ fi
 #    with its OWN version, so only version==N counts) ──
 log "polling $HEALTH for version == $N_VERSION (up to 300s)"
 for _ in $(seq 1 150); do
-  GOT="$(curl -sf "$HEALTH" 2>/dev/null | jq -r '.version // empty' 2>/dev/null || true)"
+  GOT="$(health_version)"
   if [ "$GOT" = "$N_VERSION" ]; then
+    T_N="$(date +%s)"
     # Guard against a no-op pass: the version flip must have come from OUR feed.
     # Assert a /releases/download/ hit — the app only requests that when it
     # actually downloads N. (We do NOT assert latest.json: our own readiness
@@ -265,7 +304,8 @@ for _ in $(seq 1 150); do
     else
       log "NOTE: post-update sha256=$POST_SUM changed from N-1 but differs from the served N ($N_SUM) — swapped via a re-pack path; /health==N + download hit still confirm the update applied"
     fi
-    log "SUCCESS — updated to $GOT via the local feed (artifact downloaded + in-place swap)"
+    assert_schedule_written_by_n "$T_N" || { dump_logs; exit 1; }
+    log "SUCCESS — updated to $GOT via the local feed (artifact downloaded + in-place swap); N recorded its own check"
     exit 0
   fi
   sleep 2

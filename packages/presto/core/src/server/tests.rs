@@ -1815,3 +1815,21 @@ async fn an_allow_whose_persist_fails_still_proves_and_re_prompts_later() {
         "no mirror: it re-prompts"
     );
 }
+
+/// F12: the prover is idle only when every admission permit is back, so an automatic install
+/// cannot kill a second proof just because the first one finished.
+#[test]
+fn prover_idle_tracks_every_admitted_proof() {
+    let state = HeadlessState::default();
+    assert!(state.prover_idle());
+    let first = Arc::clone(&state.prove_waiters)
+        .try_acquire_owned()
+        .unwrap();
+    let second = Arc::clone(&state.prove_waiters)
+        .try_acquire_owned()
+        .unwrap();
+    drop(first);
+    assert!(!state.prover_idle(), "one proof still admitted");
+    drop(second);
+    assert!(state.prover_idle());
+}

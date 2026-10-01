@@ -30,7 +30,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Smoke scenario (barrier | copy-initiator | positive | negative)
+        description: Smoke scenario (barrier | copy-initiator | positive | negative | prompt)
         required: false
         default: barrier
         type: string
@@ -61,8 +61,8 @@ jobs:
         run: |
           set -euo pipefail
           case "$UPDATER_SMOKE_MODE" in
-            barrier|copy-initiator|positive|negative) ;;
-            *) echo "::error::mode is not supported on this ref (allowed: barrier, copy-initiator, positive, negative)"; exit 1 ;;
+            barrier|copy-initiator|positive|negative|prompt) ;;
+            *) echo "::error::mode is not supported on this ref (allowed: barrier, copy-initiator, positive, negative, prompt)"; exit 1 ;;
           esac
           # Canonical SemVer without build metadata, above N-1: anything else fails a later parse or
           # never qualifies as an update.

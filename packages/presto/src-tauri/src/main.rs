@@ -7,7 +7,9 @@ mod windows;
 use presto::authorization::AuthorizationManager;
 use presto::commands::{AuthState, ConfigState, PendingUpdate, SharedAppState};
 use presto::server::{AppState, HeadlessState, ServerStatus};
+use presto::updater::{ManualCheckReceiver, ManualCheckSender};
 use presto::{certs, commands, config, log_dir, verified_sites};
+use presto_core::update_schedule::{InstallGate, ScheduleStore};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -16,7 +18,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::menu::MenuItemBuilder;
 use tauri::Manager;
-// AppHandle is only referenced by the (webdriver-gated) update-check fn.
+// AppHandle is only referenced by the (webdriver-gated) update task.
 #[cfg(not(feature = "webdriver"))]
 use tauri::AppHandle;
 use tracing_subscriber::fmt;
@@ -238,12 +240,12 @@ fn reset_https_enabled(state: &AppState) {
 
 // ── Auto-update ──────────────────────────────────────────────────────────
 
-/// Whether the background update poller should run.
+/// Whether the update task should run.
 ///
 /// A non-production build must never poll the prod updater feed or pop the
 /// update-prompt window:
 /// - `webdriver` builds are handled at compile time (this fn + the spawn site
-///   are `#[cfg(not(feature = "webdriver"))]`), so the poller cannot exist there.
+///   are `#[cfg(not(feature = "webdriver"))]`), so the task cannot exist there.
 /// - `debug_assertions` (a developer's `cargo tauri dev`, and the `_e2e.yml`
 ///   `cargo run` desktop app) are disabled by default — opt back in with
 ///   `PRESTO_FORCE_UPDATE_CHECK=1`.
@@ -266,32 +268,166 @@ fn should_poll_for_updates() -> bool {
     true
 }
 
-/// Background update check wrapper. Calls the shared updater module and
-/// shows the prompt window if an update is available and the user hasn't chosen yet.
+/// The update schedule store. WebDriver builds keep it in memory, so a test run never writes the
+/// user's `~/.presto`.
+fn schedule_store() -> ScheduleStore {
+    #[cfg(not(feature = "webdriver"))]
+    let path = presto::updater::update_schedule_path();
+    #[cfg(feature = "webdriver")]
+    let path = None;
+    ScheduleStore::new(path, env!("CARGO_PKG_VERSION"))
+}
+
+/// Acts on one check, on the update task, and answers a tray request still waiting for it.
 ///
-/// Not compiled for `webdriver` builds: the prompt window would steal the
-/// active WebDriver browsing context mid-test (see
-/// implementations-plan/ci-reliability-2026-05-29/diagnosis.md).
+/// Not compiled for `webdriver` builds: the prompt window would steal the active WebDriver browsing
+/// context mid-test.
 #[cfg(not(feature = "webdriver"))]
-async fn run_update_check(app: &AppHandle, config_state: &ConfigState) {
-    if let Some(update) = presto::updater::check_for_update(app, config_state).await {
-        let auto_update_pref = { config_state.read().auto_update };
-        let current_version = env!("CARGO_PKG_VERSION").to_string();
-        let new_version = update.version().to_string();
+fn act(
+    app: &AppHandle,
+    reason: presto_core::update_schedule::CheckReason<presto::updater::ManualReply>,
+    outcome: presto::updater::CheckOutcome,
+) {
+    let (mode, reply) = presto::updater::mode_and_reply(reason);
+    let result = act_on(app, mode, outcome);
+    if let Some(reply) = reply {
+        // The tray may have given up since the check ended; nothing to tell it then.
+        let _ = reply.send(result);
+    }
+}
 
-        // Store the update so respond_update_prompt can use it directly
-        if let Some(pending) = app.try_state::<PendingUpdate>() {
-            pending.set(update);
+#[cfg(not(feature = "webdriver"))]
+fn act_on(
+    app: &AppHandle,
+    mode: presto::updater::CheckMode,
+    outcome: presto::updater::CheckOutcome,
+) -> presto::updater::ManualCheckResult {
+    use presto::updater::{decide, Decision, ManualCheckResult, OutcomeKind};
+
+    let (Some(store), Some(gate), Some(slot), Some(config)) = (
+        app.try_state::<Arc<ScheduleStore>>(),
+        app.try_state::<Arc<InstallGate>>(),
+        app.try_state::<PendingUpdate>(),
+        app.try_state::<ConfigState>(),
+    ) else {
+        tracing::error!("Update state is not managed; ignoring this check's result");
+        return ManualCheckResult::Failed;
+    };
+    let (kind, update) = outcome.into_parts();
+    let now = presto_core::updater_state::now_unix();
+    let snoozed = update
+        .as_ref()
+        .is_some_and(|u| store.is_snoozed(u.version(), now));
+    let pref = config.read().auto_update;
+    let decision = decide(kind, pref, mode, snoozed, gate.is_busy());
+    match (decision, update) {
+        (Decision::Clear, _) => {
+            slot.clear();
+            if kind == OutcomeKind::UpToDate {
+                ManualCheckResult::UpToDate
+            } else {
+                ManualCheckResult::Failed
+            }
         }
+        (Decision::Unchanged, _) => ManualCheckResult::Failed,
+        (Decision::InProgress, _) => ManualCheckResult::Installing,
+        (Decision::SetOnly, Some(update)) => {
+            hold_snoozed(&slot, &store, update, now);
+            // Only launch and scheduled checks are held back by a snooze; no tray request waits.
+            ManualCheckResult::Presented
+        }
+        (Decision::SetAndPresent { focus }, Some(update)) => {
+            let version = update.version().clone();
+            slot.set(update);
+            present(app, &store, &gate, mode, &version, focus, pref).manual_result()
+        }
+        (Decision::ClearAndInstall, Some(update)) => {
+            install_automatically(app, &gate, &slot, update);
+            ManualCheckResult::Installing
+        }
+        (decision, None) => {
+            tracing::error!(?decision, "No verified update for this decision");
+            ManualCheckResult::Failed
+        }
+    }
+}
 
-        // Show prompt for both None (first time) and Some(false) (manual mode).
-        // Some(true) users never reach here — check_for_update auto-installs for them.
-        tracing::info!(
-            ?auto_update_pref,
-            version = %new_version,
-            "Showing update prompt"
-        );
-        windows::show_update_prompt_window(app, &current_version, &new_version);
+/// Holds a snoozed update for an open prompt's "Update Now" without showing anything.
+#[cfg(not(feature = "webdriver"))]
+fn hold_snoozed(
+    slot: &PendingUpdate,
+    store: &ScheduleStore,
+    update: presto::updater::VerifiedUpdate,
+    now: u64,
+) {
+    let version = update.version().clone();
+    slot.set(update);
+    tracing::info!(
+        version = %version,
+        until = store.snoozed_until(&version, now).unwrap_or_default(),
+        "Update snoozed; prompt suppressed"
+    );
+}
+
+/// A "Later" recorded after `decide` read the snooze does not stop this install. A lost claim means
+/// "Update Now" is already installing.
+#[cfg(not(feature = "webdriver"))]
+fn install_automatically(
+    app: &AppHandle,
+    gate: &Arc<InstallGate>,
+    slot: &PendingUpdate,
+    update: presto::updater::VerifiedUpdate,
+) {
+    use presto_core::update_schedule::{install_opts, InstallCaller};
+
+    let Some(claim) = gate.try_claim() else {
+        return;
+    };
+    slot.clear();
+    tracing::info!(version = %update.version(), "Auto-update enabled, performing update");
+    presto::updater::spawn_install(
+        app,
+        claim,
+        update,
+        install_opts(InstallCaller::Auto),
+        |_| {},
+    );
+}
+
+/// Presents the version this check just verified, never one read back from the slot.
+#[cfg(not(feature = "webdriver"))]
+fn present(
+    app: &AppHandle,
+    store: &ScheduleStore,
+    gate: &InstallGate,
+    mode: presto::updater::CheckMode,
+    version: &semver::Version,
+    focus: bool,
+    pref: Option<bool>,
+) -> presto::updater::Presentation {
+    use presto::updater::Presentation;
+
+    let busy = gate.is_busy();
+    let snoozed_now = store.is_snoozed(version, presto_core::updater_state::now_unix());
+    if !presto::updater::should_present(mode, snoozed_now, busy) {
+        tracing::info!(version = %version, busy, "Update prompt skipped: answered while checking");
+        return if busy {
+            Presentation::SkippedBusy
+        } else {
+            Presentation::SkippedSnoozed
+        };
+    }
+    tracing::info!(?pref, version = %version, "Showing update prompt");
+    if windows::show_update_prompt_window(
+        app,
+        env!("CARGO_PKG_VERSION"),
+        &version.to_string(),
+        focus,
+    ) {
+        tracing::info!(version = %version, "Update prompt presented");
+        Presentation::Shown
+    } else {
+        Presentation::Failed
     }
 }
 
@@ -378,15 +514,39 @@ fn spawn_http_server(
     });
 }
 
-/// Spawn the background update poller (5s warm-up, then every 12h). (F-03: extracted from `.setup`.)
+/// Spawn the update task: the launch check, then a check once 6 h of wall-clock time have passed
+/// (sampled every 15 min, so sleep cannot stretch the cadence), plus tray requests, one at a time.
 #[cfg(not(feature = "webdriver"))]
-fn spawn_update_poller(app_handle: AppHandle, config: ConfigState) {
+fn spawn_update_task(app: AppHandle, manual: ManualCheckReceiver) {
+    use presto_core::update_schedule::{run_updates, LAUNCH_DELAY, WAKE_TICK};
+
     tauri::async_runtime::spawn(async move {
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        loop {
-            run_update_check(&app_handle, &config).await;
-            tokio::time::sleep(Duration::from_secs(12 * 3600)).await;
-        }
+        let (Some(store), Some(gate)) = (
+            app.try_state::<Arc<ScheduleStore>>()
+                .map(|s| Arc::clone(&s)),
+            app.try_state::<Arc<InstallGate>>().map(|g| Arc::clone(&g)),
+        ) else {
+            tracing::error!("Update state is not managed; update checks are disabled");
+            return;
+        };
+        let check_app = app.clone();
+        match run_updates(
+            &store,
+            presto_core::updater_state::now_unix,
+            LAUNCH_DELAY,
+            WAKE_TICK,
+            manual,
+            || gate.is_busy(),
+            move |_| {
+                let app = check_app.clone();
+                async move { presto::updater::check_for_update(&app).await }
+            },
+            |reason, outcome| {
+                act(&app, reason, outcome);
+                std::future::ready(())
+            },
+        )
+        .await {}
     });
 }
 
@@ -761,9 +921,9 @@ fn maybe_show_renewal_window(app: &tauri::AppHandle) {
 }
 
 #[cfg(not(feature = "webdriver"))]
-fn start_background_tasks(app: &tauri::AppHandle, config_state: &ConfigState) {
+fn start_background_tasks(app: &tauri::AppHandle, manual: ManualCheckReceiver) {
     if should_poll_for_updates() {
-        spawn_update_poller(app.clone(), config_state.clone());
+        spawn_update_task(app.clone(), manual);
         spawn_floor_tracker();
     }
 }
@@ -773,7 +933,9 @@ fn setup_desktop(
     dev_mode: bool,
     config_state: &ConfigState,
     auth_manager: &AuthState,
+    manual_checks: ManualCheckReceiver,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    presto::updater::record_main_thread();
     #[cfg(target_os = "macos")]
     app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
@@ -815,7 +977,9 @@ fn setup_desktop(
         app.handle().clone(),
     );
     #[cfg(not(feature = "webdriver"))]
-    start_background_tasks(app.handle(), config_state);
+    start_background_tasks(app.handle(), manual_checks);
+    #[cfg(feature = "webdriver")]
+    drop(manual_checks);
     Ok(())
 }
 
@@ -844,6 +1008,8 @@ fn main() {
     // newer-schema config yields none).
     let config_state: ConfigState = Arc::new(config::ConfigStore::new(config::load_with_cap()));
     let auth_manager: AuthState = Arc::new(AuthorizationManager::new());
+    let (manual_check_tx, manual_check_rx): (ManualCheckSender, ManualCheckReceiver) =
+        tokio::sync::mpsc::channel(presto::updater::MANUAL_QUEUE);
 
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
@@ -863,6 +1029,9 @@ fn main() {
             verified_sites::VerifiedSitesRegistry::load(),
         ))
         .manage::<PendingUpdate>(PendingUpdate::default())
+        .manage::<Arc<ScheduleStore>>(Arc::new(schedule_store()))
+        .manage::<Arc<InstallGate>>(Arc::default())
+        .manage::<ManualCheckSender>(manual_check_tx)
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::get_autostart_enabled,
@@ -885,7 +1054,9 @@ fn main() {
             commands::set_auto_update,
             commands::respond_update_prompt,
         ])
-        .setup(move |app| setup_desktop(app, dev_mode, &config_state, &auth_manager))
+        .setup(move |app| {
+            setup_desktop(app, dev_mode, &config_state, &auth_manager, manual_check_rx)
+        })
         .build(tauri::generate_context!())
         .expect("error while building Presto")
         .run(|_app, event| {

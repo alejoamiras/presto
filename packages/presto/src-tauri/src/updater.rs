@@ -1,14 +1,25 @@
-//! Auto-update logic shared between the Tauri app (main.rs) and commands.
+//! Checking and installing updates.
 //!
-//! The background loop in main.rs calls `check_for_update()` periodically.
-//! When the user clicks "Update Now" in the prompt, `respond_update_prompt`
-//! calls `perform_update()` directly — no redundant network re-check.
+//! [`check_for_update`] only fetches and classifies. The update task in main.rs
+//! (`presto_core::update_schedule::run_updates`) records each check that reached the feed, then acts
+//! on it through [`decide`]. Every install, automatic or "Update Now", runs through [`spawn_install`]
+//! holding a claim on the shared `InstallGate`, and gets its bytes only through `download_guarded`.
 
-use crate::commands::ConfigState;
+mod decision;
+
+pub use decision::*;
+
+use presto_core::update_schedule::{
+    download_guarded, run_claimed, GuardedError, InstallClaim, InstallOpts, Observation,
+};
 use presto_core::{update_manifest, updater_state};
 use semver::Version;
+use std::future::Future;
+use std::path::PathBuf;
 use std::sync::OnceLock;
-use tauri::AppHandle;
+use std::thread::ThreadId;
+use std::time::Duration;
+use tauri::{AppHandle, Manager};
 use tauri_plugin_updater::UpdaterExt;
 
 /// The pinned updater public key, read ONCE from the bundled `tauri.conf.json` — the exact same key
@@ -31,14 +42,44 @@ fn updater_pubkey() -> &'static str {
 /// Absolute path to the monotonic version-floor state file. Lives alongside the app's other private
 /// state under `~/.presto/` (same base as `certs/`), deliberately NOT inside `config.json`
 /// (whose load is fail-open and would silently erase the floor on any parse glitch).
-fn updater_state_path() -> Option<std::path::PathBuf> {
+fn updater_state_path() -> Option<PathBuf> {
     dirs::home_dir().map(|h| h.join(".presto").join("updater-state.json"))
+}
+
+/// The update schedule (last check, snooze), beside `updater-state.json`.
+pub fn update_schedule_path() -> Option<PathBuf> {
+    dirs::home_dir().map(|h| h.join(".presto").join("update-schedule.json"))
+}
+
+/// A feed that has not answered by then counts as failed. 30 s, so a click queued behind a
+/// scheduled check still hears back within the tray's 90 s ceiling.
+pub const FEED_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Tray requests the update task can queue: one live request plus expired ones it skips cheaply. A
+/// full queue means the task is stalled.
+pub const MANUAL_QUEUE: usize = 4;
+
+/// A tray request is the channel the update task answers on.
+pub type ManualReply = tokio::sync::oneshot::Sender<ManualCheckResult>;
+pub type ManualCheckSender = tokio::sync::mpsc::Sender<ManualReply>;
+pub type ManualCheckReceiver = tokio::sync::mpsc::Receiver<ManualReply>;
+
+static MAIN_THREAD: OnceLock<ThreadId> = OnceLock::new();
+
+/// Called once from setup, which runs on the main thread.
+pub fn record_main_thread() {
+    let _ = MAIN_THREAD.set(std::thread::current().id());
+}
+
+/// See [`presenter_allowed`].
+pub fn may_create_windows_here() -> bool {
+    presenter_allowed(std::thread::current().id(), MAIN_THREAD.get().copied())
 }
 
 /// F-004 B2: acquire the cross-process "updater transaction" lock. Serialises check→install and the
 /// post-launch floor commit across concurrent app instances, so two processes can neither race the
 /// floor file nor install over each other. Best-effort and non-blocking: if another instance holds it,
-/// return `None` and the caller bows out (the periodic poller / next launch retries) rather than
+/// return `None` and the caller bows out (the next due check / next launch retries) rather than
 /// blocking the async runtime. The returned guard (the open, exclusively-locked file) releases the
 /// lock on drop — and, on the no-return `app.restart()` path, the OS releases it at process exit.
 /// `pub(crate)`: the autostart heal takes this NON-BLOCKING to bow out while an update transaction
@@ -222,26 +263,77 @@ fn verify_and_gate(update: tauri_plugin_updater::Update) -> Option<VerifiedUpdat
     })
 }
 
-/// Check for updates and act based on the user's auto_update preference. Any available update is put
-/// through the F-004 [`verify_and_gate`] FIRST — an unverified or rolled-back candidate never reaches
-/// the prompt or the auto-install path. Returns the [`VerifiedUpdate`] when one is available and the
-/// user hasn't opted into auto-update (so the caller can show a prompt or store it for later use).
-#[expect(
-    clippy::cognitive_complexity,
-    reason = "updater construction, availability, verification, and preference routing form one check"
-)]
-pub async fn check_for_update(
-    app: &AppHandle,
-    config_state: &ConfigState,
-) -> Option<VerifiedUpdate> {
-    tracing::info!("Checking for updates...");
-    let updater = match app.updater() {
-        Ok(u) => u,
-        Err(e) => {
-            tracing::warn!("Failed to build updater: {e}");
-            return None;
+/// The result of one feed check.
+pub enum CheckOutcome {
+    UpToDate,
+    Available(Box<VerifiedUpdate>),
+    /// The feed answered with a candidate that failed F-004 (signature or version floor).
+    Rejected,
+    Failed,
+    InstallInProgress,
+}
+
+impl CheckOutcome {
+    pub fn kind(&self) -> OutcomeKind {
+        match self {
+            Self::UpToDate => OutcomeKind::UpToDate,
+            Self::Available(_) => OutcomeKind::Available,
+            Self::Rejected => OutcomeKind::Rejected,
+            Self::Failed => OutcomeKind::Failed,
+            Self::InstallInProgress => OutcomeKind::InstallInProgress,
         }
+    }
+
+    pub fn into_parts(self) -> (OutcomeKind, Option<VerifiedUpdate>) {
+        let kind = self.kind();
+        match self {
+            Self::Available(update) => (kind, Some(*update)),
+            _ => (kind, None),
+        }
+    }
+}
+
+impl Observation for CheckOutcome {
+    fn reached_feed(&self) -> bool {
+        self.kind().reached_feed()
+    }
+
+    fn in_progress() -> Self {
+        Self::InstallInProgress
+    }
+}
+
+/// `None` once [`FEED_TIMEOUT`] passes; the plugin's check has no timeout of its own.
+async fn with_feed_timeout<F: Future>(fetch: F) -> Option<F::Output> {
+    tokio::time::timeout(FEED_TIMEOUT, fetch).await.ok()
+}
+
+/// Fetches the feed and classifies the answer. Any advertised update goes through the F-004
+/// [`verify_and_gate`] first, so only a verified candidate comes back as `Available`. Never
+/// installs: the caller records the check, then acts on it.
+pub async fn check_for_update(app: &AppHandle) -> CheckOutcome {
+    tracing::info!("Checking for updates...");
+    let update = match fetch_feed(app).await {
+        Ok(update) => update,
+        Err(outcome) => return outcome,
     };
+    tracing::info!(
+        current = env!("CARGO_PKG_VERSION"),
+        new = %update.version,
+        "Update advertised (pre-verification)"
+    );
+    match verify_and_gate(update) {
+        Some(verified) => CheckOutcome::Available(Box::new(verified)),
+        None => CheckOutcome::Rejected,
+    }
+}
+
+/// The advertised update, or the outcome that ends the check without one.
+async fn fetch_feed(app: &AppHandle) -> Result<tauri_plugin_updater::Update, CheckOutcome> {
+    let updater = app.updater().map_err(|e| {
+        tracing::warn!("Failed to build updater: {e}");
+        CheckOutcome::Failed
+    })?;
 
     // Residual (audit M6): `updater.check()` fetches, BUFFERS, and JSON-parses the whole feed body
     // BEFORE we ever see `raw_json` — so `verify_manifest`'s 64 KiB manifest-field cap does NOT bound
@@ -250,42 +342,47 @@ pub async fn check_for_update(
     // limit before JSON parsing, which `tauri-plugin-updater` does not expose (same class as the
     // artifact-buffer residual #345). Integrity is unaffected: an oversized feed still cannot forge a
     // valid signed manifest. Documented here so it isn't mistaken for covered by the manifest cap.
-    let update = match updater.check().await {
-        Ok(Some(update)) => update,
-        Ok(None) => {
+    match with_feed_timeout(updater.check()).await {
+        Some(Ok(Some(update))) => Ok(update),
+        Some(Ok(None)) => {
             tracing::info!("No update available");
-            return None;
+            Err(CheckOutcome::UpToDate)
         }
-        Err(e) => {
+        Some(Err(e)) => {
             tracing::warn!("Update check failed: {e}");
-            return None;
+            Err(CheckOutcome::Failed)
         }
-    };
-
-    tracing::info!(
-        current = env!("CARGO_PKG_VERSION"),
-        new = %update.version,
-        "Update advertised (pre-verification)"
-    );
-
-    // F-004: verify the signed manifest + enforce the version floor BEFORE acting on the update.
-    let verified = verify_and_gate(update)?;
-
-    let auto_update_pref = { config_state.read().auto_update };
-    tracing::info!(?auto_update_pref, "Auto-update preference");
-
-    match auto_update_pref {
-        Some(true) => {
-            tracing::info!("Auto-update enabled, performing update");
-            perform_update(app, verified).await;
-            None
-        }
-        _ => {
-            // None (never asked) or Some(false) (manual) — return the verified update
-            // so the caller can show a prompt or add a tray menu item.
-            Some(verified)
+        None => {
+            tracing::warn!(
+                timeout_secs = FEED_TIMEOUT.as_secs(),
+                "Update check timed out"
+            );
+            Err(CheckOutcome::Failed)
         }
     }
+}
+
+/// Installs `update` on its own task, holding `claim` until the attempt ends (a return, or the
+/// future being dropped), then runs `after`. It takes a claim the caller already holds and never
+/// claims itself, so each install path claims exactly once.
+pub fn spawn_install(
+    app: &AppHandle,
+    claim: InstallClaim,
+    update: VerifiedUpdate,
+    opts: InstallOpts,
+    after: impl FnOnce(&AppHandle) + Send + 'static,
+) {
+    let app = app.clone();
+    tauri::async_runtime::spawn(run_claimed(claim, async move {
+        perform_update(&app, update, opts).await;
+        after(&app);
+    }));
+}
+
+/// No proof holds an admission permit. Missing state (never, after setup) means no wait.
+fn prover_idle(app: &AppHandle) -> bool {
+    app.try_state::<crate::commands::SharedAppState>()
+        .is_none_or(|state| state.prover_idle())
 }
 
 /// Hard ceiling on the auto-update artifact size (SEC-03). Real DMG/AppImage/NSIS artifacts are tens
@@ -293,13 +390,14 @@ pub async fn check_for_update(
 const MAX_UPDATE_BYTES: u64 = 500 * 1024 * 1024;
 
 /// Download, verify Ed25519 signature, install, and restart the app. Accepts ONLY a
-/// [`VerifiedUpdate`] — an artifact that has already cleared both F-004 layers.
+/// [`VerifiedUpdate`] — an artifact that has already cleared both F-004 layers — and is reachable
+/// only through [`spawn_install`], so every install holds the gate.
 #[expect(
     clippy::cognitive_complexity,
     clippy::too_many_lines,
     reason = "the security-critical install transaction is intentionally linear so lock, floor, process, marker, and recovery ordering stays reviewable"
 )]
-pub async fn perform_update(app: &AppHandle, verified: VerifiedUpdate) {
+async fn perform_update(app: &AppHandle, verified: VerifiedUpdate, opts: InstallOpts) {
     let VerifiedUpdate {
         update,
         version,
@@ -309,7 +407,7 @@ pub async fn perform_update(app: &AppHandle, verified: VerifiedUpdate) {
 
     // B2: hold the cross-process updater lock across the whole download+install so no other instance
     // can race the floor or install concurrently. If another instance is mid-update, bow out (the
-    // poller retries). Held until this fn returns / the process restarts.
+    // next due check retries). Held until this fn returns / the process restarts.
     let _txn = match acquire_updater_lock() {
         Some(f) => f,
         None => return,
@@ -372,25 +470,34 @@ pub async fn perform_update(app: &AppHandle, verified: VerifiedUpdate) {
     tracing::info!(size = signed_size, "Signed artifact size within cap");
 
     // Download first (separate from install) so crash-recovery stays armed through the whole
-    // download/verify span — a mid-download crash is still recovered.
-    let bytes = match update
-        .download(
-            |chunk_length, content_length| {
-                tracing::info!(
-                    chunk_length,
-                    content_length = content_length.unwrap_or(0),
-                    "Download progress"
-                );
-            },
-            || tracing::info!("Download complete"),
-        )
-        .await
+    // download/verify span — a mid-download crash is still recovered. The bytes come only through
+    // `download_guarded`: the stall watchdog, and for an automatic install the idle-prover wait, both
+    // finish before anything below is recorded, so abandoning there leaves no state behind.
+    let bytes = match download_guarded(
+        |watch| {
+            update.download(
+                move |chunk_length, content_length| {
+                    watch.touch();
+                    tracing::info!(
+                        chunk_length,
+                        content_length = content_length.unwrap_or(0),
+                        "Download progress"
+                    );
+                },
+                || tracing::info!("Download complete"),
+            )
+        },
+        || prover_idle(app),
+        opts,
+    )
+    .await
     {
         Ok(bytes) => bytes,
-        Err(e) => {
+        Err(GuardedError::Download(e)) => {
             tracing::error!("Update download failed: {e}");
             return;
         }
+        Err(GuardedError::Stalled) => return,
     };
 
     // Defense in depth: the downloaded byte count must equal the SIGNED size. The plugin's own
@@ -477,7 +584,7 @@ pub async fn perform_update(app: &AppHandle, verified: VerifiedUpdate) {
         let section_lock = match crate::autostart::acquire_autostart_lock() {
             Ok(l) => l,
             Err(e) => {
-                // Nothing mutated yet — plain abort; the poller retries.
+                // Nothing mutated yet — plain abort; the next due check retries.
                 tracing::warn!("cannot enter the update critical section ({e}); aborting install");
                 return;
             }
@@ -736,7 +843,23 @@ impl<F: FnMut()> Drop for CrashRecoveryGuard<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::CrashRecoveryGuard;
+    use super::{with_feed_timeout, CrashRecoveryGuard, FEED_TIMEOUT};
+    use std::time::Duration;
+
+    /// D1: a feed that never answers fails at 30 s instead of holding the update task.
+    #[tokio::test(start_paused = true)]
+    async fn d1_a_silent_feed_fails_at_thirty_seconds() {
+        let start = tokio::time::Instant::now();
+        let fetched = tokio::time::timeout(
+            Duration::from_secs(600),
+            with_feed_timeout(std::future::pending::<()>()),
+        )
+        .await
+        .expect("the feed fetch has no timeout");
+        assert_eq!(fetched, None);
+        assert_eq!(start.elapsed(), FEED_TIMEOUT);
+        assert_eq!(FEED_TIMEOUT, Duration::from_secs(30));
+    }
 
     #[test]
     fn crash_recovery_rearms_once_when_update_exits_early() {

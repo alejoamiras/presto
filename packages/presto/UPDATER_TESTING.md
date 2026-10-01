@@ -24,10 +24,28 @@ The throwaway build keys therefore test whether a new binary can be produced. Th
 `release-presto.yml` blocks draft creation unless all of these pass:
 
 - **macOS Apple Silicon and Intel, positive:** install the current stable N-1 DMG, serve the production-signed N payload from a local TLS endpoint impersonating the configured production host, then require the app to update, relaunch, and report N from `/health`.
-- **macOS Apple Silicon, negative:** append a byte to the genuine payload while retaining its signature and require N-1 to reject it.
+- **macOS Apple Silicon, negative:** append a byte to the genuine payload while retaining its signature and require N-1 to reject it and still answer `/health`.
 - **Linux x86_64, positive:** run the N-1 AppImage natively under FUSE/Xvfb, update the file in place, require its checksum to change, then require the relaunched app to report N.
-- **Windows x86_64, positive and negative:** install the pinned real N-1 NSIS fixture, require a production-signed N update to apply, and separately require a tampered payload to be rejected.
+- **Windows x86_64, positive and negative:** install the pinned real N-1 NSIS fixture, require a production-signed N update to apply, and separately require a tampered payload to be rejected with N-1 still running.
+
+Every positive run then requires N's own update check on disk: `assert-update-schedule.ts` accepts `~/.presto/update-schedule.json` only if N wrote it after `/health` first reported N. N-1 writes the same file before it installs, so the version and the time are both checked.
 - **Bundle/notarization checks:** enforce the macOS bundle shape and verify both DMGs' code signatures and stapled notarization tickets.
+
+## Ephemeral smokes (manual dispatch)
+
+`smoke-updater-unix.yml` (macOS and Linux) and `smoke-updater-windows.yml` build both ends from the dispatched ref: a synthetic N-1 at 0.0.1 and N at `n-version`, signed with a run-local throwaway key. They are the only lanes where unreleased updater code runs as the old side of an update, so dispatch them before merging a change to the updater, its schedule, or these scripts:
+
+```bash
+gh workflow run smoke-updater-unix.yml --ref <branch> -f mode=<positive|negative|prompt|stall>
+gh workflow run smoke-updater-windows.yml --ref <branch> -f mode=<positive|negative|prompt|barrier|copy-initiator>
+```
+
+- `positive`, `negative`: as in the release lanes.
+- `prompt`: auto-update off. N-1 must log `Update prompt presented version=N`. After a restart with a schedule file snoozing N, it must log `Update snoozed; prompt suppressed` and show nothing for 30 s. With the snooze moved to another version, it must present again. Each launch is judged only on its own lines: its stdout on macOS and Linux, the Windows log read from an offset recorded before the launch. A daily log rotation during a launch fails the run.
+- `stall` (macOS and Linux): `updater-feed-server.ts --stall-after 65536` sends a genuine prefix of N and holds the connection open. N-1 must log `Update download stalled; aborting` 60–120 s after the last byte, keep serving `/health` from the same PID, and record no pending install in `updater-state.json`.
+- `barrier`, `copy-initiator` (Windows): the update-window marker lifecycle; the workflow's header describes both.
+
+The macOS and Linux scripts share `updater-smoke-modes.sh`, which launches the app as its own process group so a relaunch stops exactly that app. Every script refuses a mode its workflow does not allow, and `release-contract.test.ts` pins each list to its workflow's.
 
 The local feed is never public and never writes the production KV feed. A prerelease publish is also safe for installed users: it is a GitHub prerelease without `latest.json`, and publishing never flips the live feed.
 
