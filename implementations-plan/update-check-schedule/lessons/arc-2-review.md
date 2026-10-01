@@ -50,3 +50,21 @@ unix positive smoke `36785189946`. The fixes touch Rust and the K5 script, so Ph
 re-ran. At `e2196dc` (round 1), presto.yml `36786693077` and unix `36786694990` were green. The
 gating pass is at `1bcfd2a`, after the cross-arc fix: presto.yml `36788162010`, unix `36788164952`
 and Windows `36788167545`, all green (`phase-4.md`).
+
+## Post-delivery delta (same session, 2026-10-01) — "No new material findings." (converged)
+
+After delivery, arc 2 gained the tray-click smoke (`tray-menu.ts`, step 2b) and the playground
+live-node fix. Neither had been reviewed, so the same session reviewed `1bcfd2a..6ed1cec`.
+
+**First pass.** Codex found two **Low** issues, both in the test harness, and confirmed there was no
+shipped-code or https regression.
+
+| # | Finding | Verified | Disposition |
+|---|---|---|---|
+| 1 | Uniqueness is not ownership. If Presto's menu is missing, another app's sole menu would be clicked. | Yes, by reading. | **Fixed.** Only connections whose owner (`GetConnectionUnixProcessID`) runs an executable named `Presto` are considered, judged by the resolved `/proc/<pid>/exe`. A probe through an `AppRun.wrapped` symlink, as the AppImage runs it, showed that `comm` names the link, so a `comm` check would have broken the CI smoke. 🧬 Dropping the check turns the ownership test red. |
+| 2 | `wait N` is not an N-second bound. Discovery runs before the deadline, and each `busctl` call can take 25 s. | Yes. | **Fixed.** `--timeout=5` on every call, and the deadline starts before discovery. A recheck before accepting a late match was declined, because a late observation still proves the reversion. |
+
+**Second pass.** On `8a05189`, Codex's verdict was, verbatim: "No new material findings (high
+confidence within the stated private-session-bus setup)." It agreed the decline was reasonable. It
+noted that basename matching is not binary authentication, and that 5 s bounds each call rather than
+the whole command. Neither warrants more machinery for a controlled CI setup.

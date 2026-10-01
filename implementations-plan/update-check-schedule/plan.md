@@ -43,7 +43,7 @@ Post-implementation step 5, the archive move waits until both PRs merge.
   - `build-test-bundle.yml` platform=all 36848558688, every job green.
 - The production menu variant, run locally.
 - Every 🧬 test was shown red against its mutant; see `lessons/`.
-- Codex: the arc 1 loop converged at round 3. The arc 2 loop hit its 3-round cap, and its last finding concerned only a reverted change. The fresh cross-arc pass converged at round 3 with "No new material findings".
+- Codex: the arc 1 loop converged at round 3. The arc 2 loop hit its 3-round cap, and its last finding concerned only a reverted change. The fresh cross-arc pass converged at round 3 with "No new material findings". The same arc 2 session then reviewed the post-delivery delta. It found two low harness issues in `tray-menu.ts` (menu ownership, unbounded waits), both fixed, and its second pass reported "No new material findings" (`lessons/arc-2-review.md`).
 
 **Dropped:**
 - The same-length tamper follow-up (L7). Its premise was wrong: the plugin verifies the signature inside `download()`.
