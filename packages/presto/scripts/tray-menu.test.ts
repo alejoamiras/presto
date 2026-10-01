@@ -86,24 +86,36 @@ describe("tray-menu", () => {
     expect(() => layoutItems({ type: "u(ia{sv}av)", data: [1, [0, {}]] })).toThrow("malformed");
   });
 
-  test("clicks only when exactly one app exports a tray menu", () => {
+  test("clicks only the one tray menu a Presto process exports", () => {
+    // A connection is [owner pid, introspection]; pids 1 and 2 run Presto, 3 runs another app.
+    type Conn = [number | undefined, string];
+    const exe: Record<number, string> = { 1: "Presto", 2: "Presto", 3: "nm-applet" };
+    const reply = (type: string, value: unknown) =>
+      value === undefined ? undefined : { type, data: [value] };
     const bus =
-      (menus: Record<string, string>): Busctl =>
+      (conns: Record<string, Conn>): Busctl =>
       (...args) => {
-        if (args[0] === "list") return Object.keys(menus).map((name) => ({ name }));
-        const xml = menus[args[1] ?? ""];
-        return xml === undefined ? undefined : { type: "s", data: [xml] };
+        if (args[0] === "list") return Object.keys(conns).map((name) => ({ name }));
+        const owner = args.includes("GetConnectionUnixProcessID");
+        const conn = conns[(owner ? args.at(-1) : args[1]) ?? ""];
+        return owner ? reply("u", conn?.[0]) : reply("s", conn?.[1]);
       };
+    const find = (conns: Record<string, Conn>) => findMenu(bus(conns), (pid) => exe[pid]);
     const empty = "<node>\n</node>\n";
-    expect(menuPaths(INTROSPECT)).toEqual([
-      "/org/ayatana/NotificationItem/tray_icon_tray_app_1736273_1/Menu",
-    ]);
-    expect(findMenu(bus({ ":1.0": INTROSPECT, ":1.1": empty, "org.x": INTROSPECT }))).toEqual([
-      ":1.0",
-      "/org/ayatana/NotificationItem/tray_icon_tray_app_1736273_1/Menu",
-    ]);
-    expect(() => findMenu(bus({ ":1.1": empty }))).toThrow("found 0");
-    expect(() => findMenu(bus({ ":1.0": INTROSPECT, ":1.7": INTROSPECT }))).toThrow("found 2");
+    const menuPath = "/org/ayatana/NotificationItem/tray_icon_tray_app_1736273_1/Menu";
+    expect(menuPaths(INTROSPECT)).toEqual([menuPath]);
+
+    expect(
+      find({
+        ":1.0": [1, INTROSPECT],
+        ":1.1": [1, empty],
+        ":1.5": [3, INTROSPECT],
+        "org.x": [1, INTROSPECT],
+      }),
+    ).toEqual([":1.0", menuPath]);
+    expect(() => find({ ":1.5": [3, INTROSPECT] })).toThrow("found 0");
+    expect(() => find({ ":1.6": [undefined, INTROSPECT] })).toThrow("found 0");
+    expect(() => find({ ":1.0": [1, INTROSPECT], ":1.7": [2, INTROSPECT] })).toThrow("found 2");
   });
 
   test("the Linux smoke clicks the item by the label the app gives it", async () => {
