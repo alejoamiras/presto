@@ -15,8 +15,8 @@ import {
   verifyNatively,
 } from "../scripts/ultra-honk-smoke-checks.ts";
 import {
-  clickBy,
   closeExtraWindows,
+  decidePopup,
   readConfig,
   removeOriginViaUI,
   waitForActivePopup,
@@ -62,7 +62,7 @@ async function proveThroughPopup(
   expect(popup).not.toBeNull();
   await browser.switchToWindow(popup!);
   await waitForActivePopup(origin);
-  await clickBy(button);
+  await decidePopup(popup!, button);
   return pending;
 }
 

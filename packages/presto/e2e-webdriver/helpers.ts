@@ -81,42 +81,43 @@ export async function clickBy(selector: string): Promise<void> {
   await browser.pause(300);
 }
 
+const isApproved = (origin: string) =>
+  ((readConfig().approved_origins as string[] | undefined) ?? []).includes(origin);
+
 /**
- * Remove an approved origin via the Settings UI (Remove button).
- * This triggers the real IPC call which updates both in-memory config and disk.
+ * Remove an approved origin via the Settings UI (Remove button), which runs the real IPC that updates
+ * both the in-memory config and disk. A no-op when the config does not list the origin. Settings
+ * renders the list only after several IPC round trips, so the row is awaited rather than read once,
+ * and the removal counts only once the config on disk drops the origin.
  */
 export async function removeOriginViaUI(origin: string): Promise<void> {
+  if (!isApproved(origin)) return;
   const url = await browser.getUrl();
   if (!url.includes("settings.html")) {
     await browser.navigateTo("tauri://localhost/settings.html");
-    await browser.pause(500);
   }
-
-  const speedLabel = await browser.$("#speed-label");
-  await speedLabel.waitForExist({ timeout: 5000 });
-
+  await browser.$("#speed-label").waitForExist({ timeout: 5000 });
   await browser.refresh();
-  await browser.pause(500);
 
-  const items = await browser.$$(".origin-item");
-  for (const item of items) {
-    const span = await item.$("span");
-    const text = await span.getText();
-    if (text === origin) {
-      // Use JS click to trigger IPC — native clicks return malformed response on WebKitGTK
-      await browser.execute((target: string) => {
-        const items = document.querySelectorAll(".origin-item");
-        for (const li of items) {
-          if (li.querySelector("span")?.textContent === target) {
-            (li.querySelector("button") as HTMLElement)?.click();
-            return;
-          }
+  // Use JS click to trigger IPC — native clicks return malformed response on WebKitGTK
+  const clickRemove = (target: string) =>
+    browser.execute((t: string) => {
+      for (const li of document.querySelectorAll(".origin-item")) {
+        if (li.querySelector("span")?.textContent === t) {
+          (li.querySelector("button") as HTMLElement | null)?.click();
+          return true;
         }
-      }, origin);
-      await browser.pause(500);
-      return;
-    }
-  }
+      }
+      return false;
+    }, target);
+  await browser.waitUntil(() => clickRemove(origin), {
+    timeout: 10_000,
+    timeoutMsg: `Settings never listed the approved origin ${origin}`,
+  });
+  await browser.waitUntil(async () => !isApproved(origin), {
+    timeout: 10_000,
+    timeoutMsg: `${origin} is still approved after clicking Remove`,
+  });
 }
 
 /** Close all windows except Settings, then switch back to Settings. */
@@ -155,4 +156,28 @@ export async function waitForActivePopup(origin: string): Promise<void> {
     timeoutMsg: "auth popup did not render the server origin",
   });
   await browser.pause(900); // let the 700ms click-steal guard elapse
+}
+
+/**
+ * Answer the consent popup `popup` (the current window) with Allow or Deny, and return once the app has
+ * closed it, which it does as soon as the decision is recorded. The guard silently drops a click
+ * landing within 700 ms of any native focus, and Windows can deliver that focus after the origin has
+ * rendered, so one click is not enough. An accepted click disables both buttons at once, so a button
+ * still enabled means the click was dropped and is repeated, as a user would.
+ */
+export async function decidePopup(popup: string, selector: "#allow" | "#deny"): Promise<void> {
+  const enabled = async () => {
+    try {
+      return await browser.$(selector).isEnabled();
+    } catch {
+      return false; // the popup closed between the handle check and the read
+    }
+  };
+  const deadline = Date.now() + 20_000;
+  while ((await browser.getWindowHandles()).includes(popup)) {
+    if (Date.now() > deadline)
+      throw new Error(`the consent popup was still open 20 s after ${selector}`);
+    if (await enabled()) await clickBy(selector);
+    else await browser.pause(200);
+  }
 }
