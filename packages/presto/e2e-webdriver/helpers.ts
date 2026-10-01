@@ -81,17 +81,29 @@ export async function clickBy(selector: string): Promise<void> {
   await browser.pause(300);
 }
 
-const isApproved = (origin: string) =>
-  ((readConfig().approved_origins as string[] | undefined) ?? []).includes(origin);
+/**
+ * Whether the config on disk lists `origin`. Unlike `readConfig`, an unreadable or corrupt file throws
+ * rather than reading as "no origins"; a missing file counts as none only when `missingIsNone`.
+ */
+function approvedOnDisk(origin: string, missingIsNone: boolean): boolean {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(CONFIG_PATH, "utf-8");
+  } catch (err) {
+    if (missingIsNone && (err as NodeJS.ErrnoException).code === "ENOENT") return false;
+    throw err;
+  }
+  return ((JSON.parse(raw).approved_origins as string[] | undefined) ?? []).includes(origin);
+}
 
 /**
  * Remove an approved origin via the Settings UI (Remove button), which runs the real IPC that updates
  * both the in-memory config and disk. A no-op when the config does not list the origin. Settings
  * renders the list only after several IPC round trips, so the row is awaited rather than read once,
- * and the removal counts only once the config on disk drops the origin.
+ * and the removal counts only once the config, still readable, no longer lists the origin.
  */
 export async function removeOriginViaUI(origin: string): Promise<void> {
-  if (!isApproved(origin)) return;
+  if (!approvedOnDisk(origin, true)) return;
   const url = await browser.getUrl();
   if (!url.includes("settings.html")) {
     await browser.navigateTo("tauri://localhost/settings.html");
@@ -114,7 +126,7 @@ export async function removeOriginViaUI(origin: string): Promise<void> {
     timeout: 10_000,
     timeoutMsg: `Settings never listed the approved origin ${origin}`,
   });
-  await browser.waitUntil(async () => !isApproved(origin), {
+  await browser.waitUntil(async () => !approvedOnDisk(origin, false), {
     timeout: 10_000,
     timeoutMsg: `${origin} is still approved after clicking Remove`,
   });
@@ -163,21 +175,34 @@ export async function waitForActivePopup(origin: string): Promise<void> {
  * closed it, which it does as soon as the decision is recorded. The guard silently drops a click
  * landing within 700 ms of any native focus, and Windows can deliver that focus after the origin has
  * rendered, so one click is not enough. An accepted click disables both buttons at once, so a button
- * still enabled means the click was dropped and is repeated, as a user would.
+ * still enabled means the click was dropped and is repeated, as a user would. A failed decision also
+ * re-enables them, but shows an error hint that is gone 3 s later, so hints are recorded as they
+ * appear and any one fails the call instead of being retried away.
  */
 export async function decidePopup(popup: string, selector: "#allow" | "#deny"): Promise<void> {
-  const enabled = async () => {
-    try {
-      return await browser.$(selector).isEnabled();
-    } catch {
-      return false; // the popup closed between the handle check and the read
-    }
-  };
+  await browser.execute(() => {
+    const hints: string[] = [];
+    (window as unknown as { __popupHints: string[] }).__popupHints = hints;
+    new MutationObserver(() => {
+      for (const h of document.querySelectorAll(".error-hint")) hints.push(h.textContent ?? "");
+    }).observe(document.body, { childList: true, subtree: true });
+  });
+  const read = () =>
+    browser
+      .execute((sel: string) => {
+        const btn = document.querySelector<HTMLButtonElement>(sel);
+        const hints = (window as unknown as { __popupHints: string[] }).__popupHints;
+        return { enabled: !!btn && !btn.disabled, hints };
+      }, selector)
+      .catch(() => null); // the popup closed between the handle check and the read
   const deadline = Date.now() + 20_000;
   while ((await browser.getWindowHandles()).includes(popup)) {
     if (Date.now() > deadline)
       throw new Error(`the consent popup was still open 20 s after ${selector}`);
-    if (await enabled()) await clickBy(selector);
+    const state = await read();
+    if (state?.hints.length)
+      throw new Error(`the consent popup showed "${state.hints[0]}" after ${selector}`);
+    if (state?.enabled) await clickBy(selector);
     else await browser.pause(200);
   }
 }
