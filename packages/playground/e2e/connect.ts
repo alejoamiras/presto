@@ -3,13 +3,23 @@ import { expect, type Page } from "@playwright/test";
 export const PRESTO_ORIGINS = ["http://127.0.0.1:59833", "https://127.0.0.1:59834"];
 
 /**
+ * Waits for startup: `main.ts` drops `#embedded-ui`'s `hidden` class once the mode buttons are set and
+ * the browser's stored decision is applied. Visibility is not proof: on the dev server the stylesheet
+ * comes with the module graph, so if that graph fails to load (a cold Vite can 504 a stale dependency,
+ * then reload) the panel shows unstyled while `main.ts` never ran. A reload after this returns is not
+ * covered.
+ */
+export async function appReady(page: Page, timeout: number): Promise<void> {
+  await expect(page.locator("#embedded-ui")).not.toContainClass("hidden", { timeout });
+}
+
+/**
  * Selects Presto mode the way a visitor does: the Presto button, then Continue in the dialog if the
  * site is not connected yet. A connected page just switches mode. Returns once the first check has
  * settled: a run started while it is in flight under a `prompt` permission proves in the browser.
  */
 export async function connectPresto(page: Page): Promise<void> {
-  // The main panel appears only after startup has applied the browser's stored decision.
-  await expect(page.locator("#embedded-ui")).toBeVisible({ timeout: 60_000 });
+  await appReady(page, 60_000);
   const presto = page.locator("#mode-accelerated");
   if ((await presto.getAttribute("data-active")) !== "true") {
     await presto.click();

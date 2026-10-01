@@ -1,5 +1,5 @@
 import { expect, type Page, type Route, test } from "@playwright/test";
-import { mockPermission, recordPresto, setMockPermission } from "./connect";
+import { appReady, mockPermission, recordPresto, setMockPermission } from "./connect";
 
 // ── Helpers ──
 
@@ -41,10 +41,8 @@ async function mockHealth(page: Page, handler: (route: Route) => Promise<void> |
 const healthy = (route: Route) =>
   route.fulfill({ status: 200, contentType: "application/json", body: HEALTHY });
 
-/** Let startup finish: the Services row settles once the permission read has been applied. */
-async function loaded(page: Page) {
-  await expect(page.locator("#embedded-ui")).toBeVisible({ timeout: 10_000 });
-}
+/** Room for a failed first module load on a cold dev server and the reload that recovers it. */
+const loaded = (page: Page) => appReady(page, 20_000);
 
 // ── JS error safety net — catches runtime errors across all mocked tests ──
 

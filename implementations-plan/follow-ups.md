@@ -59,11 +59,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   `smoke-updater-windows.yml` each generate a throwaway key, patch version and pubkey, build N-1
   and N, scan both for test hooks, and sign a local feed, step for step in parallel copies. A shared
   composite action would hold one copy. **Verified 2026-09-30.**
-- **The playground's first mocked test can assert before `main.ts` runs.** `loaded()` waits only
-  for `#embedded-ui`, which is static HTML, but `data-active` is set by `updateModeUI` once the
-  module graph loads. App run 36848555687 failed `page loads in-browser and asks before connecting`
-  on a cold CI dev server, with `data-active` still null after 5 s. It passed 3/3 locally. `loaded()`
-  should wait for a marker that `main.ts` sets. **Verified 2026-10-01.**
 
 ## Untested paths, carried from the logs
 
