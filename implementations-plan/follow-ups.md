@@ -59,12 +59,11 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   `smoke-updater-windows.yml` each generate a throwaway key, patch version and pubkey, build N-1
   and N, scan both for test hooks, and sign a local feed, step for step in parallel copies. A shared
   composite action would hold one copy. **Verified 2026-09-30.**
-- **The test bundle's Packaged E2E (linux, http) fails on `main`'s playground live-node test.**
-  The leg points `AZTEC_NODE_URL` at `http://localhost:8080`, but since #73 the test pins
-  happy-dom's page to `https://playground.presto.build/`, which blocks an http request before it is
-  sent (reproduced against a CORS-open local stub). Every `build-test-bundle.yml platform=all` run
-  goes red until the test takes its page origin from the node URL's scheme.
-  `update-check-schedule/lessons/tray-click.md` **Verified 2026-10-01.**
+- **`removeOriginViaUI` can skip the removal silently.** It reads `.origin-item` 500 ms after a
+  refresh; if the list has not loaded yet, nothing is removed and the origin stays approved. Windows
+  WebDriver run 36796778684 then failed the next test, `auth-flow.spec.ts`'s Deny, because a prove
+  from the still-approved origin opened no consent window. It should wait for the origin to appear,
+  then for it to disappear. `update-check-schedule/lessons/tray-click.md` **Verified 2026-10-01.**
 
 ## Untested paths, carried from the logs
 

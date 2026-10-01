@@ -29,6 +29,9 @@ Post-implementation step 5, the archive move waits until both PRs merge.
   - The tray **Check for Updates…** item: generation-checked labels posted to the main thread, a 90 s reply timeout, a 5 min revert, and "Installing update…" whenever an install holds the gate.
   - The WebDriver-only tray E2E through the production menu dispatch.
   - Static guards plus a release-binary scan that keep the hooks out of shipped builds.
+  - Outside the plan, by owner decision (2026-10-01): a one-line fix to the playground live-node
+    test, which since #73 could not reach an http node. Without it the bundle gate can never go
+    green (`lessons/tray-click.md`).
 
 **Evidence:**
 - Phase 5 smokes on three OSes, in positive, negative, prompt and stall modes.

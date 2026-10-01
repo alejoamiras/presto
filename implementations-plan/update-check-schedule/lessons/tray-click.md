@@ -53,4 +53,20 @@ Packaged E2E (linux, http) failed twice (36790281980 and its re-run) on
 `checkAztecNode (live node)`. The leg sets `AZTEC_NODE_URL=http://localhost:8080`. Since #73, the
 test pins happy-dom's page to `https://playground.presto.build/`, and happy-dom then blocks the http
 request before it is sent. A CORS-open local stub received no request from the test. The break
-belongs to `main`; this stack does not touch `packages/playground`. It is logged in `follow-ups.md`.
+belongs to `main`.
+
+The owner chose to fix it in arc 2 (2026-10-01) rather than in a separate PR, because the plan's
+bundle gate needs a green run at arc 2's head. The test now probes an `http:` node from the dev
+server's origin (`http://localhost:5173/`) and anything else from the deployed playground's.
+- 🧬 Against the local http stub, the unfixed test fails and the fixed one passes (12/12).
+- The https path keeps its URL.
+
+## Unrelated flake: Windows `auth-flow.spec.ts` Deny
+
+Presto run 36796778684 at `3b6835c` failed the Windows dev WebDriver leg. `tray-update.spec.ts`
+passed there. The failing test was the Deny case, where `waitForNewWindow` returned null.
+- The test before it called `removeOriginViaUI`, which read `.origin-item` as `[]` 500 ms after a
+  refresh and removed nothing.
+- The origin stayed approved, so the Deny test's prove opened no consent window.
+- This stack does not touch the auth flow or its helpers, and the same suite passed at `1bcfd2a`.
+- Logged in `follow-ups.md`.
