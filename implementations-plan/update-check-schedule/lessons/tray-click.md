@@ -1,0 +1,44 @@
+# Real tray click in a release binary (owner request, after delivery)
+
+The owner asked for an end-to-end test of "tray click finds an update → prompt opens" in a release
+build. The WebDriver E2E calls `on_tray_menu` from a stub-backed WebDriver build. The prompt smoke
+presented from the launch check, not from a click.
+
+## What was found
+
+- **libappindicator exports the tray menu on the session bus** as `com.canonical.dbusmenu` under
+  `/org/ayatana/NotificationItem/<id>/Menu`, with or without a tray host.
+- A local probe (Xvfb plus a private `dbus-run-session`, the release `--features webdriver` binary)
+  sent `Event(id, "clicked")`. The item went "Checking…" (disabled), "Up to date", then back to
+  idle: the real GTK → muda → `on_tray_menu` path, with no hook involved.
+- **`busctl` reads a negative argument as an option.** `GetLayout iias 0 -1 0` failed with
+  `invalid option -- '1'` until a `--` was placed before the arguments.
+
+## What was added
+
+- `scripts/tray-menu.ts`: `list | dump | click <label> | wait <label> <s>` over `busctl --json`. It
+  clicks only if exactly one app exports a tray menu, and only an enabled item with that exact label.
+- **The `prompt` smoke, step 2b (Linux; `TRAY_CLICK=1` in `updater-smoke-linux.sh`).**
+  - Setup: N-1 is running with N snoozed, and has shown no prompt for 30 s.
+  - The step clicks **Check for Updates…**, then requires `Update prompt presented version=N` and
+    the item back at its idle label.
+  - Only a manual check presents under a snooze, and no manual check ran before the click, so the
+    line is caused by the click.
+  - macOS logs the step as skipped.
+- `tray-menu.test.ts` (4 tests):
+  - the real captured layout;
+  - submenus and malformed replies;
+  - exactly one exported menu;
+  - the smoke's click label equals the app's `State::Idle` label, and the Linux script enables
+    the step.
+- 🧬 Each mutant turned the suite red:
+  - absent `enabled` read as false;
+  - submenus ignored;
+  - first of several menus accepted;
+  - a stale label in the smoke;
+  - `TRAY_CLICK=1` removed.
+
+## Validation
+
+- `bun run test`, `bun run lint:actions` and shellcheck 0.9 (CI's version) exit 0.
+- CI: CI_RESULT.

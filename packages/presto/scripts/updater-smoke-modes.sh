@@ -80,6 +80,11 @@ wait_for_n1() {
   return 1
 }
 
+# Drives the app's tray menu over the session bus, as a tray host would (Linux: TRAY_CLICK=1).
+tray_menu() {
+  bun "$REPO_ROOT/packages/presto/scripts/tray-menu.ts" "$@"
+}
+
 # A schedule file holding only a 24 h snooze, in the shape the app writes.
 write_snooze() {
   printf '{"schema":1,"snooze":{"version":"%s","until":%d}}\n' "$1" "$(($(date +%s) + 86400))" \
@@ -118,6 +123,16 @@ run_prompt_mode() {
   if [ "$(health_version)" != "$n1" ]; then
     echo "::error::N-1 ($n1) stopped answering /health during the snoozed launch"
     return 1
+  fi
+  # Only a manual check presents under a snooze, and none ran before the click, so the prompt
+  # appearing now proves the real click → real feed → prompt path in a hook-free release binary.
+  if [ "${TRAY_CLICK:-}" = 1 ]; then
+    log "PROMPT 2b/3: the tray's Check for Updates… presents $N_VERSION despite the snooze"
+    tray_menu click "Check for Updates…" || return 1
+    wait_for_line "$WORK/app-2.log" "$presented" 120 || return 1
+    tray_menu wait "Check for Updates…" 30 || return 1
+  else
+    log "PROMPT 2b/3: skipped, this OS exposes no scriptable tray menu"
   fi
   stop_app || return 1
 
