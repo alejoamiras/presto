@@ -37,10 +37,12 @@ Post-implementation step 5, the archive move waits until both PRs merge.
 - Phase 5 smokes on three OSes, in positive, negative, prompt and stall modes.
 - Phase 4 at `1bcfd2a`: presto.yml 36788162010, with the tray spec on four legs; positive smokes 36788164952 and 36788167545, with the hook scan on six release binaries.
 - A real tray click in the shipped Linux AppImage (owner request): the prompt smoke 36794011299 clicks **Check for Updates…** over D-Bus during a snoozed launch and gets the prompt (`lessons/tray-click.md`).
-- At `4710b0a`, arc 2's last code commit:
-  - presto.yml 36848562347, with the tray spec on macOS, Linux and Windows.
-  - Positive smokes 36848565661 (unix) and 36848569097 (windows).
-  - `build-test-bundle.yml` platform=all 36848558688, every job green.
+- Arc 1 at `888cf99`: unix positive 36853586007, negative 36853589769, prompt 36853593040 and stall 36853596035. The follow-up `e815046` changes only test code (B14's lock wait; `lessons/arc-1-review.md`).
+- At `6d6fa40`, arc 2's last code commit (rebased onto `e815046`):
+  - presto.yml 36857595463, with the tray spec on macOS, Linux and Windows and B14 green on Windows.
+  - Positive smokes 36857602482 (unix) and 36857608794 (windows), with K5 holding on every release binary.
+  - The prompt smoke 36857605650, including the Linux tray click.
+  - `build-test-bundle.yml` platform=all 36857598940, every job green.
 - The production menu variant, run locally.
 - Every 🧬 test was shown red against its mutant; see `lessons/`.
 - Codex: the arc 1 loop converged at round 3. The arc 2 loop hit its 3-round cap, and its last finding concerned only a reverted change. The fresh cross-arc pass converged at round 3 with "No new material findings". The same arc 2 session then reviewed the post-delivery delta. It found two low harness issues in `tray-menu.ts` (menu ownership, unbounded waits), both fixed, and its second pass reported "No new material findings" (`lessons/arc-2-review.md`).

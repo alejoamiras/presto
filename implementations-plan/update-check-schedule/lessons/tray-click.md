@@ -65,6 +65,8 @@ server's origin (`http://localhost:5173/`) and anything else from the deployed p
   sandbox's L1 deploy hit a connection reset downloading `solc`.
 - The playground change routed the App gate for the first time on this stack. Its Mocked E2E
   failed once on a cold dev server (36848555687) and passed on re-run; see `follow-ups.md`.
+- After the ownership fix (`arc-2-review.md`), at `6d6fa40`: the prompt smoke 36857605650 clicked
+  through the owner-checked menu and got the prompt. The bundle 36857598940 was green.
 
 ## Unrelated flake: Windows `auth-flow.spec.ts` Deny
 
