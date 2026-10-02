@@ -30,3 +30,14 @@ stubs for `cp`, `n1_dmg` and a scanner that prints `scanned` and fails with 23; 
 and exit 23. Mutants verified: the early return (Linux N-1) and a swallowed scan (`|| true`, Windows)
 both fail it. Test-only, so no re-dispatch. Lesson: a text-shape assertion over shell code proves
 layout, not execution; when the property is "this runs on every path", run the block.
+
+### Round 3 — converged
+
+Resumed on `849a74e` (harness soundness plus the net diff `87a4c8c..849a74e`). Verbatim reply:
+"No new material findings".
+
+## Pre-PR: CI's shellcheck
+
+The repo lesson held again: local shellcheck 0.11 passed `ephemeral-updater.sh`, the
+`koalaman/shellcheck:v0.9.0` image CI matches failed it on SC2015 (`[ a ] && [ b ] || usage`, correct
+here because `usage` exits). Split into two `|| usage` guards; same behavior, so no re-dispatch.

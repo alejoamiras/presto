@@ -65,7 +65,8 @@ keygen() {
 stamp() {
   local version=$1 dir=$2
   check_version "$version"
-  [ -f "$dir/Cargo.toml" ] && [ -f "$dir/tauri.conf.json" ] || usage
+  [ -f "$dir/Cargo.toml" ] || usage
+  [ -f "$dir/tauri.conf.json" ] || usage
   : "${EPHEMERAL_PUBKEY:?EPHEMERAL_PUBKEY is required}"
   # -i.bak is the in-place form both GNU and BSD sed accept.
   sed -i.bak "s/^version = \".*\"/version = \"$version\"/" "$dir/Cargo.toml"
