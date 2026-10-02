@@ -53,13 +53,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   The server's hint is `GITHUB_TOKEN`; a non-API digest source would remove the dependency.
   `archive/aztec-v6/lessons/releases.md`.
 
-## From update-check-schedule (closed 2026-10-01)
-
-- **Consolidate the ephemeral updater smoke setup.** `smoke-updater-unix.yml` and
-  `smoke-updater-windows.yml` each generate a throwaway key, patch version and pubkey, build N-1
-  and N, scan both for test hooks, and sign a local feed, step for step in parallel copies. A shared
-  composite action would hold one copy. **Verified 2026-09-30.**
-
 ## Untested paths, carried from the logs
 
 None of these were re-checked on 2026-09-18.

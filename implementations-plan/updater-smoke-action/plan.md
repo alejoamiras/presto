@@ -3,12 +3,34 @@ tier: light
 driver: claude-code
 eli5_mode: artifact
 code_review: off
-status: approved 2026-10-02 (user set the recommended /goal seed); implementing
+status: closed 2026-10-02 (PR #85)
 created: 2026-10-01
 worktree: .claude/worktrees/updater-smoke-action
 branch: worktree-updater-smoke-action
 base: main @ 87a4c8c
 ---
+
+## Outcome
+
+**Closed 2026-10-02.** Delivered as PR #85, squash-merged. This plan's `/goal` and `/loop` seeds are
+retired; do not re-run them.
+
+**Shipped:** `packages/presto/scripts/ephemeral-updater.sh` (`keygen`, `stamp`, `build`, `feed`)
+replaces the duplicated key, stamp, build, hook-scan and feed steps of `smoke-updater-unix.yml` and
+`smoke-updater-windows.yml`; Windows keeps only its barrier injection between the builds. The feed
+contract test covers both workflows' call order; K5 executes the build's collection per OS × role with
+a failing scanner stub; `ephemeral-updater.test.ts` covers `stamp` and input refusal; the presto filters
+route the unix smoke and the script.
+
+**Proof:** unix `positive` run 37022318517 (`darwin-aarch64`, `linux-x86_64`) and Windows `barrier` run
+37022322243, all `success` at `42b3638`; later commits changed only comments, tests and one equivalent
+guard. Codex (GPT-6 Astra, `high`) converged in three rounds, confirmed once more after the
+SC2015 fix.
+
+**Dropped:** the composite action from the follow-up's wording (rejected at planning: a script is
+unit-testable and runs locally); re-proving every smoke mode (the dispatch covered extraction, as chosen
+at Phase 0). Nothing promoted to `lessons.md`: the one gotcha that bit (CI's shellcheck 0.9 versus a
+local 0.11) is already there, and the file is over budget.
 
 # updater-smoke-action
 
