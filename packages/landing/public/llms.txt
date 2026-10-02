@@ -1,0 +1,32 @@
+# Presto
+
+> Presto is a native prover for Aztec transactions and any Noir circuit. A desktop app (macOS, Linux, Windows) runs Aztec's `bb` proving binary on the user's machine, and dApps reach it on loopback through an SDK that falls back to in-browser WASM proving when Presto is absent or not yet allowed.
+
+Facts an integrating agent must get right:
+
+- Presto's app version (1.x) is not an Aztec version. Presto proves for the Aztec version the dApp's SDK sends with every request, and downloads that version's `bb` on first use; the desktop app bundles one. `/health.aztec_version` names only the bundled version.
+- Do not design install or connect prompts. Use the `<presto-banner>` web component from `@alejoamiras/presto-banners`; it is keyed to the SDK's `PrestoStatus`.
+- Never contact Presto on page load. Chrome 142+ and Firefox 153+ ask the visitor for permission on the first request. Keep the prover local with `setForceLocal(true)`, read `loopbackPermission()` (it never prompts), and connect only from a click that explains the prompt.
+- Keep the browser default of HTTPS-only private proving. `httpsOnly: false` with `allowInsecureDowngrade: true` is only for a visitor-confirmed, current-tab escape hatch.
+- The headless server (`ALLOWED_ORIGINS`, `--allow-all`) is for single-tenant CI test acceleration only, never a deployed service.
+- `/health` is diagnostic, not a security signal: local service discovery is shape-matched, not authenticated.
+
+## Packages
+
+- [@alejoamiras/presto](https://github.com/alejoamiras/presto/blob/main/packages/sdk/README.md): Aztec SDK with a drop-in `PrestoProver`. `npm install @alejoamiras/presto@testnet` targets Aztec v6; npm `latest` targets Aztec v5.
+- [@alejoamiras/presto-noir](https://github.com/alejoamiras/presto/blob/main/packages/sdk-noir/README.md): drop-in for bb.js `UltraHonkBackend`, proving any Noir circuit natively with WASM fallback.
+- [@alejoamiras/presto-banners](https://github.com/alejoamiras/presto/blob/main/packages/banners/README.md): `<presto-banner>` install and connect banners for integrating dApps.
+- [@alejoamiras/presto-core](https://github.com/alejoamiras/presto/blob/main/packages/sdk-core/README.md): the transport both SDKs share; dApps rarely import it directly.
+
+## Docs
+
+- [Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions): what the app bundles, what it downloads, and the limits.
+- [Ask before you probe](https://github.com/alejoamiras/presto/blob/main/packages/sdk/README.md#ask-before-you-probe): the permission-first connection pattern.
+- [Notes for coding agents](https://github.com/alejoamiras/presto/blob/main/packages/sdk/AGENTS.md) and the [integration skill](https://github.com/alejoamiras/presto/blob/main/packages/sdk/.claude/skills/presto/SKILL.md), both shipped in the SDK package.
+- [Security model](https://github.com/alejoamiras/presto/blob/main/docs/SECURITY_MODEL.md): trust boundaries and accepted risks.
+- [Presto app](https://github.com/alejoamiras/presto/blob/main/packages/presto/README.md): the desktop app, the headless server, `/health` and the proving routes.
+
+## Optional
+
+- [Playground](https://playground.presto.build): live in-browser WASM versus native comparison.
+- [Releases](https://github.com/alejoamiras/presto/releases): desktop installers and headless server tarballs.

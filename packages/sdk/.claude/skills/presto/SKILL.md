@@ -1,6 +1,6 @@
 ---
 name: presto
-description: Integrates the Presto SDK into an Aztec dApp. Covers asking the visitor before the first request to Presto (browsers show a Local Network Access permission prompt), PrestoProver setup, EmbeddedWallet wiring, phase callbacks for UI, Safari HTTPS compatibility, and WASM fallback patterns. Use when adding native-speed proving to an Aztec application.
+description: Integrates the Presto SDK into an Aztec dApp. Covers asking the visitor before the first request to Presto (browsers show a Local Network Access permission prompt), PrestoProver setup, EmbeddedWallet wiring, phase callbacks for UI, Safari HTTPS compatibility, WASM fallback patterns, install/connect UI with `<presto-banner>` (@alejoamiras/presto-banners), and how Presto proves whatever Aztec version the SDK pins. Use when adding native-speed proving to an Aztec application.
 argument-hint: "[setup | phases | embedded-wallet | troubleshoot]"
 ---
 
@@ -10,6 +10,13 @@ You are helping a developer integrate `@alejoamiras/presto` into their Aztec dAp
 
 ## Key facts
 
+- **Presto's app version is not an Aztec version.** Presto proves for the Aztec version this SDK
+  sends with every request (`x-aztec-version`, automatic) and fetches the `bb` that version needs on
+  first use; `/health.aztec_version` is only the version bundled with the app. See
+  [Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions)
+- **Install and connect prompts already exist:** `<presto-banner>` from
+  [`@alejoamiras/presto-banners`](https://github.com/alejoamiras/presto/tree/main/packages/banners).
+  Don't design your own
 - Package: `@alejoamiras/presto`
 - Ships its Aztec packages as exact-pinned dependencies (installs standalone; dedupes with a host on the same exact version)
 - `@testnet` targets Aztec v6 (`6.0.0-rc.1`, `@aztec-labs/*` and `@aztec-foundation/*`); `latest` stays on Aztec v5 (`5.2.0`, `@aztec/*`). Native v6 proving needs the Presto app 1.1.3 or later

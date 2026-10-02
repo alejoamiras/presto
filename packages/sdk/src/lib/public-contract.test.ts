@@ -119,3 +119,20 @@ describe("public contract (F-05 doc-sync guard)", () => {
     expect(JSON.parse(read("../../package.json")).files).toContain("AGENTS.md");
   });
 });
+
+test("agent-facing openings carry the Aztec version model and presto-banners", () => {
+  const readme = read("../../README.md");
+  const skill = read("../../.claude/skills/presto/SKILL.md");
+  const section = (doc: string, heading: string) =>
+    doc.split(`\n## ${heading}\n`)[1]?.split("\n## ")[0] ?? "";
+  const lead = (doc: string) => doc.split("\n## ")[0] ?? "";
+  for (const opening of [
+    lead(readme),
+    section(readme, "Ask before you probe"),
+    lead(read("../../AGENTS.md")),
+    section(skill, "Key facts"),
+  ]) {
+    expect(opening).toContain("github.com/alejoamiras/presto#presto-and-aztec-versions");
+    expect(opening).toContain("@alejoamiras/presto-banners");
+  }
+});

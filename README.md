@@ -11,6 +11,12 @@ Native prover for Aztec transactions and any Noir circuit. Bypasses browser WASM
 [![SDKs: MIT](https://img.shields.io/badge/SDKs-MIT-green.svg)](packages/sdk-core/LICENSE)
 [![App: AGPL-3.0](https://img.shields.io/badge/App-AGPL--3.0-blue.svg)](LICENSE)
 
+> **Integrating Presto?** Presto's app version is not an Aztec version: Presto proves for the Aztec
+> version your SDK sends, and fetches the `bb` that version needs on first use. See
+> [Presto and Aztec versions](#presto-and-aztec-versions). To ask users to install or connect Presto, use
+> `<presto-banner>` from [`@alejoamiras/presto-banners`](packages/banners) instead of designing your
+> own prompt.
+
 ## Packages
 
 | Package | Description | Status |
@@ -22,6 +28,36 @@ Native prover for Aztec transactions and any Noir circuit. Bypasses browser WASM
 | [`packages/playground`](packages/playground) | [Live demo](https://playground.presto.build) — WASM vs accelerated comparison, Aztec transfer and Noir circuit | [![App](https://github.com/alejoamiras/presto/actions/workflows/app.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/app.yml) |
 | [`packages/landing`](packages/landing) | Landing page at [presto.build](https://presto.build) | |
 | [`@alejoamiras/presto-banners`](packages/banners) | `<presto-banner>` install banners for integrating dApps, keyed to `PrestoStatus` | [![Banners](https://github.com/alejoamiras/presto/actions/workflows/banners.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/banners.yml) |
+
+## Presto and Aztec versions
+
+Presto's own version (1.x, in the tray and as `/health.version`) is the app's release number. It does
+not say which Aztec versions Presto proves.
+
+- **The desktop app bundles one `bb`**, named in each release's notes. For any other Aztec version,
+  Presto downloads that version's published `bb` from Aztec's GitHub releases on first use, checks it
+  against the SHA-256 digest GitHub publishes for the asset, and caches it. The digest comes from the
+  same publisher, so it does not authenticate Aztec independently
+  ([security model](docs/SECURITY_MODEL.md#1-depend-on-upstream-bb-publisher-security)). The headless
+  server bundles none. `BB_BINARY_PATH` makes it run one `bb` for every version, but an uncached version
+  is still downloaded first.
+- **Nobody configures this.** `@alejoamiras/presto` sends its pinned Aztec version with every request
+  (`x-aztec-version`). `@alejoamiras/presto-noir` sends its `bbVersion` option, which defaults to its
+  tested bb.js version and refuses an untested one unless `allowUntestedBbVersion` is set.
+- **`/health` is an inventory, not a guarantee.** Its detailed body (approved origins and non-browser
+  callers) names the bundled version as `aztec_version`, and lists the bundled and cached ones as
+  `available_versions` / `versions`. Every cached `bb` is re-hashed before each proof; the list itself
+  proves neither integrity nor compatibility.
+- **Limits.**
+  - The first download needs GitHub: an anonymous API call, capped at 60 an hour per address; the
+    headless server accepts `GITHUB_TOKEN`.
+  - Downloads are budgeted per origin (`429 download_budget_exhausted`).
+  - Only releases that publish an asset digest can be downloaded, and a successful download says
+    nothing about whether that pairing is tested.
+  - On Windows, native transaction proving needs Aztec v6 or later; Noir proving is unaffected.
+
+Details: the app README's
+[version model](packages/presto/README.md#version-model--why-an-aztec-bump-doesnt-re-release-this-app).
 
 ## Architecture
 
@@ -58,8 +94,8 @@ Aztec dApp                                   Noir dApp
 ### For dApp developers (SDK)
 
 ```bash
-npm install @alejoamiras/presto@testnet   # Aztec v6 (6.0.0-rc.1); native proving needs Presto 1.1.3+
-npm install @alejoamiras/presto           # Aztec v5 (5.2.0), npm `latest`
+npm install @alejoamiras/presto@testnet   # SDK for Aztec v6 (6.0.0-rc.1); native proving needs the Presto app 1.1.3+
+npm install @alejoamiras/presto           # SDK for Aztec v5 (5.2.0), npm `latest`
 ```
 
 ```typescript

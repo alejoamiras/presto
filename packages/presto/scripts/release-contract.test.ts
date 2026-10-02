@@ -287,6 +287,20 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     expect(RELEASE_RUNBOOK).toContain("1Password as the backup of record");
   });
 
+  test("notes name the bundled bb before the downloads, never as the only Aztec version", () => {
+    const notes =
+      WF.split("cat > /tmp/release-notes.md << NOTES")[1]?.split("\n          NOTES")[0] ?? "";
+    const versions = notes.indexOf("### Aztec versions");
+    expect(versions).toBeGreaterThan(-1);
+    expect(versions).toBeLessThan(notes.indexOf("### Downloads"));
+    expect(notes).toMatch(
+      /desktop app bundles the \\`bb\\` prover for Aztec \\`\$\{AZTEC_VER\}\\`/,
+    );
+    expect(notes).toContain("#presto-and-aztec-versions");
+    expect(notes).toContain("@alejoamiras/presto-banners");
+    expect(notes).not.toContain("Built against Aztec");
+  });
+
   test("ordinary releases fail closed on a same-key baseline and have no rotation escape hatch", () => {
     expect(WF).toContain("resolve-updater-baseline.ts");
     expect(WF).not.toContain("updater_key_rotation_bootstrap");
