@@ -6,7 +6,7 @@ If dApps integrate the SDK, a single desktop install can provide native-speed pr
 
 [![Presto](https://github.com/alejoamiras/presto/actions/workflows/presto.yml/badge.svg)](https://github.com/alejoamiras/presto/actions/workflows/presto.yml)
 
-> **dApp developer?** You're looking for the [SDK package](../sdk/README.md) — `npm install @alejoamiras/presto` gives your app native proving with zero user-side configuration.
+> **dApp developer?** You're looking for the [SDK package](../sdk/README.md) — `npm install @alejoamiras/presto` gives your app native proving with zero user-side configuration. This app's version is not an Aztec version: it proves for the Aztec version your SDK sends and fetches the `bb` that version needs ([Presto and Aztec versions](../../README.md#presto-and-aztec-versions)). Ask users to install or connect it with `<presto-banner>` from [`@alejoamiras/presto-banners`](../banners/README.md).
 
 ## Installation
 
@@ -213,6 +213,8 @@ The presto will download the matching `bb` binary on the first prove request (fr
 | `ALLOWED_ORIGINS` | Comma-separated browser origins pre-approved for `/prove`. **Unset = deny-by-default** (non-localhost denied; localhost auto-approved). Mutually exclusive with `--allow-all` / `PRESTO_ALLOW_ALL`. |
 | `PRESTO_ALLOW_ALL` | `1` or `true` → approve **all** browser origins (the pre-SEC-01 behavior). Opt-in; mutually exclusive with `ALLOWED_ORIGINS`. Prefer `ALLOWED_ORIGINS` for an explicit allowlist. (`--allow-all` CLI flag is equivalent.) |
 | `BB_BINARY_PATH` | Path to a pre-installed `bb` binary, bypassing the auto-download. |
+| `AZTEC_BB_VERSION` | The Aztec version of that `bb`. A request for it runs `BB_BINARY_PATH`, and `/health` reports it as `aztec_version`; requests for other versions download. Unset, `/health` reports `unknown`. |
+| `GITHUB_TOKEN` | Optional token for the GitHub API call that finds a version's `bb` release. Anonymous calls are capped at 60 an hour per address, which shared CI runners can exhaust. |
 | `PRESTO_HOME` | Private state directory (`config.json`, `versions/`, `data/`) instead of the per-user defaults. Required by `--port`, so parallel instances on one host never share state. The bb CRS (`~/.bb-crs`) stays shared. |
 | `RUST_LOG` | Standard `tracing-subscriber` filter (e.g. `info`, `debug`). |
 
@@ -335,7 +337,7 @@ The `scripts/uninstall.sh` wrapper locates the binary and runs this for you.
 
 ## Version Compatibility
 
-The presto supports multiple Aztec versions simultaneously. The `/health` endpoint reports the bundled version, all cached versions, the proving schemes the routes serve, and — for approved origins — which `bb` each Aztec version maps to:
+The presto supports multiple Aztec versions simultaneously. For approved origins and non-browser callers, `/health` reports the app's own version (`version`), the Aztec version whose `bb` ships with the app (`aztec_version`), every version it can prove without a download (`available_versions`, bundled first, then cached), the proving schemes the routes serve, and which `bb` each Aztec version maps to:
 
 ```json
 {
@@ -350,7 +352,7 @@ The presto supports multiple Aztec versions simultaneously. The `/health` endpoi
 }
 ```
 
-Unapproved origins get the minimal body (`status`, `api_version`, `schemes`). A client selects the version with the `x-aztec-version` header on any prove route; when the SDK requests a version that isn't cached, the presto downloads it automatically. If the download fails, the SDK falls back to WASM proving.
+The list is an inventory, not a guarantee: each cached `bb` is re-hashed against its marker before every proof, and a listed version says nothing about whether that pairing is tested. Unapproved origins get the minimal body (`status`, `api_version`, `schemes`). A client selects the version with the `x-aztec-version` header on any prove route; when the SDK requests a version that isn't cached, the presto downloads it automatically. If the download fails, the SDK falls back to WASM proving.
 
 ## Troubleshooting
 

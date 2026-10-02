@@ -7,6 +7,13 @@ TypeScript SDK that routes Aztec private kernel proving to a local native presto
 [![npm downloads](https://img.shields.io/npm/dm/@alejoamiras/presto)](https://www.npmjs.com/package/@alejoamiras/presto)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+> **Before you integrate.** Presto's app version is not an Aztec version: Presto proves for the
+> Aztec version this SDK sends with every request, and fetches the `bb` that version needs on first
+> use ([Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions)).
+> To ask users to install or connect Presto, use `<presto-banner>` from
+> [`@alejoamiras/presto-banners`](https://github.com/alejoamiras/presto/tree/main/packages/banners)
+> instead of designing your own prompt.
+
 ## Installation
 
 ```bash
@@ -63,7 +70,11 @@ Chrome 142+ and Firefox 153+ ask the visitor before a public site first reaches 
 device ("Access other apps and services on this device"). `checkPrestoStatus()` and every proof are
 such requests. A page that checks on load therefore shows that prompt before the visitor has done
 anything, and a site asking to reach your computer the moment it opens is exactly what a careful
-visitor should refuse. Ask first:
+visitor should refuse. Ask first. The UI for every step below already exists: `<presto-banner>` from
+[`@alejoamiras/presto-banners`](https://github.com/alejoamiras/presto/tree/main/packages/banners)
+renders the install pitch, the connect ask and the blocked-site help, so don't design your own. Which
+Aztec version Presto proves is covered in
+[Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions).
 
 1. **Keep the prover local.** `setForceLocal(true)` proves in WASM and sends nothing to Presto.
    Constructing a prover sends nothing either.
