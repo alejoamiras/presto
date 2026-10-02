@@ -51,3 +51,5 @@ Round 1: APPROVE WITH CHANGES. All three findings verified and fixed in `4ba99e4
 3. (low) The AGENTS.md check read the whole file; it now reads only the text before its first `##`.
 
 Round 2: APPROVE WITH CHANGES. One finding (medium), verified and fixed: the root README and release-notes summaries ("it downloads, unless `BB_BINARY_PATH`…") still implied that the override skips downloads. But `prove.rs` resolves and downloads before `find_bb` picks the override. Both summaries now say an uncached version is still downloaded first.
+
+Round 3: APPROVE, "No new material findings." The loop converged.
