@@ -122,7 +122,7 @@ When **no specific version** is requested (or the bundled version is), the prest
 3. **`~/.bb/bb`** — user-installed via the Aztec CLI
 4. **`PATH`** — system-wide installation
 
-When a **specific version is requested**, the *only* acceptable source is the marker-verified version cache — the presto never falls back to the sidecar/`~/.bb`/`PATH` for a requested version (that would silently run the wrong or an unverified `bb` over your private witness).
+When a **specific version is requested**, the *only* acceptable source is the marker-verified version cache (unless `BB_BINARY_PATH` is set: that operator override runs for every request) — the presto never falls back to the sidecar/`~/.bb`/`PATH` for a requested version (that would silently run the wrong or an unverified `bb` over your private witness).
 
 ### Cache Integrity (F-007)
 
@@ -212,8 +212,8 @@ The presto will download the matching `bb` binary on the first prove request (fr
 |---|---|
 | `ALLOWED_ORIGINS` | Comma-separated browser origins pre-approved for `/prove`. **Unset = deny-by-default** (non-localhost denied; localhost auto-approved). Mutually exclusive with `--allow-all` / `PRESTO_ALLOW_ALL`. |
 | `PRESTO_ALLOW_ALL` | `1` or `true` → approve **all** browser origins (the pre-SEC-01 behavior). Opt-in; mutually exclusive with `ALLOWED_ORIGINS`. Prefer `ALLOWED_ORIGINS` for an explicit allowlist. (`--allow-all` CLI flag is equivalent.) |
-| `BB_BINARY_PATH` | Path to a pre-installed `bb` binary, bypassing the auto-download. |
-| `AZTEC_BB_VERSION` | The Aztec version of that `bb`. A request for it runs `BB_BINARY_PATH`, and `/health` reports it as `aztec_version`; requests for other versions download. Unset, `/health` reports `unknown`. |
+| `BB_BINARY_PATH` | Path to a pre-installed `bb` binary. It runs for **every** request, whatever Aztec version that request names; a request for an uncached version still downloads that version's `bb` first, then runs this one. Leave it unset to prove several Aztec versions. |
+| `AZTEC_BB_VERSION` | The Aztec version to report as bundled (`/health.aztec_version`); a request for it skips the download. A label, not a check: nothing confirms it matches the binary. Unset, `/health` reports `unknown`. |
 | `GITHUB_TOKEN` | Optional token for the GitHub API call that finds a version's `bb` release. Anonymous calls are capped at 60 an hour per address, which shared CI runners can exhaust. |
 | `PRESTO_HOME` | Private state directory (`config.json`, `versions/`, `data/`) instead of the per-user defaults. Required by `--port`, so parallel instances on one host never share state. The bb CRS (`~/.bb-crs`) stays shared. |
 | `RUST_LOG` | Standard `tracing-subscriber` filter (e.g. `info`, `debug`). |

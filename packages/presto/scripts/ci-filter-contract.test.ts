@@ -20,6 +20,7 @@ const groupsFor = (...files: string[]) =>
 describe("presto CI path routing", () => {
   const cases: Array<[string, string[], string[]]> = [
     ["release runbook", ["docs/RELEASE_RUNBOOK.md"], ["release_tooling"]],
+    ["root README, guarded by scripts/integrator-docs.test.ts", ["README.md"], ["release_tooling"]],
     [
       "release workflow",
       [".github/workflows/release-presto.yml"],

@@ -125,10 +125,11 @@ test("agent-facing openings carry the Aztec version model and presto-banners", (
   const skill = read("../../.claude/skills/presto/SKILL.md");
   const section = (doc: string, heading: string) =>
     doc.split(`\n## ${heading}\n`)[1]?.split("\n## ")[0] ?? "";
+  const lead = (doc: string) => doc.split("\n## ")[0] ?? "";
   for (const opening of [
-    readme.split("\n## ")[0] ?? "",
+    lead(readme),
     section(readme, "Ask before you probe"),
-    read("../../AGENTS.md"),
+    lead(read("../../AGENTS.md")),
     section(skill, "Key facts"),
   ]) {
     expect(opening).toContain("github.com/alejoamiras/presto#presto-and-aztec-versions");

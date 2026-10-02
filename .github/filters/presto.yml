@@ -117,6 +117,7 @@ release_tooling:
   - 'packages/presto/**'
   - 'scripts/**'
   - 'CLAUDE.md'
+  - 'README.md'
   - 'docs/RELEASE_RUNBOOK.md'
   - 'biome.json'
   - 'clippy.toml'

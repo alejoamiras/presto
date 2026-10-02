@@ -39,7 +39,7 @@ not say which Aztec versions Presto proves.
   against the SHA-256 digest GitHub publishes for the asset, and caches it. The digest comes from the
   same publisher, so it does not authenticate Aztec independently
   ([security model](docs/SECURITY_MODEL.md#1-depend-on-upstream-bb-publisher-security)). The headless
-  server bundles none: it runs `BB_BINARY_PATH` or downloads.
+  server bundles none: it downloads, unless `BB_BINARY_PATH` is set, which then runs for every version.
 - **Nobody configures this.** `@alejoamiras/presto` sends its pinned Aztec version with every request
   (`x-aztec-version`). `@alejoamiras/presto-noir` sends its `bbVersion` option, which defaults to its
   tested bb.js version and refuses an untested one unless `allowUntestedBbVersion` is set.
