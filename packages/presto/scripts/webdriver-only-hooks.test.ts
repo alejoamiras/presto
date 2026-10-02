@@ -104,19 +104,22 @@ describe("WebDriver-only tray hooks", () => {
   });
 
   test("K5: every smoke build is scanned for the hooks, and the WebDriver build proves the scan can fire", async () => {
-    for (const [workflow, perStep] of [
-      ["smoke-updater-unix.yml", 2], // the macOS bundle and the Linux AppImage
-      ["smoke-updater-windows.yml", 1],
-    ] as const) {
+    for (const workflow of ["smoke-updater-unix.yml", "smoke-updater-windows.yml"]) {
       const builds = (await steps(workflow)).filter((s) =>
         /^Build (synthetic N-1|N) /.test(s.name ?? ""),
       );
-      expect(builds.map((s) => s.name?.split(" (")[0])).toEqual(["Build synthetic N-1", "Build N"]);
-      for (const build of builds) {
-        expect(
-          build.run?.split("assert-no-test-hooks.sh").length,
-          `${workflow}: ${build.name}`,
-        ).toBe(perStep + 1);
+      expect(builds.map((s) => s.run?.match(/ephemeral-updater\.sh build (\S+) /)?.[1])).toEqual([
+        "n-1",
+        "n",
+      ]);
+    }
+    const script = await text(path.join(PRESTO, "scripts", "ephemeral-updater.sh"));
+    for (const os of ["macOS", "Linux", "Windows"]) {
+      for (const role of ["n-1", "n"]) {
+        expect(collectWithFailingScanner(script, os, role), `${os} ${role}`).toEqual([
+          "scanned",
+          23,
+        ]);
       }
     }
     const teeth = (await steps("_e2e-webdriver.yml")).find((s) =>
@@ -138,4 +141,31 @@ async function steps(workflow: string): Promise<Step[]> {
     jobs: Record<string, { steps?: Step[] }>;
   };
   return Object.values(parsed.jobs).flatMap((job) => job.steps ?? []);
+}
+
+/**
+ * Runs ephemeral-updater.sh build's per-OS artifact collection for one OS and role, with a scanner
+ * that prints "scanned" and fails with 23. Returns [stdout, exit code].
+ */
+function collectWithFailingScanner(script: string, os: string, role: string): [string, number] {
+  const collect = script.split('\n  mkdir -p "$out"\n')[1]?.split("\n  esac\n")[0] ?? "";
+  expect(collect).toStartWith('  case "$RUNNER_OS" in\n');
+  const stubs =
+    'bash() { [[ "$1" == */assert-no-test-hooks.sh ]] && echo scanned; return 23; }; cp() { :; }; n1_dmg() { :; }';
+  // A function body, so an early `return` in the block skips the scan as it would in build.
+  const run = Bun.spawnSync(
+    ["bash", "-c", `set -euo pipefail; ${stubs}; collect() {\n${collect}\n  esac\n}; collect`],
+    {
+      env: {
+        PATH: process.env.PATH,
+        RUNNER_OS: os,
+        role,
+        PRESTO: "p",
+        bundle: "b",
+        root: "r",
+        out: "o",
+      },
+    },
+  );
+  return [String(run.stdout).trim(), run.exitCode];
 }

@@ -38,3 +38,5 @@ with `rg --no-ignore` / `git grep`.
   survive sleep (a launch check, then every 6 h of wall-clock time), a 24 h per-version "Remind Me
   Later", install safety (one install gate, a stall watchdog, an idle-prover wait), and a tray
   "Check for Updates…" item, plus the macOS/Linux ephemeral updater smoke (PRs #79–#81).
+- [updater-smoke-action](updater-smoke-action/plan.md) — closed 2026-10-02 — one shared script
+  (`ephemeral-updater.sh`) for the two ephemeral updater smokes' key, stamp, builds and feed (PR #85).

@@ -82,38 +82,14 @@ jobs:
           rust-workspaces: packages/presto/src-tauri -> target
           rust-components: ""
 
-      # One ephemeral key signs EVERYTHING: N-1's artifacts, N's artifacts, and (in the smoke step,
-      # via the same env) the feed manifest. Its pubkey is patched into tauri.conf.json for BOTH
-      # builds — swapping only the private key would fail verification (piece-2 audit correction).
-      - name: Generate ephemeral signing key + patch pubkey into tauri.conf.json
+      # The barrier is injected between the builds, so only N's installer carries it.
+      - name: Generate ephemeral signing key
         shell: bash
-        working-directory: packages/presto
-        run: |
-          set -euo pipefail
-          bunx tauri signer generate --ci -p "" -w ./eph.key
-          # Environment-file values are not masked, and the runner prints later steps' env.
-          echo "::add-mask::$(cat ./eph.key)"
-          {
-            echo "TAURI_SIGNING_PRIVATE_KEY=$(cat ./eph.key)"
-            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD="
-            # The CLI's .pub file is ALREADY the base64 doc tauri.conf.json expects — cat, don't
-            # re-encode (a second base64 layer fails the build at "Missing encoded key").
-            echo "EPHEMERAL_PUBKEY=$(cat ./eph.key.pub)"
-          } >> "$GITHUB_ENV"
-          rm -f ./eph.key ./eph.key.pub
+        run: bash packages/presto/scripts/ephemeral-updater.sh keygen
 
       - name: Build synthetic N-1 (0.0.1, ephemeral pubkey, clean hooks)
         shell: bash
-        working-directory: packages/presto/src-tauri
-        run: |
-          set -euo pipefail
-          sed -i "s/^version = \".*\"/version = \"$N1_VERSION\"/" Cargo.toml
-          bun -e "const f='tauri.conf.json';const c=JSON.parse(await Bun.file(f).text());c.version=process.env.N1_VERSION;c.plugins.updater.pubkey=process.env.EPHEMERAL_PUBKEY;await Bun.write(f,JSON.stringify(c,null,2)+'\n')"
-          ( cd .. && bunx tauri build --bundles nsis )
-          # The installer is LZMA-compressed; the binary it packs is this one.
-          bash ../scripts/assert-no-test-hooks.sh target/release/Presto.exe
-          mkdir -p "$RUNNER_TEMP/n1"
-          cp target/release/bundle/nsis/*-setup.exe "$RUNNER_TEMP/n1/"
+        run: bash packages/presto/scripts/ephemeral-updater.sh build n-1 "$N1_VERSION" "$RUNNER_TEMP/n1"
 
       - name: Inject the L8 barrier sentinel into hooks.nsi (N's installer only)
         shell: bash
@@ -184,40 +160,11 @@ jobs:
 
       - name: Build N (${{ inputs.n-version || '9.9.9' }}, ephemeral pubkey, PREINSTALL sentinel)
         shell: bash
-        working-directory: packages/presto/src-tauri
-        run: |
-          set -euo pipefail
-          # N carries the sentinel (its installer is the mid-update actor). Drop N-1's bundle
-          # output so N's staging can't pick up 0.0.1 files.
-          rm -rf target/release/bundle/nsis
-          sed -i "s/^version = \".*\"/version = \"$N_VERSION\"/" Cargo.toml
-          bun -e "const f='tauri.conf.json';const c=JSON.parse(await Bun.file(f).text());c.version=process.env.N_VERSION;c.plugins.updater.pubkey=process.env.EPHEMERAL_PUBKEY;await Bun.write(f,JSON.stringify(c,null,2)+'\n')"
-          ( cd .. && bunx tauri build --bundles nsis )
-          bash ../scripts/assert-no-test-hooks.sh target/release/Presto.exe
-          mkdir -p "$RUNNER_TEMP/n"
-          cp target/release/bundle/nsis/*-setup.nsis.zip target/release/bundle/nsis/*-setup.nsis.zip.sig "$RUNNER_TEMP/n/"
-          ls -la "$RUNNER_TEMP/n"
+        run: bash packages/presto/scripts/ephemeral-updater.sh build n "$N_VERSION" "$RUNNER_TEMP/n"
 
       - name: Sign and verify the ephemeral smoke feed
         shell: bash
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          payloads=("$RUNNER_TEMP"/n/*-setup.nsis.zip)
-          [ "${#payloads[@]}" -eq 1 ] || { echo "::error::expected exactly one N updater payload"; exit 1; }
-          PAYLOAD="${payloads[0]}"
-          FEED="$RUNNER_TEMP/n/smoke-latest.json"
-          FEED_HOST=$(jq -er '.plugins.updater.endpoints[0] | capture("^https://(?<host>[A-Za-z0-9.-]+)/").host' packages/presto/src-tauri/tauri.conf.json)
-          jq -n --arg version "$N_VERSION" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg signature "$(tr -d '\r\n' < "$PAYLOAD.sig")" \
-            --arg url "https://$FEED_HOST/releases/download/$(basename "$PAYLOAD")" \
-            --argjson size "$(wc -c < "$PAYLOAD" | tr -d ' ')" \
-            '{version:$version,notes:"ephemeral updater smoke",pub_date:$date,
-              platforms:{"windows-x86_64":{signature:$signature,url:$url,size:$size}}}' > "$FEED"
-          bash packages/presto/scripts/sign-smoke-feed.sh "$FEED" "$GITHUB_WORKSPACE"
-          jq -er '.plugins.updater.pubkey' packages/presto/src-tauri/tauri.conf.json > "$RUNNER_TEMP/smoke-pubkey.b64"
-          cargo run --locked --manifest-path packages/presto/core/Cargo.toml --example update-manifest -- \
-            verify --feed "$FEED" --pubkey "$RUNNER_TEMP/smoke-pubkey.b64"
+        run: bash packages/presto/scripts/ephemeral-updater.sh feed "$N_VERSION" windows-x86_64 "$RUNNER_TEMP/n"
 
       - name: Updater smoke (${{ inputs.mode || 'barrier' }}, ephemeral chain)
         shell: pwsh

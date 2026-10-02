@@ -110,101 +110,21 @@ jobs:
             echo "DBUS_SESSION_BUS_PID=$DBUS_SESSION_BUS_PID"
           } >> "$GITHUB_ENV"
 
-      # One ephemeral key signs N-1's artifacts, N's artifacts and the feed manifest. Its pubkey is
-      # patched into tauri.conf.json for BOTH builds; swapping only the private key fails verification.
       - name: Generate ephemeral signing key
         shell: bash
-        working-directory: packages/presto
-        run: |
-          set -euo pipefail
-          bunx tauri signer generate --ci -p "" -w ./eph.key
-          # Environment-file values are not masked, and the runner prints later steps' env.
-          echo "::add-mask::$(cat ./eph.key)"
-          {
-            echo "TAURI_SIGNING_PRIVATE_KEY=$(cat ./eph.key)"
-            echo "TAURI_SIGNING_PRIVATE_KEY_PASSWORD="
-            # The .pub file is already the base64 document tauri.conf.json expects.
-            echo "EPHEMERAL_PUBKEY=$(cat ./eph.key.pub)"
-          } >> "$GITHUB_ENV"
-          rm -f ./eph.key ./eph.key.pub
+        run: bash packages/presto/scripts/ephemeral-updater.sh keygen
 
       - name: Build synthetic N-1 (0.0.1, ephemeral pubkey)
         shell: bash
-        working-directory: packages/presto/src-tauri
-        run: |
-          set -euo pipefail
-          sed -i.bak "s/^version = \".*\"/version = \"$N1_VERSION\"/" Cargo.toml && rm -f Cargo.toml.bak
-          bun -e "const f='tauri.conf.json';const c=JSON.parse(await Bun.file(f).text());c.version=process.env.N1_VERSION;c.plugins.updater.pubkey=process.env.EPHEMERAL_PUBKEY;await Bun.write(f,JSON.stringify(c,null,2)+'\n')"
-          BUNDLE="target/$TARGET/release/bundle"
-          mkdir -p "$RUNNER_TEMP/n1"
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            ( cd .. && bunx tauri build --target "$TARGET" --bundles app )
-            bash ../scripts/assert-no-test-hooks.sh "$BUNDLE/macos/Presto.app"
-            # updater-smoke.sh installs N-1 from a DMG. A plain `hdiutil create` avoids tauri's
-            # Finder-scripted DMG layout, the chronically flaky part of DMG bundling on runners.
-            mkdir -p "$RUNNER_TEMP/n1-stage"
-            ditto "$BUNDLE/macos/Presto.app" "$RUNNER_TEMP/n1-stage/Presto.app"
-            for attempt in 1 2 3; do
-              if hdiutil create -volname Presto -srcfolder "$RUNNER_TEMP/n1-stage" -ov -format UDZO "$RUNNER_TEMP/n1/Presto-N1.dmg"; then
-                break
-              fi
-              if [ "$attempt" = 3 ]; then echo "::error::hdiutil create failed 3 times"; exit 1; fi
-              sleep 10
-            done
-          else
-            ( cd .. && bunx tauri build --target "$TARGET" --bundles appimage )
-            cp "$BUNDLE"/appimage/*.AppImage "$RUNNER_TEMP/n1/"
-            bash ../scripts/assert-no-test-hooks.sh "$RUNNER_TEMP"/n1/*.AppImage
-          fi
-          ls -la "$RUNNER_TEMP/n1"
+        run: bash packages/presto/scripts/ephemeral-updater.sh build n-1 "$N1_VERSION" "$RUNNER_TEMP/n1"
 
       - name: Build N (ephemeral pubkey)
         shell: bash
-        working-directory: packages/presto/src-tauri
-        run: |
-          set -euo pipefail
-          BUNDLE="target/$TARGET/release/bundle"
-          # Drop N-1's bundle output so N's collection cannot pick up 0.0.1 files.
-          rm -rf "$BUNDLE"
-          sed -i.bak "s/^version = \".*\"/version = \"$N_VERSION\"/" Cargo.toml && rm -f Cargo.toml.bak
-          bun -e "const f='tauri.conf.json';const c=JSON.parse(await Bun.file(f).text());c.version=process.env.N_VERSION;c.plugins.updater.pubkey=process.env.EPHEMERAL_PUBKEY;await Bun.write(f,JSON.stringify(c,null,2)+'\n')"
-          mkdir -p "$RUNNER_TEMP/n"
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            ( cd .. && bunx tauri build --target "$TARGET" --bundles app )
-            bash ../scripts/assert-no-test-hooks.sh "$BUNDLE/macos/Presto.app"
-            cp "$BUNDLE"/macos/*.app.tar.gz "$BUNDLE"/macos/*.app.tar.gz.sig "$RUNNER_TEMP/n/"
-          else
-            ( cd .. && bunx tauri build --target "$TARGET" --bundles appimage )
-            cp "$BUNDLE"/appimage/*.AppImage "$BUNDLE"/appimage/*.AppImage.sig "$RUNNER_TEMP/n/"
-            bash ../scripts/assert-no-test-hooks.sh "$RUNNER_TEMP"/n/*.AppImage
-          fi
-          ls -la "$RUNNER_TEMP/n"
+        run: bash packages/presto/scripts/ephemeral-updater.sh build n "$N_VERSION" "$RUNNER_TEMP/n"
 
       - name: Sign and verify the ephemeral smoke feed
         shell: bash
-        run: |
-          set -euo pipefail
-          shopt -s nullglob
-          if [ "$RUNNER_OS" = "macOS" ]; then
-            payloads=("$RUNNER_TEMP"/n/*.app.tar.gz)
-          else
-            payloads=("$RUNNER_TEMP"/n/*.AppImage)
-          fi
-          [ "${#payloads[@]}" -eq 1 ] || { echo "::error::expected exactly one N updater payload"; exit 1; }
-          PAYLOAD="${payloads[0]}"
-          FEED="$RUNNER_TEMP/n/smoke-latest.json"
-          FEED_HOST=$(jq -er '.plugins.updater.endpoints[0] | capture("^https://(?<host>[A-Za-z0-9.-]+)/").host' packages/presto/src-tauri/tauri.conf.json)
-          jq -n --arg version "$N_VERSION" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-            --arg key "$PLATFORM_KEY" \
-            --arg signature "$(tr -d '\r\n' < "$PAYLOAD.sig")" \
-            --arg url "https://$FEED_HOST/releases/download/$(basename "$PAYLOAD")" \
-            --argjson size "$(wc -c < "$PAYLOAD" | tr -d ' ')" \
-            '{version:$version,notes:"ephemeral updater smoke",pub_date:$date,
-              platforms:{($key):{signature:$signature,url:$url,size:$size}}}' > "$FEED"
-          bash packages/presto/scripts/sign-smoke-feed.sh "$FEED" "$GITHUB_WORKSPACE"
-          jq -er '.plugins.updater.pubkey' packages/presto/src-tauri/tauri.conf.json > "$RUNNER_TEMP/smoke-pubkey.b64"
-          cargo run --locked --manifest-path packages/presto/core/Cargo.toml --example update-manifest -- \
-            verify --feed "$FEED" --pubkey "$RUNNER_TEMP/smoke-pubkey.b64"
+        run: bash packages/presto/scripts/ephemeral-updater.sh feed "$N_VERSION" "$PLATFORM_KEY" "$RUNNER_TEMP/n"
 
       - name: Updater smoke (ephemeral chain)
         shell: bash
