@@ -4,12 +4,39 @@ driver: claude-code
 eli5_mode: artifact
 code_review: off
 codex_model: sol
-status: approved
+status: completed
 created: 2026-10-02
 worktree: .claude/worktrees/bundle-v6
 branch: worktree-bundle-v6
 base: main @ a9dbe84
 ---
+
+## Outcome
+
+- **2026-10-02 — completed**, delivered in PR #86. The app prerelease and the SDK docs publish run
+  after its merge.
+- **Shipped:**
+  - The release notes open with `### Aztec versions`: the desktop app bundles `bb` for
+    `${AZTEC_VER}` and downloads any other version on first use; the headless server bundles none.
+    "Built against Aztec X" is gone.
+  - Packaged acceptance asserts the installed app's `/health.aztec_version` equals the SDK's Aztec
+    pin.
+  - Integrator docs, with contract tests on each opening: the root README's canonical
+    `## Presto and Aztec versions`, leads in the SDK README, `AGENTS.md`, `SKILL.md` and the app
+    README, the landing callout, and `presto.build/llms.txt`.
+  - The root `README.md` now routes to the script-contract job.
+- **Bundle evidence:** `build-test-bundle.yml` runs 37055445459 and 37055449680 at `e6d3038`, both
+  success. Every build log shows `Aztec bb version: 6.0.0-rc.1`, and the Linux sidecar is
+  byte-identical to bb.js 6.0.0-rc.1.
+- **Approved for after the merge:**
+  - `release-presto.yml` publishes `1.2.0-rc.1` as a prerelease, never promoted.
+  - Then `release-sdk.yml packages=presto` publishes `6.0.0-rc.1.1` on npm `testnet`.
+- **Dropped:**
+  - Lead notes in the presto-core, presto-noir and presto-banners READMEs: any change forces a
+    version bump; moved to `follow-ups.md`.
+  - Renaming `/health.aztec_version`, and changing the tray label.
+- **This plan's `/goal` and `/loop` seeds are retired.** This file is a record of what was decided,
+  not instructions.
 
 # bundle-v6
 

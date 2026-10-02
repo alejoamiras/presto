@@ -45,13 +45,20 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   - `archive/aztec-v6/plan.md` (D36).
 - **Promote to `latest` when Aztec v6 goes stable:** `presto`, `presto-noir` and `presto-core` (all on
   `testnet` today). The promotion guard refuses prereleases, so the stable bump comes first.
-- **The next app release should bundle v6 `bb`.** 1.1.3 downloads it on first use, which needs the
-  release-metadata call below.
-- **A cold v6 `bb` download fails on a busy shared address.** The digest check reads GitHub's release
+- **A cold `bb` download fails on a busy shared address.** Since 1.2.0 bundles v6, v5 dApps meet
+  this on first use, as v6 dApps did on 1.1.x. The digest check reads GitHub's release
   metadata anonymously (60 calls an hour per address). R2's live-site check hit 403 on this host, and
   the page correctly fell back to WASM. Users behind CGNAT or a corporate proxy can hit the same.
   The server's hint is `GITHUB_TOKEN`; a non-API digest source would remove the dependency.
   `archive/aztec-v6/lessons/releases.md`.
+
+## From bundle-v6 (closed 2026-10-02)
+
+- **presto-core, presto-noir and presto-banners READMEs lack the two integrator pointers**: that the
+  app version is not an Aztec version (link the root README's `#presto-and-aztec-versions`), and
+  that install UI comes from `@alejoamiras/presto-banners`. Add them in each package's next real
+  release. Any file change there makes `release-plan.ts` refuse to reuse the published version.
+  `archive/bundle-v6/plan.md`.
 
 ## Untested paths, carried from the logs
 
