@@ -1,6 +1,6 @@
 # Implementation plans
 
-- [bundle-v6](bundle-v6/plan.md) — implementing — bundle bb 6.0.0-rc.1 in a prerelease; integrator and agent docs on versions and presto-banners
+No active plans.
 
 Add one line per plan here when it opens; move the line to
 [`archive/index.md`](archive/index.md) when it closes. This file is read at the start of every

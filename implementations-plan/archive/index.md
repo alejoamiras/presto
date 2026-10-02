@@ -40,3 +40,6 @@ with `rg --no-ignore` / `git grep`.
   "Check for Updates…" item, plus the macOS/Linux ephemeral updater smoke (PRs #79–#81).
 - [updater-smoke-action](updater-smoke-action/plan.md) — closed 2026-10-02 — one shared script
   (`ephemeral-updater.sh`) for the two ephemeral updater smokes' key, stamp, builds and feed (PR #85).
+- [bundle-v6](bundle-v6/plan.md) — closed 2026-10-02 — the desktop app bundles the Aztec v6 `bb`;
+  release notes, docs, agent files and `llms.txt` explain that Presto fetches the `bb` each Aztec
+  version needs and point at presto-banners (PR #86).
