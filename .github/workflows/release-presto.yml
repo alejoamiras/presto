@@ -985,7 +985,8 @@ jobs:
           The desktop app bundles the \`bb\` prover for Aztec \`${AZTEC_VER}\`. For any other Aztec
           version a dApp's SDK requests, Presto downloads that version's published \`bb\`, checks it
           against the release's SHA-256 digest and caches it, on first use. The headless server bundles
-          none: it downloads, unless \`BB_BINARY_PATH\` names one \`bb\` to run for every version.
+          none. \`BB_BINARY_PATH\` makes it run one \`bb\` for every version, but an uncached version
+          is still downloaded first.
           The app's own version says nothing about which Aztec versions it proves: see
           [Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions).
 

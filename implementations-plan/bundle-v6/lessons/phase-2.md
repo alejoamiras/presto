@@ -37,3 +37,17 @@
 - `git diff --quiet` from each tag, scoped to its own directory, exit 0 for all three:
   `@alejoamiras/presto-core@1.2.1` with `packages/sdk-core`, `@alejoamiras/presto-noir@2.0.0-rc.1` with
   `packages/sdk-noir`, `@alejoamiras/presto-banners@1.2.0` with `packages/banners`.
+
+## Codex fix loop (GPT-6.1 Sol, `high`)
+
+Round 1: APPROVE WITH CHANGES. All three findings verified and fixed in `4ba99e4`:
+1. (medium) The new `AZTEC_BB_VERSION` row said a request for that version runs `BB_BINARY_PATH`
+   and other versions download. But `find_bb` returns `BB_BINARY_PATH` before any version check
+   (`core/src/bb.rs:49-53`), so the override runs for every request, after any download. The app
+   README rows, its "only the version cache" sentence, the root README and the release notes now
+   say so; `AZTEC_BB_VERSION` is described as a label, not a check.
+2. (low) The root README guard runs in `test:scripts`, but no filter routed `README.md` there.
+   It was added to `release_tooling`, with a routing case in `ci-filter-contract.test.ts`.
+3. (low) The AGENTS.md check read the whole file; it now reads only the text before its first `##`.
+
+Round 2: APPROVE WITH CHANGES. One finding (medium), verified and fixed: the root README and release-notes summaries ("it downloads, unless `BB_BINARY_PATH`…") still implied that the override skips downloads. But `prove.rs` resolves and downloads before `find_bb` picks the override. Both summaries now say an uncached version is still downloaded first.
