@@ -102,21 +102,41 @@ test("candidate bundles run all packaged platforms without production keys or pu
   expect(PACKAGED_E2E_RUNNER).toContain(`"\${PLAYWRIGHT_PROJECT:-packaged-e2e}"`);
 });
 
-test("ephemeral Windows updater smoke prepares its signed feed before running the installed app", () => {
-  const workflow = fs.readFileSync(
-    path.join(REPO, ".github/workflows/smoke-updater-windows.yml"),
+test("both ephemeral updater smokes prepare their builds and signed feed through one script", () => {
+  const script = fs.readFileSync(
+    path.join(REPO, "packages/presto/scripts/ephemeral-updater.sh"),
     "utf8",
   );
-  const preparation =
-    workflow
-      .split("- name: Sign and verify the ephemeral smoke feed")[1]
-      ?.split("- name: Updater smoke")[0] ?? "";
-  expect(preparation).toContain('FEED="$RUNNER_TEMP/n/smoke-latest.json"');
-  expect(preparation).toContain(
-    'bash packages/presto/scripts/sign-smoke-feed.sh "$FEED" "$GITHUB_WORKSPACE"',
-  );
-  expect(preparation).toContain('verify --feed "$FEED" --pubkey "$RUNNER_TEMP/smoke-pubkey.b64"');
-  expect(workflow.replace(/^\s*#.*$/gm, "")).not.toMatch(/\$\{\{ secrets\./);
+  const feed = script.split("\nfeed() {")[1]?.split("\n}\n")[0] ?? "";
+  expect(feed).toContain('feed="$dir/smoke-latest.json"');
+  expect(feed).toContain('bash packages/presto/scripts/sign-smoke-feed.sh "$feed" "$PWD"');
+  expect(feed).toContain('verify --feed "$feed" --pubkey "$pubkey"');
+  expect(script).not.toMatch(/secrets\.|\$\{\{/);
+
+  const call = "bash packages/presto/scripts/ephemeral-updater.sh ";
+  for (const [workflow, platform] of [
+    ["smoke-updater-unix.yml", '"$PLATFORM_KEY"'],
+    ["smoke-updater-windows.yml", "windows-x86_64"],
+  ] as const) {
+    const source = fs.readFileSync(path.join(REPO, ".github/workflows", workflow), "utf8");
+    const steps = Object.values((Bun.YAML.parse(source) as SmokeWorkflow).jobs).flatMap(
+      (job) => job.steps,
+    );
+    const smoke = steps.findIndex((s) => s.name?.startsWith("Updater smoke"));
+    expect(smoke, workflow).toBeGreaterThan(0);
+    const order = steps.slice(0, smoke).flatMap((s) => {
+      if (s.run?.startsWith(call)) return [s.run.trim().slice(call.length)];
+      return s.name?.startsWith("Inject") ? ["inject"] : [];
+    });
+    expect(order, workflow).toEqual([
+      "keygen",
+      'build n-1 "$N1_VERSION" "$RUNNER_TEMP/n1"',
+      ...(workflow.includes("windows") ? ["inject"] : []),
+      'build n "$N_VERSION" "$RUNNER_TEMP/n"',
+      `feed "$N_VERSION" ${platform} "$RUNNER_TEMP/n"`,
+    ]);
+    expect(source.replace(/^\s*#.*$/gm, ""), workflow).not.toMatch(/\$\{\{ secrets\./);
+  }
 });
 
 type SmokeStep = { name?: string; run?: string; uses?: string; env?: unknown } & Record<

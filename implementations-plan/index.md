@@ -1,6 +1,6 @@
 # Implementation plans
 
-No active plans.
+- [updater-smoke-action](updater-smoke-action/plan.md) — implementing (Phase 1 ✓) — one shared script for the two ephemeral updater smokes' key, stamp, builds and feed
 
 Add one line per plan here when it opens; move the line to
 [`archive/index.md`](archive/index.md) when it closes. This file is read at the start of every

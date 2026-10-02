@@ -104,20 +104,22 @@ describe("WebDriver-only tray hooks", () => {
   });
 
   test("K5: every smoke build is scanned for the hooks, and the WebDriver build proves the scan can fire", async () => {
-    for (const [workflow, perStep] of [
-      ["smoke-updater-unix.yml", 2], // the macOS bundle and the Linux AppImage
-      ["smoke-updater-windows.yml", 1],
-    ] as const) {
+    for (const workflow of ["smoke-updater-unix.yml", "smoke-updater-windows.yml"]) {
       const builds = (await steps(workflow)).filter((s) =>
         /^Build (synthetic N-1|N) /.test(s.name ?? ""),
       );
-      expect(builds.map((s) => s.name?.split(" (")[0])).toEqual(["Build synthetic N-1", "Build N"]);
-      for (const build of builds) {
-        expect(
-          build.run?.split("assert-no-test-hooks.sh").length,
-          `${workflow}: ${build.name}`,
-        ).toBe(perStep + 1);
-      }
+      expect(builds.map((s) => s.run?.match(/ephemeral-updater\.sh build (\S+) /)?.[1])).toEqual([
+        "n-1",
+        "n",
+      ]);
+    }
+    // Both roles share the per-OS collection below, so each branch scans whatever it collects.
+    const script = await text(path.join(PRESTO, "scripts", "ephemeral-updater.sh"));
+    const collect = script.split('\n  mkdir -p "$out"\n')[1]?.split("\n  esac\n")[0] ?? "";
+    const branches = collect.split(/\n {4}(?=\w+\)\n)/).slice(1);
+    expect(branches.map((b) => b.split(")")[0])).toEqual(["macOS", "Linux", "Windows"]);
+    for (const branch of branches) {
+      expect(branch.split("assert-no-test-hooks.sh").length, branch).toBe(2);
     }
     const teeth = (await steps("_e2e-webdriver.yml")).find((s) =>
       s.run?.includes("grep -qa PRESTO_E2E_TRAY_REPORT"),

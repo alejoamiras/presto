@@ -33,7 +33,7 @@ Every positive run then requires N's own update check on disk: `assert-update-sc
 
 ## Ephemeral smokes (manual dispatch)
 
-`smoke-updater-unix.yml` (macOS and Linux) and `smoke-updater-windows.yml` build both ends from the dispatched ref: a synthetic N-1 at 0.0.1 and N at `n-version`, signed with a run-local throwaway key. They are the only lanes where unreleased updater code runs as the old side of an update, so dispatch them before merging a change to the updater, its schedule, or these scripts:
+`smoke-updater-unix.yml` (macOS and Linux) and `smoke-updater-windows.yml` build both ends from the dispatched ref: a synthetic N-1 at 0.0.1 and N at `n-version`, signed with a run-local throwaway key. Both prepare that chain with `scripts/ephemeral-updater.sh` (`keygen`, `build n-1`, `build n`, `feed`); only the Windows barrier sentinel is injected by its workflow, between the two builds. They are the only lanes where unreleased updater code runs as the old side of an update, so dispatch them before merging a change to the updater, its schedule, or these scripts:
 
 ```bash
 gh workflow run smoke-updater-unix.yml --ref <branch> -f mode=<positive|negative|prompt|stall>
@@ -45,7 +45,7 @@ gh workflow run smoke-updater-windows.yml --ref <branch> -f mode=<positive|negat
 - `stall` (macOS and Linux): `updater-feed-server.ts --stall-after 65536` sends a genuine prefix of N and holds the connection open. N-1 must log `Update download stalled; aborting` 60–120 s after the last byte, keep serving `/health` from the same PID, and record no pending install in `updater-state.json`.
 - `barrier`, `copy-initiator` (Windows): the update-window marker lifecycle; the workflow's header describes both.
 
-The macOS and Linux scripts share `updater-smoke-modes.sh`, which launches the app as its own process group so a relaunch stops exactly that app. Every script refuses a mode its workflow does not allow, and `release-contract.test.ts` pins each list to its workflow's. Both workflows fail a build of N-1 or N that contains `PRESTO_E2E_TRAY_REPORT` (`assert-no-test-hooks.sh`), so the WebDriver-only tray hooks never reach a binary built like a release.
+The macOS and Linux scripts share `updater-smoke-modes.sh`, which launches the app as its own process group so a relaunch stops exactly that app. Every script refuses a mode its workflow does not allow, and `release-contract.test.ts` pins each list to its workflow's. `ephemeral-updater.sh build` fails a build of N-1 or N that contains `PRESTO_E2E_TRAY_REPORT` (`assert-no-test-hooks.sh`), so the WebDriver-only tray hooks never reach a binary built like a release.
 
 The local feed is never public and never writes the production KV feed. A prerelease publish is also safe for installed users: it is a GitHub prerelease without `latest.json`, and publishing never flips the live feed.
 
