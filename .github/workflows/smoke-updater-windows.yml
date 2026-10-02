@@ -82,9 +82,7 @@ jobs:
           rust-workspaces: packages/presto/src-tauri -> target
           rust-components: ""
 
-      # The key, both builds and the signed feed come from ephemeral-updater.sh, shared with
-      # smoke-updater-unix.yml; its header says what each command does. The barrier below is
-      # injected between the builds, so only N's installer carries it.
+      # The barrier is injected between the builds, so only N's installer carries it.
       - name: Generate ephemeral signing key
         shell: bash
         run: bash packages/presto/scripts/ephemeral-updater.sh keygen
@@ -160,7 +158,6 @@ jobs:
           grep -q -- "$PREFIX-ready" packages/presto/src-tauri/nsis/hooks.nsi
           echo "sentinel injected into NSIS_HOOK_PREINSTALL (prefix $PREFIX)"
 
-      # N carries the sentinel: its installer is the mid-update actor.
       - name: Build N (${{ inputs.n-version || '9.9.9' }}, ephemeral pubkey, PREINSTALL sentinel)
         shell: bash
         run: bash packages/presto/scripts/ephemeral-updater.sh build n "$N_VERSION" "$RUNNER_TEMP/n"

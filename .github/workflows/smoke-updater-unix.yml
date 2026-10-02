@@ -110,8 +110,6 @@ jobs:
             echo "DBUS_SESSION_BUS_PID=$DBUS_SESSION_BUS_PID"
           } >> "$GITHUB_ENV"
 
-      # The key, both builds and the signed feed come from ephemeral-updater.sh, shared with
-      # smoke-updater-windows.yml; its header says what each command does.
       - name: Generate ephemeral signing key
         shell: bash
         run: bash packages/presto/scripts/ephemeral-updater.sh keygen

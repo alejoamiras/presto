@@ -70,7 +70,7 @@ stamp() {
   # -i.bak is the in-place form both GNU and BSD sed accept.
   sed -i.bak "s/^version = \".*\"/version = \"$version\"/" "$dir/Cargo.toml"
   rm -f "$dir/Cargo.toml.bak"
-  # A relative path: Git Bash rewrites /d/... into D:/... for arguments, not for environment values.
+  # A relative path, so the Windows run does not rely on MSYS converting /d/... for a native bun.
   (cd "$dir" && STAMP_VERSION="$version" bun -e "const f='tauri.conf.json';const c=JSON.parse(await Bun.file(f).text());c.version=process.env.STAMP_VERSION;c.plugins.updater.pubkey=process.env.EPHEMERAL_PUBKEY;await Bun.write(f,JSON.stringify(c,null,2)+'\n')")
 }
 
@@ -169,7 +169,7 @@ feed() {
   payload=${payloads[0]}
   feed="$dir/smoke-latest.json"
   pubkey="${RUNNER_TEMP:-$(mktemp -d)}/smoke-pubkey.b64"
-  # Relative paths from the repo root, for the same Git Bash reason as stamp.
+  # Relative paths from the repo root, for the same MSYS reason as stamp.
   cd "$REPO"
   host=$(jq -er '.plugins.updater.endpoints[0] | capture("^https://(?<host>[A-Za-z0-9.-]+)/").host' packages/presto/src-tauri/tauri.conf.json)
   jq -n --arg version "$version" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \

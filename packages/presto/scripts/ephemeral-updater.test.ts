@@ -13,7 +13,6 @@ afterEach(() => {
   dir = "";
 });
 
-/** A scratch src-tauri holding copies of the real Cargo.toml and tauri.conf.json. */
 function scratch(): string {
   dir = mkdtempSync(path.join(tmpdir(), "ephemeral-updater-"));
   for (const file of ["Cargo.toml", "tauri.conf.json"]) {

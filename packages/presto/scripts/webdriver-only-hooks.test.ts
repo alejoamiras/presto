@@ -113,13 +113,15 @@ describe("WebDriver-only tray hooks", () => {
         "n",
       ]);
     }
-    // Both roles share the per-OS collection below, so each branch scans whatever it collects.
+    // Both roles share the per-OS collection below; a scan at the branch's top level runs for both.
     const script = await text(path.join(PRESTO, "scripts", "ephemeral-updater.sh"));
     const collect = script.split('\n  mkdir -p "$out"\n')[1]?.split("\n  esac\n")[0] ?? "";
     const branches = collect.split(/\n {4}(?=\w+\)\n)/).slice(1);
     expect(branches.map((b) => b.split(")")[0])).toEqual(["macOS", "Linux", "Windows"]);
     for (const branch of branches) {
-      expect(branch.split("assert-no-test-hooks.sh").length, branch).toBe(2);
+      const scans = branch.split("\n").filter((l) => l.includes("assert-no-test-hooks.sh"));
+      expect(scans.length, branch).toBe(1);
+      expect(scans[0], branch).toStartWith('      bash "$PRESTO/scripts/assert-no-test-hooks.sh" ');
     }
     const teeth = (await steps("_e2e-webdriver.yml")).find((s) =>
       s.run?.includes("grep -qa PRESTO_E2E_TRAY_REPORT"),
