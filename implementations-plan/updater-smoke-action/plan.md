@@ -227,7 +227,10 @@ Assumptions for this phase: Facts 1-4, 6-8; the sed inference.
 - Pass: every command exits 0.
 - Layers: lint (biome, shellcheck, actionlint), unit, local integration.
 
-### Phase 2 — Runtime proof by dispatch
+### Phase 2 — Runtime proof by dispatch ✓
+
+✓ 2026-10-02: unix `positive` 37022318517 (`darwin-aarch64`, `linux-x86_64`) and Windows `barrier`
+37022322243, all `success` at `42b3638`; Codex loop converged; record in `lessons/phase-2.md`.
 
 Push the branch (no PR yet) and dispatch
 `gh workflow run smoke-updater-unix.yml --ref worktree-updater-smoke-action -f mode=positive` and

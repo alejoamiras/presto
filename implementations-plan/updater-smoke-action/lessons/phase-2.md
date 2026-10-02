@@ -5,6 +5,18 @@
 Pushed `42b3638` (no PR). Dispatched unix `positive` (run 37022318517) and Windows `barrier`
 (run 37022322243), both at `42b3638`.
 
+✓ 2026-10-02. Both runs' `headSha` is `42b3638`; all three legs `success`: `linux-x86_64`,
+`darwin-aarch64`, Windows `barrier`. Each leg's log shows `keygen`, `build n-1`, `build n` and `feed`
+running the script; "no test hooks" for both builds on every OS (the AppImages, the macOS bundle, the
+Windows `Presto.exe`); `verify: all 1 platform(s) bound to the signed envelope` per leg; macOS N-1
+installed from the script's `hdiutil` DMG; Windows `sed -i.bak` and the relative `bun -e` stamp worked
+under Git Bash; the sentinel landed in N only (prefix `smoke-barrier-37022322243-1`, injected after
+N-1's build). Positive's schedule assertion passed on both unix legs ("update schedule: checked by
+9.9.9"). The throwaway key appears only as `***` in every env dump (10 unix, 6 Windows).
+
+Every later commit (`459afe8`, `849a74e`, `84cd2c6`) changes comments, tests, or one equivalent
+guard, so these runs stand for the final diff.
+
 ## Codex fix loop (GPT-6 Astra, `high`, session `01a0fd16-03c0-7e41-aee3-ec98131ea755`)
 
 ### Round 1 — "No new material findings", three Lows, all accepted
@@ -41,3 +53,4 @@ Resumed on `849a74e` (harness soundness plus the net diff `87a4c8c..849a74e`). V
 The repo lesson held again: local shellcheck 0.11 passed `ephemeral-updater.sh`, the
 `koalaman/shellcheck:v0.9.0` image CI matches failed it on SC2015 (`[ a ] && [ b ] || usage`, correct
 here because `usage` exits). Split into two `|| usage` guards; same behavior, so no re-dispatch.
+Codex, resumed on `84cd2c6`, verbatim: "No new material findings".
