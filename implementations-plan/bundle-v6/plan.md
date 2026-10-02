@@ -77,7 +77,7 @@ and gain short leading notes plus one short canonical section.
 | `packages/presto/README.md` | Lead: one line linking the canonical section. `/health` docs: `aztec_version` is the bundled version. `available_versions`/`versions` (detailed body, approved origins only) list the bundled plus cached versions, an inventory that proves neither integrity nor compatibility (every cached `bb` is re-hashed before each prove). Headless config table: add the `AZTEC_BB_VERSION` and `GITHUB_TOKEN` rows. |
 | `packages/landing/index.html` (developer callout) | One sentence: Presto proves for the Aztec version your SDK pins and fetches the matching `bb`; prompt users with `<presto-banner>` from `@alejoamiras/presto-banners`. Static text only. |
 | `packages/landing/public/llms.txt` (new) | An [llms.txt](https://llmstxt.org) covering: what Presto is, the packages, the version model, presto-banners for install UI, and the rule never to contact Presto on page load (ask first, HTTPS default). Links: the canonical section, package READMEs, the security model. The page never fetches it. |
-| Contract tests | `packages/sdk/src/lib/public-contract.test.ts`: the SDK README, AGENTS.md and SKILL.md carry both pointers in their lead. New `scripts/integrator-docs.test.ts`: the root README's lead and canonical heading, the app README's lead, the landing callout, and `llms.txt` (the four packages, the canonical link, the ask-first rule). Tests key on anchors and package names, not prose. |
+| Contract tests | `packages/sdk/src/lib/public-contract.test.ts`: the SDK README, AGENTS.md and SKILL.md carry both pointers in their lead. New `scripts/integrator-docs.test.ts`: the root README lead and canonical section, and the app README lead. New `packages/landing/src/integrator-docs.test.ts` (it runs in `landing.yml`, which the root tests do not): the landing callout and `llms.txt` (the four packages, the canonical link, the ask-first rule). Tests key on anchors and package names, not prose. |
 | `CLAUDE.md`, `implementations-plan/follow-ups.md` | Current-state lines (headless bundles no `bb`; landing serves `llms.txt`; test counts); follow-ups per the close-out. |
 
 **Canonical section (root README), in substance:**
@@ -244,7 +244,7 @@ Accepted:
 
 ## Phases
 
-### Phase 1 — The release says what it bundles, and the bundle is proven
+### Phase 1 — The release says what it bundles, and the bundle is proven ✓
 
 Rewrite and move the notes section in `release-presto.yml` and pin it in `release-contract.test.ts`.
 Add the `/health.aztec_version` assertion to `presto.packaged-e2e.spec.ts`. Push the branch (no PR)
@@ -274,7 +274,7 @@ Assumptions for this phase: Facts 1-6, 11; the bb-behaviour inference.
   release-time gates, verified in Post-implementation step 6.
 - Layers: lint, unit, packaged e2e on three OSes, Intel build.
 
-### Phase 2 — Integrator and agent docs
+### Phase 2 — Integrator and agent docs ✓
 
 Write:
 - the root README lead and canonical section;
