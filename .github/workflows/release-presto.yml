@@ -978,7 +978,17 @@ jobs:
           cat > /tmp/release-notes.md << NOTES
           ## Presto ${VERSION}
 
-          Native prover for Aztec transactions.
+          Native prover for Aztec transactions and Noir circuits.
+
+          ### Aztec versions
+
+          The desktop app bundles the \`bb\` prover for Aztec \`${AZTEC_VER}\`. For any other Aztec
+          version a dApp's SDK requests, Presto downloads that version's published \`bb\`, checks it
+          against the release's SHA-256 digest and caches it, on first use. The headless server bundles
+          none: it runs \`BB_BINARY_PATH\` or downloads. The app's own version says nothing about which
+          Aztec versions it proves: see [Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions).
+
+          Building a dApp? Ask users to install or connect Presto with \`@alejoamiras/presto-banners\`.
 
           ### Fresh installation
 
@@ -1025,9 +1035,6 @@ jobs:
           Each tarball ships with a \`.sha256\` sidecar. Verify before extracting. See [Headless
           server section in the presto README](https://github.com/alejoamiras/presto/blob/main/packages/presto/README.md#headless-server-for-ci-test-acceleration)
           for the install one-liner and \`ALLOWED_ORIGINS\` configuration.
-
-          ### Aztec Version
-          Built against Aztec \`${AZTEC_VER}\`.
           NOTES
 
           # Strip leading whitespace from each line (YAML indentation artifact)

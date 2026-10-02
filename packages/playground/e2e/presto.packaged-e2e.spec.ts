@@ -25,12 +25,18 @@
  *
  * Usage: bun run --cwd packages/playground test:e2e:packaged
  */
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { expect, test } from "@playwright/test";
 import { connectPresto } from "./connect";
 import { deployAndAssert } from "./fullstack.helpers";
 
 const HTTPS_PROVE_URL = "https://127.0.0.1:59834/prove";
 const HTTPS_ULTRA_HONK_URL = "https://127.0.0.1:59834/prove/ultra-honk";
+const HTTPS_HEALTH_URL = "https://127.0.0.1:59834/health";
+const SDK_AZTEC_VERSION: string = JSON.parse(
+  readFileSync(resolve(import.meta.dirname, "../../sdk/package.json"), "utf8"),
+).dependencies["@aztec-labs/stdlib"];
 
 test.describe.configure({ mode: "serial" });
 
@@ -99,6 +105,13 @@ test("native bb proof over HTTPS via the installed desktop app", async ({ browse
   );
   expect(phases, `unexpected auth denial in trail: ${JSON.stringify(phases)}`).not.toContain(
     "denied",
+  );
+
+  // A request for the bundled version runs the bundled bb and never downloads, so the release must
+  // bundle exactly the version the SDK it ships beside sends.
+  const health = await page.evaluate(async (url) => (await fetch(url)).json(), HTTPS_HEALTH_URL);
+  expect(health.aztec_version, `detailed /health: ${JSON.stringify(health)}`).toBe(
+    SDK_AZTEC_VERSION,
   );
 
   await page.close();
