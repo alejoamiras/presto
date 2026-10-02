@@ -57,7 +57,7 @@ jobs:
 
       # F-015: pin the action to a master-history SHA (NOT the @stable-generated commit, which
       # upstream may GC) and select the compiler explicitly via `toolchain:`.
-      - uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # v1
+      - uses: dtolnay/rust-toolchain@7e38f4b43b4db5c8dd498af069a4f6196df1d067 # v1
         if: inputs.build_presto
         with:
           toolchain: 1.98.0
