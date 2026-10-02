@@ -21,3 +21,12 @@ Pushed `42b3638` (no PR). Dispatched unix `positive` (run 37022318517) and Windo
    helper's doc comment.
 
 Comment- and test-only, so no re-dispatch.
+
+### Round 2 — one Low, accepted
+
+The indentation guard was not enough: an early `return 0` in one role's branch skips a top-level scan
+and still passes. K5 now runs `build`'s collection block for every OS × role inside a function, with
+stubs for `cp`, `n1_dmg` and a scanner that prints `scanned` and fails with 23; each run must print it
+and exit 23. Mutants verified: the early return (Linux N-1) and a swallowed scan (`|| true`, Windows)
+both fail it. Test-only, so no re-dispatch. Lesson: a text-shape assertion over shell code proves
+layout, not execution; when the property is "this runs on every path", run the block.

@@ -113,15 +113,14 @@ describe("WebDriver-only tray hooks", () => {
         "n",
       ]);
     }
-    // Both roles share the per-OS collection below; a scan at the branch's top level runs for both.
     const script = await text(path.join(PRESTO, "scripts", "ephemeral-updater.sh"));
-    const collect = script.split('\n  mkdir -p "$out"\n')[1]?.split("\n  esac\n")[0] ?? "";
-    const branches = collect.split(/\n {4}(?=\w+\)\n)/).slice(1);
-    expect(branches.map((b) => b.split(")")[0])).toEqual(["macOS", "Linux", "Windows"]);
-    for (const branch of branches) {
-      const scans = branch.split("\n").filter((l) => l.includes("assert-no-test-hooks.sh"));
-      expect(scans.length, branch).toBe(1);
-      expect(scans[0], branch).toStartWith('      bash "$PRESTO/scripts/assert-no-test-hooks.sh" ');
+    for (const os of ["macOS", "Linux", "Windows"]) {
+      for (const role of ["n-1", "n"]) {
+        expect(collectWithFailingScanner(script, os, role), `${os} ${role}`).toEqual([
+          "scanned",
+          23,
+        ]);
+      }
     }
     const teeth = (await steps("_e2e-webdriver.yml")).find((s) =>
       s.run?.includes("grep -qa PRESTO_E2E_TRAY_REPORT"),
@@ -142,4 +141,31 @@ async function steps(workflow: string): Promise<Step[]> {
     jobs: Record<string, { steps?: Step[] }>;
   };
   return Object.values(parsed.jobs).flatMap((job) => job.steps ?? []);
+}
+
+/**
+ * Runs ephemeral-updater.sh build's per-OS artifact collection for one OS and role, with a scanner
+ * that prints "scanned" and fails with 23. Returns [stdout, exit code].
+ */
+function collectWithFailingScanner(script: string, os: string, role: string): [string, number] {
+  const collect = script.split('\n  mkdir -p "$out"\n')[1]?.split("\n  esac\n")[0] ?? "";
+  expect(collect).toStartWith('  case "$RUNNER_OS" in\n');
+  const stubs =
+    'bash() { [[ "$1" == */assert-no-test-hooks.sh ]] && echo scanned; return 23; }; cp() { :; }; n1_dmg() { :; }';
+  // A function body, so an early `return` in the block skips the scan as it would in build.
+  const run = Bun.spawnSync(
+    ["bash", "-c", `set -euo pipefail; ${stubs}; collect() {\n${collect}\n  esac\n}; collect`],
+    {
+      env: {
+        PATH: process.env.PATH,
+        RUNNER_OS: os,
+        role,
+        PRESTO: "p",
+        bundle: "b",
+        root: "r",
+        out: "o",
+      },
+    },
+  );
+  return [String(run.stdout).trim(), run.exitCode];
 }
