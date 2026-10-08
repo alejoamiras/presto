@@ -147,6 +147,11 @@ release_tooling:
   - '.github/workflows/smoke-updater-unix.yml'
   - '.github/workflows/smoke-updater-windows.yml'
   - '.github/workflows/update-feed-health.yml'
+  # The verified-sites workflows: their contract test runs here, and the sign workflow is a bot-pr user.
+  - '.github/workflows/sign-verified-sites.yml'
+  - '.github/workflows/publish-verified-sites.yml'
+  - '.github/workflows/verified-sites-health.yml'
+  - 'packages/release-feed/**'
   - '.github/workflows/presto.yml'
   - '.github/filters/presto.yml'
 
@@ -192,6 +197,23 @@ windows_bb:
   - 'package.json'
   - 'bun.lock'
   - 'bunfig.toml'
+  - '.bun-version'
+  - '.github/actions/setup-presto/**'
+  - '.github/workflows/presto.yml'
+  - '.github/filters/presto.yml'
+
+verified_sites_feed:
+  # The list, its signed history and key, and everything that signs, records, verifies or publishes
+  # it. Records route here alone, so a release-bot record PR runs this job and the lint job only.
+  - 'packages/presto/verified-sites.json'
+  - 'packages/presto/verified-sites/**'
+  - 'packages/presto/core/**'
+  - 'packages/presto/scripts/verified-sites-*'
+  - '.github/scripts/verified-sites-kv-guard.sh'
+  - '.github/workflows/sign-verified-sites.yml'
+  - '.github/workflows/publish-verified-sites.yml'
+  - '.github/workflows/verified-sites-health.yml'
+  - 'rust-toolchain.toml'
   - '.bun-version'
   - '.github/actions/setup-presto/**'
   - '.github/workflows/presto.yml'

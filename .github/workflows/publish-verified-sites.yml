@@ -1,0 +1,216 @@
+name: Publish Verified Sites
+
+# Publishes the newest signed record in packages/presto/verified-sites/history to the release-feed
+# KV key `verified-sites.json`, which presto.build/releases/verified-sites.json serves. It signs
+# nothing and needs no signing approval: it only republishes what main already holds, so dispatching
+# it is also the restore after a KV loss. The write refuses to move KV backwards, to replace a list at
+# the same version, or to change the signing key; the owner deletes the KV value first for a rotation.
+on:
+  push:
+    branches: [main]
+    paths:
+      - packages/presto/verified-sites/history/**
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verified-sites-publish
+  cancel-in-progress: false
+
+env:
+  CLI: packages/presto/core/target/debug/examples/verified-sites
+  HISTORY: packages/presto/verified-sites/history
+  KEY: packages/presto/verified-sites/key.pub
+  LIVE_URL: https://presto.build/releases/verified-sites.json
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.build.outputs.version }}
+      document_sha256: ${{ steps.build.outputs.document_sha256 }}
+      write: ${{ steps.build.outputs.write }}
+      history_tree: ${{ steps.build.outputs.history_tree }}
+      key_blob: ${{ steps.build.outputs.key_blob }}
+    steps:
+      - name: Assert main ref
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Publish Verified Sites must run on refs/heads/main (got $GITHUB_REF)"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-target: x86_64-unknown-linux-gnu
+          rust-cache-key: presto-sign-feed
+          rust-workspaces: packages/presto/core -> target
+          rust-components: ""
+          install-tauri-system-deps: "false"
+          run-prebuild: "false"
+      - run: cargo build --locked --quiet --manifest-path packages/presto/core/Cargo.toml --example verified-sites
+      - name: Build the document from the newest record
+        id: build
+        run: |
+          set -euo pipefail
+          out="$RUNNER_TEMP/publish"
+          mkdir "$out"
+          # newest --pubkey: publishing signs nothing, so the newest record must be under key.pub.
+          version="$("$CLI" newest "$HISTORY" --pubkey "$KEY")"
+          if [ "$version" = 0 ]; then
+            echo "::notice::no signed record yet; nothing to publish"
+            echo "write=false" >>"$GITHUB_OUTPUT"
+            exit 0
+          fi
+          "$CLI" document "$HISTORY/$version.json" "$HISTORY/$version.json.minisig" >"$out/verified-sites.json"
+          "$CLI" verify --document "$out/verified-sites.json" --pubkey "$KEY" --expect-version "$version"
+          if ! code="$(curl -sS --max-time 30 --max-filesize 1048576 -o "$RUNNER_TEMP/live.json" -w '%{http_code}' "$LIVE_URL")"; then
+            echo "::error::could not fetch the live list"
+            exit 1
+          fi
+          write=true
+          case "$code" in
+            200)
+              if cmp -s "$RUNNER_TEMP/live.json" "$out/verified-sites.json"; then
+                echo "::notice::version $version is already live"
+                write=false
+              else
+                # Fails when live is ahead of history, equivocates, or is signed by an unknown key.
+                "$CLI" live --history "$HISTORY" --pubkey "$KEY" \
+                  --retired packages/presto/verified-sites/retired-keys --live "$RUNNER_TEMP/live.json"
+              fi
+              ;;
+            404 | 503) ;;
+            *)
+              echo "::error::the live list answered HTTP $code"
+              exit 1
+              ;;
+          esac
+          {
+            echo "version=$version"
+            echo "document_sha256=$(sha256sum "$out/verified-sites.json" | cut -d' ' -f1)"
+            echo "write=$write"
+            echo "history_tree=$(git rev-parse "HEAD:$HISTORY")"
+            echo "key_blob=$(git rev-parse "HEAD:$KEY")"
+          } >>"$GITHUB_OUTPUT"
+      - if: steps.build.outputs.write == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verified-sites-document
+          path: ${{ runner.temp }}/publish/verified-sites.json
+          if-no-files-found: error
+          retention-days: 30
+
+  publish:
+    name: Publish to KV
+    needs: verify
+    if: needs.verify.outputs.write == 'true'
+    environment: release-feed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    outputs:
+      write_attempted: ${{ steps.write.outputs.attempted }}
+    env:
+      NAMESPACE: 41a6adef830f4a91bf63476a323cec98
+    steps:
+      - name: Assert main ref
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Publish Verified Sites must run on refs/heads/main (got $GITHUB_REF)"
+            exit 1
+          fi
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: verified-sites-document
+          path: ${{ runner.temp }}/publish
+      # In this job, right before the write, so re-running only this job cannot skip it: a re-run
+      # keeps its old commit and must not restore a record main has moved past or a deleted key.
+      - name: Require main to still hold this record
+        env:
+          DOCUMENT_SHA256: ${{ needs.verify.outputs.document_sha256 }}
+          HISTORY_TREE: ${{ needs.verify.outputs.history_tree }}
+          KEY_BLOB: ${{ needs.verify.outputs.key_blob }}
+        run: |
+          set -euo pipefail
+          if [ "$(sha256sum "$RUNNER_TEMP/publish/verified-sites.json" | cut -d' ' -f1)" != "$DOCUMENT_SHA256" ]; then
+            echo "::error::the downloaded document is not what Verify built"
+            exit 1
+          fi
+          main="$RUNNER_TEMP/main"
+          git init --quiet "$main"
+          git -C "$main" fetch --quiet --depth=1 --no-tags "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" refs/heads/main
+          if [ "$(git -C "$main" rev-parse "FETCH_HEAD:$HISTORY")" != "$HISTORY_TREE" ] ||
+             [ "$(git -C "$main" rev-parse "FETCH_HEAD:$KEY")" != "$KEY_BLOB" ]; then
+            echo "::error::stale: main's history or key.pub changed since this run's commit; dispatch Publish Verified Sites again"
+            exit 1
+          fi
+          git -C "$main" show FETCH_HEAD:.github/scripts/verified-sites-kv-guard.sh >"$RUNNER_TEMP/kv-guard.sh"
+      - name: Write the document unless KV refuses it
+        id: write
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_RELEASE_FEED_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          document="$RUNNER_TEMP/publish/verified-sites.json"
+          url="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/storage/kv/namespaces/$NAMESPACE/values/verified-sites.json"
+          # The token reaches curl through a header file descriptor, never its argv.
+          auth() { printf 'Authorization: Bearer %s\n' "$CLOUDFLARE_API_TOKEN"; }
+          if ! status="$(curl -sS --max-time 30 --max-filesize 1048576 -H @<(auth) -o "$RUNNER_TEMP/kv.json" -w '%{http_code}' "$url")"; then
+            echo "::error::could not read the KV value"
+            exit 1
+          fi
+          decision="$(bash "$RUNNER_TEMP/kv-guard.sh" "$status" "$RUNNER_TEMP/kv.json" "$document")"
+          if [ "$decision" = "decision=skip" ]; then
+            echo "KV already holds this document."
+            exit 0
+          fi
+          if [ "$decision" != "decision=write" ]; then
+            echo "::error::unexpected guard answer"
+            exit 1
+          fi
+          echo "attempted=true" >>"$GITHUB_OUTPUT"
+          for attempt in 1 2 3 4 5; do
+            if response="$(curl -sS --max-time 30 -X PUT -H @<(auth) -H 'Content-Type: application/octet-stream' --data-binary "@$document" "$url")" &&
+               jq -e '.success == true' <<<"$response" >/dev/null 2>&1; then
+              echo "Wrote verified-sites.json (attempt $attempt); Verify live confirms what is served."
+              exit 0
+            fi
+            if [ "$attempt" = 5 ]; then
+              echo "::error::KV write failed after 5 attempts; Verify live decides what is served"
+              exit 1
+            fi
+            sleep $((attempt * 3))
+          done
+
+  verify-live:
+    name: Verify live
+    needs: [verify, publish]
+    # After any attempted write, even a failed one: the public URL is the source of truth.
+    if: ${{ always() && !cancelled() && needs.publish.outputs.write_attempted == 'true' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Poll until presto.build serves the document
+        env:
+          DOCUMENT_SHA256: ${{ needs.verify.outputs.document_sha256 }}
+          VERSION: ${{ needs.verify.outputs.version }}
+        run: |
+          set -euo pipefail
+          for _ in $(seq 1 60); do
+            got="$(curl -fsS --max-time 15 --max-filesize 1048576 "$LIVE_URL" 2>/dev/null | sha256sum | cut -d' ' -f1 || true)"
+            if [ "$got" = "$DOCUMENT_SHA256" ]; then
+              echo "### Verified-sites list version $VERSION is live" >>"$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::$LIVE_URL still does not serve version $VERSION after 10 minutes"
+          exit 1

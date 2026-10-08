@@ -777,7 +777,8 @@ tests over synthetic trees ✓; the check of the repository itself and of `key.p
 - Mutation: map the new path to `latest.json` and a test fails.
 - Layers: unit.
 
-**Phase 5: workflows, contracts and docs.**
+**Phase 5: workflows, contracts and docs.** ✓ before O2; the round trip and live check in the
+`verified-sites-feed` job need `key.pub` and fail closed until it lands.
 - Gate: `bun run lint:actions`;
   `bun test scripts/verified-sites-workflows.test.ts scripts/cloudflare-deployment.test.ts scripts/bot-pr.test.ts scripts/action-pins.test.ts packages/presto/scripts/ci-filter-contract.test.ts`;
   the `verified-sites-feed` job's script run locally with the RFC 8032 key standing in for the
