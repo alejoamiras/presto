@@ -31,3 +31,18 @@
   "absent".
 - The stub `gh` sees only what the script hands it, so its responses live under the stub's `$HOME`
   rather than in variables the test sets.
+
+## Codex review (2026-10-08)
+
+Six findings, all accepted (R1–R6 in the plan's audit verdicts); each fix has a test that fails
+against the old behaviour, checked by mutation (a second reviewer accepted, a malformed updater key
+returning an empty key, `GH_HOST` dropped).
+
+- **`bun --config /dev/null <script>` (and `-c /dev/null`) exits 0 without running the script.**
+  Only the `=` form (`--config=/dev/null`) works; Codex confirmed it and found `--env-file`, `--cwd`,
+  `--preload` and `--tsconfig-override` take a spaced value safely. A signing step written the other way would "succeed" and sign nothing.
+  `--no-env-file --config=/dev/null` together block both a bunfig preload and `.env` loading
+  (checked with a throwaway preload and `.env`).
+- A duplicate `const` in the script failed at load time with Bun printing the offending source lines
+  to stderr, outside the script's own error handling. Harmless here (no secret in source), but a load
+  error is the one path that bypasses the fixed-message rule; typecheck catches it first.

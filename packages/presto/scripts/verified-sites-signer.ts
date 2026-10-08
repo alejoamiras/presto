@@ -3,10 +3,11 @@
  * `presto_core::verified_sites` and stock `minisign -V` both verify.
  *
  * The signing job runs this file alone, copied out of the repository and started with
- * `bun --no-install`, so it imports `node:` modules only: no package, no `bunfig.toml`, no `.env`.
+ * `bun --no-install --no-env-file --config=/dev/null`, so it imports `node:` modules only: no
+ * package, no `bunfig.toml` preload, no `.env`.
  *
  *   PRESTO_VERIFIED_SITES_SIGNING_SEED=<hex> bun verified-sites-signer.ts sign \
- *     --list <file> --pubkey <key.pub> --expect-sha256 <hex> --out <file.minisig>
+ *     --list <file> --pubkey <key.pub> --expect-sha256 <hex> --out <new file.minisig>
  *   PRESTO_VERIFIED_SITES_SIGNING_SEED=<hex> bun verified-sites-signer.ts pubkey
  *
  * The seed is read once, removed from the environment, and never printed in any form; every failure
@@ -160,27 +161,46 @@ export function takeSeed(env: Record<string, string | undefined> = process.env):
   return normalizeSeed(value);
 }
 
-function flag(args: string[], name: string): string {
-  const at = args.indexOf(name);
-  const value = at === -1 ? undefined : args[at + 1];
-  if (value === undefined || value.startsWith("--")) throw new SignerError(`missing ${name}`);
-  return value;
+const SIGN_FLAGS = ["--list", "--pubkey", "--expect-sha256", "--out"] as const;
+
+/** Exactly the `sign` flags, each once with a value; anything else is refused before the seed is read. */
+function signFlags(args: string[]): Record<(typeof SIGN_FLAGS)[number], string> {
+  const flags = new Map<string, string>();
+  for (let at = 0; at < args.length; at += 2) {
+    const [name, value] = [args[at] ?? "", args[at + 1]];
+    if (!(SIGN_FLAGS as readonly string[]).includes(name) || flags.has(name)) {
+      // Never echoed: a misplaced argument could be anything.
+      throw new SignerError("unexpected or repeated argument");
+    }
+    if (value === undefined || value.startsWith("--"))
+      throw new SignerError(`${name} needs a value`);
+    flags.set(name, value);
+  }
+  const missing = SIGN_FLAGS.find((name) => !flags.has(name));
+  if (missing) throw new SignerError(`missing ${missing}`);
+  return Object.fromEntries(flags) as Record<(typeof SIGN_FLAGS)[number], string>;
 }
 
 function sign(args: string[]): void {
+  const flags = signFlags(args);
   const key = deriveKey(takeSeed());
-  const pinned = readFileSync(flag(args, "--pubkey"), "utf8");
+  const pinned = readFileSync(flags["--pubkey"], "utf8");
   if (publicKeyDocument(key.publicKey) !== pinned) {
     throw new SignerError("the seed does not match the pinned public key");
   }
-  const list = new Uint8Array(readFileSync(flag(args, "--list")));
+  const list = new Uint8Array(readFileSync(flags["--list"]));
   if (list.byteLength > LIST_MAX_BYTES) throw new SignerError("the list is over 64 KiB");
   const sha256 = sha256Hex(list);
-  if (sha256 !== flag(args, "--expect-sha256")) {
+  if (sha256 !== flags["--expect-sha256"]) {
     throw new SignerError("the list is not the approved bytes");
   }
   const signature = signList(key, list);
-  writeFileSync(flag(args, "--out"), signature);
+  try {
+    // `wx`: never overwrite, so a mistyped `--out` cannot clobber the list or the key.
+    writeFileSync(flags["--out"], signature, { flag: "wx" });
+  } catch {
+    throw new SignerError("could not create --out (it must not exist yet)");
+  }
   console.log(`version=${listVersion(list)}`);
   console.log(`sha256=${sha256}`);
   console.log(`key_id=${keyIdHex(keyId(key.publicKey))}`);
@@ -190,7 +210,7 @@ function main(args: string[]): number {
   try {
     const [command, ...rest] = args;
     if (command === "sign") sign(rest);
-    else if (command === "pubkey")
+    else if (command === "pubkey" && rest.length === 0)
       process.stdout.write(publicKeyDocument(deriveKey(takeSeed()).publicKey));
     else throw new SignerError("usage: verified-sites-signer.ts sign|pubkey");
     return 0;

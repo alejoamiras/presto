@@ -38,6 +38,11 @@ const STRONG_ENVIRONMENT = {
   ],
 };
 const MAIN_ONLY = { branch_policies: [{ name: "main", type: "branch" }] };
+const OWNER_REVIEWER = { type: "User", reviewer: { login: "alejoamiras" } };
+const withReviewers = (rules: unknown[]) => ({
+  ...STRONG_ENVIRONMENT,
+  protection_rules: [{ type: "branch_policy" }, ...rules],
+});
 
 /**
  * Every encoding of the seed that a careless print could produce. The PKCS#8 DER is 48 bytes, so its
@@ -59,6 +64,9 @@ function seedForms(hex: string): string[] {
     [...seed].join(", "),
     [...seed].join(" "),
     der.toString("base64"),
+    // Raw bytes, as files are read (latin1 keeps every byte).
+    seed.toString("latin1"),
+    der.toString("latin1"),
   ];
 }
 
@@ -66,6 +74,8 @@ interface Call {
   argv: string[];
   env: Record<string, string>;
   stdin: string;
+  /** What GH_CONFIG_DIR held when gh started. */
+  config: string;
 }
 
 let root = "";
@@ -77,12 +87,27 @@ interface Setup {
   secrets?: { name: string }[];
   keyPub?: string;
   updaterSeed?: string;
+  /** Replaces the whole `tauri.conf.json`. */
+  tauriConfig?: unknown;
+  /** `gh secret set` echoes the seed it was given and the token to both streams, then fails. */
   setFails?: boolean;
 }
 
+/** What the script's own child environment may hold; bash adds the rest. */
+const CHILD_ENV = [
+  "GH_CONFIG_DIR",
+  "GH_HOST",
+  "GH_NO_UPDATE_NOTIFIER",
+  "GH_PROMPT_DISABLED",
+  "GH_TOKEN",
+  "HOME",
+  "PATH",
+];
+const BASH_ENV = new Set(["OLDPWD", "PWD", "SHLVL", "_"]);
+
 function setup(options: Setup = {}): void {
   root = mkdtempSync(path.join(tmpdir(), "provision-"));
-  for (const dir of ["scripts", "verified-sites", "src-tauri", "bin", "home/calls"]) {
+  for (const dir of ["scripts", "verified-sites", "src-tauri", "bin", "home/calls", "tmp"]) {
     mkdirSync(path.join(root, dir), { recursive: true });
   }
   for (const file of ["provision-verified-sites-key.ts", "verified-sites-signer.ts"]) {
@@ -94,7 +119,9 @@ function setup(options: Setup = {}): void {
   const updater = publicKeyDocument(
     deriveKey(normalizeSeed(options.updaterSeed ?? OTHER_SEED)).publicKey,
   );
-  const config = { plugins: { updater: { pubkey: Buffer.from(updater).toString("base64") } } };
+  const config = options.tauriConfig ?? {
+    plugins: { updater: { pubkey: Buffer.from(updater).toString("base64") } },
+  };
   writeFileSync(path.join(root, "src-tauri/tauri.conf.json"), JSON.stringify(config));
   const home = path.join(root, "home");
   writeFileSync(
@@ -112,13 +139,14 @@ call="$HOME/calls/$(ls "$HOME/calls" | wc -l)"
 mkdir "$call"
 printf '%s\\0' "$@" > "$call/argv"
 env -0 > "$call/env"
+ls -A "$GH_CONFIG_DIR" > "$call/config"
 case "$*" in
   "api repos/alejoamiras/presto/environments/verified-sites-signing") cat "$HOME/environment.json" ;;
   "api repos/alejoamiras/presto/environments/verified-sites-signing/deployment-branch-policies") cat "$HOME/policies.json" ;;
   "secret list --env verified-sites-signing --repo alejoamiras/presto --json name") cat "$HOME/secrets.json" ;;
   "secret set VERIFIED_SITES_SIGNING_SEED --env verified-sites-signing --repo alejoamiras/presto")
     cat > "$call/stdin"
-    ${options.setFails ? "exit 1" : ""}
+    ${options.setFails ? 'for fd in 1 2; do echo "seed $(cat "$call/stdin") token $GH_TOKEN" >&"$fd"; done; exit 1' : ""}
     printf '[{"name":"VERIFIED_SITES_SIGNING_SEED"}]' > "$HOME/secrets.json" ;;
   *) exit 64 ;;
 esac
@@ -134,6 +162,7 @@ function provision(args: string[] = [], env: Record<string, string> = {}) {
       env: {
         PATH: `${path.join(root, "bin")}:${process.env.PATH}`,
         HOME: path.join(root, "home"),
+        TMPDIR: path.join(root, "tmp"),
         PRESTO_VERIFIED_SITES_SIGNING_SEED: SEED,
         GH_TOKEN: TOKEN,
         ...env,
@@ -159,6 +188,7 @@ function calls(): Call[] {
         argv: readFileSync(at("argv"), "utf8").split("\0").filter(Boolean),
         env,
         stdin: existsSync(at("stdin")) ? readFileSync(at("stdin"), "utf8") : "",
+        config: readFileSync(at("config"), "utf8"),
       };
     });
 }
@@ -166,15 +196,28 @@ function calls(): Call[] {
 const sets = () => calls().filter((c) => c.argv[0] === "secret" && c.argv[1] === "set");
 const pinned = (hex: string) => publicKeyDocument(deriveKey(normalizeSeed(hex)).publicKey);
 
-/** No form of the seed in anything the run exposed: its output, a child's argv or environment. */
-function assertNoSeed(r: ReturnType<typeof provision>, call: Call): void {
-  const exposed: Record<string, string> = {
-    output: r.out + r.err,
-    argv: call.argv.join(" "),
-    env: Object.entries(call.env)
+/** Every file the run left in the throwaway tree, except the stub's own recordings. */
+function treeFiles(): Record<string, string> {
+  const recordings = path.join(root, "home/calls") + path.sep;
+  return Object.fromEntries(
+    readdirSync(root, { recursive: true, withFileTypes: true })
+      .filter((e) => e.isFile() && !`${e.parentPath}${path.sep}`.startsWith(recordings))
+      .map((e) => [
+        path.join(e.parentPath, e.name),
+        readFileSync(path.join(e.parentPath, e.name), "latin1"),
+      ]),
+  );
+}
+
+/** No form of the seed in anything the run exposed: output, files, a child's argv or environment. */
+function assertNoSeed(r: ReturnType<typeof provision>): void {
+  const exposed: Record<string, string> = { output: r.out + r.err, ...treeFiles() };
+  for (const [n, call] of calls().entries()) {
+    exposed[`argv ${n}`] = call.argv.join(" ");
+    exposed[`env ${n}`] = Object.entries(call.env)
       .map(([k, v]) => `${k}=${v}`)
-      .join("\n"),
-  };
+      .join("\n");
+  }
   for (const form of seedForms(SEED)) {
     for (const [where, text] of Object.entries(exposed)) {
       expect(text.includes(form), `${form} in ${where}`).toBe(false);
@@ -190,16 +233,32 @@ describe("provisioning exposes nothing", () => {
     expect(r.code).toBe(0);
     expect(r.out).toStartWith(pinned(SEED));
     expect(r.out).toMatch(/\nKey ID: [0-9A-F]{16}\n$/);
+    assertNoSeed(r);
     const all = calls();
     expect(all.length).toBeGreaterThanOrEqual(5);
     for (const call of all) {
-      assertNoSeed(r, call);
+      expect(
+        Object.keys(call.env)
+          .filter((k) => !BASH_ENV.has(k))
+          .sort(),
+      ).toEqual(CHILD_ENV);
       expect(call.env.GH_TOKEN).toBe(TOKEN);
+      expect(call.env.GH_HOST).toBe("github.com");
+      expect(call.env.GH_CONFIG_DIR).toStartWith(path.join(root, "tmp"));
+      expect(call.config).toBe("");
       expect(call.argv.join(" ")).not.toContain(TOKEN);
-      expect("PRESTO_VERIFIED_SITES_SIGNING_SEED" in call.env).toBe(false);
     }
     expect(r.out + r.err).not.toContain(TOKEN);
+    expect(readdirSync(path.join(root, "tmp"))).toEqual([]);
     expect(sets().map((c) => c.stdin)).toEqual([SEED]);
+  });
+
+  test("a failing gh that echoes the seed and token reaches no output", () => {
+    setup({ setFails: true });
+    const failed = provision();
+    expect(failed).toEqual({ code: 1, out: "", err: "provision: gh secret set failed\n" });
+    assertNoSeed(failed);
+    expect(readdirSync(path.join(root, "tmp"))).toEqual([]);
   });
 });
 
@@ -244,6 +303,19 @@ describe("provisioning refuses", () => {
         },
       },
       { policies: { branch_policies: [{ name: "main", type: "tag" }] } },
+      ...[
+        [OWNER_REVIEWER, { type: "User", reviewer: { login: "someone-else" } }],
+        [OWNER_REVIEWER, { type: "Team", reviewer: { slug: "maintainers" } }],
+        [{ type: "Team", reviewer: { login: "alejoamiras" } }],
+      ].map((reviewers) => ({
+        environment: withReviewers([{ type: "required_reviewers", reviewers }]),
+      })),
+      {
+        environment: withReviewers([
+          { type: "required_reviewers", reviewers: [OWNER_REVIEWER] },
+          { type: "required_reviewers", reviewers: [OWNER_REVIEWER] },
+        ]),
+      },
     ];
     for (const options of weak) {
       setup(options);
@@ -253,8 +325,10 @@ describe("provisioning refuses", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+});
 
-  test("any mode outside its own starting state", () => {
+describe("provisioning refuses keys", () => {
+  test("in any mode outside its own starting state", () => {
     const cases: [string[], Setup, boolean][] = [
       [[], { secrets: [{ name: "VERIFIED_SITES_SIGNING_SEED" }] }, false],
       [[], { keyPub: pinned(SEED) }, false],
@@ -282,18 +356,31 @@ describe("provisioning refuses", () => {
     }
   });
 
-  test("a published test vector and the updater key, and reports a failed set", () => {
-    setup();
-    const vector = provision([], { PRESTO_VERIFIED_SITES_SIGNING_SEED: RFC8032_TEST1_SEED });
-    expect(vector.err).toBe("provision: the seed is a published test vector\n");
-    rmSync(root, { recursive: true, force: true });
-    setup({ updaterSeed: SEED });
-    expect(provision().err).toBe("provision: the seed is the updater key\n");
-    rmSync(root, { recursive: true, force: true });
-    setup({ setFails: true });
-    const failed = provision();
-    expect(failed.code).toBe(1);
-    expect(failed.err).toBe("provision: gh secret set failed\n");
-    expect(failed.out).toBe("");
+  test("a published test vector, the updater key, or an updater key it cannot read", () => {
+    const short = `untrusted comment: x\n${Buffer.from("Ed12345678").toString("base64")}\n`;
+    const cases: [Setup, Record<string, string>, string][] = [
+      [{}, { PRESTO_VERIFIED_SITES_SIGNING_SEED: RFC8032_TEST1_SEED }, "a published test vector"],
+      [{ updaterSeed: SEED }, {}, "the updater key"],
+      [{ tauriConfig: {} }, {}, "could not read the updater public key"],
+      [{ tauriConfig: { plugins: { updater: { pubkey: 7 } } } }, {}, "could not read"],
+      [{ tauriConfig: { plugins: { updater: { pubkey: "!!" } } } }, {}, "could not read"],
+      [
+        {
+          tauriConfig: { plugins: { updater: { pubkey: Buffer.from(short).toString("base64") } } },
+        },
+        {},
+        "could not read",
+      ],
+    ];
+    for (const [options, env, why] of cases) {
+      setup(options);
+      const r = provision([], env);
+      expect(r.code).toBe(1);
+      expect(r.err).toStartWith(
+        `provision: ${why.startsWith("could") ? "" : "the seed is "}${why}`,
+      );
+      expect(sets()).toEqual([]);
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

@@ -4,14 +4,17 @@
  * 1Password) and `GH_TOKEN` (a fine-grained token limited to this repository's environments); the
  * template is `verified-sites/signing-key.env.example`.
  *
- *   bun packages/presto/scripts/provision-verified-sites-key.ts            first key: no secret, no key.pub
- *   bun packages/presto/scripts/provision-verified-sites-key.ts --restore  key.pub already holds this key
- *   bun packages/presto/scripts/provision-verified-sites-key.ts --rotate   key.pub holds a different key
+ *   bun --no-install --no-env-file --config=/dev/null packages/presto/scripts/provision-verified-sites-key.ts
+ *     (no flag: first key, no secret and no key.pub; `--restore`: key.pub already holds this key;
+ *     `--rotate`: key.pub holds a different key)
  *
+ * The launch flags keep `.env` files and bunfig preloads out of a process that holds the seed;
+ * `--config` needs the `=` form, since `--config /dev/null <script>` exits 0 without running it.
  * It prints the public-key document and key ID only. Neither the seed nor the token is ever printed,
  * passed in an argument or written to a file: the seed reaches `gh secret set` on standard input.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import {
   deriveKey,
@@ -42,10 +45,24 @@ class InputRefusal extends Refusal {}
 
 type Mode = "first" | "restore" | "rotate";
 
-/** Runs `gh` with only PATH, HOME and the token; output is captured, never echoed. */
-function gh(token: string, args: string[], stdin?: string): { ok: boolean; stdout: string } {
+interface Gh {
+  token: string;
+  /** An empty config directory, so no stored host, credential or alias can redirect a call. */
+  configDir: string;
+}
+
+/** Runs `gh` against github.com with only the token; output is captured, never echoed. */
+function gh(ctx: Gh, args: string[], stdin?: string): { ok: boolean; stdout: string } {
   const child = Bun.spawnSync(["gh", ...args], {
-    env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", GH_TOKEN: token },
+    env: {
+      PATH: process.env.PATH ?? "",
+      HOME: process.env.HOME ?? "",
+      GH_CONFIG_DIR: ctx.configDir,
+      GH_HOST: "github.com",
+      GH_PROMPT_DISABLED: "1",
+      GH_NO_UPDATE_NOTIFIER: "1",
+      GH_TOKEN: ctx.token,
+    },
     stdin: stdin === undefined ? "ignore" : new TextEncoder().encode(stdin),
     stdout: "pipe",
     stderr: "pipe",
@@ -53,8 +70,8 @@ function gh(token: string, args: string[], stdin?: string): { ok: boolean; stdou
   return { ok: child.exitCode === 0, stdout: child.stdout.toString() };
 }
 
-function ghJson(token: string, args: string[], what: string): unknown {
-  const result = gh(token, args);
+function ghJson(ctx: Gh, args: string[], what: string): unknown {
+  const result = gh(ctx, args);
   if (!result.ok) throw new Refusal(`could not read ${what}`);
   try {
     return JSON.parse(result.stdout);
@@ -63,29 +80,41 @@ function ghJson(token: string, args: string[], what: string): unknown {
   }
 }
 
-/** The secret must never land somewhere weaker than a main-only environment the owner approves. */
-function checkEnvironment(token: string): void {
+/**
+ * The secret must never land somewhere weaker than a main-only environment that only the owner can
+ * approve: GitHub accepts one approval from any listed reviewer, so he must be the only one.
+ */
+function checkEnvironment(ctx: Gh): void {
   const env = ghJson(
-    token,
+    ctx,
     ["api", `repos/${REPO}/environments/${ENVIRONMENT}`],
     "the environment",
   ) as {
     can_admins_bypass?: boolean;
     deployment_branch_policy?: { protected_branches?: boolean; custom_branch_policies?: boolean };
-    protection_rules?: { type?: string; reviewers?: { reviewer?: { login?: string } }[] }[];
+    protection_rules?: {
+      type?: string;
+      reviewers?: { type?: string; reviewer?: { login?: string } }[];
+    }[];
   };
-  const reviewers = (env.protection_rules ?? [])
-    .filter((rule) => rule.type === "required_reviewers")
-    .flatMap((rule) => rule.reviewers ?? [])
-    .map((r) => r.reviewer?.login);
-  if (!reviewers.includes(OWNER)) throw new Refusal(`${OWNER} is not a required reviewer`);
+  const approvals = (env.protection_rules ?? []).filter((r) => r.type === "required_reviewers");
+  const reviewers = approvals.flatMap((rule) => rule.reviewers ?? []);
+  const only = reviewers[0];
+  if (
+    approvals.length !== 1 ||
+    reviewers.length !== 1 ||
+    only?.type !== "User" ||
+    only.reviewer?.login !== OWNER
+  ) {
+    throw new Refusal(`${OWNER} is not the only required reviewer`);
+  }
   if (env.can_admins_bypass !== false) throw new Refusal("administrators can bypass the reviewer");
   const policy = env.deployment_branch_policy;
   if (policy?.protected_branches !== false || policy.custom_branch_policies !== true) {
     throw new Refusal("the environment is not limited to selected branches");
   }
   const branches = ghJson(
-    token,
+    ctx,
     ["api", `repos/${REPO}/environments/${ENVIRONMENT}/deployment-branch-policies`],
     "the branch policies",
   ) as { branch_policies?: { name?: string; type?: string }[] };
@@ -95,21 +124,27 @@ function checkEnvironment(token: string): void {
   }
 }
 
-function secretNames(token: string): string[] {
+function secretNames(ctx: Gh): string[] {
   const listed = ghJson(
-    token,
+    ctx,
     ["secret", "list", "--env", ENVIRONMENT, "--repo", REPO, "--json", "name"],
     "the environment's secrets",
   ) as { name?: string }[];
   return listed.map((s) => s.name ?? "");
 }
 
+/** The updater's raw Ed25519 key; anything but a well-formed minisign key refuses the run. */
 function updaterPublicKey(): string {
   const config = JSON.parse(readFileSync(TAURI_CONFIG, "utf8")) as {
-    plugins?: { updater?: { pubkey?: string } };
+    plugins?: { updater?: { pubkey?: unknown } };
   };
-  const document = Buffer.from(config.plugins?.updater?.pubkey ?? "", "base64").toString("utf8");
-  const raw = Buffer.from(document.split("\n")[1] ?? "", "base64");
+  const encoded = config.plugins?.updater?.pubkey;
+  const lines =
+    typeof encoded === "string" ? Buffer.from(encoded, "base64").toString("utf8").split("\n") : [];
+  const raw = Buffer.from(lines[1] ?? "", "base64");
+  if (raw.length !== 42 || raw.subarray(0, 2).toString("latin1") !== "Ed") {
+    throw new Refusal("could not read the updater public key");
+  }
   return raw.subarray(10).toString("hex");
 }
 
@@ -139,18 +174,27 @@ function provision(args: string[], seedValue: string | undefined, token: string 
   if (token === undefined || token.length < 8 || /\s/.test(token)) {
     throw new InputRefusal("GH_TOKEN is missing: the template imports the provisioning token");
   }
-  checkEnvironment(token);
+  const ctx: Gh = { token, configDir: mkdtempSync(path.join(tmpdir(), "presto-provision-gh-")) };
+  try {
+    store(mode, seed, ctx);
+  } finally {
+    rmSync(ctx.configDir, { recursive: true, force: true });
+  }
+}
+
+function store(mode: Mode, seed: Uint8Array, ctx: Gh): void {
+  checkEnvironment(ctx);
   const key = deriveKey(seed);
   const publicHex = Buffer.from(key.publicKey).toString("hex");
   if (TEST_VECTOR_KEYS.includes(publicHex))
     throw new Refusal("the seed is a published test vector");
   if (publicHex === updaterPublicKey()) throw new Refusal("the seed is the updater key");
   const document = publicKeyDocument(key.publicKey);
-  checkMode(mode, document, secretNames(token).includes(SECRET));
+  checkMode(mode, document, secretNames(ctx).includes(SECRET));
   const hex = Buffer.from(seed).toString("hex");
-  const set = gh(token, ["secret", "set", SECRET, "--env", ENVIRONMENT, "--repo", REPO], hex);
+  const set = gh(ctx, ["secret", "set", SECRET, "--env", ENVIRONMENT, "--repo", REPO], hex);
   if (!set.ok) throw new Refusal("gh secret set failed");
-  if (!secretNames(token).includes(SECRET))
+  if (!secretNames(ctx).includes(SECRET))
     throw new Refusal("the secret is not listed after setting it");
   process.stdout.write(document);
   console.log(`Key ID: ${keyIdHex(keyId(key.publicKey))}`);

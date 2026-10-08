@@ -244,13 +244,19 @@ expose the chosen path through `cargo:rustc-env`; `verified_sites.rs` `include_b
 
 **`packages/presto/scripts/provision-verified-sites-key.ts`** (the keyed run; modes default,
 `--restore`, `--rotate`):
+0. Launched as `bun --no-install --no-env-file --config=/dev/null …`, so no `.env` file or bunfig
+   preload runs beside the seed (`--config` needs the `=` form: `--config /dev/null <script>` exits 0
+   without running the script).
 1. Read and delete the seed and `GH_TOKEN`; on an invalid seed or a missing or multi-line token print
-   a fixed message and exit 2. Every `gh` child gets `PATH`, `HOME` and `GH_TOKEN` only; the token is
-   never printed.
-2. Read-only `gh api` preflight of `environments/verified-sites-signing`: a required reviewer including
-   `alejoamiras`, `can_admins_bypass: false`, custom branch policies exactly `[main]`. Refuse otherwise,
-   so the secret never lands somewhere weaker.
-3. Derive the key; refuse if it equals a test-vector key or the updater key.
+   a fixed message and exit 2. Every `gh` child gets `PATH`, `HOME`, `GH_TOKEN`, `GH_HOST=github.com`,
+   an empty `GH_CONFIG_DIR` (no stored host, credential or alias applies) and the no-prompt and
+   no-update-notifier switches; the token is never printed.
+2. Read-only `gh api` preflight of `environments/verified-sites-signing`: exactly one required-reviewers
+   rule naming exactly one reviewer, the user `alejoamiras` (GitHub accepts one approval from any
+   listed reviewer), `can_admins_bypass: false`, custom branch policies exactly `[main]`. Refuse
+   otherwise, so the secret never lands somewhere weaker.
+3. Derive the key; refuse if it equals a test-vector key or the updater key, and refuse if the
+   updater key in `tauri.conf.json` cannot be read as a well-formed minisign key.
 4. Mode preconditions from `gh secret list --env verified-sites-signing` and the committed `key.pub`:
    default needs both absent; `--restore` needs `key.pub` equal to the derived key; `--rotate` needs it
    different.
@@ -313,9 +319,9 @@ statement (lessons: `bash -e` gaps).
    require, by `git rev-parse origin/main:<path>`, its list and every signing-path file
    (the tripwire's set) to be the same blobs as at `prepare.sha`, else fail as "stale" (a re-run keeps
    its original commit, so this stops an old signer from meeting today's seed); copy the signer
-   and list to `$RUNNER_TEMP` and run them there with `bun --no-install` (outside a `node_modules` Bun
-   would otherwise fetch a bare import from npm), the seed only in that step's env; upload `list.json`
-   and `list.json.minisig`.
+   and list to `$RUNNER_TEMP` and run them there with `bun --no-install --no-env-file --config=/dev/null`
+   (outside a `node_modules` Bun would otherwise fetch a bare import from npm), the seed only in that
+   step's env; upload `list.json` and `list.json.minisig`.
 3. **verify-signed** (no secrets): build the CLI; the list hash equals `prepare.sha256`; production
    `verify` with the pinned key and the expected version; output the artifact hashes.
 4. **record** (`permissions: {}`): mint the release-bot App token (contents and pull requests); check
@@ -683,7 +689,7 @@ the counter with no supported recovery under append-only history.
      instead, which fails the check; so does any other status. On a failure the agent stops and reports.
 - **O2 Keyed run** (after Codex has reviewed the scripts, and after O1b's verification passes): the
   agent files
-  `env-exec request --template packages/presto/verified-sites/signing-key.env.example --slug verified-sites-key -- bun packages/presto/scripts/provision-verified-sites-key.ts`
+  `env-exec request --template packages/presto/verified-sites/signing-key.env.example --slug verified-sites-key -- bun --no-install --no-env-file --config=/dev/null packages/presto/scripts/provision-verified-sites-key.ts`
   and relays `op-remote create <host> <id>` then `op-remote <host> <id>` (the host's ssh alias is in
   `~/.agents/machine.md`). `op-remote` shows the pinned commit before it asks; the owner confirms it is
   the commit the agent reported as Codex-reviewed. The agent commits the printed public key as
@@ -729,8 +735,8 @@ and provisioning come in Phase 2.
   Accept; drop `deny_unknown_fields`; admit `http`.
 - Layers: unit, contract.
 
-**Phase 2: `sign` command, provisioning and round trip.** Scripts and tests ✓; O1, O1b, O2 and
-`key.pub` pending.
+**Phase 2: `sign` command, provisioning and round trip.** Scripts and tests ✓, Codex-reviewed (below);
+O1, O1b, O2 and `key.pub` pending.
 - Gate: `bun test packages/presto/scripts/verified-sites-signer.test.ts packages/presto/scripts/provision-verified-sites-key.test.ts`;
   `bun run --cwd packages/presto typecheck`; a local round trip with the RFC 8032 key through `sign`
   and the CLI's `verify`.
@@ -776,7 +782,7 @@ table; the rest of the docs stay in Phase 5).
   throwaway.
 - Pass (contract tests): no `inputs:`; push paths exact; per-job environments and permissions; the
   seed only in the sign step, the KV token only in the publish step, the App token only in record;
-  the signer imports only `node:` modules and runs under `bun --no-install`; the sign job compares the
+  the signer imports only `node:` modules and runs under `bun --no-install --no-env-file --config=/dev/null`; the sign job compares the
   signing-path blobs at `prepare.sha` with `origin/main` before the seed step, and the publish job
   compares the history tree and `key.pub` with `origin/main` before the write. A scripts test runs
   `verified-sites-kv-guard.sh` on fixture envelopes: absent → write; identical → skip; higher, equal
@@ -1086,6 +1092,27 @@ Dispositions:
 
 The same session, resumed over the revised plan, confirmed all three conditions met and found no new
 contradiction: **VERDICT: approve** (confidence high).
+
+### Implementation review: signer and provisioning (Codex `gpt-6.1-sol`, high, fresh session)
+
+**VERDICT: suitable for the keyed run once fixed** (moderate confidence). All six findings accepted
+and fixed, each with a test that fails against the old behaviour:
+
+| # | Finding | Severity | Fix |
+|---|---|---|---|
+| R1 | The preflight accepted the owner plus another reviewer, and GitHub takes one approval from any listed reviewer | blocker | Exactly one required-reviewers rule with exactly one `User` reviewer, `alejoamiras` |
+| R2 | `HOME` let `gh` read a stored config, whose default host could redirect calls away from github.com | should-fix | `GH_HOST=github.com` and an empty `GH_CONFIG_DIR` in every child |
+| R3 | A malformed updater key in `tauri.conf.json` silently disabled the updater-key refusal | should-fix | Refuse unless it decodes to a 42-byte `Ed` minisign key |
+| R4 | `bun --no-install` alone still loads `.env` files and bunfig preloads beside the seed | should-fix | `--no-env-file --config=/dev/null` for the keyed run and the CI signer |
+| R5 | The leak test ignored files and a child that echoes its inputs on failure | should-fix | It scans the throwaway tree and runs a failing `gh` that prints the seed and token |
+| R6 | The signer ignored stray or repeated flags, and `--out` could overwrite its inputs | nit | Exact flags, each once; `--out` is created exclusively |
+
+R5 also asked for stock `minisign -V` in CI: the PR gate's round trip runs it (Ubuntu's `minisign`
+package, secretless job, `-H` to require the prehashed form).
+
+The same session, resumed over the fixes, verified all six and added one nit (the file scan's
+exclusion matched sibling directories, and it lacked the raw-byte forms), fixed: **VERDICT: approve
+for the keyed run** (high confidence).
 
 ## Rejected and deferred alternatives
 

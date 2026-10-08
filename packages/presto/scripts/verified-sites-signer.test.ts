@@ -67,6 +67,29 @@ describe("verified-sites signer", () => {
     }
   });
 
+  test("refuses stray, repeated or missing flags, and never overwrites --out", () => {
+    const copy = path.join(dir, "list-copy.json");
+    writeFileSync(copy, readFileSync(list));
+    const flags = ["--list", list, "--pubkey", fixture("test1.pub"), "--expect-sha256", listSha];
+    const cases: [string[], string][] = [
+      [[...flags, "--out", path.join(dir, "a"), "--force", "x"], "unexpected or repeated argument"],
+      [[...flags, "--out", path.join(dir, "b"), "--list", list], "unexpected or repeated argument"],
+      [[...flags, RFC8032_TEST1_SEED], "unexpected or repeated argument"],
+      [flags, "missing --out"],
+      [[...flags, "--out"], "--out needs a value"],
+      [
+        ["--list", copy, ...flags.slice(2), "--out", copy],
+        "could not create --out (it must not exist yet)",
+      ],
+    ];
+    for (const [args, why] of cases) {
+      const r = run(["sign", ...args]);
+      expect(r).toEqual({ code: 1, out: "", err: `signer: ${why}\n` });
+    }
+    expect(readFileSync(copy)).toEqual(readFileSync(list));
+    expect(run(["pubkey", "--extra"]).code).toBe(1);
+  });
+
   test("an invalid or missing seed exits 2 without echoing it", () => {
     for (const seed of ["not-hex", `${RFC8032_TEST1_SEED}00`, null]) {
       const r = sign({}, seed);
