@@ -1,5 +1,8 @@
-const FEED_PATH = "/releases/latest.json";
-const FEED_KEY = "latest.json";
+/** Each served path and the KV key it reads; any other path is a 404 before KV is touched. */
+const FEEDS = new Map([
+  ["/releases/latest.json", "latest.json"],
+  ["/releases/verified-sites.json", "verified-sites.json"],
+]);
 
 function headers(): Headers {
   return new Headers({
@@ -13,8 +16,8 @@ function headers(): Headers {
 }
 
 export async function handleRequest(request: Request, env: Env): Promise<Response> {
-  const url = new URL(request.url);
-  if (url.pathname !== FEED_PATH) {
+  const key = FEEDS.get(new URL(request.url).pathname);
+  if (key === undefined) {
     return new Response("Not Found", { status: 404 });
   }
   if (request.method !== "GET" && request.method !== "HEAD") {
@@ -25,7 +28,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
   }
 
   try {
-    const body = await env.PRESTO_RELEASE_FEED.get(FEED_KEY, { type: "stream", cacheTtl: 60 });
+    const body = await env.PRESTO_RELEASE_FEED.get(key, { type: "stream", cacheTtl: 60 });
     if (!body) {
       return new Response("Feed unavailable", {
         status: 503,
@@ -37,6 +40,7 @@ export async function handleRequest(request: Request, env: Env): Promise<Respons
     console.error(
       JSON.stringify({
         message: "release feed read failed",
+        key,
         error: error instanceof Error ? error.message : String(error),
       }),
     );

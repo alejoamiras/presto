@@ -361,7 +361,7 @@ an hour after its merge (a failed publish), or signed by a key other than `key.p
 
 ### Worker
 
-`packages/release-feed/src/index.ts`: an exact path → key map with an own-property lookup
+`packages/release-feed/src/index.ts`: an exact path → key `Map` (no prototype lookups)
 (`/releases/latest.json` → `latest.json`, `/releases/verified-sites.json` → `verified-sites.json`), the
 same headers and the same 404, 405 and 503 (only 503 is `no-store`, as today). Tests cover both paths, a missing key, a trailing
 slash, 405, and that the keys never cross. Deployed only by the owner through `deploy-release-feed.yml`.
@@ -763,7 +763,7 @@ table; the rest of the docs stay in Phase 5).
 - Mutations: a record 101 above its predecessor; a CRLF record.
 - Layers: unit, UI mock.
 
-**Phase 4: Worker.**
+**Phase 4: Worker.** ✓
 - Gate: `bun run --cwd packages/release-feed typecheck`; `bun run --cwd packages/release-feed test`;
   `bunx wrangler deploy --dry-run --config packages/release-feed/wrangler.jsonc`.
 - Mutation: map the new path to `latest.json` and a test fails.
