@@ -1,0 +1,16 @@
+{
+  "$schema": "./verified-sites.schema.json",
+  "schemaVersion": 1,
+  "version": 7,
+  "entries": [
+    {
+      "origins": [
+        "https://alpha.example.com"
+      ],
+      "displayName": "Alpha",
+      "curatedBy": "alejoamiras",
+      "addedAt": "2026-05-28"
+    }
+  ],
+  "comment": "not a field"
+}

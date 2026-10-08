@@ -15,6 +15,7 @@ pub mod server;
 pub mod update_manifest;
 pub mod update_schedule;
 pub mod updater_state;
+pub mod verified_sites;
 pub mod versions;
 /// F-003 Windows tail — owner-only ACL helpers (Windows-only; the module is `#![cfg(windows)]`).
 #[cfg(windows)]

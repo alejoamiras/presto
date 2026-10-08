@@ -1,0 +1,33 @@
+{
+  "$schema": "./verified-sites.schema.json",
+  "schemaVersion": 1,
+  "version": 6,
+  "entries": [
+    {
+      "origins": [
+        "https://alpha.example.com"
+      ],
+      "displayName": "Alpha",
+      "curatedBy": "alejoamiras",
+      "addedAt": "2026-05-28"
+    },
+    {
+      "origins": [
+        "https://beta.example.com",
+        "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
+      ],
+      "displayName": "Beta Wallet",
+      "description": "Wallet — with an em dash, which descriptions may carry",
+      "curatedBy": "alejoamiras",
+      "addedAt": "2026-05-28"
+    },
+    {
+      "origins": [
+        "https://delta.example.com"
+      ],
+      "displayName": "![Approved](https://example.invalid/a.png)",
+      "curatedBy": "alejoamiras",
+      "addedAt": "2026-05-28"
+    }
+  ]
+}
