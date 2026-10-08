@@ -729,7 +729,8 @@ and provisioning come in Phase 2.
   Accept; drop `deny_unknown_fields`; admit `http`.
 - Layers: unit, contract.
 
-**Phase 2: `sign` command, provisioning and round trip.**
+**Phase 2: `sign` command, provisioning and round trip.** Scripts and tests ✓; O1, O1b, O2 and
+`key.pub` pending.
 - Gate: `bun test packages/presto/scripts/verified-sites-signer.test.ts packages/presto/scripts/provision-verified-sites-key.test.ts`;
   `bun run --cwd packages/presto typecheck`; a local round trip with the RFC 8032 key through `sign`
   and the CLI's `verify`.
