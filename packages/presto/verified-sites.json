@@ -1,21 +1,21 @@
 {
   "$schema": "./verified-sites.schema.json",
   "schemaVersion": 1,
+  "version": 1,
   "entries": [
     {
       "origins": [
         "https://nulo.sh",
-        "https://faucet.nulo.sh"
+        "chrome-extension://jlmiaokmjoicmclelpiiocdhncddkdmc"
       ],
-      "displayName": "Nulo Wallet",
-      "description": "Wallet and faucet for the Aztec network",
+      "displayName": "Nulo",
+      "description": "Wallet for the Aztec network",
       "curatedBy": "alejoamiras",
       "addedAt": "2026-05-28"
     },
     {
       "origins": [
-        "https://playground.presto.build",
-        "https://presto-playground.alejo-amiras.workers.dev"
+        "https://playground.presto.build"
       ],
       "displayName": "Presto Playground",
       "description": "Playground for trying Presto",

@@ -177,13 +177,13 @@ test("recognized origin renders friendly name + verified check + raw origin", as
   await mockPending(page, "https://nulo.sh");
   await page.addInitScript(() => {
     (window as any).__TAURI_MOCK__.setHandler("get_verified_info", () => ({
-      display_name: "Nulo Wallet",
+      display_name: "Nulo",
     }));
   });
   await page.goto("/authorize.html?requestId=req-abc");
 
   await expect(page.locator("#recognized")).toBeVisible();
-  await expect(page.locator(".recognized-name")).toHaveText("Nulo Wallet");
+  await expect(page.locator(".recognized-name")).toHaveText("Nulo");
   await expect(page.locator(".verified-check")).toBeVisible();
   await expect(page.locator("#origin")).toHaveText("https://nulo.sh");
 });

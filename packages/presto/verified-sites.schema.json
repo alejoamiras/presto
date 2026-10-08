@@ -1,19 +1,26 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Presto Verified Sites Registry",
-  "description": "Curated list of origins recognized by the Presto maintainers. NOT a security guarantee — see VERIFIED_SITES.md.",
+  "description": "Curated list of origins recognized by the Presto maintainers. NOT a security guarantee — see VERIFIED_SITES.md. Editor documentation only: presto_core::verified_sites::list is the parser CI and the app enforce.",
   "type": "object",
-  "required": ["schemaVersion", "entries"],
+  "required": ["schemaVersion", "version", "entries"],
   "additionalProperties": false,
   "properties": {
-    "$schema": { "type": "string" },
+    "$schema": { "const": "./verified-sites.schema.json" },
     "schemaVersion": {
       "type": "integer",
       "const": 1,
-      "description": "Schema version. Bump on breaking changes."
+      "description": "Format version. Bump only on breaking format changes."
+    },
+    "version": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991,
+      "description": "List version. Every change raises it by 1 to 100 over the newest signed record; a signed list never moves to a lower one."
     },
     "entries": {
       "type": "array",
+      "maxItems": 256,
       "items": { "$ref": "#/$defs/entry" }
     }
   },
@@ -26,30 +33,38 @@
         "origins": {
           "type": "array",
           "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
           "items": {
             "type": "string",
-            "description": "Canonical origin: scheme://host[:port], no trailing slash, no path. ASCII only (use Punycode A-labels for IDN). For browser extensions, ONLY chrome-extension:// is reliably curatable; Firefox install UUIDs and Safari schemes are per-user and excluded.",
-            "pattern": "^(https?|wss?|chrome-extension)://[A-Za-z0-9.-]+(:[0-9]+)?$"
+            "maxLength": 256,
+            "description": "Canonical origin: scheme://host[:port], lower case, no default port, no trailing slash, no path. ASCII only (Punycode A-labels for IDN). https or chrome-extension only: Firefox and Safari extension origins differ per profile.",
+            "pattern": "^(https://[a-z0-9.-]+(:[0-9]+)?|chrome-extension://[a-p]{32})$"
           }
         },
         "displayName": {
           "type": "string",
           "minLength": 1,
-          "maxLength": 64
+          "maxLength": 64,
+          "pattern": "^(?! )(?!.* $)[\\x20-\\x3b\\x3d\\x3f-\\x5f\\x61-\\x7e]+$",
+          "description": "Shown in the authorization popup. Printable ASCII without <, > or a backtick, no leading or trailing space."
         },
         "description": {
           "type": "string",
           "maxLength": 200,
-          "description": "Internal note — NOT shown in the authorization popup. Used in docs / future Settings UI."
+          "pattern": "^[^<>`]*$",
+          "description": "Curator note, NOT shown in the popup. At most 200 bytes; no <, >, backtick, control, bidi or zero-width characters."
         },
         "curatedBy": {
           "type": "string",
-          "description": "GitHub username of the curator who reviewed/added the entry."
+          "pattern": "^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$",
+          "description": "GitHub username of the curator who reviewed or added the entry."
         },
         "addedAt": {
           "type": "string",
           "format": "date",
-          "description": "ISO date for audit trail."
+          "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+          "description": "Calendar date the entry was added; audit trail only."
         }
       }
     }

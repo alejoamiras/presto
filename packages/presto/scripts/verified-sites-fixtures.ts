@@ -87,6 +87,9 @@ export function buildFixtures(): Map<string, Uint8Array> {
   // Validly signed, but a second list for version 5.
   signed("list-5-equivocating", list(5, [alpha, gamma]));
 
+  // Exactly 100 above list-5, so 101 above list-4: the edge of the record gap rule.
+  signed("list-105", list(105, [alpha, delta]));
+
   // Signature variants over list-5's exact bytes.
   out.set("list-5.wrong-key.minisig", text(signList(other, five)));
   const variant = (trustedComment: string, prehash: boolean) =>

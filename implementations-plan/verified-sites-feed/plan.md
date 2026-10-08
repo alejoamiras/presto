@@ -757,7 +757,9 @@ O1, O1b, O2 and `key.pub` pending.
 - Layers: unit, contract.
 
 **Phase 3: list content, its pins and its documentation** (the `VERIFIED_SITES.md` example and field
-table; the rest of the docs stay in Phase 5).
+table; the rest of the docs stay in Phase 5). Content, pins, schema, `.gitattributes` and the rule
+tests over synthetic trees ✓; the check of the repository itself and of `key.pub` lands with
+`key.pub` (O2).
 - Gate: `cargo test … src-tauri … verified_sites` (after `frontend:build`); the core repo test;
   `bun test scripts/presto-domain.test.ts`; `bun run --cwd packages/presto test:e2e:ui` (delete
   `test-results` after).
