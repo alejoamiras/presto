@@ -16,9 +16,11 @@
     clippy::arithmetic_side_effects
 )]
 
+pub mod fetch;
 pub mod history;
 pub mod list;
 pub mod report;
+pub mod store;
 pub mod verify;
 
 /// Largest list accepted anywhere, checked before parsing or verifying.
