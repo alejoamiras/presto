@@ -1,8 +1,9 @@
-//! WebDriver builds only: the update task with a stub feed check, and a driver that clicks "Check
-//! for Updates…" through the production dispatch and reports what the native item showed.
+//! WebDriver builds only: the update task with a stub feed check, a driver that clicks "Check for
+//! Updates…" through the production dispatch and reports what the native item showed, and the
+//! production verified-sites check pointed at a loopback test feed.
 //!
 //! Every test hook lives here, behind the one `cfg` on `mod e2e_tray`, so no shipped binary carries
-//! them or the report variable's name.
+//! them or their variables' names.
 
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
@@ -12,12 +13,21 @@ use std::time::Duration;
 
 use presto::update_menu::{State, ITEM_ID};
 use presto::updater::{CheckOutcome, ManualCheckReceiver};
+use presto::verified_sites::RefreshRequest;
 use presto_core::update_schedule::CheckReason;
+use presto_core::verified_sites::fetch::Feed;
+use presto_core::verified_sites::verify::ListKey;
 use tauri::menu::{Menu, MenuItem};
 use tauri::{AppHandle, Wry};
-use tokio::sync::oneshot;
+use tokio::sync::{mpsc, oneshot};
 
 const REPORT_ENV: &str = "PRESTO_E2E_TRAY_REPORT";
+/// Exactly `http://127.0.0.1:<port>/`.
+const LIST_URL_ENV: &str = "PRESTO_E2E_VERIFIED_SITES_URL";
+/// The test feed's minisign public-key document, both lines with their newlines.
+const LIST_KEY_ENV: &str = "PRESTO_E2E_VERIFIED_SITES_PUBKEY";
+/// The spec gives each list change 5 s to show.
+const LIST_PUMP: Duration = Duration::from_secs(1);
 
 /// Long enough to observe a result, short enough for the driver to watch the revert.
 pub const REVERT: Duration = Duration::from_secs(2);
@@ -75,6 +85,50 @@ pub fn start(app: &AppHandle, manual: ManualCheckReceiver, menu: Menu<Wry>) {
     });
     if let Ok(report) = std::env::var(REPORT_ENV) {
         tauri::async_runtime::spawn(drive(app.clone(), stub, menu, PathBuf::from(report)));
+    }
+    start_list_feed(app);
+}
+
+/// The production list check against the test feed, asked every second. Without both variables, or
+/// with either malformed, no list check runs at all: WebDriver builds skip the production one.
+fn start_list_feed(app: &AppHandle) {
+    let url = std::env::var(LIST_URL_ENV).ok();
+    let key = std::env::var(LIST_KEY_ENV).ok();
+    if url.is_none() && key.is_none() {
+        return;
+    }
+    let Some(feed) = url.zip(key).and_then(|(url, key)| test_feed(&url, &key)) else {
+        tracing::error!("Ignoring the test list feed: it needs a loopback http URL and a list key");
+        return;
+    };
+    let (requests, received) = mpsc::channel(1);
+    presto::verified_sites::spawn_refresh(app, feed, received);
+    tauri::async_runtime::spawn(pump(requests));
+}
+
+fn test_feed(url: &str, key: &str) -> Option<Feed> {
+    let port = url.strip_prefix("http://127.0.0.1:")?.strip_suffix('/')?;
+    if port.starts_with('0') || !port.bytes().all(|b| b.is_ascii_digit()) {
+        return None;
+    }
+    port.parse::<u16>().ok()?;
+    Some(Feed {
+        url: url.to_string(),
+        https_only: false,
+        ..Feed::production(ListKey::from_document(key).ok()?)
+    })
+}
+
+/// One request at a time, each held until answered: the check loop skips a request whose reply
+/// was dropped.
+async fn pump(requests: mpsc::Sender<RefreshRequest>) {
+    loop {
+        tokio::time::sleep(LIST_PUMP).await;
+        let (reply, answered) = oneshot::channel();
+        if requests.send(reply).await.is_err() {
+            return;
+        }
+        let _ = answered.await;
     }
 }
 
