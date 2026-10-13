@@ -15,7 +15,9 @@ Both SDKs depend on core at an **exact** version (`workspace:*` in the tree, pin
 
 ## One-time production configuration
 
-Keep the release setup small: neither GitHub environment requires reviewers, but both restrict deployment branches to `main`. For this solo-maintainer repository, environments scope secrets and OIDC claims to release jobs; they are not independent approval boundaries. A commit already trusted on `main` can change a workflow that consumes an environment secret. Add a reviewer or external signing service only if that stronger threat model becomes necessary.
+Keep the release setup small: the release environments require no reviewers, but every one restricts deployment branches to `main`. For this solo-maintainer repository, environments scope secrets and OIDC claims to release jobs; they are not independent approval boundaries. A commit already trusted on `main` can change a workflow that consumes an environment secret. Add a reviewer or external signing service only if that stronger threat model becomes necessary.
+
+The one exception is `verified-sites-signing` (below): it requires the owner's review, so every verified-sites list is signed only after a person has read what is being signed. It is a pause, not an independent identity: a token that can merge and approve as the owner can still do both.
 
 ### `release-signing` GitHub environment
 
@@ -34,6 +36,24 @@ separate offline-copy requirement from the original launch plan. Save the key an
 `recoveredUpdaterPublicKey` in `infra/presto-identity.json`. Never claim recovery based only on a
 GitHub upload. This attestation does not claim that an independent offline backup exists.
 The signing job must verify every payload and manifest against the committed public key.
+
+### `verified-sites-signing` GitHub environment
+
+Holds `VERIFIED_SITES_SIGNING_SEED`, the 32-byte Ed25519 seed (hex) behind
+`packages/presto/verified-sites/key.pub`. It is not the updater key and must never become it.
+
+- **Protection:** required reviewer `alejoamiras` and no one else (GitHub accepts one approval from
+  any listed reviewer), *Prevent self-review* off, administrators cannot bypass, deployment branches
+  exactly `main`. Add nothing by hand.
+- **Key:** generated once by a keyed run and backed up in 1Password (item `Presto-VerifiedSites`).
+  The agent files
+  `env-exec request --template packages/presto/verified-sites/signing-key.env.example --slug verified-sites-key -- bun --no-install --no-env-file --config=/dev/null packages/presto/scripts/provision-verified-sites-key.ts`;
+  the owner runs `op-remote create` (it generates the seed and asks for a short-lived fine-grained
+  token, `alejoamiras/presto` only, Actions read, Environments read and write, Metadata read) and
+  then `op-remote`, after confirming the pinned commit. The script refuses a weaker environment, a
+  test-vector or updater key and a mode that does not match the repository (`--restore` re-stores
+  the key `key.pub` holds; `--rotate` stores a new one). It prints only the public key, which is
+  committed as `key.pub`. Revoke the provisioning token afterwards.
 
 ### Launch gates
 
@@ -58,7 +78,7 @@ Keep three distinct tokens, each saved/read-back verified in 1Password before Gi
 | --- | --- | --- |
 | Landing/playground builds and previews | None: the Workers Builds build token lives in Cloudflare ([setup](CLOUDFLARE_DEPLOYMENT.md#workers-builds-landing-and-playground)) | Account Workers Scripts Edit and Account Settings Read; Presto zone Workers Routes Edit and Zone Read; User Details Read and Memberships Read |
 | Feed Worker code | Main-only `release-feed`: `CLOUDFLARE_RELEASE_FEED_DEPLOY_API_TOKEN` | Account Workers Scripts Edit only |
-| Signed feed promotion | Main-only `release-feed`: `CLOUDFLARE_RELEASE_FEED_API_TOKEN` | Account Workers KV Storage Edit only |
+| Signed feed promotion and the verified-sites publish | Main-only `release-feed`: `CLOUDFLARE_RELEASE_FEED_API_TOKEN` | Account Workers KV Storage Edit only |
 
 Feed deployment uses `wrangler versions upload` and deploys the exact returned version ID at 100%.
 It does not run `wrangler deploy` or `wrangler triggers deploy`: route changes are an explicit
@@ -102,6 +122,9 @@ The real 5.2.0 release must be produced by CI with provenance; there is no token
 - Work from a clean `main` checkout at the intended commit.
 - Require all CI checks to be green.
 - Confirm no release workflow is queued or running.
+- Confirm that every change to `packages/presto/verified-sites/key.pub` since the last release was
+  yours (`git log <last tag>..HEAD -- packages/presto/verified-sites/key.pub`): a release compiles that
+  key in, and a swapped key would let someone else sign every list it trusts.
 - Run the repository checks:
 
 ```bash
@@ -428,6 +451,67 @@ bun run sdk:promote -- <PREVIOUS_GOOD> --rollback
 Rollback accepts provenance from the current `release-sdk.yml` identity or the retired, exact `publish-testnet.yml` identity so pre-migration releases remain usable. Ordinary forward promotion accepts only `release-sdk.yml` provenance and still requires `testnet` to identify the candidate.
 
 Never delete or re-publish an npm version. Fix forward under a new derived revision/version.
+
+## Verified-sites list
+
+The curated list behind the popup's ✓ (`packages/presto/VERIFIED_SITES.md`) is signed by its own
+key and served at `https://presto.build/releases/verified-sites.json` from the release-feed KV key
+`verified-sites.json`. It is display-only: no approval, deny-by-default rule, cooldown or `/health`
+decision reads it.
+
+### Publishing a list
+
+1. Merge a PR that edits `packages/presto/verified-sites.json` and raises its `version`.
+2. **Sign Verified Sites** starts and waits on `verified-sites-signing`. Before approving, read its
+   Prepare summary: the version, the SHA-256 of the bytes to sign (reproduce it with the printed
+   `git show … | sha256sum`), the changes against the newest record, and the signing-path tripwire.
+   Reject if anything there is not what you merged, or if a signing-path change is not one you know.
+3. The run records the signature as a release-bot PR adding `history/<version>.json` and its
+   `.minisig`; it auto-merges once its checks pass (press **Update branch** if it stalls behind
+   `main`).
+4. That merge runs **Publish Verified Sites**, which writes only the newest record to KV and then
+   polls the public URL until it serves it. **Verified Sites Health** re-checks the live list daily.
+
+### When something sticks
+
+- **A list merged while a record PR was still open:** signing refuses to run past a waiting record.
+  Merge the record PR, then dispatch Sign Verified Sites (it takes no input).
+- **A record PR fails its checks:** do not edit the record. Close the PR and delete its
+  `chore/verified-sites-<version>` branch (signing refuses while it exists), fix the cause, raise
+  `version` in the source list and merge; the new signing run records the new version.
+- **A record PR was closed:** delete its `chore/verified-sites-<version>` branch, then dispatch Sign
+  Verified Sites.
+- **Sign failed as stale:** `main` changed the list or the signing path after the summary you
+  approved. Dispatch Sign Verified Sites again and review the new summary.
+- **Live list missing or behind** (Health fails, or KV was lost): dispatch Publish Verified Sites.
+  It needs no signing approval, because it only republishes records already on `main`.
+
+### Restoring the signing key
+
+If the environment secret is lost but 1Password still holds the seed, file the keyed run with
+`--restore`; it re-stores exactly the key `key.pub` already holds.
+
+### Rotating the key (an app release)
+
+1. Point the template at a new 1Password item `Presto-VerifiedSites-<yyyymm>` (the old item stays as
+   the retired key's backup) and push.
+2. File the keyed run with `--rotate`. From here signing fails closed until step 4, because the
+   signer refuses a seed that does not match `key.pub`.
+3. Open a PR that moves the old key to `verified-sites/retired-keys/<OLDKEYID>.pub`, writes the new
+   `key.pub`, and raises `version`.
+4. Merge and approve; a new-key list is recorded. Publish refuses the key change, so delete the live
+   value (`bunx wrangler kv key delete verified-sites.json --remote --namespace-id 41a6adef830f4a91bf63476a323cec98`,
+   with your own Cloudflare login) and dispatch Publish Verified Sites.
+5. Release and promote the app. Old-key clients keep their last list until the updater (a separate
+   key) moves them.
+
+### Emergency: a list on presto.build that history does not hold
+
+If Health reports the live list ahead of history, a different list at a recorded version, or a key
+other than `key.pub`'s, someone wrote KV outside this flow; if the list verifies, assume the
+signing seed is stolen. Signing and publishing refuse while that holds. Delete the KV value as
+in step 4 above, dispatch Publish Verified Sites to restore the newest record, then rotate the key.
+The badge stays display-only throughout.
 
 ## Failure classification
 

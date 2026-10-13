@@ -50,8 +50,5 @@ test("public links, feed probes and recognized origins use the permanent domain"
   const playground = sites.entries.find(
     (entry: { displayName: string }) => entry.displayName === "Presto Playground",
   );
-  expect(playground.origins).toEqual([
-    "https://playground.presto.build",
-    "https://presto-playground.alejo-amiras.workers.dev",
-  ]);
+  expect(playground.origins).toEqual(["https://playground.presto.build"]);
 });

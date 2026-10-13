@@ -1,0 +1,381 @@
+name: Sign Verified Sites
+
+# Signs packages/presto/verified-sites.json as merged on main, behind the owner's approval of the
+# `verified-sites-signing` environment, and records the signed bytes as a release-bot PR adding
+# history/<version>.json and its .minisig. Nothing goes live here: merging that PR runs Publish
+# Verified Sites. The approver reads prepare's summary (version, hash, diffs, signing-path tripwire)
+# and the sign job refuses unless main still holds exactly what that summary showed.
+on:
+  push:
+    branches: [main]
+    paths:
+      - packages/presto/verified-sites.json
+      - packages/presto/verified-sites/key.pub
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verified-sites-sign
+  cancel-in-progress: false
+
+env:
+  CLI: packages/presto/core/target/debug/examples/verified-sites
+  HISTORY: packages/presto/verified-sites/history
+  # Every file a signature's integrity rests on. prepare lists the ones changed since the newest
+  # record's list was approved; sign refuses unless main still has the same blobs as the run's commit.
+  SIGNING_PATHS: >-
+    .github/workflows/sign-verified-sites.yml
+    .github/workflows/publish-verified-sites.yml
+    .github/scripts/verified-sites-kv-guard.sh
+    .github/actions/bot-push
+    .github/actions/bot-pr
+    .github/actions/setup-presto
+    .github/scripts/bot-push.sh
+    .github/scripts/bot-pr.sh
+    .bun-version
+    rust-toolchain.toml
+    .cargo
+    packages/presto/scripts/verified-sites-signer.ts
+    packages/presto/core
+    packages/presto/verified-sites/key.pub
+    packages/presto/verified-sites/retired-keys
+    packages/release-feed/src
+
+jobs:
+  prepare:
+    name: Prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      sha: ${{ github.sha }}
+      version: ${{ steps.check.outputs.version }}
+      sha256: ${{ steps.check.outputs.sha256 }}
+      sign: ${{ steps.check.outputs.sign }}
+    steps:
+      - name: Assert main ref
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Sign Verified Sites must run on refs/heads/main (got $GITHUB_REF)"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      # Signing past a waiting record could leave a second, unrecorded signature for one version.
+      - name: Refuse while a record PR waits
+        run: |
+          set -euo pipefail
+          if ! heads="$(git ls-remote --heads origin)"; then
+            echo "::error::could not list origin's branches"
+            exit 1
+          fi
+          while read -r _ ref; do
+            version="${ref#refs/heads/chore/verified-sites-}"
+            if [ ! -e "$HISTORY/$version.json" ]; then
+              echo "::error::record $version is still waiting on chore/verified-sites-$version: merge it (or close it and delete the branch), then dispatch this workflow again"
+              exit 1
+            fi
+          done < <(grep -E $'\trefs/heads/chore/verified-sites-[0-9]+$' <<<"$heads" || true)
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-target: x86_64-unknown-linux-gnu
+          rust-cache-key: presto-sign-feed
+          rust-workspaces: packages/presto/core -> target
+          rust-components: ""
+          install-tauri-system-deps: "false"
+          run-prebuild: "false"
+          install-js-deps: "false"
+      - run: cargo build --locked --quiet --manifest-path packages/presto/core/Cargo.toml --example verified-sites
+      - name: Decide, and summarize for the approver
+        id: check
+        run: |
+          set -euo pipefail
+          live="$RUNNER_TEMP/live.json"
+          if ! code="$(curl -sS --max-time 30 --max-filesize 1048576 -o "$live" -w '%{http_code}' https://presto.build/releases/verified-sites.json)"; then
+            echo "::error::could not fetch the live list"
+            exit 1
+          fi
+          case "$code" in
+            200) live_arg=(--live "$live") ;;
+            404 | 503) live_arg=(--live-absent) ;;
+            *)
+              echo "::error::the live list answered HTTP $code"
+              exit 1
+              ;;
+          esac
+          "$CLI" check --source packages/presto/verified-sites.json --history "$HISTORY" \
+            --pubkey packages/presto/verified-sites/key.pub \
+            --retired packages/presto/verified-sites/retired-keys \
+            "${live_arg[@]}" --publish --commit "$GITHUB_SHA" \
+            --outputs "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
+      - name: Show the full diff and the signing-path tripwire
+        if: steps.check.outputs.sign == 'true'
+        run: |
+          set -euo pipefail
+          read -ra paths <<<"$SIGNING_PATHS"
+          if ! newest="$("$CLI" newest "$HISTORY")"; then
+            echo "::error::could not read the history"
+            exit 1
+          fi
+          {
+            if [ "$newest" = 0 ]; then
+              echo "### Signing path"
+              echo
+              echo "First list: no earlier approval to compare the signing path against."
+              exit 0
+            fi
+            echo "### Unified diff against record $newest"
+            echo
+            echo '~~~~diff'
+            git diff --no-index -- "$HISTORY/$newest.json" packages/presto/verified-sites.json || [ "$?" -eq 1 ]
+            echo '~~~~'
+            echo
+            blob="$(git hash-object "$HISTORY/$newest.json")"
+            approved="$(git log --format=%H --reverse --find-object="$blob" -- packages/presto/verified-sites.json | sed -n 1p)"
+            echo "### Signing path since record $newest's list was merged"
+            echo
+            if [ -z "$approved" ]; then
+              echo "> [!WARNING]"
+              echo "> No commit on main ever held record $newest's bytes; review every signing-path change."
+            else
+              changed="$(git diff --name-only "$approved" "$GITHUB_SHA" -- "${paths[@]}")"
+              if [ -n "$changed" ]; then
+                echo "> [!WARNING]"
+                echo "> Changed since \`${approved:0:12}\`; read these before approving:"
+                echo
+                # A backtick in a file name would close the code span; show it as a quote.
+                while read -r file; do printf -- '- \x60%s\x60\n' "${file//$'\x60'/\'}"; done <<<"$changed"
+              else
+                echo "Unchanged since \`${approved:0:12}\`."
+              fi
+            fi
+          } >>"$GITHUB_STEP_SUMMARY"
+
+  sign:
+    name: Sign
+    needs: prepare
+    if: needs.prepare.outputs.sign == 'true'
+    environment: verified-sites-signing
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Assert main ref
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Sign Verified Sites must run on refs/heads/main (got $GITHUB_REF)"
+            exit 1
+          fi
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+          sparse-checkout-cone-mode: false
+          sparse-checkout: |
+            /packages/presto/verified-sites.json
+            /packages/presto/verified-sites/key.pub
+            /packages/presto/scripts/verified-sites-signer.ts
+            /.bun-version
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      # A re-run keeps its original commit: never let an old signer or list meet today's seed.
+      - name: Require the approved bytes, still on main
+        env:
+          SHA: ${{ needs.prepare.outputs.sha }}
+          SHA256: ${{ needs.prepare.outputs.sha256 }}
+        run: |
+          set -euo pipefail
+          read -ra paths <<<"$SIGNING_PATHS"
+          if [ "$(sha256sum packages/presto/verified-sites.json | cut -d' ' -f1)" != "$SHA256" ]; then
+            echo "::error::the list at $SHA is not the bytes prepare summarized"
+            exit 1
+          fi
+          git fetch --quiet --depth=1 --no-tags origin refs/heads/main
+          for path in packages/presto/verified-sites.json "${paths[@]}"; do
+            here="$(git rev-parse --verify --quiet "$SHA:$path" || echo absent)"
+            there="$(git rev-parse --verify --quiet "FETCH_HEAD:$path" || echo absent)"
+            if [ "$here" != "$there" ]; then
+              echo "::error::stale: $path changed on main since $SHA; dispatch this workflow again"
+              exit 1
+            fi
+          done
+          mkdir "$RUNNER_TEMP/sign"
+          cp packages/presto/verified-sites.json "$RUNNER_TEMP/sign/list.json"
+          cp packages/presto/verified-sites/key.pub "$RUNNER_TEMP/sign/key.pub"
+          cp packages/presto/scripts/verified-sites-signer.ts "$RUNNER_TEMP/sign/"
+      # The only step that sees the seed: one dependency-free file, outside the checkout, with no
+      # install, no .env and no bunfig (the `=` form matters: `--config /dev/null x.ts` runs nothing).
+      - name: Sign
+        working-directory: ${{ runner.temp }}/sign
+        env:
+          PRESTO_VERIFIED_SITES_SIGNING_SEED: ${{ secrets.VERIFIED_SITES_SIGNING_SEED }}
+          SHA256: ${{ needs.prepare.outputs.sha256 }}
+        run: |
+          bun --no-install --no-env-file --config=/dev/null verified-sites-signer.ts sign \
+            --list list.json --pubkey key.pub --expect-sha256 "$SHA256" --out list.json.minisig
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: verified-sites-signed
+          path: |
+            ${{ runner.temp }}/sign/list.json
+            ${{ runner.temp }}/sign/list.json.minisig
+          if-no-files-found: error
+          retention-days: 30
+
+  verify-signed:
+    name: Verify signature
+    needs: [prepare, sign]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      list_sha256: ${{ steps.verify.outputs.list_sha256 }}
+      signature_sha256: ${{ steps.verify.outputs.signature_sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-target: x86_64-unknown-linux-gnu
+          rust-cache-key: presto-sign-feed
+          rust-workspaces: packages/presto/core -> target
+          rust-components: ""
+          install-tauri-system-deps: "false"
+          run-prebuild: "false"
+          install-js-deps: "false"
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: verified-sites-signed
+          path: ${{ runner.temp }}/signed
+      - run: cargo build --locked --quiet --manifest-path packages/presto/core/Cargo.toml --example verified-sites
+      - name: Verify with the production verifier
+        id: verify
+        env:
+          SIGNED: ${{ runner.temp }}/signed
+          SHA256: ${{ needs.prepare.outputs.sha256 }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ "$(sha256sum "$SIGNED/list.json" | cut -d' ' -f1)" != "$SHA256" ]; then
+            echo "::error::the signed list is not the approved bytes"
+            exit 1
+          fi
+          "$CLI" document "$SIGNED/list.json" "$SIGNED/list.json.minisig" >"$RUNNER_TEMP/document.json"
+          "$CLI" verify --document "$RUNNER_TEMP/document.json" \
+            --pubkey packages/presto/verified-sites/key.pub \
+            --expect-sha256 "$SHA256" --expect-version "$VERSION"
+          {
+            echo "list_sha256=$SHA256"
+            echo "signature_sha256=$(sha256sum "$SIGNED/list.json.minisig" | cut -d' ' -f1)"
+          } >>"$GITHUB_OUTPUT"
+
+  record:
+    name: Record
+    needs: [prepare, verify-signed]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # The release-bot App token (contents + pull requests) pushes the record branch and opens its PR.
+    permissions: {}
+    steps:
+      - name: Assert main ref
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Sign Verified Sites must run on refs/heads/main (got $GITHUB_REF)"
+            exit 1
+          fi
+      - uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_BOT_APP_ID }}
+          private-key: ${{ secrets.RELEASE_BOT_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          token: ${{ steps.app-token.outputs.token }}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: verified-sites-signed
+          path: ${{ runner.temp }}/signed
+      - name: Place the record
+        id: place
+        env:
+          SIGNED: ${{ runner.temp }}/signed
+          VERSION: ${{ needs.prepare.outputs.version }}
+          LIST_SHA256: ${{ needs.verify-signed.outputs.list_sha256 }}
+          SIGNATURE_SHA256: ${{ needs.verify-signed.outputs.signature_sha256 }}
+        run: |
+          set -euo pipefail
+          if [ "$(sha256sum "$SIGNED/list.json" | cut -d' ' -f1)" != "$LIST_SHA256" ] ||
+             [ "$(sha256sum "$SIGNED/list.json.minisig" | cut -d' ' -f1)" != "$SIGNATURE_SHA256" ]; then
+            echo "::error::the downloaded artifact is not what Verify signature checked"
+            exit 1
+          fi
+          record="$HISTORY/$VERSION.json"
+          if [ -e "$record" ] || [ -e "$record.minisig" ]; then
+            if cmp -s "$record" "$SIGNED/list.json" && cmp -s "$record.minisig" "$SIGNED/list.json.minisig"; then
+              echo "Version $VERSION is already recorded with these bytes."
+              echo "recorded=true" >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "::error::history already holds a different version $VERSION"
+            exit 1
+          fi
+          mkdir -p "$HISTORY"
+          cp "$SIGNED/list.json" "$record"
+          cp "$SIGNED/list.json.minisig" "$record.minisig"
+          echo "recorded=false" >>"$GITHUB_OUTPUT"
+      - name: Push the record branch
+        id: push
+        if: steps.place.outputs.recorded == 'false'
+        uses: ./.github/actions/bot-push
+        with:
+          branch: chore/verified-sites-${{ needs.prepare.outputs.version }}
+          message: "chore(presto): record verified-sites list version ${{ needs.prepare.outputs.version }}"
+          paths: |
+            packages/presto/verified-sites/history/${{ needs.prepare.outputs.version }}.json
+            packages/presto/verified-sites/history/${{ needs.prepare.outputs.version }}.json.minisig
+          if-exists: skip
+      # A re-run finds its own branch: keep it only if it is one commit adding exactly the verified
+      # artifact on top of main.
+      - name: Check a branch kept from an earlier attempt
+        if: steps.push.outputs.pushed == 'false'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          SIGNED: ${{ runner.temp }}/signed
+          VERSION: ${{ needs.prepare.outputs.version }}
+          HEAD_SHA: ${{ steps.push.outputs.head }}
+        run: |
+          set -euo pipefail
+          branch="chore/verified-sites-$VERSION"
+          if ! shape="$(gh api "repos/$GITHUB_REPOSITORY/compare/main...$HEAD_SHA" --jq '[.ahead_by, ([.files[] | "\(.status) \(.filename)"] | sort | join(","))] | @tsv')"; then
+            echo "::error::could not compare $branch with main"
+            exit 1
+          fi
+          if [ "$shape" != $'1\t'"added $HISTORY/$VERSION.json,added $HISTORY/$VERSION.json.minisig" ]; then
+            echo "::error::$branch is not one commit adding exactly its record ($shape); close it and delete the branch"
+            exit 1
+          fi
+          git fetch --quiet --depth=1 --no-tags origin "$HEAD_SHA"
+          if ! git show "$HEAD_SHA:$HISTORY/$VERSION.json" | cmp -s - "$SIGNED/list.json" ||
+             ! git show "$HEAD_SHA:$HISTORY/$VERSION.json.minisig" | cmp -s - "$SIGNED/list.json.minisig"; then
+            echo "::error::$branch holds other bytes than this run's verified artifact; close it and delete the branch"
+            exit 1
+          fi
+      - name: Open the record PR
+        if: steps.place.outputs.recorded == 'false'
+        uses: ./.github/actions/bot-pr
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          branch: chore/verified-sites-${{ needs.prepare.outputs.version }}
+          title: "chore(presto): record verified-sites list version ${{ needs.prepare.outputs.version }}"
+          body: |
+            Signed by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} from ${{ needs.prepare.outputs.sha }}.
+            List SHA-256: `${{ needs.verify-signed.outputs.list_sha256 }}`. Merging publishes it to presto.build through Publish Verified Sites.
+          auto-merge: "true"
+          head: ${{ steps.push.outputs.head }}

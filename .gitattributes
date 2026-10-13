@@ -1,3 +1,7 @@
 implementations-plan/** linguist-generated=true
 implementations-plan/lessons.md -linguist-generated
 implementations-plan/follow-ups.md -linguist-generated
+# Signed bytes: a CRLF checkout would change what the signatures cover.
+packages/presto/verified-sites.json -text
+packages/presto/verified-sites/** -text
+packages/presto/core/tests/fixtures/verified_sites/** -text

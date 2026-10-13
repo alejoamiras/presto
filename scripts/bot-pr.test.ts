@@ -275,6 +275,7 @@ describe("bot PR contract", () => {
       "release-bot-token-check.yml",
       "release-presto.yml",
       "release-sdk.yml",
+      "sign-verified-sites.yml",
     ]);
     for (const { step } of uses) {
       expect(step.with?.head).toMatch(/^\$\{\{ (steps\.push|needs\.update)\.outputs\.head \}\}$/);

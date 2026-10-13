@@ -48,8 +48,8 @@ be reported to their respective maintainers where the defect is upstream.
 
 **Read [`docs/SECURITY_MODEL.md`](docs/SECURITY_MODEL.md) before reporting.** It records the trust
 boundaries this project has consciously accepted — upstream `bb` publisher trust, unauthenticated
-loopback service discovery, plaintext proving on server runtimes, the unsigned Windows installer, and
-the CI-only headless server. Re-reporting one of those as a novel finding costs us both time.
+loopback service discovery, plaintext proving on server runtimes, the unsigned Windows installer, the
+CI-only headless server, and the owner-only approval of verified-sites signing. Re-reporting one of those as a novel finding costs us both time.
 
 A **bypass** of one of those boundaries, a **broader impact** than the one documented, or a
 **materially different precondition** is still in scope and should be reported privately. So is
@@ -66,7 +66,8 @@ So you can tell a finding from a design:
   project-operated server. See [PRIVACY.md](PRIVACY.md).
 - Browser proving is HTTPS-only by default, and a failed HTTPS attempt cannot silently become an
   HTTP one.
-- Origin approval is deny-by-default, with a curated verified-sites registry for display only.
+- Origin approval is deny-by-default, with a curated verified-sites registry for display only. The
+  registry is signed in CI with its own key, never the updater's, after the owner approves the run.
 - Updater payloads are Ed25519-signed and verified independently of any OS package signature.
 - Cached `bb` binaries are digest-checked on download and re-checked before execution; a requested
   version with a missing or invalid marker fails closed.

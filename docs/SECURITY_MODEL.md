@@ -34,6 +34,12 @@ dApp → adapter SDK → presto-core → loopback HTTP/HTTPS → local bb proces
   and verified independently of any OS package signature.
 - **npm packages are published by this project** through GitHub OIDC with provenance, and verified
   after publish. Their Aztec dependencies are published upstream (see decision 6).
+- **The verified-sites list is signed by this project in CI**, with a dedicated Ed25519 key that is
+  never the updater's. Its seed sits in the `verified-sites-signing` GitHub environment, whose only
+  reviewer is the owner. Every signed list is recorded in `packages/presto/verified-sites/history/`
+  and served from `https://presto.build/releases/verified-sites.json`. The list is display-only: it
+  puts a name and a ✓ beside an origin in the approval popup, and no authorization decision reads it
+  (see decision 7).
 
 The main confidential asset is the **private witness** sent to `/prove` or `/prove/ultra-honk`.
 Approved-origin state, locally generated TLS private keys, updater state, and cached executable
@@ -239,6 +245,30 @@ production build installs only the adapter and core publications named in `publi
 provenance is verified. Upstream Aztec packages in that bundle are verified by lockfile integrity
 only.
 
+### 7. The verified-sites approver is a pause, not a second identity
+
+The owner is the only required reviewer of `verified-sites-signing`, so the owner's own credentials,
+or a token acting as the owner, can both land a list change and approve its signing. The review is a
+deliberate pause before the seed is used, not an independent party.
+
+This is accepted because the list is display-only. A forged list can put a ✓ and a chosen name beside
+an origin, but it cannot approve that origin, bypass deny-by-default or a cooldown, or change what
+`/health` returns, and the raw origin is always shown beside the name.
+
+The controls narrow the gap rather than close it:
+
+- the signing workflow takes no input, signs only the bytes whose SHA-256 its summary shows, and
+  refuses if `main` no longer holds those bytes or the signing path it was approved with;
+- the summary lists every signing-path change since the last signed list;
+- every signed list lands as a public release-bot PR before it is published, and no job that holds
+  the seed, the release-bot key or the KV token installs a dependency;
+- publishing refuses a key change and a list that does not continue history, and a daily check
+  alarms on either.
+
+Residual: a malicious workflow change merged to `main` and then approved can exfiltrate the seed.
+`main` is the trust boundary here as everywhere else, and the recovery is a key rotation
+(`docs/RELEASE_RUNBOOK.md`, "Verified-sites list").
+
 ## Not accepted
 
 The decisions above do not authorize:
@@ -249,6 +279,8 @@ The decisions above do not authorize:
   health contract;
 - persisting a plaintext-proving consent anywhere;
 - installing an unsigned or incorrectly signed updater payload, or one exceeding the size ceiling;
+- letting the verified-sites list grant, skip or shorten an approval, or signing it with the updater
+  key;
 - executing a requested cached `bb` version whose integrity marker is absent or invalid; or
 - representing a same-origin digest as proof of an uncompromised upstream publisher.
 

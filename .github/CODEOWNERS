@@ -7,3 +7,11 @@
 packages/presto/verified-sites.json        @alejoamiras
 packages/presto/verified-sites.schema.json @alejoamiras
 packages/presto/VERIFIED_SITES.md          @alejoamiras
+
+# Verified-sites signing path: the key, the signed history, and what signs and publishes them.
+# Release-bot record PRs request the curator through these lines.
+packages/presto/verified-sites/                  @alejoamiras
+packages/presto/scripts/verified-sites-signer.ts @alejoamiras
+.github/workflows/sign-verified-sites.yml        @alejoamiras
+.github/workflows/publish-verified-sites.yml     @alejoamiras
+.github/scripts/verified-sites-kv-guard.sh       @alejoamiras

@@ -1,0 +1,89 @@
+name: Verified Sites Health
+
+# The standing read-back of presto.build/releases/verified-sites.json, beside the updater's Update
+# Feed Health. Secretless: the list is public and history is in the repository. It fails when the
+# live list was written outside the signing flow (ahead of history, a different list at a recorded
+# version, or a key other than key.pub's) and when publishing has fallen behind.
+on:
+  schedule:
+    - cron: "17 7 * * *" # daily 07:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verified-sites-health
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: Probe verified-sites.json
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLI: packages/presto/core/target/debug/examples/verified-sites
+      HISTORY: packages/presto/verified-sites/history
+      LIVE_URL: https://presto.build/releases/verified-sites.json
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-target: x86_64-unknown-linux-gnu
+          rust-cache-key: presto-sign-feed
+          rust-workspaces: packages/presto/core -> target
+          rust-components: ""
+          install-tauri-system-deps: "false"
+          run-prebuild: "false"
+          install-js-deps: "false"
+      - run: cargo build --locked --quiet --manifest-path packages/presto/core/Cargo.toml --example verified-sites
+      - name: Check the live list against history
+        run: |
+          set -euo pipefail
+          newest="$("$CLI" newest "$HISTORY")"
+          if ! code="$(curl -sS --max-time 30 --max-filesize 1048576 -o live.json -w '%{http_code}' "$LIVE_URL")"; then
+            echo "::error::could not fetch $LIVE_URL"
+            exit 1
+          fi
+          case "$code" in
+            200) live_arg=(--live live.json) ;;
+            404 | 503) live_arg=(--live-absent) ;;
+            *)
+              echo "::error::$LIVE_URL answered HTTP $code"
+              exit 1
+              ;;
+          esac
+          # Fails when live is ahead of history, equivocates, or is signed by a key history does not name.
+          if ! state="$("$CLI" live --history "$HISTORY" --pubkey packages/presto/verified-sites/key.pub \
+                --retired packages/presto/verified-sites/retired-keys "${live_arg[@]}")"; then
+            echo "::error::the live list was not written by the signing flow; see the release runbook's emergency section"
+            exit 1
+          fi
+          echo "$state"
+          kind="$(sed -n 's/^state=//p' <<<"$state")"
+          version="$(sed -n 's/^version=//p' <<<"$state")"
+          signed_by="$(sed -n 's/^signed_by=//p' <<<"$state")"
+          if [ "$kind" = absent ]; then
+            if [ "$newest" = 0 ]; then
+              echo "::notice::no list recorded or live yet"
+              exit 0
+            fi
+            echo "::error::no live list, but history holds version $newest: dispatch Publish Verified Sites"
+            exit 1
+          fi
+          if [ "$signed_by" != pinned ]; then
+            echo "::error::the live list (version $version) is signed by $signed_by, not key.pub's key"
+            exit 1
+          fi
+          if [ "$kind" = behind ]; then
+            merged="$(git log -1 --format=%ct -- "$HISTORY/$newest.json")"
+            if [ $(($(date +%s) - merged)) -gt 3600 ]; then
+              echo "::error::live is version $version, but record $newest merged over an hour ago: dispatch Publish Verified Sites"
+              exit 1
+            fi
+            echo "::notice::record $newest merged within the hour; publishing may still be in flight"
+          fi
+          echo "### Verified-sites list healthy: live version $version, newest record $newest" >>"$GITHUB_STEP_SUMMARY"

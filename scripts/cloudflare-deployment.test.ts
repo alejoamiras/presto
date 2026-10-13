@@ -121,6 +121,19 @@ describe("release-feed deployment contract", () => {
     expect(release.match(/environment: release-feed/g)).toHaveLength(2);
   });
 
+  test("KV is written only by promotion and the verified-sites publish job, which uses the API", () => {
+    const writers = WORKFLOWS.filter(([, text]) =>
+      /wrangler kv key (put|delete)|storage\/kv\/namespaces/.test(text),
+    ).map(([file]) => file);
+    expect(writers.sort()).toEqual(["publish-verified-sites.yml", "release-presto.yml"]);
+    const publish = read(".github/workflows/publish-verified-sites.yml");
+    expect(publish).not.toContain("wrangler");
+    expect(publish.match(/-X PUT/g)).toHaveLength(1);
+    expect(publish.match(/values\/verified-sites\.json/g)).toHaveLength(1);
+    expect(publish.match(/environment: release-feed/g)).toHaveLength(1);
+    expect(publish.match(/secrets\.CLOUDFLARE_RELEASE_FEED_API_TOKEN/g)).toHaveLength(1);
+  });
+
   test("the release-feed Worker is deployed independently from feed promotion", () => {
     const deploy = read(".github/workflows/deploy-release-feed.yml");
     expect(deploy).toContain(

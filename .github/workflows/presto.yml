@@ -38,6 +38,7 @@ jobs:
       release_tooling: ${{ steps.override.outputs.relevant || steps.filter.outputs.release_tooling }}
       updater_feed: ${{ steps.override.outputs.relevant || steps.filter.outputs.updater_feed }}
       windows_bb: ${{ steps.override.outputs.relevant || steps.filter.outputs.windows_bb }}
+      verified_sites_feed: ${{ steps.override.outputs.relevant || steps.filter.outputs.verified_sites_feed }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -403,7 +404,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.release_tooling == 'true'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
@@ -422,6 +423,68 @@ jobs:
         run: bun run --cwd packages/presto test:unit
       - name: Unit-test root scripts (download-bb cache-integrity gate)
         run: bun run test:scripts
+      - name: Typecheck the release-feed Worker
+        run: bun run --cwd packages/release-feed typecheck
+      - name: Unit-test the release-feed Worker
+        run: bun run --cwd packages/release-feed test
+
+  verified-sites-feed:
+    name: Verified Sites Feed
+    needs: changes
+    if: needs.changes.outputs.verified_sites_feed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLI: packages/presto/core/target/debug/examples/verified-sites
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      # A rotation moves key.pub into retired-keys/, so additions are allowed; nothing else is.
+      - name: Signed history and retired keys are append-only
+        env:
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          base="${PR_BASE:-$(git merge-base origin/main HEAD)}"
+          changes="$(git diff --no-renames --name-status "$base" HEAD -- \
+            packages/presto/verified-sites/history packages/presto/verified-sites/retired-keys)"
+          if [ -n "$changes" ] && altered="$(grep -v $'^A\t' <<<"$changes")"; then
+            echo "::error::signed history and retired keys are append-only; this changes existing files:"
+            echo "$altered"
+            exit 1
+          fi
+      - uses: ./.github/actions/setup-presto
+        with:
+          rust-cache-key: presto-sign-feed
+          rust-workspaces: packages/presto/core -> target
+          rust-components: ""
+          install-tauri-system-deps: "false"
+          run-prebuild: "false"
+          install-js-deps: "false"
+      - name: The list and every record meet the rules
+        run: cargo test --locked --manifest-path packages/presto/core/Cargo.toml --test verified_sites_repo
+      - run: cargo build --locked --quiet --manifest-path packages/presto/core/Cargo.toml --example verified-sites
+      - name: Install stock minisign
+        run: sudo apt-get update -q && sudo apt-get install -y --no-install-recommends minisign
+      - name: Round trip under a throwaway key
+        run: bash packages/presto/scripts/verified-sites-roundtrip.sh "$CLI"
+      - name: Changes against the live list
+        run: |
+          set -euo pipefail
+          live_arg=(--live-absent)
+          if code="$(curl -sS --max-time 30 --max-filesize 1048576 -o "$RUNNER_TEMP/live.json" -w '%{http_code}' https://presto.build/releases/verified-sites.json)" &&
+             [ "$code" = 200 ]; then
+            live_arg=(--live "$RUNNER_TEMP/live.json")
+          else
+            echo "::warning::could not fetch the live list; comparing against the newest record"
+          fi
+          "$CLI" check --source packages/presto/verified-sites.json \
+            --history packages/presto/verified-sites/history \
+            --pubkey packages/presto/verified-sites/key.pub \
+            --retired packages/presto/verified-sites/retired-keys \
+            "${live_arg[@]}" --summary "$GITHUB_STEP_SUMMARY"
 
   smoke:
     name: Smoke
@@ -902,6 +965,7 @@ jobs:
         e2e-webdriver-builtdebug,
         windows-prebuild,
         windows-build,
+        verified-sites-feed,
       ]
     runs-on: ubuntu-latest
     timeout-minutes: 2
@@ -909,7 +973,7 @@ jobs:
       - name: Check results
         run: |
           test "${{ needs.identity-readiness.result }}" = success
-          results="${{ needs.changes.result }} ${{ needs.clippy.result }} ${{ needs.test.result }} ${{ needs.cert-trust.result }} ${{ needs.updater-feed-e2e.result }} ${{ needs.lint.result }} ${{ needs.smoke.result }} ${{ needs.ultra-honk-real-bb.result }} ${{ needs.release-smoke.result }} ${{ needs.desktop-ui.result }} ${{ needs.e2e.result }} ${{ needs.e2e-webdriver.result }} ${{ needs.e2e-webdriver-builtdebug.result }} ${{ needs.windows-prebuild.result }} ${{ needs.windows-build.result }}"
+          results="${{ needs.changes.result }} ${{ needs.clippy.result }} ${{ needs.test.result }} ${{ needs.cert-trust.result }} ${{ needs.updater-feed-e2e.result }} ${{ needs.lint.result }} ${{ needs.smoke.result }} ${{ needs.ultra-honk-real-bb.result }} ${{ needs.release-smoke.result }} ${{ needs.desktop-ui.result }} ${{ needs.e2e.result }} ${{ needs.e2e-webdriver.result }} ${{ needs.e2e-webdriver-builtdebug.result }} ${{ needs.windows-prebuild.result }} ${{ needs.windows-build.result }} ${{ needs.verified-sites-feed.result }}"
           for r in $results; do
             if [ "$r" = "failure" ] || [ "$r" = "cancelled" ]; then
               echo "Job failed or was cancelled: $r"

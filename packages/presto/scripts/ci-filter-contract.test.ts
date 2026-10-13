@@ -93,6 +93,7 @@ describe("presto CI path routing", () => {
         "rust_platform",
         "sdk_integration",
         "updater_feed",
+        "verified_sites_feed",
         "windows_packaging",
       ],
     ],
@@ -108,10 +109,41 @@ describe("presto CI path routing", () => {
         "rust_platform",
         "sdk_integration",
         "updater_feed",
+        "verified_sites_feed",
         "windows_bb",
         "windows_packaging",
       ],
     ],
+    [
+      "a signed verified-sites record (release-bot PRs stay off the platform lanes)",
+      [
+        "packages/presto/verified-sites/history/1.json",
+        "packages/presto/verified-sites/history/1.json.minisig",
+      ],
+      ["release_tooling", "verified_sites_feed"],
+    ],
+    [
+      "the verified-sites list, compiled into the app",
+      ["packages/presto/verified-sites.json"],
+      [
+        "desktop_runtime",
+        "release_tooling",
+        "rust_platform",
+        "verified_sites_feed",
+        "windows_packaging",
+      ],
+    ],
+    [
+      "the verified-sites signing and publishing path",
+      [
+        ".github/workflows/sign-verified-sites.yml",
+        ".github/workflows/publish-verified-sites.yml",
+        ".github/scripts/verified-sites-kv-guard.sh",
+        "packages/presto/scripts/verified-sites-signer.ts",
+      ],
+      ["release_tooling", "verified_sites_feed"],
+    ],
+    ["release-feed Worker", ["packages/release-feed/src/index.ts"], ["release_tooling"]],
   ];
 
   for (const [name, files, expected] of cases) {

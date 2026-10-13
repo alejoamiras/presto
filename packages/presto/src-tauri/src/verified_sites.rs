@@ -138,9 +138,19 @@ mod tests {
             "embedded registry is empty — seed entries missing?"
         );
         // Specific seed entries we expect.
-        assert!(registry.lookup("https://nulo.sh").is_some());
-        assert!(registry.lookup("https://faucet.nulo.sh").is_some());
-        assert!(registry.lookup("https://playground.presto.build").is_some(),);
+        let name = |origin: &str| registry.lookup(origin).map(|s| s.display_name.as_str());
+        assert_eq!(name("https://nulo.sh"), Some("Nulo"));
+        assert_eq!(
+            name("chrome-extension://jlmiaokmjoicmclelpiiocdhncddkdmc"),
+            Some("Nulo")
+        );
+        assert_eq!(
+            name("https://playground.presto.build"),
+            Some("Presto Playground")
+        );
+        assert_eq!(name("https://yacana.network"), Some("Yacana"));
+        // Removed origins stay removed.
+        assert_eq!(registry.by_origin.len(), 4);
     }
 
     #[test]
