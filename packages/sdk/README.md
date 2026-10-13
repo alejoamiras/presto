@@ -552,7 +552,7 @@ Practical guidance for integrators:
 
 ## Version Compatibility
 
-The SDK auto-detects its Aztec version from its pinned Aztec `stdlib` dependency and sends it as the `x-aztec-version` header on prove requests. The presto uses this to select (or download) the correct `bb` binary — no manual version matching needed.
+The SDK sends the `bb` release it proves with, its exact `@aztec-foundation/bb.js` pin, as the `x-aztec-version` header on prove requests. The presto uses it to select (or download) the matching `bb` binary, so no manual version matching is needed. Since Aztec 6.0.0-rc.3 that number differs from the `@aztec-labs/*` one; the header and `status.sdkAztecVersion` keep their historical names.
 
 ## Claude Code Skill
 

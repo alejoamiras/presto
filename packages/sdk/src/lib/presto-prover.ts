@@ -72,15 +72,15 @@ function createLazySimulator(): CircuitSimulator {
 }
 
 /**
- * The Aztec version this SDK expects, from its pinned `@aztec-labs/stdlib`. Only the LEADING non-digits
- * are stripped (a `^`/`~` range prefix): the server's version check accepts the inner `.`/`-` of a
- * version like `5.0.0-rc.1`, so the prerelease suffix must survive for the `/health` handshake.
+ * The bb release this SDK proves with: its exact `@aztec-foundation/bb.js` pin. Presto downloads and
+ * caches `bb` by this barretenberg tag, so it is what `x-aztec-version` carries; since Aztec
+ * 6.0.0-rc.3 it differs from the `@aztec-labs/stdlib` version, which names no bb release. Only the
+ * LEADING non-digits are stripped, so a prerelease suffix like `-rc.6` survives.
  */
-export function sdkAztecVersion(): string | undefined {
-  return (sdkPkg.dependencies as Record<string, string | undefined>)["@aztec-labs/stdlib"]?.replace(
-    /^[^0-9]*/,
-    "",
-  );
+export function sdkBbVersion(): string | undefined {
+  return (sdkPkg.dependencies as Record<string, string | undefined>)[
+    "@aztec-foundation/bb.js"
+  ]?.replace(/^[^0-9]*/, "");
 }
 
 /** The `/prove` success body: `{ proof: <base64> }`, decoded into the kernel's proof type. */
@@ -121,7 +121,7 @@ export class PrestoProver extends BBLazyPrivateKernelProver {
     this.#onPhase = opts.onPhase ?? null;
     this.#client = new PrestoClient({
       presto: opts.presto,
-      aztecVersion: sdkAztecVersion(),
+      aztecVersion: sdkBbVersion(),
       // Forwarded through this instance so `setOnPhase` after construction reaches both emitters.
       onPhase: (phase, data) => this.#onPhase?.(phase, data),
     });

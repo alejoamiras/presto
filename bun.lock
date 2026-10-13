@@ -95,6 +95,7 @@
       "version": "0.0.0",
       "dependencies": {
         "@alejoamiras/presto-core": "workspace:*",
+        "@aztec-foundation/bb.js": "6.0.0-rc.1",
         "@aztec-foundation/noir-acvm_js": "6.0.0-rc.1",
         "@aztec-foundation/noir-noirc_abi": "6.0.0-rc.1",
         "@aztec-labs/bb-prover": "6.0.0-rc.1",

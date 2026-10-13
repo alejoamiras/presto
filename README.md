@@ -41,8 +41,9 @@ not say which Aztec versions Presto proves.
   ([security model](docs/SECURITY_MODEL.md#1-depend-on-upstream-bb-publisher-security)). The headless
   server bundles none. `BB_BINARY_PATH` makes it run one `bb` for every version, but an uncached version
   is still downloaded first.
-- **Nobody configures this.** `@alejoamiras/presto` sends its pinned Aztec version with every request
-  (`x-aztec-version`). `@alejoamiras/presto-noir` sends its `bbVersion` option, which defaults to its
+- **Nobody configures this.** `@alejoamiras/presto` sends the `bb` release it proves with, its exact
+  `@aztec-foundation/bb.js` pin, with every request (`x-aztec-version`). Since Aztec 6.0.0-rc.3 that
+  number differs from the `@aztec-labs/*` one. `@alejoamiras/presto-noir` sends its `bbVersion` option, which defaults to its
   tested bb.js version and refuses an untested one unless `allowUntestedBbVersion` is set.
 - **`/health` is an inventory, not a guarantee.** Its detailed body (approved origins and non-browser
   callers) names the bundled version as `aztec_version`, and lists the bundled and cached ones as
