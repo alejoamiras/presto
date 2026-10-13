@@ -211,10 +211,10 @@ Settings, which regenerates both. Configuration and approved origins are untouch
 `Presto --remove-ca-trust` removes the trust alone.
 
 **No uninstall path removes** `~/.presto/config.json` and your approved origins, the `bb` version
-cache, `~/.bb-crs/`, the updater state, the logs, or the proving-workspace directory. That is deliberate — a
-reinstall keeps your choices — so delete those by hand if you want the state gone. Inside the app you
-can remove an approved site or remove certificate trust from Settings; there is no single "clear all
-data" control.
+cache, `~/.bb-crs/`, the updater state, the verified-sites cache, the logs, or the proving-workspace
+directory. That is deliberate — a reinstall keeps your choices — so delete those by hand if you want
+the state gone. Inside the app you can remove an approved site or remove certificate trust from
+Settings; there is no single "clear all data" control.
 
 ## Reports you send us
 
