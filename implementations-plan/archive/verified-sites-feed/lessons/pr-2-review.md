@@ -52,7 +52,7 @@ After the fixes, run with the local `history/1` stand-in:
 - The tampered mutant (signing the served bytes validly) still fails at step 3, with one failure
   and no "after all" timeout.
 
-## Rounds 3 and 4 (resumed session, verification only)
+## Rounds 3 to 5 (resumed session, verification only)
 
 - **Round 3, after `history/1` merged.** Codex confirmed that the only non-docs change since round 2
   was the header fix plus the two record files, and that record selection, `BUILT_IN` and the
@@ -63,3 +63,6 @@ After the fixes, run with the local `history/1` stand-in:
   - removing the request timeout still fails through the outer 10 s deadline.
 
   `VERDICT: ready`.
+- **Round 5, after the Windows store-test fix (`34c65ff`).** Codex confirmed that the diff since
+  `bd755ae` changes only that test's load assertion and comment, that `Ok(None)` leaves the
+  built-in list in use, and that the save still fails before reaching the write. `VERDICT: ready`.

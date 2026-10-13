@@ -1207,7 +1207,7 @@ accepted (details in `lessons/pr-1-review.md`):
 Minors fixed: tripwire file names cannot break the summary's markup and a failed tripwire diff fails
 the step; the runbook's failed-record recovery deletes the record branch; two comments cut.
 
-### Implementation review: PR 2 (Codex `gpt-6.1-sol`, high, fresh session, resumed once)
+### Implementation review: PR 2 (Codex `gpt-6.1-sol`, high, one session)
 
 **VERDICT: ready** (round 2, high confidence). Round 1 raised one material finding, accepted
 (details in `lessons/pr-2-review.md`):
@@ -1225,6 +1225,9 @@ Not changed:
 - src-tauri case 19's FIFO: the core test names that regression, and the CI job's timeout bounds
   it.
 - The spec's numbered step comments: they state expectations the assertions do not spell out.
+
+Rounds 3 to 5 resumed the session to verify, not reopen: the `history/1` merge and two Windows-only
+test corrections CI forced (`2e79326`, `34c65ff`). Each returned `VERDICT: ready`.
 
 ## Rejected and deferred alternatives
 

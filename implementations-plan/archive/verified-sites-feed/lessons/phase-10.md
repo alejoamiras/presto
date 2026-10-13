@@ -88,7 +88,7 @@ The stand-in was deleted first. Then `main` was merged at `14c4085`, which adds 
   build fails it, carrying all three names.
 - `bun run lint:clippy`, `bun run test` and `bun run lint:actions` pass.
 
-## CI, and the one fix it forced
+## CI, and the two fixes it forced
 
 - Presto 38480721422 at `7a8dde1` was green except Cert Trust (windows). Its
   `verified_sites_feed` "connection refused" case returned `Unreachable` as expected but took
@@ -96,6 +96,19 @@ The stand-in was deleted first. Then `main` was merged at `14c4085`, which adds 
 - **Windows takes about 2 s to refuse a loopback connect**, so the 2 s test feed timeout ended it.
   The bound for that case on Windows is now `0..FEED_TIMEOUT * 2` (`2e79326`). The drip and hang
   cases, and the outer deadline, still catch a missing timeout. Codex verified it (round 4).
+- Presto 38482487240 at `bd755ae` was the first run to reach presto-core's unit tests on Windows,
+  since the app crate's step before it had failed until then. `an_unwritable_directory_fails_the_save`
+  failed at its last assertion: the save still returned `WriteFailed`, but `load()` returned
+  `Ok(None)`, not an error.
+  - **Windows reports opening a path beneath a regular file as not found** (ERROR_PATH_NOT_FOUND,
+    std's `NotFound`), which the store reads as no cache; Linux reports ENOTDIR, an error. The app
+    treats both the same way, falling back to the built-in list, so only the test was wrong.
+  - The test now expects `Ok(None)` on Windows and an error elsewhere (`34c65ff`). Codex verified it
+    (round 5). Without wine, the Windows cross-check is compile-only, so CI is the run.
+- The same run's Lint job failed once in `assert-no-test-hooks.test.ts`: the clean-inputs test hit
+  Bun's 5 s timeout with `ar` still running, and Bun killed it. The test took 690 ms in the run
+  before, and 40 local runs of the file all passed in about 1 s, so it was treated as a runner
+  stall, not changed, and the next run re-ran it.
 - The other run IDs are in `pre-pr.md`.
 
 ## Close-out
@@ -106,11 +119,11 @@ The stand-in was deleted first. Then `main` was merged at `14c4085`, which adds 
   - New labels: `verified-sites`, `owner-decision` and `known-limit`.
   - Searching existing issues first found nothing to dedupe against.
 - **`lessons.md`:** three entries promoted: the lock read, the `bun --config` form, and Windows'
-  slow refused connect. To pay for them:
+  slow refused connect, which later also took the path-beneath-a-file answer. To pay for them:
   - the two npm registry entries merged into one;
   - the process-group teardown entry retired, since the always-loaded run-isolation rules state it.
 
-  The file was 9.1 KB before, over its ~8 KiB budget, and is 9.4 KB after. Reaching 8 KiB means
+  The file was 9.1 KB before, over its ~8 KiB budget, and is 9.5 KB after. Reaching 8 KiB means
   retiring curated entries from other plans, which is the owner's call.
 - The plan moved to `archive/` and its index line to `archive/index.md`. It has no relative markdown
   links to repair; `lessons.md` already points at the archive paths.

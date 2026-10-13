@@ -129,8 +129,9 @@ not belong here. Sections are stable; append, never re-sort.
   `archive/presto-noir/lessons/audit-fixes.md`
 - **Node-based actions cannot see Git Bash's `/tmp` on Windows runners** — a failure with no uploaded
   artifact is usually this. Use `$RUNNER_TEMP`. `archive/presto-noir/lessons/arc-1-review.md`
-- **Windows takes about 2 s to refuse a loopback connect** — a "refused fails at once" timing bound
-  that holds on Linux and macOS fails there. `archive/verified-sites-feed/lessons/phase-10.md`
+- **Windows refuses a loopback connect in about 2 s, and opening a path beneath a regular file is
+  `NotFound` there, not an error** — tests pinning Linux's answer to either fail only on Windows.
+  `archive/verified-sites-feed/lessons/phase-10.md`
 
 ## Local tooling
 
