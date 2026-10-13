@@ -29,8 +29,13 @@ runs:
       shell: bash
       run: |
         VERSION=$(bun scripts/aztec-manifest.ts packages/sdk/package.json aztec.js)
-        echo "Aztec version: $VERSION"
-        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        # The @aztec-foundation/* packages carry their own number since 6.0.0-rc.3; bb.js names it.
+        FOUNDATION=$(bun scripts/aztec-manifest.ts packages/sdk/package.json bb.js)
+        echo "Aztec version: $VERSION (foundation $FOUNDATION)"
+        {
+          echo "version=$VERSION"
+          echo "foundation=$FOUNDATION"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Install Node.js 24
       if: inputs.skip_cli != 'true'
@@ -122,7 +127,7 @@ runs:
     - name: Check the installed Aztec graph against the reviewed list
       if: inputs.skip_cli != 'true'
       shell: bash
-      run: bun scripts/aztec-installer-graph.ts "$HOME/.aztec/versions/${{ steps.detect.outputs.version }}" .github/actions/setup-aztec/installer-aztec-packages.txt "${{ steps.detect.outputs.version }}"
+      run: bun scripts/aztec-installer-graph.ts "$HOME/.aztec/versions/${{ steps.detect.outputs.version }}" .github/actions/setup-aztec/installer-aztec-packages.txt "${{ steps.detect.outputs.version }}" "${{ steps.detect.outputs.foundation }}"
 
     # A `snappy` that cannot load its binding otherwise surfaces only as `aztec start` timing out ~10
     # minutes later, with ERR_MODULE_NOT_FOUND buried in the node log; fail here, naming the cause.

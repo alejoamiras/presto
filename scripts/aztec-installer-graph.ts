@@ -4,12 +4,14 @@
  * so a new first-party package already older than the gate installs without the list noticing;
  * only this name comparison catches it, and it must run whether or not the install step was cached.
  * The exemption is by name, so every package must also be at its reviewed version, the release being
- * installed (`@aztec/viem`: `VIEM_VERSION`): any other version skipped the gate unreviewed.
+ * installed: `@aztec-foundation/*` at the foundation version (bb.js's; a separate number since
+ * 6.0.0-rc.3), `@aztec/viem` at `VIEM_VERSION`, the rest at the Aztec version. Any other version
+ * skipped the gate unreviewed.
  *
  * The graph is the prefix's `package-lock.json` (every platform's optional packages, which the age
  * gate also filters) joined with what is on disk, so a package missing from the lock still counts.
  *
- * Usage: bun scripts/aztec-installer-graph.ts <install-prefix> <list-file> <aztec-version>
+ * Usage: bun scripts/aztec-installer-graph.ts <install-prefix> <list-file> <aztec-version> <foundation-version>
  */
 
 import { lstatSync, readdirSync, readFileSync } from "node:fs";
@@ -100,9 +102,17 @@ export function parseReviewedList(text: string): string[] {
   return names;
 }
 
-export function compareGraph(graph: AztecGraph, listed: string[], release: string) {
+/** The two version numbers of one Aztec release, as `update-aztec-version.ts` resolves them. */
+export type ReleaseVersions = { labs: string; foundation: string };
+
+export function compareGraph(graph: AztecGraph, listed: string[], release: ReleaseVersions) {
   const installed = [...graph.keys()].sort();
-  const reviewed = (name: string) => (name === "@aztec/viem" ? VIEM_VERSION : release);
+  const reviewed = (name: string) =>
+    name === "@aztec/viem"
+      ? VIEM_VERSION
+      : name.startsWith("@aztec-foundation/")
+        ? release.foundation
+        : release.labs;
   const offRelease = installed.flatMap((name) =>
     [...(graph.get(name) ?? [])].filter((v) => v !== reviewed(name)).map((v) => `${name}@${v}`),
   );
@@ -114,13 +124,14 @@ export function compareGraph(graph: AztecGraph, listed: string[], release: strin
 }
 
 if (import.meta.main) {
-  const [prefix, listFile, release] = process.argv.slice(2);
-  if (!prefix || !listFile || !release) {
+  const [prefix, listFile, labs, foundation, ...extra] = process.argv.slice(2);
+  if (!prefix || !listFile || !labs || !foundation || extra.length > 0) {
     console.error(
-      "usage: bun scripts/aztec-installer-graph.ts <install-prefix> <list-file> <aztec-version>",
+      "usage: bun scripts/aztec-installer-graph.ts <install-prefix> <list-file> <aztec-version> <foundation-version>",
     );
     process.exit(2);
   }
+  const release = { labs, foundation };
   const listed = parseReviewedList(readFileSync(listFile, "utf8"));
   const graph = aztecGraph(prefix);
   if (graph.size === 0) {
@@ -140,5 +151,7 @@ if (import.meta.main) {
     );
   }
   if (added.length > 0 || removed.length > 0 || offRelease.length > 0) process.exit(1);
-  console.log(`Aztec installer graph matches ${listFile} at ${release} (${graph.size} names)`);
+  console.log(
+    `Aztec installer graph matches ${listFile} at ${labs} (foundation ${foundation}, ${graph.size} names)`,
+  );
 }
