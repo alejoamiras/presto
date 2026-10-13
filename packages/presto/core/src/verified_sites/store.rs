@@ -281,6 +281,25 @@ mod tests {
     }
 
     #[test]
+    fn a_forged_list_at_the_highest_version_never_becomes_the_floor() {
+        let (list, signature) = (
+            fixture("list-max-wrong-key.json"),
+            fixture("list-max-wrong-key.json.minisig"),
+        );
+        let other = ListKey::from_document(&String::from_utf8(fixture("test2.pub")).unwrap());
+        let forged = verify_list(&list, &signature, &other.unwrap()).unwrap();
+        assert_eq!(forged.version(), crate::verified_sites::MAX_VERSION);
+        let dir = Dir::new();
+        dir.write(&document(&list, &signature));
+        assert!(matches!(
+            dir.store().load(),
+            Err(LoadError::Invalid(ListError::KeyMismatch))
+        ));
+        assert_refused_then_replaced(&dir);
+        assert_eq!(version(dir.store().load()), Some(5));
+    }
+
+    #[test]
     fn an_oversized_file_is_refused_and_replaced() {
         let dir = Dir::new();
         dir.write(&vec![b' '; DOCUMENT_MAX_BYTES + 1]);
