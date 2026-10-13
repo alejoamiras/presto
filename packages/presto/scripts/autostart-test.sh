@@ -62,8 +62,10 @@ mkdir -p /work/packages/presto
 cp -r /src/packages/presto/src-tauri /work/packages/presto/src-tauri
 cp -r /src/packages/presto/core /work/packages/presto/core
 cp /src/packages/presto/package.json /work/packages/presto/package.json
-cp /src/packages/presto/verified-sites.json /work/packages/presto/verified-sites.json 2>/dev/null || true
+cp -r /src/packages/presto/verified-sites /work/packages/presto/verified-sites
 cp /src/bun.lock /work/bun.lock
+# tauri.conf.json bundles the repository LICENSE as a resource, and tauri-build checks it exists.
+cp /src/LICENSE /work/LICENSE
 cd /work/packages/presto/src-tauri
 
 echo "── build (cold runs take minutes; the /target volume keeps later runs warm) ──"
