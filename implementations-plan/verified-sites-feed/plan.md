@@ -480,7 +480,7 @@ reaches them; the badge stays display-only throughout.
 
 | Actor | Can | Control | Residual |
 |---|---|---|---|
-| Agent or token acting as the owner (`repo` scope, SSH push) | Land a change (the ruleset needs 0 approvals) and approve its own signing run with one API call; dispatch workflows; change environments; overwrite environment secrets; push a workflow that mints the release-bot identity (its secrets are repository-wide); or skip signing altogether with one PR that swaps `key.pub` and adds a self-signed record | Required reviewer; the summary and tripwire; every list is a public bot PR before it is live (the App authors it, so CODEOWNERS requests, and notifies, the owner); `publish` refuses a key change and the daily probe alarms on one, so a swapped key never goes live without the owner's KV delete; the release runbook asks the owner to confirm any `key.pub` change since the last release; display-only blast radius; agents hold a fine-grained token without Deployments, Environments, Secrets or Administration (O1b), so the one-call approval and environment or secret changes are gone for them | **Accepted by the owner.** The reviewer is a pause, not an independent identity; a token that can push and merge still acts as the owner in every other way. |
+| Agent or token acting as the owner (`repo` scope, SSH push) | Land a change (the ruleset needs 0 approvals) and approve its own signing run with one API call; dispatch workflows; change environments; overwrite environment secrets; push a workflow that mints the release-bot identity (its secrets are repository-wide); or skip signing altogether with one PR that swaps `key.pub` and adds a self-signed record | Required reviewer; the summary and tripwire; every list is a public bot PR before it is live (the App authors it, so CODEOWNERS requests, and notifies, the owner); `publish` refuses a key change and the daily probe alarms on one, so a swapped key never goes live without the owner's KV delete; the release runbook asks the owner to confirm any `key.pub` change since the last release; display-only blast radius | **Accepted by the owner.** The reviewer is a pause, not an independent identity; a token that can push and merge still acts as the owner in every other way. Agents hold that token too (O1b declined, 2026-10-13), so an agent can approve a signing run with one API call. |
 | Malicious workflow or script change on `main` | Exfiltrate the seed when an approved run starts | Tripwire lists signing-path changes; secret jobs run no repo dependency | Accepted: `main` is the trust boundary (`RELEASE_RUNBOOK.md`). Rotate if it happens. |
 | Malicious PR | Propose entries or signing-path changes | Owner review; strict parser; append-only check; fork PRs get no secrets; the environment is `main`-only | — |
 | Cloudflare KV-token, account or Worker holder (KV Storage Edit is account-wide) | Withhold, or replay any signed list at or above a client's floor | Signature; floor; equivocation refusal; caps | Freeze; fresh or cache-wiped clients accept a replayed list between their built-in and the newest. |
@@ -503,7 +503,8 @@ Contract tests pin all of this, plus the absence of `inputs:`.
 **Approval gap (accepted) and its mitigations:** no inputs to inject; signing bound to the hash shown at
 approval and to `main` still holding it; content restricted so the summary cannot be spoofed; records
 create-only and public before going live; probe; display-only blast radius (no approval, deny-by-default,
-cooldown or `/health` decision reads the registry); rotation runbook; the agents' narrowed token (O1b).
+cooldown or `/health` decision reads the registry); rotation runbook. Agents keep the owner's token
+(O1b declined), so nothing technical stops an agent from approving; the owner accepted that.
 
 **Cryptography.** Verification: `minisign-verify =0.2.5` (already trusted by the updater), key ID first,
 `allow_legacy = false`. Signing: Bun's `node:crypto` Ed25519 (BoringSSL) and `Bun.CryptoHasher`
@@ -564,7 +565,7 @@ the counter with no supported recovery under append-only history.
   `release-signing` have branch policy `main`, no reviewers, `can_admins_bypass: true`;
   `verified-sites-signing` does not exist yet; the `main` ruleset requires the four status checks
   (strict), 0 approvals, no code-owner review; `Landing Status` is not required; the agent token is the
-  owner's `gh` OAuth token with `repo` scope (until O1b). `origin/main` is still `3ebb19b` on
+  owner's `gh` OAuth token with `repo` scope, and stays so (O1b declined, 2026-10-13). `origin/main` is still `3ebb19b` on
   2026-10-08, so every recon fact stands.
 - **Fine-grained token permissions** (GitHub's "Permissions required for fine-grained personal access
   tokens", 2026-10-08): `POST …/actions/runs/{id}/pending_deployments` needs **Deployments: write**;
@@ -605,9 +606,9 @@ the counter with no supported recovery under append-only history.
   "absent" and fails on anything else.
 - **I7** tauri-plugin-webdriver can refresh an auth window (it already refreshes other windows,
   `helpers.ts:112`). Fallback: the same origin in a fresh popup after the 30 s deny cooldown.
-- **I8** GitHub checks a fine-grained token's permission before it looks at the run, so a token
-  without Deployments write gets 403 even for a run with nothing pending. O1b's probe relies on it and
-  fails closed if it is wrong (any status but 403 stops the run).
+- **I8** (moot: O1b and its probe were dropped, 2026-10-13.) GitHub checks a fine-grained token's
+  permission before it looks at the run, so a token without Deployments write gets 403 even for a run
+  with nothing pending.
 - **I9** Job summaries render while a later job waits for approval.
 - **I10** Hard-coding the RFC 8032 vectors (fixtures and the E2E feed), and generating one throwaway
   key inside the CI round-trip job, is within the owner's key-handling constraint: none has authority,
@@ -619,7 +620,8 @@ the counter with no supported recovery under append-only history.
 - **A2 Delivery (D20):** two sequential PRs, approved.
 - **A3 Narrowed agent token:** yes, before the keyed run: owner step O1b, verified by the agent with
   four expected 403s. O2's template imports a separate owner token for provisioning, so the keyed run
-  never depends on the agents' token.
+  never depends on the agents' token. **Reversed by the owner on 2026-10-13: O1b skipped** (decision
+  ledger).
 - **A4 Tightening (D16):** confirmed. It cannot exclude a Firefox entry that would otherwise work:
   `moz-extension` UUIDs differ per browser profile, so none can be listed; the rule only codifies that.
 - **A5 `/harden`:** none.
@@ -635,7 +637,9 @@ the counter with no supported recovery under append-only history.
     3. Deployment branches and tags: **Selected branches and tags** → Add rule → Ref type **Branch**,
        pattern `main`.
     4. Add no secrets or variables by hand.
-  - **API** (from the owner's own `gh`; after O1b the agents' token cannot change environments):
+  - **Done 2026-10-09** with the owner's `gh`. Read-back: reviewer `alejoamiras` only,
+    `prevent_self_review: false`, `can_admins_bypass: false`, branch policy `main` only, no secrets.
+  - **API** (from the owner's own `gh`):
     ```sh
     id=$(gh api users/alejoamiras --jq .id)
     jq -n --argjson id "$id" '{wait_timer:0,prevent_self_review:false,can_admins_bypass:false,
@@ -650,7 +654,9 @@ the counter with no supported recovery under append-only history.
     gh api repos/alejoamiras/presto/environments/verified-sites-signing/deployment-branch-policies \
       --jq '[.branch_policies[] | {name, type}]'
     ```
-- **O1b Narrow the agents' GitHub token** (after O1, before O2).
+- **O1b Narrow the agents' GitHub token: dropped.** The owner declined it on 2026-10-13, so its
+  verification is dropped too and agents keep the owner's `gh` token (decision ledger). The steps
+  below are kept as the record of what was offered; nothing waits on them.
   1. GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens → Generate
      new token. Resource owner `alejoamiras`; repository access: every repository agents on this host
      work in (or all repositories); an expiry of the owner's choosing. Repository permissions:
@@ -687,18 +693,18 @@ the counter with no supported recovery under append-only history.
      names a completed run (nothing pending) and asks to reject, and the deletes name a secret and a
      branch-policy id that do not exist. A token that held the permission would get 422 or 404
      instead, which fails the check; so does any other status. On a failure the agent stops and reports.
-- **O2 Keyed run** (after Codex has reviewed the scripts, and after O1b's verification passes): the
+- **O2 Keyed run** (after Codex has reviewed the scripts, and after O1): the
   agent files
   `env-exec request --template packages/presto/verified-sites/signing-key.env.example --slug verified-sites-key -- bun --no-install --no-env-file --config=/dev/null packages/presto/scripts/provision-verified-sites-key.ts`
   and relays `op-remote create <host> <id>` then `op-remote <host> <id>` (the host's ssh alias is in
   `~/.agents/machine.md`). `op-remote` shows the pinned commit before it asks; the owner confirms it is
-  the commit the agent reported as Codex-reviewed. The agent commits the printed public key as
+  the commit the agent reported (its scripts byte-identical to the Codex-reviewed revision). The agent commits the printed public key as
   `verified-sites/key.pub`.
-  - **The provisioning token** (`op-remote create` asks for it, `# op: import`): a second fine-grained
-    token, resource owner `alejoamiras`, only `alejoamiras/presto`, **Actions: read** (the environment
+  - **The provisioning token** (`op-remote create` asks for it, `# op: import`): a fine-grained token
+    separate from the agents' `gh` login, resource owner `alejoamiras`, only `alejoamiras/presto`, **Actions: read** (the environment
     preflight), **Environments: read and write** (list, public key, set), **Metadata: read**, nothing
     else, a short expiry. The script refuses to run without it, so provisioning never uses the agents'
-    token. Revoke it after the run; a later `--restore` or `--rotate` pastes a fresh one into the item's
+    `gh` login. Revoke it after the run; a later `--restore` or `--rotate` pastes a fresh one into the item's
     `GH_TOKEN` field.
 - **O3 Merge PR 1** (not while a `release-presto` run is in flight).
 - **O4 Deploy the Worker:** dispatch `deploy-release-feed.yml`; `/releases/verified-sites.json` returns
@@ -736,7 +742,7 @@ and provisioning come in Phase 2.
 - Layers: unit, contract.
 
 **Phase 2: `sign` command, provisioning and round trip.** Scripts and tests ✓, Codex-reviewed (below);
-O1, O1b, O2 and `key.pub` pending.
+O1 done (2026-10-09), O1b dropped (2026-10-13); O2 and `key.pub` pending.
 - Gate: `bun test packages/presto/scripts/verified-sites-signer.test.ts packages/presto/scripts/provision-verified-sites-key.test.ts`;
   `bun run --cwd packages/presto typecheck`; a local round trip with the RFC 8032 key through `sign`
   and the CLI's `verify`.
@@ -750,8 +756,8 @@ O1, O1b, O2 and `key.pub` pending.
   a missing `GH_TOKEN` is refused before any `gh` call; every child environment holds the token
   unchanged and no output contains it.
 - Mutation: print `seed.toString("base64")` and the leak test fails.
-- Then: a focused Codex review of the two scripts, push the branch, O1, O1b and its verification, the
-  keyed run (O2), commit `key.pub`. Gate after O2: `env-exec wait` exits 0; the environment read-backs match O1; the secret
+- Then: a focused Codex review of the two scripts, push the branch, O1, the keyed run (O2), commit
+  `key.pub`. Gate after O2: `env-exec wait` exits 0; the environment read-backs match O1; the secret
   is listed by name only; the KEYID in `key.pub` equals the log's; the masked log holds only public
   values.
 - Layers: unit, contract.
@@ -894,7 +900,7 @@ after PR 1 merges and the owner approves.
 | 1: publishing path | `worktree-verified-sites-feed` | 1–6 | `main` |
 | 2: client, plus close-out | `verified-sites-feed-client` (same worktree) | 7–10 | `main` after `history/1` |
 
-Order: Phase 1–2 → push → O1 → O1b and its verification → O2 → commit `key.pub` → Phases 3–5 → gate, Codex loop, checkpoint → PR 1
+Order: Phase 1–2 → push → O1 → Phases 3–5 (all but `key.pub`) → O2 → commit `key.pub` → gate, Codex loop, checkpoint → PR 1
 → O3 → O4 → O5 → live gate → Phases 7–9 → gate, Codex loop, close-out, checkpoint → PR 2 → O6 → O7 →
 O8. From then on, a list change is one merge plus one approval.
 
@@ -983,6 +989,15 @@ display-only boundary, no new IPC or ACL, Firefox deferred.
   wording fixed.
 - D20 delivery: driver (3 stacked arcs), Codex (1 PR), Opus (2 sequential PRs, adopted); both
   checkers agree it follows from D11. Still offered as A2.
+
+**Changed after approval:**
+- **A3 reversed (owner, 2026-10-13): O1b skipped.** The narrowed agent token and its four-403
+  verification are dropped; agents keep the owner's `gh` OAuth token (`repo` scope). An agent can
+  therefore approve a signing run with one API call and change the environment or its secret. The
+  approval gap stays accepted as written (threat model; `SECURITY_MODEL.md` decision 7), without that
+  mitigation, and no doc claims a narrowed token. Provisioning is unaffected: the O2 template imports
+  its own short-lived owner token, and the script and template stay byte-identical to their
+  Codex-reviewed revision (`6599d42`).
 
 ### Contradiction check: Codex (`gpt-6.1-sol`, high, fresh session)
 
@@ -1148,19 +1163,19 @@ for the keyed run** (high confidence).
 - **Making `Landing Status` required:** `presto.yml`'s `release_tooling` lane runs the Worker's tests instead.
 - **Removing the popup's badge latch** (D17).
 
-## Seeds (final, approved 2026-10-08)
+## Seeds (final, approved 2026-10-08; O1b removed 2026-10-13)
 
 ELI5 companion: https://claude.ai/artifact/AAwn5s8D3drQb2AfotZ3bz (source, not committed:
 `implementations-plan/verified-sites-feed/eli5.html`).
 
 Run inside the worktree (`agent-worktree resume verified-sites-feed`). Use exactly one per session.
-**Recommended: `/loop`**, because the plan stops at owner steps (O1, O1b, O2–O8) between phases, which a
+**Recommended: `/loop`**, because the plan stops at owner steps (O1, O2–O8) between phases, which a
 completion condition cannot see past.
 
 ```
 /loop 15m Drive implementations-plan/verified-sites-feed forward. Never idle waiting for input, except at an owner step. Each firing:
 1. Reality check: read implementations-plan/verified-sites-feed/plan.md (Outcome & Quality Bar first) and lessons/. If that path is gone and `git fetch -q origin main && git cat-file -e FETCH_HEAD:implementations-plan/archive/verified-sites-feed/plan.md` succeeds, PR 2 merged: run `agent-worktree done verified-sites-feed --merged`, report what it removed (or its refusal verbatim, never forcing), clear this loop and stop. A live plan.md with an `## Outcome` block means the close-out was interrupted: finish it. Otherwise rebuild the task list from plan.md if empty; `git status`; `git log --oneline -5`; `gh pr view --json statusCheckRollup` if a PR exists.
-2. Owner steps (O1, O1b, O2–O8) are never yours: never approve a deployment, dispatch sign-verified-sites.yml, publish-verified-sites.yml or deploy-release-feed.yml, write KV, deploy a Worker, merge, tag, release, change gh's login, or touch the updater key. If the next step is an owner step, state the exact instruction once and hold; later firings only re-check whether it happened. After O1b, run its verification with your own gh and report it; file O2 (`env-exec request`, then relay the `op-remote create <host> <id>` and `op-remote <host> <id>` lines) only once all four probes returned 403.
+2. Owner steps (O1, O2–O8) are never yours: never approve a deployment, dispatch sign-verified-sites.yml, publish-verified-sites.yml or deploy-release-feed.yml, write KV, deploy a Worker, merge, tag, release, change gh's login, or touch the updater key. If the next step is an owner step, state the exact instruction once and hold; later firings only re-check whether it happened. After O1, file O2 (`env-exec request`, then relay the `op-remote create <host> <id>` and `op-remote <host> <id>` lines).
 3. No task in hand: take the next pending phase step. After each meaningful edit run that phase's gate commands. Commit with `-F <msgfile>` (conventional, lower-case subject); remote git commands run with `SSH_AUTH_SOCK=`.
 4. Stuck or facing a decision: consult Codex (`~/.claude/skills/codex/scripts/run-codex.sh <prompt> <worktree> high read-only gpt-6.1-sol`), decide, and log it in lessons/phase-N.md. Never cross a hard limit or expand scope.
 5. Same step failed 3 times: stop and surface it.
@@ -1169,5 +1184,5 @@ completion condition cannot see past.
 ```
 
 ```
-/goal Phases 1–10 marked ✓ in implementations-plan/verified-sites-feed/plan.md, each backed by its validation gate (commands, pass criteria and mutations as written there) reported passing in the transcript, with `LESSONS_FILE=implementations-plan/verified-sites-feed/lessons/phase-N.md` printed per phase; owner steps O1, O1b and O2–O5 confirmed done in the transcript, never performed by the agent (O6–O8 follow the PR 2 merge and are the owner's), with O1b's verification output (four HTTP 403s) in the transcript before O2 was filed; for each PR the pre-PR gate's CI run IDs recorded in lessons/pre-pr.md and the Codex fix loop converged (a resumed Codex pass reporting no new material finding, quoted); `/code-review` NOT run; PR 1 merged and PR 2 open on GitHub (`gh pr view` output in the transcript), PR 2 carrying the close-out (`git show --stat` of the archive-move commit in the transcript); `bun run test` and `bun run lint:actions` both exit 0 in the transcript.
+/goal Phases 1–10 marked ✓ in implementations-plan/verified-sites-feed/plan.md, each backed by its validation gate (commands, pass criteria and mutations as written there) reported passing in the transcript, with `LESSONS_FILE=implementations-plan/verified-sites-feed/lessons/phase-N.md` printed per phase; owner steps O1 and O2–O5 confirmed done in the transcript, never performed by the agent (O6–O8 follow the PR 2 merge and are the owner's); for each PR the pre-PR gate's CI run IDs recorded in lessons/pre-pr.md and the Codex fix loop converged (a resumed Codex pass reporting no new material finding, quoted); `/code-review` NOT run; PR 1 merged and PR 2 open on GitHub (`gh pr view` output in the transcript), PR 2 carrying the close-out (`git show --stat` of the archive-move commit in the transcript); `bun run test` and `bun run lint:actions` both exit 0 in the transcript.
 ```

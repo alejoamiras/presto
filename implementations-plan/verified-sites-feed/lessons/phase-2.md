@@ -46,3 +46,12 @@ returning an empty key, `GH_HOST` dropped).
 - A duplicate `const` in the script failed at load time with Bun printing the offending source lines
   to stderr, outside the script's own error handling. Harmless here (no secret in source), but a load
   error is the one path that bypasses the fixed-message rule; typecheck catches it first.
+
+## Owner steps
+
+- O1 done on 2026-10-09 with the owner's `gh`; the read-back matched the plan (reviewer
+  `alejoamiras` only, self-review allowed, no admin bypass, `main` only, no secrets).
+- O1b declined on 2026-10-13, so its four-403 verification never ran. Agents keep the owner's token;
+  the approval gap is accepted without that mitigation (decision ledger). The provisioning script and
+  template are unchanged from their reviewed revision: `git diff 6599d42 HEAD` over both, and over the
+  signer, is empty.

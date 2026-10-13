@@ -263,9 +263,7 @@ The controls narrow the gap rather than close it:
 - every signed list lands as a public release-bot PR before it is published, and no job that holds
   the seed, the release-bot key or the KV token installs a dependency;
 - publishing refuses a key change and a list that does not continue history, and a daily check
-  alarms on either;
-- agents hold a fine-grained token without the Deployments, Environments, Secrets or Administration
-  permissions, so they cannot approve a run or change the environment or its secret.
+  alarms on either.
 
 Residual: a malicious workflow change merged to `main` and then approved can exfiltrate the seed.
 `main` is the trust boundary here as everywhere else, and the recovery is a key rotation

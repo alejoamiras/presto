@@ -54,9 +54,6 @@ Holds `VERIFIED_SITES_SIGNING_SEED`, the 32-byte Ed25519 seed (hex) behind
   test-vector or updater key and a mode that does not match the repository (`--restore` re-stores
   the key `key.pub` holds; `--rotate` stores a new one). It prints only the public key, which is
   committed as `key.pub`. Revoke the provisioning token afterwards.
-- **Agents' token:** agents on the build host hold a fine-grained token without Administration,
-  Deployments, Environments or Secrets access, so none can approve a signing run, change this
-  environment or overwrite its secret.
 
 ### Launch gates
 
