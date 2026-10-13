@@ -141,7 +141,8 @@ pub struct SignPlan {
 }
 
 /// Sign iff the source differs from the newest record, or that record was signed by a retired key.
-/// A list to sign must be above the newest record, by at most [`MAX_VERSION_STEP`].
+/// A list to sign must be above the newest record (0 before the first), by at most
+/// [`MAX_VERSION_STEP`], so no list can push the counter out of reach.
 pub fn plan_signing(
     source: &[u8],
     records: &[Record],
@@ -150,6 +151,12 @@ pub fn plan_signing(
 ) -> Result<SignPlan, String> {
     let source = SiteList::parse_unsigned(source).map_err(|e| format!("source: {e}"))?;
     let Some(newest) = records.last() else {
+        if source.version() > MAX_VERSION_STEP {
+            return Err(format!(
+                "version {} is more than {MAX_VERSION_STEP} above 0, and there is no record yet",
+                source.version()
+            ));
+        }
         return Ok(SignPlan {
             source,
             previous: None,

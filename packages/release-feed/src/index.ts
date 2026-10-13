@@ -1,4 +1,3 @@
-/** Each served path and the KV key it reads; any other path is a 404 before KV is touched. */
 const FEEDS = new Map([
   ["/releases/latest.json", "latest.json"],
   ["/releases/verified-sites.json", "verified-sites.json"],

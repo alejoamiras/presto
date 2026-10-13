@@ -56,6 +56,7 @@ refused "a list verified under the production key" "signed by a different key" \
 refused "a signer whose seed is not the pinned key" "does not match the pinned public key" \
   sign list.json "$presto/verified-sites/key.pub" pinned.minisig
 
+# Same version, other bytes, still a valid list (an empty one included).
 sed 's/"version": /"version":  /' list.json >tampered.json
 cmp -s list.json tampered.json && { echo "::error::the tampered list is unchanged"; exit 1; }
 "$cli" document tampered.json list.json.minisig >tampered-document.json
@@ -74,7 +75,6 @@ refused "a signed list with an unknown field" "unknown field" \
 mkdir -p history retired-keys
 cp list.json "history/$version.json"
 cp list.json.minisig "history/$version.json.minisig"
-jq '.entries[0].displayName = "Someone Else"' list.json >equivocating.json
 refused "a different list at a recorded version" "must be above the newest record" \
-  "$cli" check --source equivocating.json --history history --pubkey throwaway.pub \
+  "$cli" check --source tampered.json --history history --pubkey throwaway.pub \
   --retired retired-keys --live-absent --publish

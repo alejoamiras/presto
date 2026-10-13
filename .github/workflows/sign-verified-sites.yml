@@ -35,9 +35,10 @@ env:
     .github/scripts/bot-push.sh
     .github/scripts/bot-pr.sh
     .bun-version
+    rust-toolchain.toml
+    .cargo
     packages/presto/scripts/verified-sites-signer.ts
-    packages/presto/core/src/verified_sites
-    packages/presto/core/examples/verified-sites.rs
+    packages/presto/core
     packages/presto/verified-sites/key.pub
     packages/presto/verified-sites/retired-keys
     packages/release-feed/src
@@ -138,13 +139,17 @@ jobs:
             if [ -z "$approved" ]; then
               echo "> [!WARNING]"
               echo "> No commit on main ever held record $newest's bytes; review every signing-path change."
-            elif changed="$(git diff --name-only "$approved" "$GITHUB_SHA" -- "${paths[@]}")" && [ -n "$changed" ]; then
-              echo "> [!WARNING]"
-              echo "> Changed since \`${approved:0:12}\`; read these before approving:"
-              echo
-              while read -r file; do printf -- '- \x60%s\x60\n' "$file"; done <<<"$changed"
             else
-              echo "Unchanged since \`${approved:0:12}\`."
+              changed="$(git diff --name-only "$approved" "$GITHUB_SHA" -- "${paths[@]}")"
+              if [ -n "$changed" ]; then
+                echo "> [!WARNING]"
+                echo "> Changed since \`${approved:0:12}\`; read these before approving:"
+                echo
+                # A backtick in a file name would close the code span; show it as a quote.
+                while read -r file; do printf -- '- \x60%s\x60\n' "${file//$'\x60'/\'}"; done <<<"$changed"
+              else
+                echo "Unchanged since \`${approved:0:12}\`."
+              fi
             fi
           } >>"$GITHUB_STEP_SUMMARY"
 

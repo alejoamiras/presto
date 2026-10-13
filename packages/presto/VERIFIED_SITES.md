@@ -51,7 +51,7 @@ at every level, and the whole file is at most 64 KiB.
 |-------|----------|-------|
 | `$schema` | no | Exactly `./verified-sites.schema.json` (editor hints only). |
 | `schemaVersion` | yes | `1`. Changes only with a breaking format change. |
-| `version` | yes | Integer, 1 to 2^53 − 1. **Raise it in every PR that changes the file**, by 1 to 100 over the newest signed record (see Versions). |
+| `version` | yes | Integer, 1 to 2^53 − 1. **Raise it in every PR that changes the file**, by 1 to 100 over the newest signed record, or 0 before the first (see Versions). |
 | `entries` | yes | 0–256 entries. An empty list is valid: it removes every badge. |
 | `entries[].origins[]` | yes | 1–16 per entry, unique across the list, at most 256 bytes each. `https` or `chrome-extension` only, in canonical form: `scheme://host[:port]`, lower case, no default port, no path, no trailing slash. ASCII only — use Punycode A-labels for IDN (`xn--nlo-zna.sh`, NOT `nülo.sh`). |
 | `entries[].displayName` | yes | Shown in the popup. 1–64 printable ASCII characters, no `<`, `>` or backtick, no leading or trailing space. |
@@ -67,7 +67,8 @@ is; `.gitattributes` keeps Windows checkouts from rewriting its line endings.
 Every signed list has a version, and a signed list never replaces a newer one.
 The PR gate requires the file's `version` to be above the newest record in
 `verified-sites/history/` (or equal to it with identical bytes) and at most
-100 above it, so a typo cannot burn the counter.
+100 above it, counting from 0 before the first record, so a typo cannot burn
+the counter.
 
 ## Adding or changing an entry
 

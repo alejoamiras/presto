@@ -16,7 +16,7 @@
       "type": "integer",
       "minimum": 1,
       "maximum": 9007199254740991,
-      "description": "List version. Every change raises it by 1 to 100 over the newest signed record; a signed list never moves to a lower one."
+      "description": "List version. Every change raises it by 1 to 100 over the newest signed record (0 before the first); a signed list never moves to a lower one."
     },
     "entries": {
       "type": "array",

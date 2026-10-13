@@ -532,6 +532,9 @@ fn signing_plan_follows_the_version_rules() {
         first.sign && first.previous.is_none(),
         "empty history signs the first list"
     );
+    assert!(plan("list-105.json")
+        .unwrap_err()
+        .contains("more than 100 above 0"));
 
     repo.record(5, "list-5.json", "list-5.json.minisig");
     assert!(

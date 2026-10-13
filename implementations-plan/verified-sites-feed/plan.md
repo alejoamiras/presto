@@ -176,7 +176,7 @@ KEYID is displayed as minisign does: `{:016X}` of the little-endian key ID.
 
 | Where | Rule |
 |---|---|
-| PR gate (`core/tests/verified_sites_repo.rs`, in `presto.yml`) | Source parses strictly; `version > H`, or `== H` with bytes equal to record H; `version ≤ H + 100`. Every record parses, has `version == N`, pairs with a `.minisig`, and verifies under `key.pub` or `retired-keys/<its KEYID>.pub`; consecutive records differ by at most 100, so no record can jump the counter to an absurd value. File names match `^[1-9][0-9]*\.json(\.minisig)?$`, and no record, signature or `key.pub` contains `\r`. `key.pub` is neither a test-vector key nor the updater key. |
+| PR gate (`core/tests/verified_sites_repo.rs`, in `presto.yml`) | Source parses strictly; `version > H`, or `== H` with bytes equal to record H; `version ≤ H + 100`, with H = 0 before the first record (`prepare` applies the same bound). Every record parses, has `version == N`, pairs with a `.minisig`, and verifies under `key.pub` or `retired-keys/<its KEYID>.pub`; the first record is at most 100 and consecutive records differ by at most 100, so no record can jump the counter to an absurd value. File names match `^[1-9][0-9]*\.json(\.minisig)?$`, and no record, signature or `key.pub` contains `\r`. `key.pub` is neither a test-vector key nor the updater key. |
 | PR gate (`verified-sites-feed` job) | No path that exists at the base under `history/` or `retired-keys/` is modified, deleted, renamed away or changed in type; additions are allowed (a rotation moves `key.pub` into `retired-keys/`). The base is the PR base, or `git merge-base origin/main HEAD` on a dispatch. |
 | `prepare` | Sign iff the source differs from record H, or record H is not signed by the pinned key (rotation; then `version > H` is required). Fail if live is ahead of history or equal-but-different. |
 | `publish` | Write only the newest record; skip if KV already holds it; refuse if KV (read through the API) holds a higher version, the same version with different list bytes, or a list signed by a different key than the record (so a key change, legitimate or not, needs the owner's KV delete first). |
@@ -308,7 +308,8 @@ statement (lessons: `bash -e` gaps).
    semantic diff (every
    curator-written value rendered as inline code, which the backtick ban makes unbreakable, so a name
    like `![Approved](https://…)` shows as text), the unified diff in a fence, and the tripwire: signing-path files (`*-verified-sites.yml`, the signer,
-   `core/src/verified_sites/`, the CLI, `verified-sites/key.pub`, `retired-keys/`,
+   the whole core crate (the CLI, its modules, manifest and lockfile), `rust-toolchain.toml`, a root
+   `.cargo/`, `verified-sites/key.pub`, `retired-keys/`,
    `.github/actions/{bot-push,bot-pr,setup-presto}`, `.github/scripts/{bot-push,bot-pr}.sh`,
    `.bun-version`, `packages/release-feed/src`) changed since the
    commit that first gave `verified-sites.json` record H's bytes (found by blob hash, so a change merged

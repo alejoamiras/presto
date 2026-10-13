@@ -36,7 +36,7 @@ fn check_retired(dir: &Path) -> Result<(), String> {
 }
 
 /// The list may be signed next (or is the newest record), and every record verifies, carries its
-/// own version and is at most [`MAX_VERSION_STEP`] above the one before it.
+/// own version and is at most [`MAX_VERSION_STEP`] above the one before it (the first, above 0).
 fn check(presto: &Path) -> Result<(), String> {
     let dir = presto.join("verified-sites");
     let pinned = ListKey::from_document(&read_text(&dir.join("key.pub"))?)
@@ -44,18 +44,20 @@ fn check(presto: &Path) -> Result<(), String> {
     let retired = dir.join("retired-keys");
     check_retired(&retired)?;
     let records = read_records(&dir.join("history"))?;
-    let mut previous = None;
+    let mut previous = 0;
     for record in &records {
         verify_record(record, &pinned, &retired)?;
-        if let Some(before) = previous {
-            if record.version.saturating_sub(before) > MAX_VERSION_STEP {
-                return Err(format!(
-                    "record {} is more than {MAX_VERSION_STEP} above record {before}",
-                    record.version
-                ));
-            }
+        if record.version.saturating_sub(previous) > MAX_VERSION_STEP {
+            let before = match previous {
+                0 => "0".to_string(),
+                n => format!("record {n}"),
+            };
+            return Err(format!(
+                "record {} is more than {MAX_VERSION_STEP} above {before}",
+                record.version
+            ));
         }
-        previous = Some(record.version);
+        previous = record.version;
     }
     let source = std::fs::read(presto.join("verified-sites.json"))
         .map_err(|e| format!("read verified-sites.json: {e}"))?;
@@ -150,7 +152,7 @@ fn history_and_source_pass_when_every_rule_holds() {
 
 #[test]
 fn each_history_rule_refuses_its_violation() {
-    let cases: [(Tree, &str); 6] = [
+    let cases: [(Tree, &str); 8] = [
         (
             tree("list-105.json", &[(4, "list-4"), (105, "list-105")]),
             "more than 100 above record 4",
@@ -166,6 +168,11 @@ fn each_history_rule_refuses_its_violation() {
         (
             tree("list-105.json", &[(4, "list-4")]),
             "more than 100 above the newest record",
+        ),
+        (tree("list-105.json", &[]), "more than 100 above 0"),
+        (
+            tree("list-105.json", &[(105, "list-105")]),
+            "record 105 is more than 100 above 0",
         ),
         (
             Tree::new(

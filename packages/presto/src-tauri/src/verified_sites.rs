@@ -149,7 +149,7 @@ mod tests {
             Some("Presto Playground")
         );
         assert_eq!(name("https://yacana.network"), Some("Yacana"));
-        // Exactly those four origins: removed ones stay removed.
+        // Removed origins stay removed.
         assert_eq!(registry.by_origin.len(), 4);
     }
 

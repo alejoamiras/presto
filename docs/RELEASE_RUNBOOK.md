@@ -476,8 +476,9 @@ decision reads it.
 
 - **A list merged while a record PR was still open:** signing refuses to run past a waiting record.
   Merge the record PR, then dispatch Sign Verified Sites (it takes no input).
-- **A record PR fails its checks:** do not edit the record. Fix the cause, raise `version` in the
-  source list and merge; the new signing run records the new version.
+- **A record PR fails its checks:** do not edit the record. Close the PR and delete its
+  `chore/verified-sites-<version>` branch (signing refuses while it exists), fix the cause, raise
+  `version` in the source list and merge; the new signing run records the new version.
 - **A record PR was closed:** delete its `chore/verified-sites-<version>` branch, then dispatch Sign
   Verified Sites.
 - **Sign failed as stale:** `main` changed the list or the signing path after the summary you
