@@ -16,7 +16,7 @@ delivery: two sequential PRs (publishing path, then client)
 
 - **2026-10-13: completed.** PR 1 #92 (`34784d2`) shipped the publishing path. The first signed
   record landed through release-bot PR #93 (`14c4085`) and is live at
-  `https://presto.build/releases/verified-sites.json` (publish run 38480207618). PR 2 #<PR2> is the
+  `https://presto.build/releases/verified-sites.json` (publish run 38480207618). PR 2 #100 is the
   client, and this close-out rides as its final commits.
 - **Shipped in PR 1:**
   - the strict list parser and minisign verifier in core;
