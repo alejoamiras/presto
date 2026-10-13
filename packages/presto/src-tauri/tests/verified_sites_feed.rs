@@ -1,8 +1,8 @@
 //! The verified-sites client end to end in one process: a scripted feed on an ephemeral loopback port,
 //! fixture lists signed with the RFC 8032 TEST 1 key standing in for the pinned key, list 4 as the
-//! built-in, and a cache in a temporary directory. Every case runs under an outer deadline, so a
-//! missing production timeout fails the case instead of hanging the suite, and asserts what the popup
-//! would see, what the disk holds, and how long the check took.
+//! built-in, and a cache in a temporary directory. Every check runs under an outer deadline, so a
+//! missing network timeout fails the case instead of hanging the suite; cache loads are outside it.
+//! Each case asserts what the popup would see, what the disk holds, and how long the check took.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, Ordering};
