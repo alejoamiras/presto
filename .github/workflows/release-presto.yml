@@ -350,6 +350,26 @@ jobs:
             sleep 10
           done
 
+      # What ships must carry no WebDriver-only test hook. The DMG packs the same .app as the
+      # .app.tar.gz; the NSIS installer is LZMA-compressed, so its binary is scanned instead.
+      - name: Assert no test hooks in the bundles
+        working-directory: packages/presto
+        env:
+          TARGET: ${{ matrix.target }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="src-tauri/target/$TARGET/release"
+          case "$RUNNER_OS" in
+            macOS) bash scripts/assert-no-test-hooks.sh "$root"/bundle/macos/*.app.tar.gz ;;
+            Linux)
+              bash scripts/assert-no-test-hooks.sh "$root"/bundle/appimage/*.AppImage \
+                "$root"/bundle/deb/*.deb
+              ;;
+            Windows) bash scripts/assert-no-test-hooks.sh "$root/Presto.exe" ;;
+            *) echo "::error::no test-hook scan for $RUNNER_OS"; exit 1 ;;
+          esac
+
       - name: Upload artifacts
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
