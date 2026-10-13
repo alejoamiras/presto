@@ -809,7 +809,8 @@ passes.
 
 ### PR 2: client
 
-**Phase 7: store and fetch (core;** may start before `history/1` lands).
+**Phase 7: store and fetch (core;** may start before `history/1` lands). ✓ (a FIFO at the cache
+path is replaced by the save, a directory fails it; see `lessons/phase-7.md`).
 - Gate: core tests and clippy; the Windows cross-check.
 - Pass: store: corrupt, forged (TEST 2 key, version 2^53 − 1), oversized, FIFO and directory
   (`cfg(unix)`), never lowers under the lock, releases the lock. Fetch, against a house-style
