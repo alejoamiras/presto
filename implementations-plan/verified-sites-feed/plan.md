@@ -871,6 +871,9 @@ local stand-in for `history/1`; the spec's run and the build pair repeat in Phas
 - Layers: E2E, contract.
 
 **Phase 10: PR 2 pre-PR gate**, the Codex fix loop, the close-out commits, checkpoint, open PR 2.
+In progress: `main` merged after PR 1, the 2^53 − 1 fixture and its store test, docs, and the Codex
+loop (converged) are done. The real-record gates and the close-out wait for `history/1`
+(`lessons/phase-10.md`).
 - First, once this branch sits on `main` after PR 1: add a fixture to `verified-sites-fixtures.ts`,
   a valid list at version 2^53 − 1 signed with TEST 2, and a store test that a forged cache at that
   version never raises the stored version floor (the bricking attack). The list-5 wrong-key store
@@ -1159,6 +1162,25 @@ accepted (details in `lessons/pr-1-review.md`):
 
 Minors fixed: tripwire file names cannot break the summary's markup and a failed tripwire diff fails
 the step; the runbook's failed-record recovery deletes the record branch; two comments cut.
+
+### Implementation review: PR 2 (Codex `gpt-6.1-sol`, high, fresh session, resumed once)
+
+**VERDICT: ready** (round 2, high confidence). Round 1 raised one material finding, accepted
+(details in `lessons/pr-2-review.md`):
+
+| # | Finding | Severity | Fix |
+|---|---|---|---|
+| 1 | A save that could not take the lock returned `WriteFailed` before reading the disk, and the caller swaps memory anyway (D18). Another instance holding the lock over a newer list let a replayed older list become current | important | The disk is judged whether or not the lock was taken; only then does a lock error become `WriteFailed`. A held-lock test covers both a newer and an equivocating disk list. |
+
+Minors fixed:
+- The E2E tampered list is signed for its own version, so only the signature refuses it.
+- The core FIFO test fails on a deadline instead of hanging.
+- One comment went with the restructure, and the integration test's deadline claim was narrowed.
+
+Not changed:
+- src-tauri case 19's FIFO: the core test names that regression, and the CI job's timeout bounds
+  it.
+- The spec's numbered step comments: they state expectations the assertions do not spell out.
 
 ## Rejected and deferred alternatives
 
