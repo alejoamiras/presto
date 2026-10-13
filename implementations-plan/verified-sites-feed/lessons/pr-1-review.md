@@ -26,3 +26,10 @@ inside the code span).
 | # | Finding | Severity | Disposition |
 |---|---|---|---|
 | 4 | `setup-presto` runs `bun install --frozen-lockfile` in prepare (and the other CLI jobs), so a root or workspace lifecycle hook could rewrite the CLI's sources or `$GITHUB_ENV` and show one digest while outputting another, with no signing-path file changed | important | **Accepted, different fix.** Codex proposed adding the manifests, lockfile and bunfig to `SIGNING_PATHS`; that list would still miss the scripts a hook calls and any new workspace, and the stale check reads exact paths, not globs. Instead `setup-presto` gains `install-js-deps` (default `"true"`), and all five jobs that build or run the CLI pass `"false"`: nothing installs, so no hook runs. A contract test pins the five; removing the flag from one fails it. |
+
+## Round 3 (resumed session)
+
+`VERDICT: ready — 0 new material findings` (high confidence). Codex: "the fix closes the
+lifecycle-hook path in all five CLI jobs. Their remaining steps require no installed JS packages; the
+signer uses only built-ins. The `"true"` default preserves every other caller's behavior." The loop
+converged.

@@ -802,7 +802,8 @@ table; the rest of the docs stay in Phase 5). ✓ (the repository and `key.pub` 
 - Layers: lint, contract.
 
 **Phase 6: PR 1 pre-PR gate** (below), then the Codex fix loop, then checkpoint to the parent, then
-open PR 1. After O3–O5, a read-only live gate: every job of both runs succeeded; the live document
+open PR 1. Gate ✓ and Codex loop converged (2026-10-13, `lessons/pre-pr.md`, `lessons/pr-1-review.md`);
+PR 1 not yet open. After O3–O5, a read-only live gate: every job of both runs succeeded; the live document
 verifies with the CLI at version 1; `history/1.json` equals the list at the merge commit; the probe
 passes.
 
@@ -1130,6 +1131,21 @@ package, secretless job, `-H` to require the prehashed form).
 The same session, resumed over the fixes, verified all six and added one nit (the file scan's
 exclusion matched sibling directories, and it lacked the raw-byte forms), fixed: **VERDICT: approve
 for the keyed run** (high confidence).
+
+### Implementation review: PR 1 (Codex `gpt-6.1-sol`, high, fresh session, resumed twice)
+
+**VERDICT: ready** (round 3, high confidence). Rounds 1 and 2 raised four material findings, all
+accepted (details in `lessons/pr-1-review.md`):
+
+| # | Finding | Severity | Fix |
+|---|---|---|---|
+| 1 | The tripwire and stale check missed core files outside `verified_sites/` that change what the CLI prints | important | `SIGNING_PATHS` holds the whole core crate, `rust-toolchain.toml` and a root `.cargo/` |
+| 2 | The round trip's equivocation case broke on an empty list | important | It reuses the whitespace-tampered list |
+| 3 | The first list's version was unbounded | important | Counted from 0 before the first record, in `prepare` and the repo test |
+| 4 | `bun install` in the CLI jobs ran lifecycle hooks beside the CLI | important | `setup-presto` `install-js-deps: "false"` in all five CLI jobs (a different fix from Codex's path list; Codex accepted it in round 3) |
+
+Minors fixed: tripwire file names cannot break the summary's markup and a failed tripwire diff fails
+the step; the runbook's failed-record recovery deletes the record branch; two comments cut.
 
 ## Rejected and deferred alternatives
 
