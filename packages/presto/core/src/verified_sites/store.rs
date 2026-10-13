@@ -71,20 +71,17 @@ impl ListStore {
         let Some(path) = self.path.as_deref() else {
             return SaveOutcome::Saved;
         };
-        // The lock file lives beside the list, so its directory must exist first.
-        if let Some(parent) = path.parent() {
-            if let Err(e) = std::fs::create_dir_all(parent) {
-                return SaveOutcome::WriteFailed(e);
-            }
-        }
-        let _lock = match crate::file_lock::lock_exclusive_within(
-            &path.with_extension("json.lock"),
-            LOCK_WAIT,
-        ) {
-            Ok(lock) => lock,
-            Err(e) => return SaveOutcome::WriteFailed(e),
-        };
-        // An unreadable or unverifiable file protects nothing, so it is simply replaced.
+        let lock = path
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| {
+                crate::file_lock::lock_exclusive_within(
+                    &path.with_extension("json.lock"),
+                    LOCK_WAIT,
+                )
+            });
+        // Judged even without the lock: a failed save still swaps memory, so it must not skip a
+        // newer list on disk. An unreadable or unverifiable file protects nothing and is replaced.
         if let Ok(Some(disk)) = read_verified(path, &self.key) {
             match judge(&disk, &candidate.list) {
                 Judgement::Accept => {}
@@ -93,6 +90,10 @@ impl ListStore {
                 Judgement::Older => return SaveOutcome::DiskNewer(disk),
             }
         }
+        let _lock = match lock {
+            Ok(lock) => lock,
+            Err(e) => return SaveOutcome::WriteFailed(e),
+        };
         let body = document(candidate.list.bytes(), &candidate.signature);
         match crate::updater_state::write_private_atomic(path, &body, ".verified-sites-") {
             Ok(()) => SaveOutcome::Saved,
@@ -313,8 +314,15 @@ mod tests {
         std::fs::create_dir_all(dir.path.parent().unwrap()).unwrap();
         let c_path = std::ffi::CString::new(dir.path.to_str().unwrap()).unwrap();
         assert_eq!(unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) }, 0);
-        // The save's rename replaces the FIFO like any other bad file.
-        assert_refused_then_replaced(&dir);
+        // The save's rename replaces the FIFO like any other bad file. On a thread, so a blocking
+        // open fails the test instead of hanging it.
+        let checks = std::thread::spawn(move || assert_refused_then_replaced(&dir));
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while !checks.is_finished() {
+            assert!(Instant::now() < deadline, "opening the FIFO blocked");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        checks.join().unwrap();
     }
 
     #[cfg(unix)]
@@ -388,6 +396,26 @@ mod tests {
             SaveOutcome::Saved
         ));
         assert!(dir.lock_is_free());
+    }
+
+    #[test]
+    fn a_save_that_cannot_lock_still_defers_to_the_disk() {
+        let save_beside = |on_disk: &str| {
+            let dir = Dir::new();
+            dir.write(&envelope(&signed(on_disk)));
+            let held = crate::file_lock::try_lock_exclusive(&dir.path.with_extension("json.lock"))
+                .unwrap();
+            assert!(held.is_some());
+            dir.store().save_if_newer(&signed("list-5"))
+        };
+        match save_beside("list-6") {
+            SaveOutcome::DiskNewer(list) => assert_eq!(list.version(), 6),
+            other => panic!("expected the disk's list 6, got {other:?}"),
+        }
+        assert!(matches!(
+            save_beside("list-5-equivocating"),
+            SaveOutcome::Equivocation
+        ));
     }
 
     #[test]
