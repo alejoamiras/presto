@@ -852,7 +852,9 @@ once `history/1` is on `main` (`lessons/phase-8.md` lists what waits for it).
   accepted; union instead of replace.
 - Layers: integration, contract.
 
-**Phase 9: WebDriver hook, feed, spec and scan** (including D22's release scan).
+**Phase 9: WebDriver hook, feed, spec and scan** (including D22's release scan). ✓ against the same
+local stand-in for `history/1`; the spec's run and the build pair repeat in Phase 10 on the real record
+(`lessons/phase-9.md`).
 - Gate: `bun test packages/presto/scripts/webdriver-only-hooks.test.ts packages/presto/scripts/assert-no-test-hooks.test.ts packages/presto/scripts/verified-sites-e2e-feed.test.ts packages/presto/scripts/release-contract.test.ts`;
   the extended scanner passes the published 1.2.0-rc.1 `.deb`, `.app.tar.gz` and AppImage (fetched with
   `gh release download`, deleted after) and fails a `.tar.gz` and a `.deb` that carry the needle;
@@ -864,7 +866,7 @@ once `history/1` is on `main` (`lessons/phase-8.md` lists what waits for it).
 - Pass (D22): `release-contract.test.ts` pins the step inside `build`, after the bundles are built
   and before upload, with no `secrets.` reference, one target set per OS, and no scan anywhere in
   `sign-updater-artifacts`.
-- Mutations: sign the `tampered` list validly (step 3 fails); skip the refresh (step 4 fails); move the
+- Mutations: sign the `tampered` list validly (step 3 fails); skip the refresh (step 2 fails); move the
   release scan after upload, or drop the `.deb` target (the contract test fails).
 - Layers: E2E, contract.
 
@@ -1000,6 +1002,8 @@ display-only boundary, no new IPC or ACL, Firefox deferred.
 **Changed after approval:**
 - **Case 19 corrected (implementation, 2026-10-13):** `rename(2)` replaces a FIFO at the cache path,
   healing it like any bad file; only a directory fails the save.
+- **Skip-the-refresh mutation corrected (implementation, 2026-10-13):** the popup reads its badge only
+  when it loads, so the mutant fails at step 2, the first badge that needs a reload, not step 4.
 - **A3 reversed (owner, 2026-10-13): O1b skipped.** The narrowed agent token and its four-403
   verification are dropped; agents keep the owner's `gh` OAuth token (`repo` scope). An agent can
   therefore approve a signing run with one API call and change the environment or its secret. The
