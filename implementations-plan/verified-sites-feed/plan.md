@@ -741,8 +741,8 @@ and provisioning come in Phase 2.
   Accept; drop `deny_unknown_fields`; admit `http`.
 - Layers: unit, contract.
 
-**Phase 2: `sign` command, provisioning and round trip.** Scripts and tests ✓, Codex-reviewed (below);
-O1 done (2026-10-09), O1b dropped (2026-10-13); O2 and `key.pub` pending.
+**Phase 2: `sign` command, provisioning and round trip.** ✓ Codex-reviewed (below); O1 done
+(2026-10-09), O1b dropped, O2 done (2026-10-13, key ID `49A083C1A11B3947`).
 - Gate: `bun test packages/presto/scripts/verified-sites-signer.test.ts packages/presto/scripts/provision-verified-sites-key.test.ts`;
   `bun run --cwd packages/presto typecheck`; a local round trip with the RFC 8032 key through `sign`
   and the CLI's `verify`.
@@ -763,9 +763,8 @@ O1 done (2026-10-09), O1b dropped (2026-10-13); O2 and `key.pub` pending.
 - Layers: unit, contract.
 
 **Phase 3: list content, its pins and its documentation** (the `VERIFIED_SITES.md` example and field
-table; the rest of the docs stay in Phase 5). Content, pins, schema, `.gitattributes` and the rule
-tests over synthetic trees ✓; the check of the repository itself and of `key.pub` lands with
-`key.pub` (O2).
+table; the rest of the docs stay in Phase 5). ✓ (the repository and `key.pub` checks landed with
+`key.pub`).
 - Gate: `cargo test … src-tauri … verified_sites` (after `frontend:build`); the core repo test;
   `bun test scripts/presto-domain.test.ts`; `bun run --cwd packages/presto test:e2e:ui` (delete
   `test-results` after).
@@ -783,8 +782,7 @@ tests over synthetic trees ✓; the check of the repository itself and of `key.p
 - Mutation: map the new path to `latest.json` and a test fails.
 - Layers: unit.
 
-**Phase 5: workflows, contracts and docs.** ✓ before O2; the round trip and live check in the
-`verified-sites-feed` job need `key.pub` and fail closed until it lands.
+**Phase 5: workflows, contracts and docs.** ✓
 - Gate: `bun run lint:actions`;
   `bun test scripts/verified-sites-workflows.test.ts scripts/cloudflare-deployment.test.ts scripts/bot-pr.test.ts scripts/action-pins.test.ts packages/presto/scripts/ci-filter-contract.test.ts`;
   the `verified-sites-feed` job's script run locally with the RFC 8032 key standing in for the

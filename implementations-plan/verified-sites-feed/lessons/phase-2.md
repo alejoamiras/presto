@@ -55,3 +55,7 @@ returning an empty key, `GH_HOST` dropped).
   the approval gap is accepted without that mitigation (decision ledger). The provisioning script and
   template are unchanged from their reviewed revision: `git diff 6599d42 HEAD` over both, and over the
   signer, is empty.
+- O2 done on 2026-10-13: `env-exec wait` exited 0, and the masked log held only the public key
+  document and `Key ID: 49A083C1A11B3947`. The key ID recomputed from `key.pub` (SHA-256 of the key,
+  first 8 bytes) matches. The environment read-back still matches O1, and its secrets list holds the
+  one name `VERIFIED_SITES_SIGNING_SEED`. The owner revoked the provisioning token.

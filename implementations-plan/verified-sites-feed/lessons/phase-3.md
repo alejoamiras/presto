@@ -34,3 +34,11 @@
 
 - src-tauri's tests need the bb sidecar in `binaries/` (`bun run --cwd packages/presto prebuild`)
   as well as `frontend:build`; tauri-build fails on the missing resource otherwise.
+
+## After O2 (2026-10-13)
+
+- `key.pub` committed (key ID `49A083C1A11B3947`). The repo test now also checks the repository
+  itself (no history yet, so the source list only has to parse and be signable) and that `key.pub` is
+  neither an RFC 8032 test key nor the updater key: 5 pass, clippy clean.
+- Mutations: `key.pub` set to the TEST 1 key fails the key test; set to the updater key's document,
+  it fails the key test and the repository check. Reverted (with a `touch`, so Cargo rebuilds).

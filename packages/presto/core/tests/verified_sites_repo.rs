@@ -62,6 +62,16 @@ fn check(presto: &Path) -> Result<(), String> {
     plan_signing(&source, &records, &pinned, &retired).map(|_| ())
 }
 
+/// The 32-byte Ed25519 key inside a minisign public key document.
+fn raw_key(document: &str) -> Vec<u8> {
+    use base64::Engine as _;
+    let line = document.lines().nth(1).unwrap_or_default();
+    let blob = base64::engine::general_purpose::STANDARD
+        .decode(line)
+        .unwrap();
+    blob.get(10..).unwrap().to_vec()
+}
+
 fn fixtures() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/verified_sites")
 }
@@ -219,4 +229,36 @@ fn carriage_returns_and_misnamed_retired_keys_are_refused() {
     let name = format!("verified-sites/retired-keys/{}.pub", other.key_id_hex());
     rotated.write(&name, &fixture("test2.pub"));
     rotated.check().unwrap();
+}
+
+#[test]
+fn the_repository_list_and_history_hold_every_rule() {
+    check(&Path::new(env!("CARGO_MANIFEST_DIR")).join("..")).unwrap();
+}
+
+#[test]
+fn the_pinned_key_is_neither_a_test_vector_nor_the_updater_key() {
+    use base64::Engine as _;
+    let presto = Path::new(env!("CARGO_MANIFEST_DIR")).join("..");
+    let pinned = raw_key(&read_text(&presto.join("verified-sites/key.pub")).unwrap());
+    assert_eq!(pinned.len(), 32);
+    for vector in [
+        "d75a980182b10ab7d54bfed3c964073a0ee172f3daa62325af021a68f707511a",
+        "3d4017c3e843895a92b70aa74d1b7ebc9c982ccf2ec4968cc0cd55f12af4660c",
+    ] {
+        assert_ne!(
+            hex::encode(&pinned),
+            vector,
+            "key.pub is an RFC 8032 test vector"
+        );
+    }
+    let config: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(presto.join("src-tauri/tauri.conf.json")).unwrap())
+            .unwrap();
+    let updater = base64::engine::general_purpose::STANDARD
+        .decode(config["plugins"]["updater"]["pubkey"].as_str().unwrap())
+        .unwrap();
+    let updater = raw_key(std::str::from_utf8(&updater).unwrap());
+    assert_eq!(updater.len(), 32);
+    assert_ne!(pinned, updater, "key.pub is the updater key");
 }

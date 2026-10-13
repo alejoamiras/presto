@@ -59,8 +59,9 @@
   workstation". The key had no authority (nothing pins it) and was deleted with the run's temp
   directory. Every later local run set the TEST 1 seed.
 
-## Waiting on O2
+## After O2 (2026-10-13)
 
-- The repository-level repo test and the `key.pub` checks (not a test vector, not the updater key).
-- The round trip and the live check in the `verified-sites-feed` job need `key.pub`; the job fails
-  closed until it lands.
+- The round trip against the real `key.pub` (TEST 1 seed, minisign in a container): accepted, and all
+  six negatives refused for their own reasons, the production-key check now against the real key.
+- The live check as CI runs it: `presto.build/releases/verified-sites.json` answers 404 (the Worker
+  without the route is still deployed), so it compares against nothing and passes.
