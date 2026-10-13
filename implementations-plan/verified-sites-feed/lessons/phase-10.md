@@ -1,4 +1,4 @@
-# Phase 10: PR 2 pre-PR gate (part 1, before `history/1`)
+# Phase 10: PR 2 pre-PR gate and close-out
 
 ## Merging `main` after PR 1
 
@@ -70,12 +70,47 @@ With the stand-in, for src-tauri:
 - The Windows cross-check: only the existing `autostart_heal` and `uninstall_ownership` warnings.
 - `run-webdriver-local.sh`: 9 of 9 specs, 27 tests.
 
-## Waiting for `history/1` on `main`
+## On the real record (2026-10-13)
 
-- Merge `main` again.
-- The real-record gates: the spec and the full WebDriver suite, the release and WebDriver build
-  pair, the spec mutants, case 25 live, `autostart-test.sh`, and the embedded-equals-newest test.
-- The pre-PR gate's CI runs (`presto.yml` dispatch, `actionlint.yml`, both updater smokes in
-  `positive` mode), with run IDs in `pre-pr.md`.
-- Then the close-out: the Outcome block, the archive move, `lessons.md` promotion, and issues for
-  any open items.
+The stand-in was deleted first. Then `main` was merged at `14c4085`, which adds only
+`history/1.json` and its `.minisig` (byte-equal to the source list).
+
+- `the_built_in_is_the_newest_record_byte_for_byte` passes. Mutation: embedding the `.minisig`
+  instead fails it.
+- The core repo test (5) verifies record 1 under `key.pub`.
+- `PRESTO_VERIFIED_SITES_LIVE=1` case 25 passes against the live list.
+- `autostart-test.sh` (Docker) passes in 114 s.
+- `run-webdriver-local.sh` passes 9 of 9 specs, 27 tests; the verified-sites spec takes 12.9 s.
+- Spec mutants:
+  - signing the tampered list validly fails at step 3 (`spec.ts:130`, one failure);
+  - removing the popup refresh fails at step 2 (the reloaded badge is null, one failure).
+- Build pair: the release build (3 min 24 s) passes `assert-no-test-hooks.sh`. The WebDriver
+  build fails it, carrying all three names.
+- `bun run lint:clippy`, `bun run test` and `bun run lint:actions` pass.
+
+## CI, and the one fix it forced
+
+- Presto 38480721422 at `7a8dde1` was green except Cert Trust (windows). Its
+  `verified_sites_feed` "connection refused" case returned `Unreachable` as expected but took
+  2.0168 s against a 1 s bound.
+- **Windows takes about 2 s to refuse a loopback connect**, so the 2 s test feed timeout ended it.
+  The bound for that case on Windows is now `0..FEED_TIMEOUT * 2` (`2e79326`). The drip and hang
+  cases, and the outer deadline, still catch a missing timeout. Codex verified it (round 4).
+- The other run IDs are in `pre-pr.md`.
+
+## Close-out
+
+- **Issues:** #94 (no expiry), #95 (the approval gap), #96 (Firefox), #97 (the O8 canary) and
+  #98 (auth-flow's `afterEach`).
+  - #99, a same-user symlink at `~/.presto`, was filed as a known limit and closed as not planned.
+  - New labels: `verified-sites`, `owner-decision` and `known-limit`.
+  - Searching existing issues first found nothing to dedupe against.
+- **`lessons.md`:** three entries promoted: the lock read, the `bun --config` form, and Windows'
+  slow refused connect. To pay for them:
+  - the two npm registry entries merged into one;
+  - the process-group teardown entry retired, since the always-loaded run-isolation rules state it.
+
+  The file was 9.1 KB before, over its ~8 KiB budget, and is 9.4 KB after. Reaching 8 KiB means
+  retiring curated entries from other plans, which is the owner's call.
+- The plan moved to `archive/` and its index line to `archive/index.md`. It has no relative markdown
+  links to repair; `lessons.md` already points at the archive paths.

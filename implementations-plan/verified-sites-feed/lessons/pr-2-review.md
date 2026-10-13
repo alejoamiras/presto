@@ -51,3 +51,15 @@ After the fixes, run with the local `history/1` stand-in:
 - The full WebDriver suite passes 9 of 9 specs, 27 tests.
 - The tampered mutant (signing the served bytes validly) still fails at step 3, with one failure
   and no "after all" timeout.
+
+## Rounds 3 and 4 (resumed session, verification only)
+
+- **Round 3, after `history/1` merged.** Codex confirmed that the only non-docs change since round 2
+  was the header fix plus the two record files, and that record selection, `BUILT_IN` and the
+  byte-for-byte test now select and embed record 1 as designed. `VERDICT: ready`.
+- **Round 4, after the Windows CI fix (`2e79326`).** Codex confirmed:
+  - only Windows' refused-connect case gets `0..4 s`;
+  - the drip and hang cases keep `2..4 s`;
+  - removing the request timeout still fails through the outer 10 s deadline.
+
+  `VERDICT: ready`.

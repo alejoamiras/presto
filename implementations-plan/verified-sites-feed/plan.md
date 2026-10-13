@@ -1,7 +1,7 @@
 ---
 plan: verified-sites-feed
 tier: deep
-status: approved 2026-10-08, implementing PR 1
+status: completed 2026-10-13
 base: 3ebb19b
 driver: claude-code
 eli5_mode: artifact
@@ -11,6 +11,52 @@ codex_model: sol
 harden: none (declined by the owner at the gate)
 delivery: two sequential PRs (publishing path, then client)
 ---
+
+## Outcome
+
+- **2026-10-13: completed.** PR 1 #92 (`34784d2`) shipped the publishing path. The first signed
+  record landed through release-bot PR #93 (`14c4085`) and is live at
+  `https://presto.build/releases/verified-sites.json` (publish run 38480207618). PR 2 #<PR2> is the
+  client, and this close-out rides as its final commits.
+- **Shipped in PR 1:**
+  - the strict list parser and minisign verifier in core;
+  - the signer CLI and its round trip;
+  - `sign-verified-sites.yml`, behind the owner's approval of `verified-sites-signing`;
+  - append-only history, PR-gated by the `verified-sites-feed` job;
+  - `publish-verified-sites.yml` with its KV guard, and the daily health probe;
+  - the Worker route.
+- **Shipped in PR 2:**
+  - **Core:** the verified, locked, never-backwards cache (`store.rs`) and the bounded HTTPS fetch
+    (`fetch.rs`).
+  - **App:**
+    - `build.rs` embeds the newest record;
+    - the registry replaces whole, persists before it swaps, and re-judges under its write lock;
+    - the refresh runs on the update check's cadence through the production `run_updates`;
+    - the 25-case integration test runs on every OS.
+  - **WebDriver:** the feed, the spec, and the hook in `e2e_tray.rs`.
+  - **Release:** the `PRESTO_E2E_` scan over every bundle in `release-presto.yml`'s `build` job (D22).
+  - **Docs:** `VERIFIED_SITES.md`, `PRIVACY.md` and `CLAUDE.md`.
+- **Evidence:** `lessons/pre-pr.md` has the CI run IDs, `lessons/pr-1-review.md` and
+  `lessons/pr-2-review.md` the Codex loops (both converged), and `lessons/phase-*.md` each gate
+  with its mutations.
+- **Changed or dropped, each recorded in the ledger or lessons:**
+  - O1b (a narrowed agent token) was skipped by the owner (A3 reversed).
+  - `start_background_tasks` gained `spawn_production_refresh(app)`, not a literal `spawn_refresh`
+    line, because the pinned key parses into an `Option`.
+  - Case 19: a FIFO at the cache path is replaced by the save; only a directory fails it.
+  - The skip-the-refresh mutant fails at step 2, not step 4.
+  - `autostart-test.sh` copies `LICENSE`, fixing a breakage already on `main`.
+  - Each "rebase on `origin/main`" became a merge of `main`, because PR 1 landed as a squash.
+  - Open follow-ups went to GitHub issues instead of `follow-ups.md`.
+  - The PR 2 review's case-19 subprocess harness was declined, since the core FIFO test is
+    deadline-bound.
+  - tauri-plugin-webdriver's early-returning `refresh()` is harmless noise, noted only.
+- **Open items:** #94 (no expiry), #95 (the approval gap, a second approval factor), #96 (Firefox
+  extensions), #97 (the O8 canary, after the first release with the client), #98 (auth-flow's
+  `afterEach`). **Known limits:** #99 (a same-user symlink at `~/.presto`). Owner steps O6 (merge
+  PR 2) and O7 (release and promote) are the delivery itself.
+- **This plan's `/goal` and `/loop` seeds are retired.** This file is a record of what was decided,
+  not instructions.
 
 # Signed, remotely fetched verified-sites list
 
@@ -871,9 +917,7 @@ local stand-in for `history/1`; the spec's run and the build pair repeat in Phas
 - Layers: E2E, contract.
 
 **Phase 10: PR 2 pre-PR gate**, the Codex fix loop, the close-out commits, checkpoint, open PR 2.
-In progress: `main` merged after PR 1, the 2^53 − 1 fixture and its store test, docs, and the Codex
-loop (converged) are done. The real-record gates and the close-out wait for `history/1`
-(`lessons/phase-10.md`).
+✓ on the real `history/1` (`lessons/phase-10.md`, `lessons/pre-pr.md`); the director opens PR 2.
 - First, once this branch sits on `main` after PR 1: add a fixture to `verified-sites-fixtures.ts`,
   a valid list at version 2^53 − 1 signed with TEST 2, and a store test that a forged cache at that
   version never raises the stored version floor (the bricking attack). The list-5 wrong-key store
