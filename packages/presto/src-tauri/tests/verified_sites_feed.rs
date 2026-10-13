@@ -395,6 +395,7 @@ async fn cases_04_to_16_a_bad_answer_changes_nothing() {
         }
         let before = h.disk();
         let redirect = matches!(case.answer, Some(Answer::RedirectToValid));
+        let refused = case.answer.is_none();
         let (outcome, elapsed) = match case.answer {
             Some(answer) => h.check(answer).await,
             None => {
@@ -415,10 +416,11 @@ async fn cases_04_to_16_a_bad_answer_changes_nothing() {
             Refresh::Refused | Refresh::Kept | Refresh::Equivocation
         );
         assert_eq!(outcome.reached_feed(), answered, "{label}");
-        let bound = if case.slow {
-            FEED_TIMEOUT..FEED_TIMEOUT * 2
-        } else {
-            Duration::ZERO..FAST
+        let bound = match (case.slow, refused) {
+            (true, _) => FEED_TIMEOUT..FEED_TIMEOUT * 2,
+            // Windows retries a refused connect for about 2 s, so the feed timeout may end it.
+            (false, true) if cfg!(windows) => Duration::ZERO..FEED_TIMEOUT * 2,
+            _ => Duration::ZERO..FAST,
         };
         assert!(bound.contains(&elapsed), "{label}: took {elapsed:?}");
         h.assert_at(if case.at_five { 5 } else { 4 });
