@@ -42,8 +42,12 @@ export function feedDocuments(key: SigningKey, record: Uint8Array): Record<Serve
   return {
     with: envelope(key, lists.with),
     without: envelope(key, lists.without),
-    // A valid signature, but over the `without` list: only the signature check can refuse it.
-    tampered: documentBytes(lists.tampered, new TextEncoder().encode(signList(key, lists.without))),
+    // Signed for its own version, but over its bytes minus the final newline, so the comment line
+    // matches and only the signature check can refuse it.
+    tampered: documentBytes(
+      lists.tampered,
+      new TextEncoder().encode(signList(key, lists.tampered.subarray(0, -1))),
+    ),
   };
 }
 
