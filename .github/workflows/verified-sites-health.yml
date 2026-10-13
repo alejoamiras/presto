@@ -38,6 +38,7 @@ jobs:
           rust-components: ""
           install-tauri-system-deps: "false"
           run-prebuild: "false"
+          install-js-deps: "false"
       - run: cargo build --locked --quiet --manifest-path packages/presto/core/Cargo.toml --example verified-sites
       - name: Check the live list against history
         run: |

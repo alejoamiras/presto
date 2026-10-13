@@ -494,7 +494,7 @@ reaches them; the badge stays display-only throughout.
 
 | Job | Token | Secret | Installs |
 |---|---|---|---|
-| prepare, verify-signed, verify, verify-live, PR gates, probe | `contents: read` (or `{}`) | none | setup-presto where the CLI is built |
+| prepare, verify-signed, verify, verify-live, PR gates, probe | `contents: read` (or `{}`) | none | setup-presto where the CLI is built, without `bun install` (no lifecycle script runs beside the CLI) |
 | sign | `contents: read` | the seed, in the signing step only | none; sparse checkout; one Bun file run from `$RUNNER_TEMP` |
 | record | `{}` plus an App token (contents, pull requests; about 1 h) | the App key, used only by the token action | none |
 | publish | `{}` | KV token and account ID, in the write step only | none (curl, jq, base64) |

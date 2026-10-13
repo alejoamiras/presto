@@ -16,3 +16,13 @@ Verdict: not ready, 3 material findings. All verified against the repository and
 Areas Codex reported as holding: artifact hash bindings, create-only record branches and the
 retained-branch check, append-only enforcement, secret scoping, the KV guard's refusals, live and
 history verification, Worker routing.
+
+## Round 2 (resumed session)
+
+Verdict: not ready, 1 new material finding. Codex confirmed the round-1 fixes hold (version 100
+passes and 101 fails with no history, the whitespace-mutated empty list stays valid, backticks stay
+inside the code span).
+
+| # | Finding | Severity | Disposition |
+|---|---|---|---|
+| 4 | `setup-presto` runs `bun install --frozen-lockfile` in prepare (and the other CLI jobs), so a root or workspace lifecycle hook could rewrite the CLI's sources or `$GITHUB_ENV` and show one digest while outputting another, with no signing-path file changed | important | **Accepted, different fix.** Codex proposed adding the manifests, lockfile and bunfig to `SIGNING_PATHS`; that list would still miss the scripts a hook calls and any new workspace, and the stale check reads exact paths, not globs. Instead `setup-presto` gains `install-js-deps` (default `"true"`), and all five jobs that build or run the CLI pass `"false"`: nothing installs, so no hook runs. A contract test pins the five; removing the flag from one fails it. |

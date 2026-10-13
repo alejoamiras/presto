@@ -169,6 +169,28 @@ describe("verified-sites secrets and privileges", () => {
   });
 });
 
+describe("verified-sites CLI jobs", () => {
+  test("no job that builds or runs the CLI installs JS packages, so no lifecycle script runs", () => {
+    const presto = { workflow: Bun.YAML.parse(read(".github/workflows/presto.yml")) as Workflow };
+    const jobs: [string, Job][] = [
+      ...[sign, publish, health].flatMap((w) => Object.entries(w.workflow.jobs)),
+      ["verified-sites-feed", job(presto, "verified-sites-feed")],
+    ];
+    const setups = jobs.flatMap(([name, j]) =>
+      j.steps
+        .filter((s) => s.uses === "./.github/actions/setup-presto")
+        .map((s) => `${name}: ${s.with?.["install-js-deps"]}`),
+    );
+    expect(setups).toEqual([
+      "prepare: false",
+      "verify-signed: false",
+      "verify: false",
+      "probe: false",
+      "verified-sites-feed: false",
+    ]);
+  });
+});
+
 describe("verified-sites signing", () => {
   const signJob = job(sign, "sign");
   const signStep = signJob.steps[stepIndex(signJob, "Sign")];

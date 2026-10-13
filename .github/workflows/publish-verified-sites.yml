@@ -54,6 +54,7 @@ jobs:
           rust-components: ""
           install-tauri-system-deps: "false"
           run-prebuild: "false"
+          install-js-deps: "false"
       - run: cargo build --locked --quiet --manifest-path packages/presto/core/Cargo.toml --example verified-sites
       - name: Build the document from the newest record
         id: build
