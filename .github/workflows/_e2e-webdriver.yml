@@ -72,12 +72,43 @@ jobs:
         if: inputs.mode == 'built-debug'
         run: bunx tauri build --debug --no-bundle --features webdriver
 
+      # The app's WebDriver-only list hook polls this loopback feed, and verified-sites.spec.ts switches
+      # what it serves through the state file's control endpoint.
+      - name: Start the verified-sites feed
+        run: |
+          state="$RUNNER_TEMP/verified-sites-feed.json"
+          bun scripts/verified-sites-e2e-feed.ts --state "$state" > "$RUNNER_TEMP/verified-sites-feed.log" 2>&1 &
+          for _ in $(seq 1 100); do
+            [ -s "$state" ] && break
+            sleep 0.1
+          done
+          if [ ! -s "$state" ]; then
+            echo "::error::the verified-sites feed wrote no state file"
+            cat "$RUNNER_TEMP/verified-sites-feed.log"
+            exit 1
+          fi
+          # The state's pid is Bun's own (a native Windows PID there), so Cleanup can kill exactly it.
+          pid=$(S="$state" bun -e 'process.stdout.write(String((await Bun.file(process.env.S).json()).pid))')
+          {
+            echo "VERIFIED_SITES_E2E_FEED_STATE=$state"
+            echo "VERIFIED_SITES_E2E_FEED_PID=$pid"
+          } >> "$GITHUB_ENV"
+
       # ── Launch app (single step, no platform conditionals) ──
       - name: Launch app
         run: |
           # The app's WebDriver-only tray driver writes here, and tray-update.spec.ts reads it.
           export PRESTO_E2E_TRAY_REPORT="$RUNNER_TEMP/tray-report.json"
           echo "PRESTO_E2E_TRAY_REPORT=$PRESTO_E2E_TRAY_REPORT" >> "$GITHUB_ENV"
+          # The list hook's feed and key, from the feed's state. The key is a two-line document whose
+          # final newline `$(...)` strips, so it is put back.
+          field() {
+            F="$1" bun -e 'const s = await Bun.file(process.env.VERIFIED_SITES_E2E_FEED_STATE).json()
+              process.stdout.write(String(s[process.env.F]))'
+          }
+          PRESTO_E2E_VERIFIED_SITES_URL=$(field url)
+          PRESTO_E2E_VERIFIED_SITES_PUBKEY="$(field pubkey)"$'\n'
+          export PRESTO_E2E_VERIFIED_SITES_URL PRESTO_E2E_VERIFIED_SITES_PUBKEY
           EXE=""
           [ "$RUNNER_OS" = "Windows" ] && EXE=".exe"
           case "${{ inputs.mode }}" in
@@ -118,9 +149,9 @@ jobs:
           cat "$RUNNER_TEMP/tauri.log" 2>/dev/null || true
           exit 1
 
-      # The updater smokes prove shipped binaries lack this string; that check means something only
-      # if a build with the hooks demonstrably contains it.
-      - name: Assert the WebDriver binary carries the tray hooks
+      # The updater smokes and the release build prove shipped binaries lack these names; that check
+      # means something only if a build with the hooks demonstrably contains each of them.
+      - name: Assert the WebDriver binary carries the test hooks
         env:
           MODE: ${{ inputs.mode }}
         run: |
@@ -129,10 +160,12 @@ jobs:
           PROFILE=debug
           [ "$MODE" = "release" ] && PROFILE=release
           BIN="src-tauri/target/$PROFILE/Presto$EXE"
-          if ! grep -qa PRESTO_E2E_TRAY_REPORT "$BIN"; then
-            echo "::error::$BIN does not contain PRESTO_E2E_TRAY_REPORT, so the smokes' absence check proves nothing"
-            exit 1
-          fi
+          for name in PRESTO_E2E_TRAY_REPORT PRESTO_E2E_VERIFIED_SITES_URL PRESTO_E2E_VERIFIED_SITES_PUBKEY; do
+            if ! grep -qa "$name" "$BIN"; then
+              echo "::error::$BIN does not contain $name, so the shipped-binary scans prove nothing"
+              exit 1
+            fi
+          done
 
       # ── Run tests ──
       - name: Run WebDriver E2E tests
@@ -163,6 +196,7 @@ jobs:
           path: |
             ${{ runner.temp }}/tauri.log
             ${{ runner.temp }}/tray-report.json
+            ${{ runner.temp }}/verified-sites-feed.log
           if-no-files-found: ignore
           retention-days: 7
 
@@ -173,12 +207,18 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             # Git Bash has no pkill; use taskkill on the native processes (// escapes
             # the flags so MSYS doesn't path-mangle them).
+            if [ -n "${VERIFIED_SITES_E2E_FEED_PID:-}" ]; then
+              taskkill //F //PID "$VERIFIED_SITES_E2E_FEED_PID" 2>/dev/null || true
+            fi
             if [ -n "${TAURI_PID:-}" ]; then
               taskkill //F //PID "$TAURI_PID" //T 2>/dev/null || true
             fi
             taskkill //F //IM Presto.exe 2>/dev/null || true
             taskkill //F //IM msedgewebview2.exe 2>/dev/null || true
           else
+            if [ -n "${VERIFIED_SITES_E2E_FEED_PID:-}" ]; then
+              kill "$VERIFIED_SITES_E2E_FEED_PID" 2>/dev/null || true
+            fi
             pkill -P "${TAURI_PID:-0}" 2>/dev/null || true
             kill "${TAURI_PID:-0}" 2>/dev/null || true
             pkill -f "Presto" 2>/dev/null || true
