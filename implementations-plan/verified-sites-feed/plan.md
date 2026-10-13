@@ -820,7 +820,9 @@ path is replaced by the save, a directory fails it; see `lessons/phase-7.md`).
 - Mutations: remove the byte counter; save without re-reading.
 - Layers: unit, integration.
 
-**Phase 8: app wiring and the in-process integration test.**
+**Phase 8: app wiring and the in-process integration test.** ✓ against an uncommitted local
+stand-in for `history/1`: no src-tauri build works without a record, so this branch builds in CI only
+once `history/1` is on `main` (`lessons/phase-8.md` lists what waits for it).
 - `src-tauri/tests/verified_sites_feed.rs`: multi-thread runtime, aws-lc-rs provider, a scripted local
   HTTP server, fixture lists, a temporary store, a 2 s feed timeout, built-in = list 4, and an outer
   `tokio::time::timeout` on every case so a missing production timeout fails instead of hanging. Every
@@ -834,7 +836,7 @@ path is replaced by the save, a directory fails it; see `lessons/phase-7.md`).
 | 2 | Restart | A new `VerifiedSites` on the same store is at 5; serving 4 is refused |
 | 3 | List 6 drops a built-in entry | That origin answers None, also after a restart |
 | 4–16 | Tampered signature; wrong key; older; same version, different body; malformed JSON; signed schema violation; oversized with and without `Content-Length`; drip; hang; 404; 503; connection refused; 302 to a valid document | Nothing changes; returns within its bound; `reached` only for 200s within the cap |
-| 17–20 | Cache corrupt; forged; FIFO or directory (unix); oversized | `load` returns the built-in in under 200 ms; the next accepted list overwrites the file (a FIFO or directory: the save fails, memory still advances) |
+| 17–20 | Cache corrupt; forged; FIFO or directory (unix); oversized | `load` returns the built-in in under 200 ms; the next accepted list overwrites the file (a FIFO is replaced like any bad file; a directory fails the save, and memory still advances) |
 | 21 | Unwritable store directory | The swap still happens; the error is logged |
 | 22 | Another instance already wrote list 6; this one fetches 5 | Memory moves to 6 (the disk winner), never to 5 |
 | 23 | Disk holds a different list at the fetched version | Equivocation: nothing changes |
@@ -867,6 +869,10 @@ path is replaced by the save, a directory fails it; see `lessons/phase-7.md`).
 - Layers: E2E, contract.
 
 **Phase 10: PR 2 pre-PR gate**, the Codex fix loop, the close-out commits, checkpoint, open PR 2.
+- First, once this branch sits on `main` after PR 1: add a fixture to `verified-sites-fixtures.ts`,
+  a valid list at version 2^53 − 1 signed with TEST 2, and a store test that a forged cache at that
+  version never raises the stored version floor (the bricking attack). The list-5 wrong-key store
+  test stays.
 
 ### Pre-PR gate (blocks each PR)
 
@@ -992,6 +998,8 @@ display-only boundary, no new IPC or ACL, Firefox deferred.
   checkers agree it follows from D11. Still offered as A2.
 
 **Changed after approval:**
+- **Case 19 corrected (implementation, 2026-10-13):** `rename(2)` replaces a FIFO at the cache path,
+  healing it like any bad file; only a directory fails the save.
 - **A3 reversed (owner, 2026-10-13): O1b skipped.** The narrowed agent token and its four-403
   verification are dropped; agents keep the owner's `gh` OAuth token (`repo` scope). An agent can
   therefore approve a signing run with one API call and change the environment or its secret. The
