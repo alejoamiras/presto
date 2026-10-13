@@ -1,6 +1,6 @@
 # Privacy Notice
 
-**Last updated:** 2026-09-18
+**Last updated:** 2026-10-13
 
 Presto proves locally. There are no user accounts, and the project adds no product analytics, no
 advertising trackers, no remote crash reporting, and no application telemetry to the SDK packages,
@@ -74,9 +74,11 @@ directory to cache the proving reference string, and Presto neither places nor c
 downloaded from Aztec's public CRS host on first use and grows with the circuits proved: a few
 hundred MiB for small Noir circuits, several GiB after Aztec transaction proving.
 
-**`~/.presto/certs/`**, the updater state, and the various lock and update-marker files also live
-under `~/.presto`, but they resolve from your home directory **directly and ignore `PRESTO_HOME`** —
-they are desktop-only concerns, and the headless server has neither TLS nor an updater.
+**`~/.presto/certs/`**, the updater state, the last accepted verified-sites list
+(`verified-sites-accepted.json`, the public signed list exactly as served), and the various lock and
+update-marker files also live under `~/.presto`, but they resolve from your home directory
+**directly and ignore `PRESTO_HOME`** — they are desktop-only concerns, and the headless server has
+neither TLS, nor an updater, nor the list.
 
 **The local Certificate Authority is keyless.** Its signing key is generated in memory, signs one
 `localhost` leaf, and is discarded: the application never deliberately persists it. It is also
@@ -148,8 +150,14 @@ This is published package behaviour, so it is your users' privacy, not just ours
   the process environment carries a `GITHUB_TOKEN`, the digest lookup is sent with it as a `Bearer`
   credential, because anonymous callers share a 60-request-per-hour budget per source address that CI
   runners exhaust between them. On a developer machine that environment variable is usually absent
-  and the call goes out anonymously. The updater request carries no version or platform in its URL,
-  and polls 5 seconds after launch and then every 12 hours; `PRESTO_NO_UPDATE=1` disables it.
+  and the call goes out anonymously. The updater request carries no version or platform in its URL.
+  It checks 5 seconds after launch, then whenever 6 hours of wall-clock time have passed, sampled
+  every 15 minutes; `PRESTO_NO_UPDATE=1` disables it.
+- **`presto.build/releases/verified-sites.json`** — the desktop app fetches the signed list of
+  recognized sites on the same cadence as the update check, retrying every 15 minutes until a check
+  reaches the server. It is a plain `GET` with no cookies, no query string and no body, and the
+  user agent is just `presto`: no version, platform, or anything about the sites you use or approved
+  leaves the machine. Like the update check, it is disabled by `PRESTO_NO_UPDATE=1`.
 - **A proving reference string (CRS)** — `bb` and `@aztec/bb.js` both download one on first use, from
   Aztec's public CRS host, and cache it (`~/.bb-crs/` natively, IndexedDB in the browser). This is
   `bb`'s own network behaviour, not something Presto initiates or proxies; it happens whether you
@@ -169,8 +177,8 @@ under their own terms and privacy policies. GitHub also processes issue, pull-re
 security-report interactions made through its service. The project does not combine any of that into
 an analytics profile.
 
-The Worker serving the updater feed reads only the request method and path, returns a stored file,
-and stores nothing. It runs with Cloudflare's Workers Logs enabled at full sampling, so Cloudflare
+The Worker serving the updater feed and the verified-sites list reads only the request method and
+path, returns a stored file, and stores nothing. It runs with Cloudflare's Workers Logs enabled at full sampling, so Cloudflare
 retains request records for it under Cloudflare's own defaults.
 
 ### The OpenTelemetry caveat
