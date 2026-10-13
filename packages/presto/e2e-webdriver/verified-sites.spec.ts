@@ -81,9 +81,11 @@ describe("Verified sites: the signed list feed", () => {
 
   after(async () => {
     try {
+      // Closing the popup denies the request; awaiting it first would wait out the server's 60 s
+      // decision deadline, past the hook's timeout.
+      await closeExtraWindows(settingsHandle);
       await pendingProve?.catch(() => {});
       pendingProve = null;
-      await closeExtraWindows(settingsHandle);
       await serve(feed, "none");
     } catch (e) {
       console.error("Verified sites cleanup failed:", e);
