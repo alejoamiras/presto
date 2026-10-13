@@ -429,6 +429,12 @@ mod tests {
             store.save_if_newer(&signed("list-5")),
             SaveOutcome::WriteFailed(_)
         ));
-        assert!(store.load().is_err());
+        // Windows reports a path through a regular file as not found, so it reads as no cache.
+        let loaded = store.load();
+        if cfg!(windows) {
+            assert!(matches!(loaded, Ok(None)), "{loaded:?}");
+        } else {
+            assert!(loaded.is_err(), "{loaded:?}");
+        }
     }
 }
