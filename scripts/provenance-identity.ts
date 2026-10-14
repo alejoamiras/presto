@@ -1,3 +1,4 @@
+import "./ec-default-digest.ts";
 import { type Bundle, bundleFromJSON, type SerializedBundle } from "@sigstore/bundle";
 import { getTrustedRoot } from "@sigstore/tuf";
 import {

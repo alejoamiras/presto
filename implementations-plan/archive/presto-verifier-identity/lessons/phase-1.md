@@ -11,12 +11,23 @@
   isolation contract also refuses `require`, non-literal `import(...)` and any subprocess other than
   npm reading the registry or installing without scripts.
 
+## Runtime
+
+- Bun 1.4.0, the repository's `.bun-version`, has no default digest for EC keys:
+  `crypto.verify(null, …)` throws `ERR_OSSL_EVP_NO_DEFAULT_DIGEST`. sigstore-js (SETs) and tuf-js
+  (root metadata) verify that way and read the throw as a bad signature, so every verification fails
+  closed. Node, OpenSSL and Bun 1.4.2 use SHA-256. `scripts/ec-default-digest.ts` supplies SHA-256
+  for that case on such a runtime only.
+- The first local gates ran on this machine's Bun 1.4.2 and missed it; CI caught it. Verification
+  gates run under the pinned Bun.
+
 ## Gates
 
-- Live, against the registry and TUF: the bound CLI passes for presto 6.0.0-rc.3 and 5.2.0-revision.5,
-  presto-core 1.2.1, presto-noir 2.0.0-rc.2 and presto-banners 1.2.0, at the tag commit and at the
-  claimed commit; a mutated commit, signer, issuer, repository, repository ID, owner ID, ref, build
-  config or runner is refused for each, through both entry points (70 checks).
+- Live, against the registry and TUF, under the pinned Bun 1.4.0: the bound CLI passes for presto
+  6.0.0-rc.3 and 5.2.0-revision.5, presto-core 1.2.1, presto-noir 2.0.0-rc.2 and presto-banners
+  1.2.0, at the tag commit and at the claimed commit; a mutated commit, signer, issuer, repository,
+  repository ID, owner ID, ref, build config or runner is refused for each, through both entry
+  points (70 checks).
 
 ## Foreign-reviewer consults
 

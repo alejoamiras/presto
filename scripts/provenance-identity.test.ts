@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
+import crypto, {
   createHash,
   generateKeyPairSync,
   type KeyObject,
@@ -350,6 +350,17 @@ describe("the verifier binds a provenance statement to its signing identity", as
       expect(error).not.toBeInstanceOf(PolicyError);
     }
   });
+});
+
+// sigstore-js and tuf-js verify EC signatures with a null digest, the way this calls it.
+test("an EC signature verifies with no digest named", () => {
+  const { privateKey, publicKey } = keys();
+  const data = Buffer.from("ec-default-digest");
+  const signature = sign("sha256", data, privateKey);
+  // tuf-js passes the key wrapped as `{ key }`.
+  for (const key of [publicKey, { key: publicKey }]) {
+    expect(crypto.verify(null, data, key, signature)).toBe(true);
+  }
 });
 
 describe("real publications", async () => {
