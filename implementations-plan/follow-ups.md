@@ -68,8 +68,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 
 ## From presto-rc3 (closed 2026-10-14)
 
-- **#103: point `audit/fixtures/interop-sdk.json` at presto 6.0.0-rc.3 once it is published.** The
-  legacy-SDK gate is dormant until then.
 - **#102: a deterministic `download_failed` falls back to WASM as a silent `transient`.** Fixing it
   is a presto-core change.
 - **#104 (owner decision, optional): presto 1.2.0-rc.2, to bundle `bb` 6.0.0-rc.6.**
