@@ -76,8 +76,13 @@
   - `main`'s scheduled `dependency-audit.yml` has failed since 2026-10-12 on the same two plus
     `quinn-proto` RUSTSEC-2026-0338/0340/0343 in all three Cargo locks. Patched releases exist:
     sharp 0.35.5 (2026-09-27) and source-map-js 1.2.2 (2026-09-30). No issue tracks it.
-  - The PR's `dependency-audit` job will fail for this reason. It is not a required gate and
-    `release-sdk.yml` does not call it, but `release-presto.yml` does.
+  - The PR's `dependency-audit` job will fail for this reason. It is not a required PR gate.
+  - **Correction (2026-10-14):** this entry first said `release-sdk.yml` does not call the audit.
+    That was wrong. `release-sdk.yml:127-130` calls it on every run that is not a dry run, and
+    every publish job requires it to succeed (`:135-207`, since `a08e497`).
+    `release-presto.yml` gates on it as well (`:98`, `:823`). So a red audit on `main` blocks
+    publishing this branch's packages. quinn-proto's RUSTSEC-2026-0338 is patched in `>= 0.11.18`;
+    the locks pin 0.11.17, and 0.11.19 was released 2026-09-30.
 
 ## Container install
 
