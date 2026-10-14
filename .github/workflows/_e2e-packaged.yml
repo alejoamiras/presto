@@ -251,8 +251,8 @@ jobs:
           fi
           bun run test:all
 
-      # Point the playground at the PACKED SDK tarball (not the workspace source), so the composed proof
-      # exercises the PUBLISHED artifact — the brief's "packed SDK" requirement (codex harness review).
+      # The playground installs the packed SDK tarball, not the workspace source, so the composed proof
+      # runs against the exports a consumer installs.
       - name: Pack the SDK + install the tarball into the playground
         run: bash .github/scripts/packaged-e2e-swap-sdk.sh
 
