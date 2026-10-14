@@ -200,7 +200,8 @@ They are in `scripts/provenance-identity.test.ts` and `scripts/__fixtures__/`.
      reusable workflow, which blocks the later publications and the pin update.
    - Bun runs only repository script files in `publish`, and those import, transitively, only
      repository modules and runtime built-ins. This is checked on the import graph, which also
-     refuses computed imports, `require` and spawned interpreters or package runners.
+     refuses non-literal imports, `require` and any subprocess other than npm reading the registry
+     or installing without scripts.
    - Every consumer named above imports the bound function.
 
 ## Gates

@@ -8,7 +8,8 @@
 - `@sigstore/mock` 0.13.0: the root certificate is valid from its creation, so the leaf and the log
   entry are dated a second or two later; its byte outputs are `ArrayBufferView`s, not `Uint8Array`s.
 - `Bun.Transpiler.scanImports` drops type-only imports and reports only literal specifiers, so the
-  isolation contract also refuses `require`, computed `import(...)` and spawned interpreters.
+  isolation contract also refuses `require`, non-literal `import(...)` and any subprocess other than
+  npm reading the registry or installing without scripts.
 
 ## Gates
 
@@ -19,12 +20,5 @@
 
 ## Foreign-reviewer consults
 
-- Plan audit, GPT-6.1 Sol at `high`, 2 rounds: sound after the mock recipe, the per-field mutation
-  table, the 5.2.0 fixture and the publish-job dependency boundary were folded in.
-- Fix loop round 1, GPT-6.1 Sol at `high`: no identity-policy bypass found. Applied: the `verify`
-  job installs with no restored package cache; the isolation contract refuses inline Bun, computed
-  imports, `require` and spawned interpreters (each mutation-checked); tamper rows prove the
-  cryptographic checks refuse altered payloads, certificates, signatures and log entries; presto
-  5.2.0 runs through the report path; a complete presto-core 1.2.1 bundle replaces the trimmed
-  core report as offline verification coverage; the plan describes the final state and the exact
-  pinned fields. One finding outside this plan's scope went to the director.
+- Plan audit: GPT-6.1 Sol at `high`, sound after 2 rounds.
+- Fix loop: GPT-6.1 Sol at `high`; what it changed is in this branch's commits.
