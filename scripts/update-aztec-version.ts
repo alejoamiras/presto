@@ -43,27 +43,47 @@ export function targetFor(name: string, targets: AztecTargets): string {
 /** The registry reads the updater needs; tests substitute a fixed registry. */
 export interface AztecRegistry {
   distTags(name: string): Promise<Record<string, string>>;
-  /** `spec`'s direct dependencies, or `undefined` when npm has no such version. */
+  /** `spec`'s direct dependencies, or `undefined` when npm has no such version; any other failure throws. */
   dependencies(spec: string): Promise<Record<string, string> | undefined>;
 }
 
-async function npmView(args: string[]): Promise<string | undefined> {
+async function npmView(args: string[]): Promise<{ code: number; out: string }> {
   const proc = Bun.spawn(["npm", "view", ...args, "--json"], { stdout: "pipe", stderr: "pipe" });
   const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
-  return code === 0 ? out : undefined;
+  return { code, out };
+}
+
+/**
+ * `npm view <spec> dependencies --json` as a registry answer. Only npm's E404 means "no such
+ * version"; any other failure throws, so a transient error cannot drop a package's pins from the
+ * foundation aggregate or pass it off as unpublished.
+ */
+export function parseNpmDependencies(
+  spec: string,
+  code: number,
+  out: string,
+): Record<string, string> | undefined {
+  // npm prints nothing for a version with no dependencies.
+  if (code === 0) return out.trim() === "" ? {} : JSON.parse(out);
+  let error: unknown;
+  try {
+    error = JSON.parse(out)?.error?.code;
+  } catch {}
+  if (error === "E404") return undefined;
+  throw new Error(
+    `npm view ${spec} dependencies failed (exit ${code}, ${String(error ?? "no error code")})`,
+  );
 }
 
 export const npmRegistry: AztecRegistry = {
   async distTags(name) {
-    const out = await npmView([name, "dist-tags"]);
-    if (out === undefined) throw new Error(`npm view ${name} dist-tags failed`);
+    const { code, out } = await npmView([name, "dist-tags"]);
+    if (code !== 0) throw new Error(`npm view ${name} dist-tags failed (exit ${code})`);
     return JSON.parse(out);
   },
   async dependencies(spec) {
-    const out = await npmView([spec, "dependencies"]);
-    if (out === undefined) return undefined;
-    // npm prints nothing for a version with no dependencies.
-    return out.trim() === "" ? {} : JSON.parse(out);
+    const { code, out } = await npmView([spec, "dependencies"]);
+    return parseNpmDependencies(spec, code, out);
   },
 };
 
@@ -234,7 +254,6 @@ async function main() {
     }
   }
 
-  // Companion bumps an @aztec version change also requires (lessons from the 5.0.0-rc.2 bump):
   const crsBumped = await updateCrsCacheVersion(targets.foundation);
   if (crsBumped) console.log(`Bumped CRS_CACHE_VERSION → ${targets.foundation} in ${CRS_FILE}.`);
   // The Windows bb.exe pin is intentionally NOT touched here (F-008) — see check-windows-bb-pin.ts.

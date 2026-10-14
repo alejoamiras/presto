@@ -5,6 +5,7 @@ import {
   foundationVersionOf,
   HOST_DEPENDENCY_FILES,
   PACKAGE_JSON_FILES,
+  parseNpmDependencies,
   updateHostDependencies,
   updatePackageJson,
   validateVersion,
@@ -166,6 +167,21 @@ describe("split release targets", () => {
       split,
     );
     expect(JSON.parse(host)).toEqual({ "@aztec-foundation/bb.js": "6.0.0-rc.6" });
+  });
+});
+
+describe("parseNpmDependencies", () => {
+  test("only npm's E404 reads as unpublished; any other failure throws", () => {
+    const spec = "@aztec-labs/bb-prover@6.0.0-rc.3";
+    expect(parseNpmDependencies(spec, 0, '{"@aztec-foundation/bb.js":"6.0.0-rc.6"}')).toEqual({
+      "@aztec-foundation/bb.js": "6.0.0-rc.6",
+    });
+    expect(parseNpmDependencies(spec, 0, "")).toEqual({});
+    expect(parseNpmDependencies(spec, 1, '{"error":{"code":"E404"}}')).toBeUndefined();
+    expect(() => parseNpmDependencies(spec, 1, '{"error":{"code":"ETIMEDOUT"}}')).toThrow(
+      `npm view ${spec} dependencies failed (exit 1, ETIMEDOUT)`,
+    );
+    expect(() => parseNpmDependencies(spec, 1, "")).toThrow("no error code");
   });
 });
 
