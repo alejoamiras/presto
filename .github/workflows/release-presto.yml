@@ -403,7 +403,7 @@ jobs:
           esac
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: unsigned-presto-${{ matrix.platform }}
           path: |
@@ -442,7 +442,7 @@ jobs:
         run: cargo build --locked --manifest-path packages/presto/core/Cargo.toml --example update-manifest
 
       - name: Download unsigned build outputs
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           pattern: unsigned-presto-*
           path: artifacts
@@ -462,35 +462,35 @@ jobs:
             "$GITHUB_WORKSPACE/packages/presto/core/target/debug/examples/update-manifest"
 
       - name: Upload signed macOS Apple Silicon artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: presto-macos-arm64
           path: artifacts/unsigned-presto-macos-arm64
           if-no-files-found: error
 
       - name: Upload signed macOS Intel artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: presto-macos-x86_64
           path: artifacts/unsigned-presto-macos-x86_64
           if-no-files-found: error
 
       - name: Upload signed Linux artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: presto-linux-x86_64
           path: artifacts/unsigned-presto-linux-x86_64
           if-no-files-found: error
 
       - name: Upload signed Windows artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: presto-windows-x86_64
           path: artifacts/unsigned-presto-windows-x86_64
           if-no-files-found: error
 
       - name: Upload signed production update feed
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signed-update-feed
           path: artifacts/latest.json
@@ -581,7 +581,7 @@ jobs:
           shasum -a 256 -c "$TARBALL.sha256"
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: presto-server-${{ matrix.platform }}
           path: |
@@ -596,7 +596,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: presto-macos-arm64
           path: artifacts
@@ -666,7 +666,7 @@ jobs:
 
       - name: Upload logs
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: post-build-smoke-logs
           path: /tmp/smoke.log
@@ -687,7 +687,7 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: presto-macos-x86_64
           path: artifacts
@@ -896,7 +896,7 @@ jobs:
           bun-version-file: .bun-version
 
       - name: Download all artifacts
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           path: artifacts
 
@@ -965,7 +965,7 @@ jobs:
       # inline step; prereleases still ship no feed.
       - name: Download signed update feed
         if: needs.validate.outputs.is_prerelease == 'false'
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: signed-update-feed
           path: signed-feed
@@ -1123,7 +1123,7 @@ jobs:
           echo "Asset manifest:"; cat asset-manifest.sha256
 
       - name: Upload asset manifest
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-asset-manifest
           path: asset-manifest.sha256
@@ -1196,7 +1196,7 @@ jobs:
           echo "Remote tag $TAG verified at $EXPECTED_SHA"
 
       - name: Download the gated asset manifest
-        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-asset-manifest
           path: manifest
