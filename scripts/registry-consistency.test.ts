@@ -1,11 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { NPM_PACKAGES } from "./npm-packages.ts";
+import { hasVerifiedSdkProvenance, verifiedProvenanceStatement } from "./registry-consistency.ts";
 import { verifyProvenanceStatement } from "./sdk-release-verification.ts";
-import {
-  hasVerifiedSdkProvenance,
-  verifiedProvenanceStatement,
-} from "./verify-sdk-package-signatures.ts";
 
 /** `npm audit signatures --json --include-attestations` for the published presto-core 1.0.0. */
 const realReport = () =>

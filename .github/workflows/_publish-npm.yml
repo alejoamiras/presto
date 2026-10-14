@@ -7,7 +7,8 @@ name: _Publish npm package (reusable)
 # The job holding the publish credentials executes no dependency lifecycle script, only repository code: `pack`
 # builds the candidate and records its digest, `consumer-test` runs the registry-resolved consumer
 # host with read-only permissions, `publish` re-asserts the digest before `npm publish`, and
-# `verify` does the post-publish registry install. The digest travels as a job output because an
+# `verify` binds the publication's provenance to the release signing identity and does the
+# post-publish registry install. The digest travels as a job output because an
 # artifact can be replaced within a run and a recorded output cannot.
 on:
   workflow_call:
@@ -249,9 +250,10 @@ jobs:
           }
           echo "npm $npm_version"
 
-      # No dependency lifecycle script runs in this job: the verification scripts below import only
-      # repository modules and runtime built-ins, so there is no lockfile install here — even a locked
-      # dependency's `prepare` must not run beside the OIDC identity.
+      # No dependency code runs in this job: the verification scripts below import only repository
+      # modules and runtime built-ins, so there is no lockfile install here — even a locked
+      # dependency's `prepare` must not run beside the OIDC identity. The identity-bound check, which
+      # needs the sigstore packages, runs in `verify`.
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
@@ -296,8 +298,8 @@ jobs:
           echo "::error::npm publish could not be verified"
           exit 1
 
-      - name: Cryptographically verify registry signatures and provenance
-        run: bun scripts/verify-sdk-package-signatures.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"
+      - name: Verify registry signatures and provenance claims
+        run: bun scripts/registry-consistency.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"
 
       - name: Create git tag and GitHub release
         env:
@@ -330,7 +332,8 @@ jobs:
             --latest=false \
             "${assets[@]}"
 
-  # A fresh registry install of the published version, with a read-only token and no OIDC identity.
+  # A fresh registry install of the published version and its identity-bound provenance, with a
+  # read-only token and no OIDC identity.
   verify:
     name: Verify ${{ inputs.package }}
     needs: [pack, publish]
@@ -339,12 +342,32 @@ jobs:
     permissions:
       contents: read
     env:
+      PACKAGE: ${{ inputs.package }}
       VERSION: ${{ needs.publish.outputs.version }}
       PACKAGE_NAME: ${{ needs.pack.outputs.name }}
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: 24.20.0
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
+          restore-keys: ${{ runner.os }}-bun-
+
+      - run: bun install --frozen-lockfile --ignore-scripts
+
+      - name: Verify provenance against the release signing identity
+        run: bun scripts/verify-sdk-package-signatures.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"
 
       - name: Verify release records and a fresh registry install
         env:

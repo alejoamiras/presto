@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { NPM_PACKAGES } from "./npm-packages.ts";
 
 const repository = resolve(import.meta.dir, "..");
@@ -14,6 +14,32 @@ function job(workflow: string, name: string): string {
   const rest = workflow.slice(start + 1);
   const next = rest.slice(1).search(/\n {2}[a-z-]+:\n/);
   return next === -1 ? rest : rest.slice(0, next + 1);
+}
+
+/** `first` appears in `text`, and `second` after it. */
+function before(text: string, first: string, second: string): void {
+  const a = text.indexOf(first);
+  const b = text.indexOf(second);
+  expect(a).toBeGreaterThan(0);
+  expect(b).toBeGreaterThan(a);
+}
+
+/** Every module `entries` reach through static or dynamic imports, and each non-built-in specifier. */
+function importGraph(entries: string[]): { modules: Set<string>; external: string[] } {
+  const transpiler = new Bun.Transpiler({ loader: "ts" });
+  const modules = new Set<string>();
+  const external: string[] = [];
+  const pending = [...entries];
+  while (pending.length) {
+    const file = pending.pop() as string;
+    if (modules.has(file)) continue;
+    modules.add(file);
+    for (const { path: specifier } of transpiler.scanImports(readFileSync(file, "utf8"))) {
+      if (specifier.startsWith(".")) pending.push(Bun.resolveSync(specifier, dirname(file)));
+      else if (!/^(node:|bun:|bun$)/.test(specifier)) external.push(`${file}: ${specifier}`);
+    }
+  }
+  return { modules, external };
 }
 
 describe("npm release workflow contract", () => {
@@ -85,9 +111,10 @@ describe("npm release workflow contract", () => {
     expect(plan).toContain("node-version: 24");
   });
 
-  test("exact cryptographic verification precedes the publication records", () => {
-    const verification = publish.indexOf("bun scripts/verify-sdk-package-signatures.ts");
-    const records = publish.indexOf("Create git tag and GitHub release");
+  test("registry signatures and provenance claims are checked before the publication records", () => {
+    const publishJob = job(publish, "publish");
+    const verification = publishJob.indexOf("bun scripts/registry-consistency.ts");
+    const records = publishJob.indexOf("Create git tag and GitHub release");
     expect(verification).toBeGreaterThan(0);
     expect(records).toBeGreaterThan(verification);
   });
@@ -104,12 +131,6 @@ describe("publish job isolation", () => {
       expect(unprivileged).not.toContain("id-token");
       expect(unprivileged).not.toContain("environment:");
     }
-    const before = (text: string, first: string, second: string) => {
-      const a = text.indexOf(first);
-      const b = text.indexOf(second);
-      expect(a).toBeGreaterThan(0);
-      expect(b).toBeGreaterThan(a);
-    };
     // The digest travels as a job output, recorded before the consumer job runs.
     before(pack, "sha256sum", "upload-artifact");
     expect(pack).not.toContain("sdk-tarball-consumer.sh");
@@ -124,8 +145,29 @@ describe("publish job isolation", () => {
     for (const install of ["sdk-tarball-consumer.sh", "npx", "npm install", "bun install"]) {
       expect(publishJob).not.toContain(install);
     }
+  });
+
+  test("the identity-bound check runs unprivileged, after a locked install, and can fail the run", () => {
+    const verify = job(publish, "verify");
     expect(verify).toContain("needs: [pack, publish]");
     expect(verify).toContain("npm install --ignore-scripts");
+    before(
+      verify,
+      "bun install --frozen-lockfile --ignore-scripts",
+      "bun scripts/verify-sdk-package-signatures.ts",
+    );
+    expect(verify).not.toContain("continue-on-error");
+  });
+
+  test("every script the credentialed job runs imports only repository modules and built-ins", () => {
+    const scripts = [...job(publish, "publish").matchAll(/bun (scripts\/[\w./-]+\.ts)/g)].map(
+      ([, script]) => resolve(repository, script as string),
+    );
+    expect(scripts.length).toBeGreaterThanOrEqual(3);
+    const { modules, external } = importGraph(scripts);
+    expect(external).toEqual([]);
+    expect(modules.has(resolve(repository, "scripts/registry-consistency.ts"))).toBe(true);
+    expect(job(publish, "publish")).not.toContain("verify-sdk-package-signatures");
   });
 
   test("the consumer host never runs registry lifecycle scripts and pins its compiler exactly", () => {
@@ -140,10 +182,24 @@ describe("publish job isolation", () => {
 
   test("every caller checks the SIGNED statement's commit and workflow, not only the unsigned one", () => {
     const source = (rel: string) => readFileSync(resolve(repository, rel), "utf8");
-    // Publication: the signed statement must name the dispatched commit.
+    // Publication: the statement, bound to its signing identity, must name the dispatched commit.
     expect(job(publish, "publish")).toContain(
+      'bun scripts/registry-consistency.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"',
+    );
+    expect(job(publish, "verify")).toContain(
       'bun scripts/verify-sdk-package-signatures.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"',
     );
+    // Every consumer takes the identity-bound verifier, never the registry-consistency one.
+    for (const consumer of [
+      "scripts/release-plan.ts",
+      "scripts/promote-sdk-latest.ts",
+      "scripts/published-playground.ts",
+    ]) {
+      expect(source(consumer)).toMatch(
+        /from "\.\/verify-sdk-package-signatures(\.ts)?"|import\("\.\/verify-sdk-package-signatures\.ts"\)/,
+      );
+      expect(source(consumer)).not.toContain("registry-consistency");
+    }
     // Reuse planning: the signed statement must name the tag's commit.
     expect(source("scripts/release-plan.ts")).toContain(
       "verifySdkPackageSignatures(version, pkg, tagCommit)",
@@ -151,8 +207,9 @@ describe("publish job isolation", () => {
     // Promotion: the tag is compared against the signed commit, and a rollback's legacy-workflow
     // allowance reaches the signed verification too.
     const promote = source("scripts/promote-sdk-latest.ts");
-    expect(promote).toContain(
-      "const provenance = await verifySdkPackageSignatures(version, pkg, undefined, allowedWorkflows)",
+    // Only a rollback may accept the reusable workflow's earlier name as signer.
+    expect(promote).toMatch(
+      /const provenance = await verifySdkPackageSignatures\(\s*version,\s*pkg,\s*undefined,\s*allowedWorkflows,\s*rollback \? ROLLBACK_SIGNERS : RELEASE_SIGNERS,?\s*\)/,
     );
     expect(promote).toContain("tagCommit !== provenance.commit");
   });

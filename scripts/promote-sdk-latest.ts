@@ -5,6 +5,7 @@ import {
   packageFromArgs,
   releaseTag,
 } from "./npm-packages.ts";
+import { RELEASE_SIGNERS, ROLLBACK_SIGNERS } from "./provenance-identity.ts";
 import {
   fetchAndVerifySdkProvenance,
   LEGACY_SDK_RELEASE_WORKFLOW,
@@ -182,7 +183,13 @@ async function verifyPromotionCandidate(
     : undefined;
   await fetchAndVerifySdkProvenance(version, undefined, allowedWorkflows, pkg);
   // The signed statement's commit is the one the tag must match.
-  const provenance = await verifySdkPackageSignatures(version, pkg, undefined, allowedWorkflows);
+  const provenance = await verifySdkPackageSignatures(
+    version,
+    pkg,
+    undefined,
+    allowedWorkflows,
+    rollback ? ROLLBACK_SIGNERS : RELEASE_SIGNERS,
+  );
   const gitTag = releaseTag(pkg, version);
   const remoteRefs = run([
     "git",
