@@ -55,6 +55,7 @@
     ]
   },
   "overrides": {
+    "sharp": "0.35.5",
     "systeminformation": "5.31.7",
     "ws": "8.21.3"
   },
