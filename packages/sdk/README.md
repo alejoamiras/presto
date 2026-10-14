@@ -7,9 +7,9 @@ TypeScript SDK that routes Aztec private kernel proving to a local native presto
 [![npm downloads](https://img.shields.io/npm/dm/@alejoamiras/presto)](https://www.npmjs.com/package/@alejoamiras/presto)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-> **Before you integrate.** Presto's app version is not an Aztec version: Presto proves for the
-> Aztec version this SDK sends with every request, and fetches the `bb` that version needs on first
-> use ([Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions)).
+> **Before you integrate.** Presto's app version is not an Aztec version: Presto proves with the
+> `bb` release this SDK sends with every request, and fetches that `bb` on first use
+> ([Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions)).
 > To ask users to install or connect Presto, use `<presto-banner>` from
 > [`@alejoamiras/presto-banners`](https://github.com/alejoamiras/presto/tree/main/packages/banners)
 > instead of designing your own prompt.
@@ -17,7 +17,7 @@ TypeScript SDK that routes Aztec private kernel proving to a local native presto
 ## Installation
 
 ```bash
-# Aztec v6 (6.0.0-rc.1, the Aztec testnet), on the `testnet` dist-tag
+# Aztec v6 (6.0.0-rc.3, the Aztec testnet), on the `testnet` dist-tag
 npm install @alejoamiras/presto@testnet
 # Aztec v5 (5.2.0, `@aztec/*` packages), npm `latest`
 npm install @alejoamiras/presto

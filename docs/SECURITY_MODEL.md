@@ -107,9 +107,9 @@ else. `provenance: "attestation"` is reserved for when upstream signs.
 
 Three further consequences follow from trusting the publisher, and none of them is a bug to report:
 
-- **There is no minimum-safe-version floor.** The `x-aztec-version` header names an *Aztec* release,
-  and many Aztec versions share one `bb`, so a "newer is safer" floor would break legitimate older
-  dApps. Any well-formed version upstream published is accepted
+- **There is no minimum-safe-version floor.** The `x-aztec-version` header names the barretenberg
+  release the client proves with (the SDK's bb.js version), and an older dApp needs its older `bb`,
+  so a "newer is safer" floor would break legitimate older dApps. Any well-formed version upstream published is accepted
   (`packages/presto/core/src/versions/version_policy.rs`).
 - **Revocation is reactive and ships in an app release.** `KNOWN_VULNERABLE_VERSIONS` is a
   compile-time list and is currently **empty**. Withdrawing a version that is later found vulnerable

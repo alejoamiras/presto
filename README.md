@@ -95,7 +95,7 @@ Aztec dApp                                   Noir dApp
 ### For dApp developers (SDK)
 
 ```bash
-npm install @alejoamiras/presto@testnet   # SDK for Aztec v6 (6.0.0-rc.1); native proving needs the Presto app 1.1.3+
+npm install @alejoamiras/presto@testnet   # SDK for Aztec v6 (6.0.0-rc.3); native proving needs the Presto app 1.1.3+
 npm install @alejoamiras/presto           # SDK for Aztec v5 (5.2.0), npm `latest`
 ```
 
@@ -129,7 +129,7 @@ confirmed, current-tab-only HTTP escape hatch by setting both `httpsOnly: false`
 ### For Noir circuits (`@alejoamiras/presto-noir`)
 
 ```bash
-npm install @alejoamiras/presto-noir@testnet @aztec-foundation/bb.js@6.0.0-rc.1   # Aztec v6
+npm install @alejoamiras/presto-noir@testnet @aztec-foundation/bb.js@6.0.0-rc.6   # Aztec v6 (6.0.0-rc.3)
 npm install @alejoamiras/presto-noir @aztec/bb.js@5.2.0                         # Aztec v5, `latest`
 ```
 

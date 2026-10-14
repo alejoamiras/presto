@@ -1,6 +1,6 @@
 # Migration guide
 
-## Aztec v6 (`6.0.0-rc.1`)
+## Aztec v6 (`6.0.0-rc.3`)
 
 Aztec v6 renames its npm scopes: most `@aztec/<name>` packages become `@aztec-labs/<name>`, while
 bb.js, the Noir packages and the L1 artifacts move to `@aztec-foundation/` (for example
@@ -8,7 +8,7 @@ bb.js, the Noir packages and the L1 artifacts move to `@aztec-foundation/` (for 
 dependencies, then install the SDK built for v6:
 
 ```bash
-npm install @alejoamiras/presto@testnet   # Aztec v6, 6.0.0-rc.1
+npm install @alejoamiras/presto@testnet   # Aztec v6, 6.0.0-rc.3
 npm install @alejoamiras/presto           # Aztec v5 (5.2.0), npm `latest`
 ```
 
