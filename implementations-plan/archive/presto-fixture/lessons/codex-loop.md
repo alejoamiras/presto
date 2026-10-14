@@ -16,10 +16,10 @@ Codex checked the following independently:
 It also noted that the proof itself stays unverified until the e2e runs.
 
 **Findings:**
-- **Fixed.** The plan's trust sentence overstated what the verifier proves. It now names the claims
-  that are checked: the repository, `release-sdk.yml` on `main`, and the commit.
-- **Not in this plan.** Two findings are about pre-existing code outside this diff: one in the
-  shared verifier, and a comment nit in `_e2e-packaged.yml`. Both are routed to the owner.
+- **Fixed.** The plan's trust sentence now names the checked claims exactly: the repository,
+  `release-sdk.yml` on `main`, and the commit.
+- **Not in this plan.** Two findings concern pre-existing code outside this diff. Both are routed to
+  the owner.
 
 ## Round 2: the wording fix (`887b0c1..a383bc5`)
 
