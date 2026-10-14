@@ -288,13 +288,9 @@ impl VersionRejection {
 /// vulnerable — is handled REACTIVELY via the [`KNOWN_VULNERABLE_VERSIONS`] revocation list
 /// (empty by default). Everything not on that list is allowed.
 ///
-/// Well-formedness is STILL enforced (codex denylist-review #2): the request must be canonical strict
-/// semver with no build metadata. This rejects aliases (`latest`) the looser `is_valid_version` charset
-/// gate lets through, and keeps the exact-string revocation match meaningful.
-///
-/// (A precise FUTURE gate could run `bb --version` on the downloaded binary to obtain the true
-/// barretenberg build id — distinct from the Aztec/npm version — and denylist on THAT, or ship a signed
-/// updateable revocation manifest. Larger cross-package changes, tracked separately.)
+/// Well-formedness is STILL enforced: the request must be canonical strict semver with no build
+/// metadata. This rejects aliases (`latest`) the looser `is_valid_version` charset gate lets through,
+/// and keeps the exact-string revocation match meaningful.
 pub fn check_version_selectable(requested: &str) -> Result<(), VersionRejection> {
     check_version_against(requested, KNOWN_VULNERABLE_VERSIONS)
 }
