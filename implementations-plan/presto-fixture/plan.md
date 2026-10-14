@@ -6,12 +6,29 @@ eli5_mode: off
 code_review: off
 codex_model: sol
 explainer: off
-status: approved 2026-10-14 (director brief)
+status: closed 2026-10-14 (PR #110); approved 2026-10-14 (director brief)
 created: 2026-10-14
 worktree: .claude/worktrees/presto-fixture
 branch: worktree-presto-fixture
 base: main @ cfe86f1
 ---
+
+## Outcome
+
+Closed 2026-10-14 in PR #110 (`Closes #103`). Codex converged in 2 rounds
+(`lessons/codex-loop.md`).
+
+**Shipped:**
+- The fixture names presto 6.0.0-rc.3. Its `sdkIntegrity` is the digest that npm's signature audit
+  and the SLSA claims verified (release-sdk.yml at b842a53), and it equals the registry's
+  `dist.integrity`.
+- The presto-core 1.2.1 pin re-verified unchanged.
+- The legacy step wakes and exits 0 locally. The proof itself is `sdk.yml`'s sandbox e2e on the PR.
+
+**Open items:** none in this plan. One review finding about pre-existing code was routed to the
+owner.
+
+**Seeds:** none were issued, and none remain.
 
 ## Summary
 
