@@ -118,12 +118,10 @@ path npm's own `audit signatures` already takes in every environment that runs t
 - `verifyProvenanceStatement` keeps its claim checks and also receives the verified identity.
 
 **Where third-party code may run.** Decision: A (director, 2026-10-14). B is filed at close-out, after
-the merge, as an `owner-decision` issue. `_publish-npm.yml`'s `publish`
-job holds `id-token: write`. It runs both verifier CLIs, `sdk-release-verification.ts` in the
-consistency poll and `verify-sdk-package-signatures.ts` before tagging. It runs them with no
-dependency install, by design: they "import only repository modules and runtime built-ins". If the
-`@sigstore/*` packages are imported into those modules, third-party code runs beside the OIDC
-identity, however the packages get installed. Two ways to keep it out:
+the merge, as an `owner-decision` issue. `_publish-npm.yml`'s `publish` job holds
+`id-token: write` and installs no dependencies, so every CLI it runs imports only repository modules
+and runtime built-ins. Importing the `@sigstore/*` packages into those modules would run third-party
+code beside the OIDC identity, however the packages got installed. Two ways keep it out:
 
 - **A (recommended): bind identity at every consumer; keep the publish job dependency-free.**
   - The identity policy and `verifySigningIdentity` go in a new module,
@@ -150,7 +148,7 @@ identity, however the packages get installed. Two ways to keep it out:
 
 | # | Commit | Change |
 |---|---|---|
-| 1 | `build(deps)` | The three `@sigstore/*` runtime packages and `@sigstore/mock`. The lock diff may add only their subtree. If bun re-dedupes, splice the lock, as in the audit-fix lesson. |
+| 1 | `build(deps)` | The three `@sigstore/*` runtime packages, and `@sigstore/mock` with `@sigstore/protobuf-specs` for tests. The lock diff adds only their subtree. |
 | 2 | `feat(release)` | Under option A: `scripts/provenance-identity.ts` holds the identity policy and `verifySigningIdentity(bundle, expectation, trust?)`. `trust` is injectable for tests; production uses TUF. `verifySdkPackageSignatures` binds identity. The publish job's checks move to the dependency-free `registry-consistency.ts`, and the `verify` job runs the bound CLI. |
 | 3 | `test(release)` | The tests below. |
 | 4 | `docs(ci)` | Rewrite the comment at `.github/workflows/_e2e-packaged.yml:254-255` to say what the step does. |
@@ -162,7 +160,7 @@ identity, however the packages get installed. Two ways to keep it out:
 
 ## Tests
 
-They are in `scripts/sdk-release-verification.test.ts` and its fixtures.
+They are in `scripts/provenance-identity.test.ts` and `scripts/__fixtures__/`.
 
 1. **A mock Sigstore world.** It is built with `@sigstore/mock`'s v1 primitives:
    - a CA with a CT log, so the leaf certificate carries an SCT;
@@ -180,20 +178,29 @@ They are in `scripts/sdk-release-verification.test.ts` and its fixtures.
    - **Entry points:** both bundle-consuming entry points get the passing control and a
      foreign-identity bundle. The entry points are the audit-report path and the injected-bundle
      path that `verifySdkPackageSignatures` uses.
+   - **Tampering:** a payload changed after signing, another signer's certificate, a second envelope
+     signature, a log entry with another integrated time and another signature's log entry are each
+     refused by the cryptographic checks, never as a `PolicyError`, with the release and the
+     rollback signers alike.
 2. **Real publications, offline.** These use a committed snapshot of the public-good trusted root
    and real `npm audit signatures` reports:
-   - presto-core 1.0.0 (already committed) and presto 6.0.0-rc.3 must pass, at their own commits;
+   - presto 6.0.0-rc.3 and presto-core 1.2.1 must pass, at their own commits, and rc.3 fails at
+     any other;
    - presto 5.2.0, signed by `_publish-sdk.yml`, must pass with the rollback allowance and fail
-     without it.
+     without it, through both entry points.
+
+   The committed presto-core 1.0.0 report is trimmed to its statement payloads, so it covers claim
+   extraction only.
 3. **Live.** `describe.skipIf(!process.env.PRESTO_LIVE_PROVENANCE)` runs `verifySdkPackageSignatures`
    against npm and TUF for presto 6.0.0-rc.3 and core 1.2.1.
-4. **Contract (option A).** The assertions at `scripts/sdk-release-contract.test.ts:88` and `:144`
-   require the bound CLI inside `publish`. They are replaced, not supplemented:
-   - The `verify` job runs the bound CLI after a frozen, script-free install, keeping `--package`,
-     the version and `$GITHUB_SHA`. Its failure fails the reusable workflow, which blocks the later
-     publications and the pin update.
-   - The CLIs that `publish` runs import, transitively, only repository modules and runtime
-     built-ins. This is checked on the import graph, not on filenames.
+4. **Contract (option A).** In `scripts/sdk-release-contract.test.ts`:
+   - `publish` runs `registry-consistency.ts` before the publication records and never the bound CLI.
+   - The `verify` job runs the bound CLI after a frozen, script-free install with no restored
+     package cache, keeping `--package`, the version and `$GITHUB_SHA`. Its failure fails the
+     reusable workflow, which blocks the later publications and the pin update.
+   - Bun runs only repository script files in `publish`, and those import, transitively, only
+     repository modules and runtime built-ins. This is checked on the import graph, which also
+     refuses computed imports, `require` and spawned interpreters or package runners.
    - Every consumer named above imports the bound function.
 
 ## Gates
@@ -210,9 +217,15 @@ They are in `scripts/sdk-release-verification.test.ts` and its fixtures.
 
 ## Security & Adversarial Considerations
 
-- **Every identity field is pinned**, including the immutable repository and owner IDs, so a
-  renamed or recreated repository with the same URI does not match. The runner environment is
-  pinned too.
+- **Pinned identity fields:** the issuer (.1.8), the SAN and build signer URI (.1.9), the runner
+  environment (.1.11), the repository URI (.1.12), digest (.1.13), ref (.1.14), the immutable
+  repository and owner IDs (.1.15, .1.17), so a renamed or recreated repository with the same URI
+  does not match, and the build config URI and digest (.1.18, .1.19).
+- **Not pinned:** the build signer digest (.1.10), owner URI (.1.16), trigger (.1.20), run invocation
+  URI (.1.21) and visibility (.1.22). The signer is a reusable workflow called from the same commit
+  that .1.19 pins, `release-sdk.yml` is dispatch-only, and the owner ID binds the owner.
+- **The verifier runs locked bytes.** The `verify` job installs from the registry against
+  `bun.lock` with no restored cache, so no file saved by a job that ran dependency code reaches it.
 - **The SAN is anchored and escaped.** It is never a bare string pattern.
 - **The commit is bound in both directions:** the certificate's commit equals the statement's, and
   the expected commit when one is given.
