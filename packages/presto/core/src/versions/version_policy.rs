@@ -235,7 +235,7 @@ pub fn versions_to_evict_for_size(
     to_evict
 }
 
-/// Aztec versions whose bundled `bb` is KNOWN to be vulnerable — a REVOCATION list, **EMPTY by default**.
+/// `bb` releases KNOWN to be vulnerable — a REVOCATION list, **EMPTY by default**.
 ///
 /// `x-aztec-version` carries the barretenberg release the client proves with (the SDK's exact
 /// `@aztec-foundation/bb.js` pin, which since Aztec 6.0.0-rc.3 differs from the `@aztec-labs/*`
@@ -261,7 +261,7 @@ pub enum VersionRejection {
     /// Carries `+build` metadata. Two builds with equal SemVer precedence are distinct release
     /// identities we can't reason about — refuse them.
     HasBuildMetadata,
-    /// The requested Aztec version is on the [`KNOWN_VULNERABLE_VERSIONS`] revocation list.
+    /// The requested version is on the [`KNOWN_VULNERABLE_VERSIONS`] revocation list.
     KnownVulnerable,
 }
 
@@ -903,9 +903,8 @@ mod tests {
 
     #[test]
     fn version_policy_allows_everything_by_default() {
-        // The header is the Aztec version (not a bb version), and many Aztec releases share one bb, so
-        // there is NO floor: any well-formed version a dApp requests is allowed — including OLDER ones —
-        // so a legitimate older-but-compatible app is never broken. Default (empty) production denylist.
+        // Each client needs exactly the bb release it names, so there is NO floor: any well-formed
+        // version is allowed, OLDER ones included. Default (empty) production denylist.
         for v in [
             "5.0.0",
             "5.1.0",
