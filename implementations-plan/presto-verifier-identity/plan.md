@@ -6,7 +6,7 @@ eli5_mode: off
 code_review: off
 codex_model: sol
 explainer: off
-status: draft 2026-10-14, at the approval gate (adds a verification policy)
+status: approved 2026-10-14 (director, decision A)
 created: 2026-10-14
 worktree: .claude/worktrees/presto-verifier-identity
 branch: worktree-presto-verifier-identity
@@ -31,7 +31,7 @@ registry bytes inherits this property:
 - the release plan;
 - promotion;
 - the production playground build;
-- the fixture tooling;
+- the verifier CLI, which re-points the interop fixture by hand;
 - `_publish-npm.yml`'s `verify` job.
 
 The OIDC-holding `publish` job keeps registry-consistency checks only. See "Where third-party code
@@ -67,6 +67,7 @@ Two library facts shape the policy:
 | `@sigstore/tuf` | 5.0.0 | 2026-06-01 |
 | `@sigstore/bundle` | 5.0.0 | 2026-06-01 |
 | `@sigstore/mock` | 0.13.0 | 2026-06-01; tests only |
+| `@sigstore/protobuf-specs` | 0.5.2 | 2026-08-21; tests only, the version the three above already resolve |
 
 All are maintained by `bdehamer` in sigstore-js. Root `devDependencies` are what CI, the release
 and Workers Builds install (`bun install --frozen-lockfile`).
@@ -116,7 +117,8 @@ path npm's own `audit signatures` already takes in every environment that runs t
   It is taken from the same envelope payload bytes that are verified and later decoded.
 - `verifyProvenanceStatement` keeps its claim checks and also receives the verified identity.
 
-**Where third-party code may run (decision for the approval gate).** `_publish-npm.yml`'s `publish`
+**Where third-party code may run.** Decision: A (director, 2026-10-14). B is filed at close-out, after
+the merge, as an `owner-decision` issue. `_publish-npm.yml`'s `publish`
 job holds `id-token: write`. It runs both verifier CLIs, `sdk-release-verification.ts` in the
 consistency poll and `verify-sdk-package-signatures.ts` before tagging. It runs them with no
 dependency install, by design: they "import only repository modules and runtime built-ins". If the
@@ -136,7 +138,7 @@ identity, however the packages get installed. Two ways to keep it out:
     `verify-sdk-package-signatures.ts`. A publication whose signing identity does not bind fails the
     release run right after publishing.
   - Every consumer that trusts registry bytes binds identity: `release-plan.ts`,
-    `promote-sdk-latest.ts`, `published-playground.ts` and the fixture tooling.
+    `promote-sdk-latest.ts`, `published-playground.ts` and the verifier CLI.
   - A contract test asserts that the publish job never runs the identity-bound CLI, and that every
     consumer imports the bound function.
 - **B: move tagging out of the OIDC job.** A new `tag` job (no OIDC, `contents: write`) installs
