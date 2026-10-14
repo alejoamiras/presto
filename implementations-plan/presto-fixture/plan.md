@@ -45,9 +45,9 @@ On the PR, the acceptance check is `sdk.yml`'s sandbox e2e. The fixture path rou
 ## Security & Adversarial Considerations
 
 - **Which bytes CI trusts.** The installer checks the tarball against `sdkIntegrity`. So the value
-  must come from a source that vouched for the bytes: npm's signature audit and the SLSA statement
-  over the same digest, both bound to the release workflow and commit. The registry's
-  `dist.integrity` alone is not enough. A hand-copied value that matched the wrong publication
+  must come from a source that vouched for the bytes. Here that is npm's signature audit and the
+  SLSA statement over the same digest, whose claims name this repository, `release-sdk.yml` on
+  `main`, and commit b842a53. The registry's `dist.integrity` alone is not enough. A hand-copied value that matched the wrong publication
   would let CI prove against bytes nobody built from this repository.
 - **The siblings.** Core's integrity is re-verified, not carried forward. It is unchanged only
   because the published manifest still pins 1.2.1.
