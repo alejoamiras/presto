@@ -1,9 +1,9 @@
 /**
  * The bb.js releases this adapter is tested against: the wire contract, the byte identity of native
- * and WASM proofs, and the CLI flags are all verified per version, and an Aztec release ships its
- * `@aztec-foundation/bb.js` under the same version string.
+ * and WASM proofs, and the CLI flags are all verified per version. Each is a barretenberg release, the
+ * tag Presto downloads `bb` by; since Aztec 6.0.0-rc.3 it differs from the `@aztec-labs/*` version.
  */
-export const TESTED_BB_VERSIONS: readonly string[] = ["6.0.0-rc.1"];
+export const TESTED_BB_VERSIONS: readonly string[] = ["6.0.0-rc.6"];
 export const TESTED_BB_VERSION = TESTED_BB_VERSIONS[0] as string;
 
 /**

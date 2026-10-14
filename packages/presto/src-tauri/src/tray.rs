@@ -114,7 +114,7 @@ pub fn build_tray_menu(
     let aztec_bb_version = env!("AZTEC_BB_VERSION");
     let version_text = MenuItemBuilder::with_id(
         "version_info",
-        format!("v{app_version} · Aztec {aztec_bb_version}"),
+        format!("v{app_version} · bb {aztec_bb_version}"),
     )
     .enabled(false)
     .build(app)?;

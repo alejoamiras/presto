@@ -89,6 +89,11 @@ export const WINDOWS_BB_CHECKSUMS: Record<string, WindowsBbPin> = {
     provenance: "manual-review",
     note: "v6.0.0-rc.1 asset, reviewed 2026-09-28: prerelease published 2026-09-23 by AztecBot, lightweight tag on a GitHub-verified commit (654cc60); downloaded-file sha256sum EQUALS the GitHub API asset digest (7118884 bytes). Diff against the 5.2.0 pin: still a single bb.exe (PE, 39319040 bytes, embeds 6.0.0-rc.1), no bundled DLLs, identical imported-DLL set. Reproduce: curl -fsSL -o bb.tar.gz https://github.com/AztecProtocol/barretenberg/releases/download/v6.0.0-rc.1/barretenberg-amd64-windows.tar.gz && sha256sum bb.tar.gz. Change-detector only (SEC-02).",
   },
+  "6.0.0-rc.6": {
+    sha256: "d79cb3ee59cac4b5df20f402e5faf63db05193b568789c5c95af5c78c2abd1ac",
+    provenance: "manual-review",
+    note: "v6.0.0-rc.6 asset (the bb.js Aztec 6.0.0-rc.3 pins), reviewed 2026-10-13: prerelease published 2026-10-08 by AztecBot, tag on the GitHub-verified commit 654cc60 that v6.0.0-rc.1's tag also names; downloaded-file sha256sum EQUALS the GitHub API asset digest (7120520 bytes). Diff against the 6.0.0-rc.1 pin (re-downloaded, still 6335a036…6607): still a single bb.exe (PE, 39320576 bytes, embeds 6.0.0-rc.6), no bundled DLLs, identical imported-DLL set. Reproduce: curl -fsSL -o bb.tar.gz https://github.com/AztecProtocol/barretenberg/releases/download/v6.0.0-rc.6/barretenberg-amd64-windows.tar.gz && sha256sum bb.tar.gz. Change-detector only (SEC-02).",
+  },
 };
 
 export function windowsBbReleaseTag(version: string): string {

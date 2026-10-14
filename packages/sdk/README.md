@@ -7,9 +7,9 @@ TypeScript SDK that routes Aztec private kernel proving to a local native presto
 [![npm downloads](https://img.shields.io/npm/dm/@alejoamiras/presto)](https://www.npmjs.com/package/@alejoamiras/presto)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
-> **Before you integrate.** Presto's app version is not an Aztec version: Presto proves for the
-> Aztec version this SDK sends with every request, and fetches the `bb` that version needs on first
-> use ([Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions)).
+> **Before you integrate.** Presto's app version is not an Aztec version: Presto proves with the
+> `bb` release this SDK sends with every request, and fetches that `bb` on first use
+> ([Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions)).
 > To ask users to install or connect Presto, use `<presto-banner>` from
 > [`@alejoamiras/presto-banners`](https://github.com/alejoamiras/presto/tree/main/packages/banners)
 > instead of designing your own prompt.
@@ -17,7 +17,7 @@ TypeScript SDK that routes Aztec private kernel proving to a local native presto
 ## Installation
 
 ```bash
-# Aztec v6 (6.0.0-rc.1, the Aztec testnet), on the `testnet` dist-tag
+# Aztec v6 (6.0.0-rc.3, the Aztec testnet), on the `testnet` dist-tag
 npm install @alejoamiras/presto@testnet
 # Aztec v5 (5.2.0, `@aztec/*` packages), npm `latest`
 npm install @alejoamiras/presto
@@ -249,14 +249,14 @@ prior flat interface let illegal field combinations typecheck; this is the post-
 type PrestoStatus =
   | {
       available: true;
-      needsDownload: boolean;        // must download bb for the SDK's Aztec version before proving
+      needsDownload: boolean;        // must download the bb release the SDK sends before proving
       nativeAztecVersion?: string;   // from /health (single-version protocol)
       availableVersions?: string[];  // cached versions (multi-version protocol)
       sdkAztecVersion?: string;
       appVersion?: string;
       apiVersion?: number;
       schemes?: readonly string[];   // proving schemes served ("chonk", "ultra_honk"); absent on an app older than 1.1.0
-      versions?: readonly { aztecVersion: string; bbVersion: string }[]; // cached Aztec ↔ bb pairs (detailed body only)
+      versions?: readonly { aztecVersion: string; bbVersion: string }[]; // cached bb releases, the same string under both keys (detailed body only)
       protocol: PrestoProtocol; // "http" | "https"
     }
   | { available: false; reason: "offline"; sdkAztecVersion?: string }
@@ -364,7 +364,7 @@ try { await prover.createChonkProof(steps); }
 catch (e) { if (e instanceof PrestoHttpError) { /* e.status, e.code */ } }
 ```
 
-`checkPrestoStatus()` additionally surfaces the presto's `appVersion` and `apiVersion` on an available result, plus `schemes` (the proving schemes its routes serve — `chonk` for `/prove`, `ultra_honk` for `/prove/ultra-honk`) and, once the origin is approved, `versions` (which `bb` each cached Aztec version maps to). A presto that predates the scheme list omits `schemes`; `PrestoProver` treats that as `chonk` only.
+`checkPrestoStatus()` additionally surfaces the presto's `appVersion` and `apiVersion` on an available result, plus `schemes` (the proving schemes its routes serve — `chonk` for `/prove`, `ultra_honk` for `/prove/ultra-honk`) and, once the origin is approved, `versions` (the cached `bb` releases; `aztecVersion` and `bbVersion` carry the same bb.js version, under historical names). A presto that predates the scheme list omits `schemes`; `PrestoProver` treats that as `chonk` only.
 
 ## Configuration
 
@@ -494,7 +494,7 @@ const prover = new PrestoProver({
 | `transmit` | Sending proof request to presto |
 | `proving` | Presto (or WASM fallback) is proving |
 | `proved` | Proof complete — `data.durationMs` has the timing |
-| `downloading` | Presto is downloading `bb` for this Aztec version |
+| `downloading` | Presto is downloading the `bb` release this SDK sends |
 | `receive` | Deserializing proof from response |
 | `fallback` | Presto unavailable, falling back to WASM |
 | `denied` | User denied this site access to the presto (403) — falling back to WASM |
@@ -552,7 +552,7 @@ Practical guidance for integrators:
 
 ## Version Compatibility
 
-The SDK auto-detects its Aztec version from its pinned Aztec `stdlib` dependency and sends it as the `x-aztec-version` header on prove requests. The presto uses this to select (or download) the correct `bb` binary — no manual version matching needed.
+The SDK sends the `bb` release it proves with, its exact `@aztec-foundation/bb.js` pin, as the `x-aztec-version` header on prove requests. The presto uses it to select (or download) the matching `bb` binary, so no manual version matching is needed. Since Aztec 6.0.0-rc.3 that number differs from the `@aztec-labs/*` one; the header and `status.sdkAztecVersion` keep their historical names. The SDK reads the version from its own manifest, so an override, alias or forced dedupe that gives `@aztec-labs/bb-prover` a different bb.js is unsupported: Presto would still prove with the pinned release.
 
 ## Claude Code Skill
 

@@ -11,6 +11,13 @@ has private fields, so code typed to the class itself should type against its me
 [![npm version](https://img.shields.io/npm/v/@alejoamiras/presto-noir)](https://www.npmjs.com/package/@alejoamiras/presto-noir)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+> **Before you integrate.** Presto's app version is not an Aztec version: Presto proves with the
+> `bb` release this adapter sends (`bbVersion`), and fetches that `bb` on first use
+> ([Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions)).
+> To ask users to install or connect Presto, use `<presto-banner>` from
+> [`@alejoamiras/presto-banners`](https://github.com/alejoamiras/presto/tree/main/packages/banners)
+> instead of designing your own prompt.
+
 ```ts
 import { Barretenberg } from "@aztec-foundation/bb.js";
 import { PrestoUltraHonkBackend } from "@alejoamiras/presto-noir";
@@ -34,8 +41,8 @@ suggested copy.
 ## Installation
 
 ```bash
-# Aztec v6 bb.js (6.0.0-rc.1), on the `testnet` dist-tag
-npm install @alejoamiras/presto-noir@testnet @aztec-foundation/bb.js@6.0.0-rc.1
+# Aztec v6 bb.js (6.0.0-rc.6, from Aztec 6.0.0-rc.3), on the `testnet` dist-tag
+npm install @alejoamiras/presto-noir@testnet @aztec-foundation/bb.js@6.0.0-rc.6
 # Aztec v5 bb.js (5.2.0), npm `latest`
 npm install @alejoamiras/presto-noir @aztec/bb.js@5.2.0
 ```
@@ -141,6 +148,7 @@ adapter must prove natively against a headless presto built with the real `bb`):
 
 | `@alejoamiras/presto-noir` | bb.js (peer, exact) | `bbVersion` (default) | Presto |
 |---|---|---|---|
+| 2.0.0-rc.2 | `@aztec-foundation/bb.js` 6.0.0-rc.6 | 6.0.0-rc.6 | ≥ 1.1.3 |
 | 2.0.0-rc.1 | `@aztec-foundation/bb.js` 6.0.0-rc.1 | 6.0.0-rc.1 | ≥ 1.1.3 |
 | 1.2.0 | `@aztec/bb.js` 5.2.0 | 5.2.0 | ≥ 1.1.0 |
 | 1.1.0 | `@aztec/bb.js` 5.2.0 | 5.2.0 | ≥ 1.1.0 |

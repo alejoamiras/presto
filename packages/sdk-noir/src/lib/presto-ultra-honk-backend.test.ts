@@ -53,7 +53,7 @@ const healthOk = () =>
   Response.json({
     status: "ok",
     api_version: 1,
-    available_versions: ["6.0.0-rc.1"],
+    available_versions: ["6.0.0-rc.6"],
     schemes: ["chonk", "ultra_honk"],
   });
 const proveOk = (vk = true) =>
@@ -114,7 +114,7 @@ describe("PrestoUltraHonkBackend", () => {
     expect(proof).toEqual(EXPECTED);
     const [job] = proveJobs(requests);
     expect(job?.headers.get("content-type")).toBe("application/json");
-    expect(job?.headers.get("x-aztec-version")).toBe("6.0.0-rc.1");
+    expect(job?.headers.get("x-aztec-version")).toBe("6.0.0-rc.6");
     expect(await job?.json()).toEqual({
       bytecode: BYTECODE,
       witness: toBase64(WITNESS),
@@ -325,7 +325,7 @@ describe("PrestoUltraHonkBackend", () => {
     const { backend: b } = backend();
     expect(await b.checkPrestoStatus()).toMatchObject({
       available: true,
-      sdkAztecVersion: "6.0.0-rc.1",
+      sdkAztecVersion: "6.0.0-rc.6",
       schemes: ["chonk", "ultra_honk"],
     });
   });

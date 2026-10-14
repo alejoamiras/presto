@@ -4,3 +4,5 @@ _*.md
 eli5.html
 **/plans/
 !**/lessons/**
+narration.mp3
+narration.mp4
