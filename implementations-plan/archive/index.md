@@ -49,3 +49,6 @@ with `rg --no-ignore` / `git grep`.
 - [presto-rc3](presto-rc3/plan.md) — closed 2026-10-14 — Aztec 6.0.0-rc.3: the SDK sends its
   bb.js pin as `x-aztec-version` (labs rc.3, foundation and `bb` rc.6), split-target tooling, and
   released servers proven against a verifying local rc.3 network; no server release (PR #105).
+- [presto-rustls-fix](presto-rustls-fix/plan.md) — closed 2026-10-14 — the dependency audit green
+  again: rustls 0.23.46 for RUSTSEC-2026-0346..0349, a same-day crate taken after it diffed equal to
+  its upstream tag with a fully traced delta (PR #108).
