@@ -157,17 +157,31 @@ describe("publish job isolation", () => {
       "bun scripts/verify-sdk-package-signatures.ts",
     );
     expect(verify).not.toContain("continue-on-error");
+    // A restored cache could hold files a job running dependency code saved.
+    expect(verify).not.toContain("actions/cache");
   });
 
   test("every script the credentialed job runs imports only repository modules and built-ins", () => {
-    const scripts = [...job(publish, "publish").matchAll(/bun (scripts\/[\w./-]+\.ts)/g)].map(
-      ([, script]) => resolve(repository, script as string),
-    );
+    const publishJob = job(publish, "publish");
+    // Bun runs only repository script files here: no inline code, package runner or script alias.
+    const bunArguments = [...publishJob.matchAll(/\bbunx?\s+(\S+)/g)].map(([, arg]) => arg);
+    expect(bunArguments.filter((arg) => !arg?.startsWith("scripts/"))).toEqual([]);
+    for (const [, inline] of publishJob.matchAll(/\bnode\s+-[ep]\s+'([^']*)'/g)) {
+      expect(inline).not.toMatch(/require|import/);
+    }
+    const scripts = bunArguments.map((script) => resolve(repository, script as string));
     expect(scripts.length).toBeGreaterThanOrEqual(3);
     const { modules, external } = importGraph(scripts);
     expect(external).toEqual([]);
     expect(modules.has(resolve(repository, "scripts/registry-consistency.ts"))).toBe(true);
-    expect(job(publish, "publish")).not.toContain("verify-sdk-package-signatures");
+    expect(publishJob).not.toContain("verify-sdk-package-signatures");
+    // The scanner sees only literal specifiers, and spawned interpreters would be new entry points.
+    for (const module of modules) {
+      const code = readFileSync(module, "utf8");
+      expect(code).not.toMatch(/\brequire\s*\(/);
+      expect(code).not.toMatch(/\bimport\s*\(\s*[^\s"'`]/);
+      expect(code).not.toMatch(/\[\s*["'](bun|bunx|node|npx)["']/);
+    }
   });
 
   test("the consumer host never runs registry lifecycle scripts and pins its compiler exactly", () => {

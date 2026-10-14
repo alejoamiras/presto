@@ -358,12 +358,8 @@ jobs:
         with:
           bun-version-file: .bun-version
 
-      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.bun/install/cache
-          key: ${{ runner.os }}-bun-${{ hashFiles('bun.lock') }}
-          restore-keys: ${{ runner.os }}-bun-
-
+      # No restored package cache: the verifier runs only bytes downloaded here and checked against
+      # bun.lock, never files a job that ran dependency code could have saved.
       - run: bun install --frozen-lockfile --ignore-scripts
 
       - name: Verify provenance against the release signing identity

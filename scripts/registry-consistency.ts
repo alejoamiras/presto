@@ -100,10 +100,11 @@ export async function auditSignatures(
       ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error"],
       directory,
     );
-    const installed = run(
-      ["node", "-p", `require('./node_modules/${pkg.name}/package.json').version`],
-      directory,
-    ).trim();
+    const installed = (
+      (await Bun.file(join(directory, "node_modules", pkg.name, "package.json")).json()) as {
+        version?: string;
+      }
+    ).version;
     if (installed !== version) throw new Error(`installed ${installed}, expected ${version}`);
     return JSON.parse(
       run(["npm", "audit", "signatures", "--json", "--include-attestations"], directory),
