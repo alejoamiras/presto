@@ -177,7 +177,7 @@ async function clearIndexedDB(): Promise<void> {
  * above only evicts pre-5.0 residue. Bump CRS_CACHE_VERSION whenever `@aztec-foundation/bb.js` changes
  * the CRS format.
  */
-const CRS_CACHE_VERSION = "6.0.0-rc.1";
+const CRS_CACHE_VERSION = "6.0.0-rc.6";
 async function bustStaleCrsCacheOnce(log: LogFn): Promise<void> {
   if (typeof indexedDB === "undefined" || typeof localStorage === "undefined") return;
   const KEY = "bb-crs-cache-version";

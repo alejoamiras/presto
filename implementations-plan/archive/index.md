@@ -46,3 +46,6 @@ with `rg --no-ignore` / `git grep`.
 - [presto-audit-fix](presto-audit-fix/plan.md) — closed 2026-10-14 — the dependency audit green again:
   sharp 0.35.5 (exact override, miniflare pins it), source-map-js 1.2.2 and quinn-proto 0.11.19, with
   no other lock movement (PR #107).
+- [presto-rc3](presto-rc3/plan.md) — closed 2026-10-14 — Aztec 6.0.0-rc.3: the SDK sends its
+  bb.js pin as `x-aztec-version` (labs rc.3, foundation and `bb` rc.6), split-target tooling, and
+  released servers proven against a verifying local rc.3 network; no server release (PR #105).

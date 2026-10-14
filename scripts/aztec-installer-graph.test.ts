@@ -9,7 +9,7 @@ afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
 
-const RELEASE = "6.0.0-rc.1";
+const RELEASE = { labs: "6.0.0-rc.3", foundation: "6.0.0-rc.6" };
 
 /**
  * An install prefix with each `path → name` package on disk and in `package-lock.json`, plus
@@ -23,7 +23,13 @@ function prefix(
 ): string {
   const root = mkdtempSync(join(tmpdir(), "aztec-graph-"));
   roots.push(root);
-  const version = (path: string) => versions[path] ?? (path === VIEM ? "2.38.3" : RELEASE);
+  const version = (path: string) =>
+    versions[path] ??
+    (path === VIEM
+      ? "2.38.3"
+      : path.includes("@aztec-foundation/")
+        ? RELEASE.foundation
+        : RELEASE.labs);
   for (const [path, name] of Object.entries(installed)) {
     mkdirSync(join(root, path), { recursive: true });
     writeFileSync(
@@ -66,7 +72,7 @@ describe("installer graph check", () => {
     mkdirSync(extra, { recursive: true });
     writeFileSync(
       join(extra, "package.json"),
-      JSON.stringify({ name: "@aztec-labs/old-new", version: RELEASE }),
+      JSON.stringify({ name: "@aztec-labs/old-new", version: RELEASE.labs }),
     );
     expect(compareGraph(aztecGraph(root), LISTED, RELEASE)).toEqual({
       ...clean,
@@ -88,12 +94,29 @@ describe("installer graph check", () => {
       prefix(
         INSTALLED,
         { ...OTHER_PLATFORM, [nested]: "" },
-        { [nested]: "6.0.0-rc.2", [VIEM]: RELEASE },
+        { [nested]: "6.0.0-rc.2", [VIEM]: RELEASE.labs },
       ),
     );
     expect(compareGraph(graph, LISTED, RELEASE)).toEqual({
       ...clean,
-      offRelease: ["@aztec-foundation/wsdb-darwin-arm64@6.0.0-rc.2", `@aztec/viem@${RELEASE}`],
+      offRelease: ["@aztec-foundation/wsdb-darwin-arm64@6.0.0-rc.2", `@aztec/viem@${RELEASE.labs}`],
+    });
+  });
+
+  test("reviews each scope at its own number: a foundation name at the labs version fails, and the reverse", () => {
+    const foundation = "node_modules/@aztec-foundation/wsdb-darwin-arm64";
+    const graph = aztecGraph(
+      prefix(INSTALLED, OTHER_PLATFORM, {
+        [foundation]: RELEASE.labs,
+        "node_modules/@aztec-labs/aztec": RELEASE.foundation,
+      }),
+    );
+    expect(compareGraph(graph, LISTED, RELEASE)).toEqual({
+      ...clean,
+      offRelease: [
+        `@aztec-foundation/wsdb-darwin-arm64@${RELEASE.labs}`,
+        `@aztec-labs/aztec@${RELEASE.foundation}`,
+      ],
     });
   });
 

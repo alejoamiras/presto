@@ -5,94 +5,75 @@
  * Examples:
  *   bun scripts/check-aztec-update.ts nightly
  *   bun scripts/check-aztec-update.ts devnet
- * Output: JSON with { current, latest, needsUpdate }
+ * Output: JSON with { current, latest, needsUpdate, foundation?, missing? }
  *
  * The package names come from the SDK manifest, so the check follows whichever Aztec scope it pins.
+ * Each name is looked up at its own target: `@aztec-foundation/*` at the version the release pins.
  */
 import {
-  type AztecDependency,
   listAztecDependencies,
   type PackageManifest,
   requireAztecDependency,
 } from "./aztec-manifest.ts";
+import {
+  type AztecRegistry,
+  missingPackages,
+  npmRegistry,
+  resolveTargets,
+} from "./update-aztec-version.ts";
 
 const SDK_SECTIONS = ["dependencies", "devDependencies"] as const;
 
-const distTag = process.argv[2] ?? "";
-if (!distTag) {
-  console.error("Usage: bun scripts/check-aztec-update.ts <dist-tag>");
-  console.error("Examples:");
-  console.error("  bun scripts/check-aztec-update.ts nightly");
-  console.error("  bun scripts/check-aztec-update.ts devnet");
-  process.exit(1);
-}
+export type UpdateCheck = {
+  current: string;
+  latest: string;
+  needsUpdate: boolean;
+  foundation?: string;
+  missing?: string[];
+};
 
-async function getLatestVersion(aztecJs: string, tag: string): Promise<string> {
-  const proc = Bun.spawn(["npm", "view", aztecJs, "dist-tags", "--json"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const output = await new Response(proc.stdout).text();
-  const exitCode = await proc.exited;
-  if (exitCode !== 0) {
-    const stderr = await new Response(proc.stderr).text();
-    throw new Error(`npm view failed: ${stderr}`);
-  }
-  const tags = JSON.parse(output);
-  const version = tags[tag];
-  if (!version) throw new Error(`No '${tag}' dist-tag found for ${aztecJs}`);
-  return version;
-}
-
-async function verifyAllPackagesExist(
-  packages: AztecDependency[],
-  version: string,
-): Promise<{ allExist: boolean; missing: string[] }> {
-  const missing: string[] = [];
-
-  await Promise.all(
-    packages.map(async ({ name: pkg }) => {
-      const proc = Bun.spawn(["npm", "view", `${pkg}@${version}`, "version", "--json"], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) {
-        missing.push(pkg);
-      }
-    }),
-  );
-
-  return { allExist: missing.length === 0, missing };
-}
-
-async function main() {
-  const sdk: PackageManifest = await Bun.file("packages/sdk/package.json").json();
+export async function checkAztecUpdate(
+  sdk: PackageManifest,
+  distTag: string,
+  registry: AztecRegistry = npmRegistry,
+): Promise<UpdateCheck> {
   const { name: aztecJs, version: current } = requireAztecDependency(sdk, "aztec.js", SDK_SECTIONS);
-  const latest = await getLatestVersion(aztecJs, distTag);
+  const latest = (await registry.distTags(aztecJs))[distTag];
+  if (!latest) throw new Error(`No '${distTag}' dist-tag found for ${aztecJs}`);
+  if (current === latest) return { current, latest, needsUpdate: false };
 
-  if (current === latest) {
-    console.log(JSON.stringify({ current, latest, needsUpdate: false }));
-    return;
-  }
-
-  const { missing } = await verifyAllPackagesExist(
-    listAztecDependencies(sdk, SDK_SECTIONS),
+  const targets = await resolveTargets(latest, sdk, registry);
+  const names = listAztecDependencies(sdk, SDK_SECTIONS).map(({ name }) => name);
+  const missing = await missingPackages(names, targets, registry);
+  return {
+    current,
     latest,
-  );
-
-  if (missing.length > 0) {
-    console.error(
-      `Warning: Not all packages available at ${latest}. Missing: ${missing.join(", ")}`,
-    );
-  }
-
-  console.log(
-    JSON.stringify({ current, latest, needsUpdate: true, ...(missing.length > 0 && { missing }) }),
-  );
+    needsUpdate: true,
+    foundation: targets.foundation,
+    ...(missing.length > 0 && { missing }),
+  };
 }
 
-main().catch((err) => {
-  console.error(err.message);
-  process.exit(1);
-});
+if (import.meta.main) {
+  const distTag = process.argv[2] ?? "";
+  if (!distTag) {
+    console.error("Usage: bun scripts/check-aztec-update.ts <dist-tag>");
+    console.error("Examples:");
+    console.error("  bun scripts/check-aztec-update.ts nightly");
+    console.error("  bun scripts/check-aztec-update.ts devnet");
+    process.exit(1);
+  }
+  try {
+    const sdk: PackageManifest = await Bun.file("packages/sdk/package.json").json();
+    const result = await checkAztecUpdate(sdk, distTag);
+    if (result.missing) {
+      console.error(
+        `Warning: Not all packages available at their ${result.latest} targets. Missing: ${result.missing.join(", ")}`,
+      );
+    }
+    console.log(JSON.stringify(result));
+  } catch (err) {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exit(1);
+  }
+}

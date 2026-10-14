@@ -29,8 +29,13 @@ runs:
       shell: bash
       run: |
         VERSION=$(bun scripts/aztec-manifest.ts packages/sdk/package.json aztec.js)
-        echo "Aztec version: $VERSION"
-        echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+        # The @aztec-foundation/* packages carry their own number since 6.0.0-rc.3; bb.js names it.
+        FOUNDATION=$(bun scripts/aztec-manifest.ts packages/sdk/package.json bb.js)
+        echo "Aztec version: $VERSION (foundation $FOUNDATION)"
+        {
+          echo "version=$VERSION"
+          echo "foundation=$FOUNDATION"
+        } >> "$GITHUB_OUTPUT"
 
     - name: Install Node.js 24
       if: inputs.skip_cli != 'true'
@@ -83,7 +88,7 @@ runs:
         npm install -g npm@12.0.2
         AZTEC_LIST="$GITHUB_WORKSPACE/.github/actions/setup-aztec/installer-aztec-packages.txt"
         # npm 12 blocks dependency install scripts by default (allowScripts). Reviewed minimal
-        # allowlist, exactly the seven script-bearing packages in aztec 6.0.0-rc.1's tree (npm <12
+        # allowlist, exactly the seven script-bearing packages in aztec 6.0.0-rc.3's tree (npm <12
         # ran ALL install scripts, so this is strictly narrower than the pre-upgrade behavior):
         # bcrypto is REQUIRED (plain node-gyp rebuild, no prebuilds — blocking it kills
         # `aztec start` with "Cannot find module 'bcrypto.node'"); leveldown, lmdb and
@@ -102,7 +107,7 @@ runs:
         while IFS= read -r name; do
           echo "min-release-age-exclude[]=$name" >> "$NPMRC"
         done < "$AZTEC_LIST"
-        for p in bcrypto@5.5.2 leveldown@6.1.1 lmdb@3.5.6 msgpackr-extract@3.0.4 protobufjs@7.6.6 unrs-resolver@1.12.2 @parcel/watcher@2.6.0; do
+        for p in bcrypto@5.5.2 leveldown@6.1.1 lmdb@3.5.7 msgpackr-extract@3.0.4 protobufjs@7.6.6 unrs-resolver@1.12.2 @parcel/watcher@2.6.0; do
           echo "allow-scripts[]=$p" >> "$NPMRC"
         done
         export NPM_CONFIG_USERCONFIG="$NPMRC"
@@ -122,7 +127,7 @@ runs:
     - name: Check the installed Aztec graph against the reviewed list
       if: inputs.skip_cli != 'true'
       shell: bash
-      run: bun scripts/aztec-installer-graph.ts "$HOME/.aztec/versions/${{ steps.detect.outputs.version }}" .github/actions/setup-aztec/installer-aztec-packages.txt "${{ steps.detect.outputs.version }}"
+      run: bun scripts/aztec-installer-graph.ts "$HOME/.aztec/versions/${{ steps.detect.outputs.version }}" .github/actions/setup-aztec/installer-aztec-packages.txt "${{ steps.detect.outputs.version }}" "${{ steps.detect.outputs.foundation }}"
 
     # A `snappy` that cannot load its binding otherwise surfaces only as `aztec start` timing out ~10
     # minutes later, with ERR_MODULE_NOT_FOUND buried in the node log; fail here, naming the cause.

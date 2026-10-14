@@ -4,7 +4,7 @@
   "verifierTarget": "noir-recursive-no-zk",
   "toolchain": {
     "nargo": "1.0.0-rc.3",
-    "bbJs": "6.0.0-rc.1",
+    "bbJs": "6.0.0-rc.6",
     "backend": "WasmWorker"
   },
   "files": {

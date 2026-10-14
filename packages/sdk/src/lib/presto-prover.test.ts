@@ -1,17 +1,18 @@
 import { afterEach, beforeEach, describe, expect, mock, spyOn, test } from "bun:test";
+import { dirname, join } from "node:path";
 import { PrestoHttpError } from "@alejoamiras/presto-core";
 import { BBLazyPrivateKernelProver } from "@aztec-labs/bb-prover/client/lazy";
 import { WASMSimulator } from "@aztec-labs/simulator/client";
 import * as stdlibKernel from "@aztec-labs/stdlib/kernel";
 import { ChonkProofWithPublicInputs } from "@aztec-labs/stdlib/proofs";
 import sdkPkg from "../../package.json" with { type: "json" };
-import { decodeChonkProof, PrestoProver, sdkAztecVersion } from "./presto-prover.js";
+import { decodeChonkProof, PrestoProver, sdkBbVersion } from "./presto-prover.js";
 
 // The adapter's own job: serialize the kernel steps, hand the round trip to the client, decode the
 // proof, and run WASM for every fallback outcome. Transport policy and the error taxonomy are the
 // client's and are tested in @alejoamiras/presto-core.
 
-const SDK_AZTEC_VERSION = (sdkPkg.dependencies as Record<string, string>)["@aztec-labs/stdlib"];
+const SDK_BB_VERSION = (sdkPkg.dependencies as Record<string, string>)["@aztec-foundation/bb.js"];
 const EMPTY_PROOF_B64 = ChonkProofWithPublicInputs.empty().toBuffer().toString("base64");
 
 const fakeStep = {
@@ -23,6 +24,22 @@ const fakeStep = {
 } as any;
 
 type RouteHandler = (request: Request) => Response | Promise<Response>;
+
+/** The installed manifest of `name` as resolved from `fromDir`; packages need not export `./package.json`. */
+async function installedManifest(
+  name: string,
+  fromDir: string,
+): Promise<{ dir: string; manifest: Record<string, any> }> {
+  let dir = dirname(Bun.resolveSync(name, fromDir));
+  for (;;) {
+    const file = Bun.file(join(dir, "package.json"));
+    if ((await file.exists()) && (await file.json()).name === name) {
+      return { dir, manifest: await file.json() };
+    }
+    if (dir === dirname(dir)) throw new Error(`no manifest for ${name} above ${fromDir}`);
+    dir = dirname(dir);
+  }
+}
 
 function mockFetch(routes: Record<string, RouteHandler>): { fetchedUrls: string[] } {
   const fetchedUrls: string[] = [];
@@ -48,8 +65,8 @@ const healthOk = () =>
   Response.json({
     status: "ok",
     api_version: 1,
-    aztec_version: SDK_AZTEC_VERSION,
-    available_versions: [SDK_AZTEC_VERSION],
+    aztec_version: SDK_BB_VERSION,
+    available_versions: [SDK_BB_VERSION],
   });
 
 /** The WASM prover, stubbed to reject: reaching it is how a test observes a fallback. */
@@ -110,7 +127,7 @@ describe("PrestoProver", () => {
     const proof = await p.createChonkProof([fakeStep]);
 
     expect(proof.toBuffer()).toEqual(ChonkProofWithPublicInputs.empty().toBuffer());
-    expect(captured!.headers.get("x-aztec-version")).toBe(SDK_AZTEC_VERSION);
+    expect(captured!.headers.get("x-aztec-version")).toBe(SDK_BB_VERSION);
     expect(captured!.headers.get("content-type")).toBe("application/octet-stream");
     expect(new Uint8Array(await captured!.arrayBuffer())).toEqual(new Uint8Array([0xde, 0xad]));
     expect(phases).toEqual(["detect", "serialize", "transmit", "proving", "proved", "receive"]);
@@ -227,21 +244,30 @@ describe("PrestoProver", () => {
     expect(phases).toContain("fallback");
   });
 
-  test("checkPrestoStatus reports the SDK's pinned Aztec version and setPrestoConfig re-probes", async () => {
+  test("checkPrestoStatus reports the SDK's bb.js version and setPrestoConfig re-probes", async () => {
     const { fetchedUrls } = mockFetch({ "/health": healthOk });
     const { prover: p } = prover();
     expect(await p.checkPrestoStatus()).toMatchObject({
       available: true,
-      sdkAztecVersion: SDK_AZTEC_VERSION,
+      sdkAztecVersion: SDK_BB_VERSION,
     });
     p.setPrestoConfig({ port: 51337 });
     await p.checkPrestoStatus();
     expect(fetchedUrls.some((url) => url.includes(":51337"))).toBe(true);
   });
 
-  test("the handshake version is the pinned @aztec-labs/stdlib, prerelease suffix preserved", () => {
-    expect(sdkAztecVersion()).toBe(SDK_AZTEC_VERSION.replace(/^[^0-9]*/, ""));
-    expect(sdkAztecVersion()).toMatch(/^\d/);
+  test("the handshake version is the pinned @aztec-foundation/bb.js, prerelease suffix preserved", () => {
+    expect(sdkBbVersion()).toBe(SDK_BB_VERSION.replace(/^[^0-9]*/, ""));
+    expect(sdkBbVersion()).toMatch(/^\d/);
+  });
+
+  // Presto fetches `bb` by the version the SDK sends, so it must be the bb.js the WASM prover loads:
+  // the exact pin `@aztec-labs/bb-prover` declares and resolves.
+  test("the handshake version is the bb.js @aztec-labs/bb-prover pins and loads", async () => {
+    const prover = await installedManifest("@aztec-labs/bb-prover", import.meta.dir);
+    expect(prover.manifest.dependencies["@aztec-foundation/bb.js"]).toBe(sdkBbVersion());
+    const bbJs = await installedManifest("@aztec-foundation/bb.js", prover.dir);
+    expect(bbJs.manifest.version).toBe(sdkBbVersion());
   });
 
   test("decodeChonkProof rejects bodies without a string proof", () => {

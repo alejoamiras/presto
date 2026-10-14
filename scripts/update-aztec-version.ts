@@ -3,9 +3,12 @@
  *
  * Usage: bun scripts/update-aztec-version.ts <version>
  * Example: bun scripts/update-aztec-version.ts 5.0.0-nightly.20260220
+ *
+ * `<version>` is the `@aztec-labs/*` release. The `@aztec-foundation/*` names move to the version
+ * that release's own packages pin, which since 6.0.0-rc.3 is a different number.
  */
 
-import { isAztecPackage } from "./aztec-manifest.ts";
+import { isAztecPackage, listAztecDependencies, type PackageManifest } from "./aztec-manifest.ts";
 import { isExactSemver } from "./npm-packages.ts";
 
 const VERSION_PATTERN = /^\d+\.\d+\.\d+(-(?:nightly\.\d{8}|rc\.\d+|aztecnr-rc\.\d+))?$/;
@@ -30,70 +33,172 @@ export function validateVersion(version: string): boolean {
   return VERSION_PATTERN.test(version) && isExactSemver(version);
 }
 
-function bumpPins(deps: Record<string, unknown>, newVersion: string, skipPackages?: Set<string>) {
+/** One Aztec release's two numbers: `@aztec-labs/*` (and `@aztec/*` through v5), and `@aztec-foundation/*`. */
+export type AztecTargets = { labs: string; foundation: string };
+
+export function targetFor(name: string, targets: AztecTargets): string {
+  return name.startsWith("@aztec-foundation/") ? targets.foundation : targets.labs;
+}
+
+/** The registry reads the updater needs; tests substitute a fixed registry. */
+export interface AztecRegistry {
+  distTags(name: string): Promise<Record<string, string>>;
+  /** `spec`'s direct dependencies, or `undefined` when npm has no such version; any other failure throws. */
+  dependencies(spec: string): Promise<Record<string, string> | undefined>;
+}
+
+async function npmView(args: string[]): Promise<{ code: number; out: string }> {
+  const proc = Bun.spawn(["npm", "view", ...args, "--json"], { stdout: "pipe", stderr: "pipe" });
+  const [out, code] = await Promise.all([new Response(proc.stdout).text(), proc.exited]);
+  return { code, out };
+}
+
+/**
+ * `npm view <spec> dependencies --json` as a registry answer. Only npm's E404 means "no such
+ * version"; any other failure throws, so a transient error cannot drop a package's pins from the
+ * foundation aggregate or pass it off as unpublished.
+ */
+export function parseNpmDependencies(
+  spec: string,
+  code: number,
+  out: string,
+): Record<string, string> | undefined {
+  // npm prints nothing for a version with no dependencies.
+  if (code === 0) return out.trim() === "" ? {} : JSON.parse(out);
+  let error: unknown;
+  try {
+    error = JSON.parse(out)?.error?.code;
+  } catch {}
+  if (error === "E404") return undefined;
+  throw new Error(
+    `npm view ${spec} dependencies failed (exit ${code}, ${String(error ?? "no error code")})`,
+  );
+}
+
+export const npmRegistry: AztecRegistry = {
+  async distTags(name) {
+    const { code, out } = await npmView([name, "dist-tags"]);
+    if (code !== 0) throw new Error(`npm view ${name} dist-tags failed (exit ${code})`);
+    return JSON.parse(out);
+  },
+  async dependencies(spec) {
+    const { code, out } = await npmView([spec, "dependencies"]);
+    return parseNpmDependencies(spec, code, out);
+  },
+};
+
+/**
+ * The one `@aztec-foundation/*` version a release's packages pin, from each package's direct
+ * dependencies. Every foundation pin counts, not only the names this repo manages, so pins that
+ * disagree anywhere are caught. No pin, two versions, or a range throws, naming each source.
+ */
+export function foundationVersionOf(pins: Map<string, Record<string, string>>): string {
+  const sources = new Map<string, string[]>();
+  for (const [pkg, deps] of pins) {
+    for (const [name, spec] of Object.entries(deps)) {
+      if (!name.startsWith("@aztec-foundation/")) continue;
+      const source = `${pkg} → ${name}@${spec}`;
+      if (!isExactSemver(spec)) throw new Error(`not an exact @aztec-foundation pin: ${source}`);
+      sources.set(spec, [...(sources.get(spec) ?? []), source]);
+    }
+  }
+  const [first, ...others] = sources.keys();
+  if (first === undefined) {
+    throw new Error(`no @aztec-foundation pin in ${[...pins.keys()].join(", ") || "any package"}`);
+  }
+  if (others.length > 0) {
+    throw new Error(`@aztec-foundation pins disagree: ${[...sources.values()].flat().join("; ")}`);
+  }
+  return first;
+}
+
+const SDK_SECTIONS = ["dependencies", "devDependencies"] as const;
+
+/** The targets of labs release `labs`, read from the pins of every labs package `sdk` names. */
+export async function resolveTargets(
+  labs: string,
+  sdk: PackageManifest,
+  registry: AztecRegistry = npmRegistry,
+): Promise<AztecTargets> {
+  const names = listAztecDependencies(sdk, SDK_SECTIONS)
+    .map(({ name }) => name)
+    .filter((name) => !name.startsWith("@aztec-foundation/"));
+  const deps = await Promise.all(names.map((name) => registry.dependencies(`${name}@${labs}`)));
+  const pins = new Map<string, Record<string, string>>();
+  names.forEach((name, i) => {
+    const found = deps[i];
+    if (found) pins.set(`${name}@${labs}`, found);
+  });
+  return { labs, foundation: foundationVersionOf(pins) };
+}
+
+/** The `names` npm does not publish at their own target. */
+export async function missingPackages(
+  names: Iterable<string>,
+  targets: AztecTargets,
+  registry: AztecRegistry = npmRegistry,
+): Promise<string[]> {
+  const unique = [...new Set(names)].sort();
+  const found = await Promise.all(
+    unique.map((name) => registry.dependencies(`${name}@${targetFor(name, targets)}`)),
+  );
+  return unique.filter((_, i) => found[i] === undefined);
+}
+
+function bumpPins(
+  deps: Record<string, unknown>,
+  targets: AztecTargets,
+  skipPackages?: Set<string>,
+) {
   for (const [key, value] of Object.entries(deps)) {
     if (isAztecPackage(key) && typeof value === "string" && AZTEC_VERSION_PATTERN.test(value)) {
       if (skipPackages?.has(key)) continue;
-      deps[key] = newVersion;
+      deps[key] = targetFor(key, targets);
     }
   }
 }
 
 export function updatePackageJson(
   content: string,
-  newVersion: string,
+  targets: AztecTargets,
   skipPackages?: Set<string>,
 ): string {
   const pkg = JSON.parse(content);
   for (const section of DEPENDENCY_SECTIONS) {
-    if (pkg[section]) bumpPins(pkg[section], newVersion, skipPackages);
+    if (pkg[section]) bumpPins(pkg[section], targets, skipPackages);
   }
   return `${JSON.stringify(pkg, null, 2)}\n`;
 }
 
 export function updateHostDependencies(
   content: string,
-  newVersion: string,
+  targets: AztecTargets,
   skipPackages?: Set<string>,
 ): string {
   const deps = JSON.parse(content);
-  bumpPins(deps, newVersion, skipPackages);
+  bumpPins(deps, targets, skipPackages);
   return `${JSON.stringify(deps, null, 2)}\n`;
 }
 
-async function findMissingPackages(version: string, packageFiles: string[]): Promise<Set<string>> {
-  const allAztecPackages = new Set<string>();
+/** Every Aztec release package the manifests in `packageFiles` pin at a release version. */
+async function managedPackages(packageFiles: string[]): Promise<Set<string>> {
+  const names = new Set<string>();
   for (const filePath of packageFiles) {
     const pkg = await Bun.file(filePath).json();
     for (const section of DEPENDENCY_SECTIONS) {
-      const deps = pkg[section];
-      if (!deps) continue;
-      for (const [key, value] of Object.entries(deps)) {
+      for (const [key, value] of Object.entries(pkg[section] ?? {})) {
         if (isAztecPackage(key) && typeof value === "string" && AZTEC_VERSION_PATTERN.test(value)) {
-          allAztecPackages.add(key);
+          names.add(key);
         }
       }
     }
   }
-
-  const missing = new Set<string>();
-  await Promise.all(
-    [...allAztecPackages].map(async (pkg) => {
-      const proc = Bun.spawn(["npm", "view", `${pkg}@${version}`, "version", "--json"], {
-        stdout: "pipe",
-        stderr: "pipe",
-      });
-      const exitCode = await proc.exited;
-      if (exitCode !== 0) missing.add(pkg);
-    }),
-  );
-
-  return missing;
+  return names;
 }
 
 export const CRS_FILE = "packages/playground/src/aztec.ts";
 
-/** Bump CRS_CACHE_VERSION so returning playground visitors re-download the CRS if bb.js changed its format. */
+/** Bump CRS_CACHE_VERSION (a bb.js version) so returning playground visitors re-download the CRS if bb.js changed its format. */
 async function updateCrsCacheVersion(version: string): Promise<boolean> {
   const original = await Bun.file(CRS_FILE).text();
   const updated = original.replace(/(const CRS_CACHE_VERSION\s*=\s*")[^"]*(")/, `$1${version}$2`);
@@ -123,20 +228,25 @@ async function main() {
     process.exit(1);
   }
 
-  const skipPackages = await findMissingPackages(newVersion, PACKAGE_JSON_FILES);
+  const sdk: PackageManifest = await Bun.file("packages/sdk/package.json").json();
+  const targets = await resolveTargets(newVersion, sdk);
+  console.log(`Targets: @aztec-labs/* ${targets.labs}, @aztec-foundation/* ${targets.foundation}`);
+  const skipPackages = new Set(
+    await missingPackages(await managedPackages(PACKAGE_JSON_FILES), targets),
+  );
   if (skipPackages.size > 0) {
     console.log(`Skipping unpublished packages: ${[...skipPackages].join(", ")}`);
   }
 
   let updatedFiles = 0;
 
-  const targets = [
+  const files = [
     ...PACKAGE_JSON_FILES.map((path) => [path, updatePackageJson] as const),
     ...HOST_DEPENDENCY_FILES.map((path) => [path, updateHostDependencies] as const),
   ];
-  for (const [filePath, update] of targets) {
+  for (const [filePath, update] of files) {
     const original = await Bun.file(filePath).text();
-    const updated = update(original, newVersion, skipPackages);
+    const updated = update(original, targets, skipPackages);
     if (updated !== original) {
       await Bun.write(filePath, updated);
       console.log(`Updated ${filePath}`);
@@ -144,15 +254,16 @@ async function main() {
     }
   }
 
-  // Companion bumps an @aztec version change also requires (lessons from the 5.0.0-rc.2 bump):
-  const crsBumped = await updateCrsCacheVersion(newVersion);
-  if (crsBumped) console.log(`Bumped CRS_CACHE_VERSION → ${newVersion} in ${CRS_FILE}.`);
+  const crsBumped = await updateCrsCacheVersion(targets.foundation);
+  if (crsBumped) console.log(`Bumped CRS_CACHE_VERSION → ${targets.foundation} in ${CRS_FILE}.`);
   // The Windows bb.exe pin is intentionally NOT touched here (F-008) — see check-windows-bb-pin.ts.
 
   if (updatedFiles === 0 && !crsBumped) {
     console.log("\nAll files already at target version. No changes needed.");
   } else {
-    console.log(`\nDone. Updated ${updatedFiles} package.json file(s) to ${newVersion}.`);
+    console.log(
+      `\nDone. Updated ${updatedFiles} file(s) to ${targets.labs} (foundation ${targets.foundation}).`,
+    );
   }
 
   console.log("\nNext steps:");
