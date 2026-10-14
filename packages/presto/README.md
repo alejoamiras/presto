@@ -337,7 +337,7 @@ The `scripts/uninstall.sh` wrapper locates the binary and runs this for you.
 
 ## Version Compatibility
 
-The presto supports multiple Aztec versions simultaneously. For approved origins and non-browser callers, `/health` reports the app's own version (`version`), the `bb` release that ships with the app (`aztec_version`, a historical name: it is a bb.js version), every version it can prove without a download (`available_versions`, bundled first, then cached), the proving schemes the routes serve, and which `bb` each Aztec version maps to:
+The presto supports multiple `bb` releases simultaneously. For approved origins and non-browser callers, `/health` reports the app's own version (`version`), the `bb` release that ships with the app (`aztec_version`, a historical name: it is a bb.js version), every version it can prove without a download (`available_versions`, bundled first, then cached), the proving schemes the routes serve, and the cached `bb` releases (`versions`, the same string under both keys):
 
 ```json
 {

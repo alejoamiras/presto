@@ -222,7 +222,7 @@ prover.setForceLocal(true); // until the visitor connects
 |-------|---------|-------------------|
 | `detect` | Probing presto health | - |
 | `secure-connection-unavailable` | HTTPS could not connect; immediately precedes WASM fallback | - |
-| `downloading` | Presto downloading bb binary for this Aztec version | - |
+| `downloading` | Presto downloading the bb release this SDK sends | - |
 | `serialize` | Serializing execution steps to msgpack | - |
 | `transmit` | Sending proof request | - |
 | `proving` | Native (or WASM) proving in progress | - |
