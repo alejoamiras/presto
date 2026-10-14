@@ -56,10 +56,14 @@ On the PR, the acceptance check is a green `Dependency Audit` workflow.
 - **Release age.** No release-age gate covers Cargo here (`minimumReleaseAge` is bun only). That is
   why the provenance gate exists. The crate must equal the tag, and its delta must trace to
   maintainer-reviewed upstream PRs.
-- **Exposure.** `rustls` in these locks depends on aws-lc-rs, ring, webpki, pki-types, subtle,
-  zeroize, log and once_cell, and not on `brotli`. So the `brotli` feature is off and -0348 cannot
-  reach Presto. -0349 (client resumption state) reaches the reqwest downloads. -0346 needs a custom
-  `ClientSessionStore` that formats values with `Debug`. -0347 needs `EchMode::Enable`.
+- **Exposure.**
+  - -0348 cannot reach Presto. `rustls` has no `brotli` or `brotli-decompressor` dependency in any of
+    the three locks, so the built-in decompressor is off.
+  - -0349's hint-writing code runs in the reqwest clients. But these builds do not enable
+    `prefer-post-quantum`, so X25519 is already the first key share. A downgrade would also need a
+    later connection sharing that client's session store.
+  - -0346 needs a custom `ClientSessionStore` that formats values with `Debug`.
+  - -0347 needs `EchMode::Enable`.
 - **Lock drift.** Each lock's diff may touch only the `rustls` entry.
 
 ## Delivery
