@@ -68,8 +68,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 
 ## From presto-rc3 (closed 2026-10-14)
 
-- **#101: the dependency audit is red on `main`.** It blocks the rc.3 npm release: sharp 0.35.5,
-  source-map-js 1.2.2, and quinn-proto 0.11.19 in all three Cargo locks.
 - **#103: point `audit/fixtures/interop-sdk.json` at presto 6.0.0-rc.3 once it is published.** The
   legacy-SDK gate is dormant until then.
 - **#102: a deterministic `download_failed` falls back to WASM as a silent `transient`.** Fixing it
