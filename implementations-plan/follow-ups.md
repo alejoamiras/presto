@@ -6,14 +6,19 @@ Lifted from the three plans in `archive/` on 2026-09-18. Each entry says whether
 against `main`** that day or only carried from the log. Anything the sweep found already fixed was
 dropped rather than carried — see "Closed by the sweep" at the bottom for what that covered.
 
-## Dated — one cliff, 2026-11-30
+## Dated — two cliffs, 2026-10-31 and 2026-11-30
 
-- **All nine dependency-audit exceptions expire on the same day.**
-  `scripts/dependency-audit-allowlist.json` accepts GHSA entries for `@opentelemetry/propagator-jaeger`,
-  `undici` (×3), `deepmerge-ts`, `extract-zip` (×2), `serialize-javascript` and `js-yaml`, every one
-  with `"expires": "2026-11-30"`. On 2026-12-01 the audit gate goes red on all nine at once. js-yaml
-  4.3.2 only needs the release-age gate to clear plus a lockfile refresh; the rest are pinned by
-  Aztec 5.2 or the WebdriverIO stack. (sharp left with wrangler 4.135.) **Verified 2026-09-26.**
+- **The thirteen dependency-audit exceptions expire on two days.**
+  `scripts/dependency-audit-allowlist.json` accepts:
+  - until **2026-10-31**: `undici` GHSA-rfgv-xxqx-mfg5 and GHSA-w293-vg96-wgc3;
+  - until **2026-11-30**: `undici` (×3), `@fastify/busboy`, `@opentelemetry/propagator-jaeger`,
+    `basic-ftp`, `braces`, `deepmerge-ts`, `extract-zip` (×2) and `serialize-javascript`.
+  - The audit gate goes red on 2026-11-01 on the first two, and on 2026-12-01 on the rest. Each
+    entry's `reason` says what pins it.
+  - **Verified 2026-10-14** against the allowlist and PR #105's audit log.
+- **#106: drop the root `sharp` 0.35.5 override at the next wrangler bump.** wrangler 4.150.0's
+  miniflare pins sharp 0.35.5 itself. Left in place, the override would hold back sharp's later
+  fixes. `archive/presto-audit-fix/plan.md`
 
 ## Owner actions
 

@@ -43,3 +43,6 @@ with `rg --no-ignore` / `git grep`.
 - [bundle-v6](bundle-v6/plan.md) — closed 2026-10-02 — the desktop app bundles the Aztec v6 `bb`;
   release notes, docs, agent files and `llms.txt` explain that Presto fetches the `bb` each Aztec
   version needs and point at presto-banners (PR #86).
+- [presto-audit-fix](presto-audit-fix/plan.md) — closed 2026-10-14 — the dependency audit green again:
+  sharp 0.35.5 (exact override, miniflare pins it), source-map-js 1.2.2 and quinn-proto 0.11.19, with
+  no other lock movement (PR #107).
