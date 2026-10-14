@@ -30,7 +30,9 @@ identity-policy bypass found (`lessons/phase-1.md`).
 - Live gate: every current publication verifies at its tag commit, and every single-value mutation
   is refused (70 checks).
 
-**Open items:** two issues, filed after the merge — option B (tags and releases created after the
+**Open items:** three issues, filed after the merge and listed in `follow-ups.md` — an
+`owner-decision` to bump `.bun-version` to 1.4.2 with Workers Builds' `BUN_VERSION` and delete
+`scripts/ec-default-digest.ts`, option B (tags and releases created after the
 bound verification, the publish job without `contents: write`) as an `owner-decision`, and a
 hardening issue for release planning to read a reused package's dependency pins from the tarball
 bound to its verified digest rather than from registry metadata.

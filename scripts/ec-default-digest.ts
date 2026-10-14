@@ -1,8 +1,9 @@
 import crypto, { createPublicKey, generateKeyPairSync, KeyObject } from "node:crypto";
 
-// Bun 1.4.0 has no default digest for EC keys: `crypto.verify(null, …)` throws where Node and OpenSSL
-// use SHA-256, and sigstore-js and tuf-js, which verify that way, read the throw as a bad signature.
-// On such a runtime only, a null digest with an EC key becomes SHA-256.
+// Bun 1.4.0 throws on `crypto.verify(null, …)` with an EC key, where OpenSSL, Node and Bun 1.4.2
+// default to SHA-256; sigstore-js and tuf-js verify that way and read the throw as a bad signature.
+// On such a runtime only, this wraps `crypto.verify` so that a null digest with an EC key, bare or as
+// `{ key }`, is SHA-256; nothing else changes. Remove once `.bun-version` is 1.4.2 or newer.
 
 function lacksEcDefaultDigest(): boolean {
   const { privateKey, publicKey } = generateKeyPairSync("ec", { namedCurve: "prime256v1" });

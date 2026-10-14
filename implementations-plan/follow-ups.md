@@ -72,6 +72,17 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   is a presto-core change.
 - **#104 (owner decision, optional): presto 1.2.0-rc.2, to bundle `bb` 6.0.0-rc.6.**
 
+## From presto-verifier-identity (closed 2026-10-14)
+
+- **Owner decision: bump `.bun-version` to 1.4.2 in lockstep with Workers Builds' `BUN_VERSION`
+  variable, then delete `scripts/ec-default-digest.ts`.** Bun 1.4.0 has no EC default digest, which
+  the sigstore verification needs; Workers Builds refuses a Bun that differs from `.bun-version`.
+- **Owner decision: tags and releases created after the bound verification**, so the publish job
+  no longer needs `contents: write`. `archive/presto-verifier-identity/plan.md`, option B.
+- **Release planning reads a reused package's dependency pins from the tarball bound to its
+  verified digest** rather than from registry metadata. It matters only against a registry serving
+  inconsistent metadata; the bound consumers never accept the bytes either way.
+
 ## Untested paths, carried from the logs
 
 None of these were re-checked on 2026-09-18.
