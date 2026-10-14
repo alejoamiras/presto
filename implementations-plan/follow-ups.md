@@ -54,7 +54,8 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 
 ## From bundle-v6 (closed 2026-10-02)
 
-- **presto-core, presto-noir and presto-banners READMEs lack the two integrator pointers**: that the
+- **presto-core and presto-banners READMEs lack the two integrator pointers** (presto-noir's landed
+  with 2.0.0-rc.2): that the
   app version is not an Aztec version (link the root README's `#presto-and-aztec-versions`), and
   that install UI comes from `@alejoamiras/presto-banners`. Add them in each package's next real
   release. Any file change there makes `release-plan.ts` refuse to reuse the published version.
