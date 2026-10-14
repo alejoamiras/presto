@@ -539,6 +539,8 @@ so there are no lanes. The PR body states:
    2. `agent-worktree done presto-rc3 --merged`, and report its output. Never force past a refusal.
    - After `DONE`, this session arms one background wait for the trigger.
 7. **Owner release order (not this session's):**
+   0. Merge the audit fix first (#101). Every `release-sdk.yml` publish job requires
+      `dependency-audit` to succeed, and a dry run skips that job, so step 1 passes either way.
    1. `release-sdk.yml packages=all dry_run=true`. Expect core 1.2.1 reused, noir 2.0.0-rc.2,
       presto 6.0.0-rc.3 and banners reused, on `testnet`.
    2. The real dispatch. The pin PR auto-merges, and Workers Builds deploys the playground.
