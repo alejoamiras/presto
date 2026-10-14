@@ -510,6 +510,39 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     expect(signer).not.toContain("assert-no-test-hooks");
   });
 
+  test("macOS ships a DMG only once its app validates as stapled, before the updater pass re-notarizes", () => {
+    const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs.build?.steps ?? [];
+    const run = steps.find((s) => s.name === "Build Tauri bundle")?.run ?? "";
+    const dmgPass = [
+      "bunx tauri bundle --target T --bundles dmg --verbose",
+      "hdiutil attach",
+      "xcrun stapler validate",
+    ];
+    const unstapled = [...dmgPass, "ditto", "xcrun stapler staple", "hdiutil detach", "sleep 60"];
+    const head = ["bunx tauri signer generate", "bunx tauri build --target T --no-bundle"];
+    const app = "bunx tauri bundle --target T --bundles app";
+    expect(macBuildCalls(run, 0)).toEqual({
+      calls: [...head, ...dmgPass, "hdiutil detach", app],
+      code: 0,
+    });
+    expect(macBuildCalls(run, 2)).toEqual({
+      calls: [...head, ...unstapled, ...unstapled, ...dmgPass, "hdiutil detach", app],
+      code: 0,
+    });
+    expect(macBuildCalls(run, 3)).toEqual({
+      calls: [
+        ...head,
+        ...unstapled,
+        ...unstapled,
+        ...dmgPass,
+        "ditto",
+        "xcrun stapler staple",
+        "hdiutil detach",
+      ],
+      code: 1,
+    });
+  });
+
   test("dependency audit is a release publication gate", () => {
     const release = WF.split("  release:")[1]?.split("\n  packaged-e2e-on-draft:")[0] ?? "";
     expect(WF).toContain("uses: ./.github/workflows/dependency-audit.yml");
@@ -685,6 +718,46 @@ function scanCalls(run: string, os: string): { calls: string[]; code: number } {
     });
     const calls = r.stdout.toString().split("\n").filter(Boolean);
     return { calls: calls.filter((c) => !c.startsWith("::error::")), code: r.exitCode };
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Runs the macOS branch of the build step with tauri, hdiutil, xcrun, ditto and sleep stubbed: each
+ * bundle pass writes the files tauri would, and the first `unstapled` stapler validations fail.
+ * Returns the stubbed calls in order and the step's exit code.
+ */
+function macBuildCalls(run: string, unstapled: number): { calls: string[]; code: number } {
+  const cwd = fs.mkdtempSync(path.join(tmpdir(), "release-mac-"));
+  const stubs = `
+    calls="$RUNNER_TEMP/calls"; validations=0
+    bunx() {
+      case "$*" in
+        *"signer generate"*) echo "bunx tauri signer generate" >>"$calls"; : >"\${@: -1}"; return ;;
+        *"--bundles dmg"*) mkdir -p "$DMG_DIR"; : >"$DMG_DIR/Presto_x64.dmg" ;;
+        *"--bundles app"*)
+          mkdir -p "$MACOS_DIR/Presto.app/Contents/MacOS"
+          touch "$MACOS_DIR/Presto.app/Contents/MacOS/"{Presto,bb} "$MACOS_DIR/Presto.app.tar.gz"{,.sig} ;;
+      esac
+      echo "bunx $*" >>"$calls"
+    }
+    hdiutil() { echo "hdiutil $1" >>"$calls"; [ "$1" != attach ] || mkdir -p "\${@: -1}/Presto.app"; }
+    xcrun() {
+      echo "xcrun $1 $2" >>"$calls"
+      [ "$2" = validate ] || return 0
+      validations=$((validations + 1)); [ "$validations" -gt ${unstapled} ]
+    }
+    ditto() { echo ditto >>"$calls"; }
+    sleep() { echo "sleep $*" >>"$calls"; }
+  `;
+  try {
+    const r = Bun.spawnSync(["bash", "-c", `${stubs}\n${run}`], {
+      cwd,
+      env: { PATH: process.env.PATH, RUNNER_OS: "macOS", RUNNER_TEMP: cwd, TARGET: "T" },
+    });
+    const calls = fs.readFileSync(path.join(cwd, "calls"), "utf8").split("\n").filter(Boolean);
+    return { calls, code: r.exitCode };
   } finally {
     fs.rmSync(cwd, { recursive: true, force: true });
   }
