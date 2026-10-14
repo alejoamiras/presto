@@ -24,7 +24,9 @@ not belong here. Sections are stable; append, never re-sort.
 ## Build, bundling and dependencies
 
 - **`minimumReleaseAge` is npm-only — Cargo has no equivalent** — an unconstrained `cargo update` took
-  27 crates from inside the 7-day window. `archive/presto-cleanup/lessons/phase-2.md`
+  27 crates from inside the 7-day window. A fix that needs a fresh crate first diffs the `.crate`
+  against its upstream tag and against the previous crate. `archive/presto-cleanup/lessons/phase-2.md`,
+  `archive/presto-rustls-fix/lessons/phase-1.md`
 - **A one-line `overrides` change makes `bun install` re-dedupe the whole lock** — root `vite`
   moved from 8.2.2 to 8.3.0. Splice only the target's entries onto the committed lock and verify
   with `--frozen-lockfile`. (2026-10, bun 1.4.0) `archive/presto-audit-fix/lessons/phase-1.md`

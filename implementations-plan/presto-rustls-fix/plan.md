@@ -6,12 +6,33 @@ eli5_mode: off
 code_review: off
 codex_model: sol
 explainer: off
-status: approved 2026-10-14 (director brief)
+status: closed 2026-10-14 (PR #108); approved 2026-10-14 (director brief)
 created: 2026-10-14
 worktree: .claude/worktrees/presto-rustls-fix
 branch: worktree-presto-rustls-fix
 base: main @ af4ce18
 ---
+
+## Outcome
+
+Closed 2026-10-14 in PR #108. Codex converged in 2 rounds (`lessons/codex-loop.md`).
+
+**Shipped:** `rustls` 0.23.46 in all three Cargo locks. Only its version and checksum move, and
+`main` (d24465a) is merged in. The local `audit:dependencies` reports 0 blocked.
+
+**Provenance gate passed** (`lessons/phase-1.md`):
+- the crate equals tag `v/0.23.46`;
+- its delta traces to four maintainer-reviewed `rel-0.23` PRs;
+- the publisher continues from 0.23.45.
+
+The crate was about six hours old when it was taken.
+
+**Known limits:**
+- rustls publishes without trusted publishing.
+- Its tag is lightweight and unsigned.
+- Provenance rests on crate == tag and on upstream review, not on a signature.
+
+**Open items:** none. **Seeds:** none were issued, and none remain.
 
 ## Summary
 
