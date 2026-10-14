@@ -7,13 +7,49 @@ code_review: off
 claude_model: opus
 codex_model: sol
 explainer: off
-status: approved 2026-10-13 (director, conditional; conditions under Approval)
+status: closed 2026-10-14 (PR #105); approved 2026-10-13 (director, conditional)
 created: 2026-10-13
 worktree: .claude/worktrees/presto-rc3
 branch: worktree-presto-rc3
 base: main @ 14c4085
 budget: recon 1 agent; code-review off; codex gpt-6.1-sol at high (director's brief)
 ---
+
+## Outcome
+
+Closed 2026-10-14 in PR #105. Phases 1–5 are green, the lessons are under `lessons/`, and Codex
+converged in 3 rounds (4, then 1, then 0 material findings; `lessons/codex-loop.md`).
+
+**Shipped:**
+- The SDK sends its exact `@aztec-foundation/bb.js` pin as `x-aztec-version`, and a test holds it
+  equal to the bb.js that bb-prover declares and loads.
+- The tooling handles `{labs, foundation}` targets. The foundation version is derived from the
+  release's pins, and both a disagreement and an npm error other than E404 fail closed.
+- The rc.3 bump: `@alejoamiras/presto` 6.0.0-rc.3 and `@alejoamiras/presto-noir` 2.0.0-rc.2.
+  presto-core is unchanged at 1.2.1. The owner publishes.
+
+**Evidence:**
+- Released `presto-server` 1.1.3 (`90b76733…7c41`) and 1.2.0-rc.1 (`21cecfe1…59ab`) each started
+  from a cold cache, downloaded barretenberg `v6.0.0-rc.6` (archive `950d5d07…0628`), and proved a
+  transaction that a local rc.3 node verified with `DEBUG_FORCE_TX_PROOF_VERIFICATION` and mined.
+- So no server release is needed.
+- The release-API digest is a consistency check, not publisher authentication.
+- The bb cross-check, as found: the downloaded `bb` and bb.js rc.6's binary are the same build, not
+  hash-equal. They differ in 11 bytes of version-stamp padding.
+
+**Known limits:**
+- The drift test covers this repository's install only. A consumer override that gives bb-prover a
+  different bb.js is documented as unsupported.
+- `lessons.md` was 9.1 KiB before this plan and is 9.4 KiB after it, over its 8 KiB budget. The
+  next promotion should prune it.
+
+**Open items:**
+- #101, the dependency audit red on `main`. It blocks the release, so merge its fix first.
+- #103, the interop fixture after the publish.
+- #102, the silent `download_failed`.
+- #104, optional 1.2.0-rc.2, an owner decision.
+
+**Seeds:** the `/goal` and `/loop` seeds below are retired.
 
 ## Summary
 
@@ -360,7 +396,7 @@ Unless a gate says otherwise, every gate includes `bun run test` (lint, the thre
 unit) and `bun run lint`. Commits are signed: `env -u SSH_AUTH_SOCK git commit`, then check that
 `%G?` is not `N`. PRs open only in Delivery.
 
-### Phase 1: the SDK sends its bb.js version (rc.1 values, so behaviour is unchanged)
+### Phase 1: the SDK sends its bb.js version (rc.1 values, so behaviour is unchanged) ✓
 
 **Validation gate:**
 - A new test in `presto-prover.test.ts` asserts that `sdkBbVersion()` equals the
@@ -371,7 +407,7 @@ unit) and `bun run lint`. Commits are signed: `env -u SSH_AUTH_SOCK git commit`,
   `bash scripts/sdk-tarball-consumer.sh <tarball> presto --with <each pair>` (the same commands as
   `_ts-package-ci.yml:148-159`). Both pass, and the packed manifest pins bb.js.
 
-### Phase 2: tooling for split release numbers
+### Phase 2: tooling for split release numbers ✓
 
 **Validation gate:**
 - `bun run lint:actions` exit 0.
@@ -391,7 +427,7 @@ unit) and `bun run lint`. Commits are signed: `env -u SSH_AUTH_SOCK git commit`,
   - the existing addition, removal and viem cases.
 - `bun run aztec:check prerelease` prints `needsUpdate: true` with no `missing`.
 
-### Phase 3: the rc.3 bump and the Noir fixtures
+### Phase 3: the rc.3 bump and the Noir fixtures ✓
 
 1. Run `bun run aztec:update 6.0.0-rc.3`, then `bun install`.
 2. Do the manual items in the change map.
@@ -430,7 +466,7 @@ unit) and `bun run lint`. Commits are signed: `env -u SSH_AUTH_SOCK git commit`,
 - The Windows pin's review is recorded.
 - `git diff --name-only origin/main...` intersected with `app.yml`'s `published` list is empty.
 
-### Phase 4: local rc.3 network, branch and released servers (director's condition 1)
+### Phase 4: local rc.3 network, branch and released servers (director's condition 1) ✓
 
 Run `aztec start --local-network --port <p> --admin-port <p2>` in the container, with
 `ANVIL_PORT=<p3>`, on host networking. Real verification follows the order in Non-obvious
@@ -464,7 +500,7 @@ mechanics. The ports come from `~/.agents/ports.md`. Data lives on real disk und
   against a non-verifying network, and the PR must show that job green.
 - Every container and process this phase started is gone, and its ports are released.
 
-### Phase 5: keyless testnet reads
+### Phase 5: keyless testnet reads ✓
 
 **Validation gate:**
 - Through the forwarder, `node_getNodeInfo` reports `nodeVersion` 6.0.0-rc.3.

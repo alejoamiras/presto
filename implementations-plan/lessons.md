@@ -7,9 +7,8 @@ not belong here. Sections are stable; append, never re-sort.
 
 ## Rust, Cargo and Clippy
 
-- **Hoisting RAII guards into a struct reverses their drop order** — locals drop in reverse
-  declaration order, struct fields in declaration order; nothing flags the inversion.
-  `archive/presto-noir/lessons/phase-3.md`
+- **Hoisting RAII guards into a struct reverses their drop order** — fields drop in declaration
+  order, locals in reverse; nothing flags it. `archive/presto-noir/lessons/phase-3.md`
 - **A blocking `recv()` inside `#[tokio::test]` deadlocks the test** — the single-threaded runtime has
   no other thread to drive what the receiver waits on. `archive/presto-noir/lessons/phase-4.md`
 - **`Guard::drop` runs before tokio reaps the child** — a confirm-the-kill wait inside `Drop` can only
@@ -34,6 +33,9 @@ not belong here. Sections are stable; append, never re-sort.
 - **Any Wrangler bump fails `release-feed`'s typecheck** — `wrangler types --check` wants
   `worker-configuration.d.ts` regenerated (`bun run --cwd packages/release-feed types`).
   `archive/workers-builds/lessons/phase-1.md`
+- **Aztec release numbers split by npm scope** — `@aztec-labs/*` 6.0.0-rc.3 pins `@aztec-foundation/*`
+  (bb.js, Noir) at rc.6, and `bb` is tagged by the foundation number. (2026-10)
+  `archive/presto-rc3/plan.md`
 
 ## Types and package boundaries
 
@@ -56,16 +58,18 @@ not belong here. Sections are stable; append, never re-sort.
   (`write EINVAL`) before any test runs. `archive/presto-noir/lessons/phase-6.md`
 - **A test that self-skips with `return` reports `ok`** — two `#[ignore]`d hermetic tests asserted
   nothing in an `--ignored` lane for months. Grep the log for the skip message.
-- **"Green" without a run ID is not green** — a failing Windows lane was treated as merged-clean.
-  Assume any platform with no lane was never exercised. `archive/presto-noir/lessons/audit-fixes.md`
+- **"Green" without a run ID is not green** — a failing Windows lane was treated as merged-clean. A
+  platform with no lane was never exercised. `archive/presto-noir/lessons/audit-fixes.md`
 - **A regression test proves nothing until it fails against the old code** — twice a new test passed
   on the unfixed code. `archive/lna-consent/lessons/cross-arc-review.md`
-- **A Presto-mode deploy passes on a silent in-browser fallback** — the smoke's native deploy went
-  green against a Presto the HTTPS-only page could not reach. Assert the phase trail
-  (`expectNativeProof`).
+- **A Presto-mode deploy passes on a silent in-browser fallback** — a native-path smoke went green on
+  WASM. Assert the phase trail (`expectNativeProof`).
 - **A refused loopback port and a Local Network Access block look the same to the page** — both are
   `Failed to fetch`; only CDP `Network.loadingFailed` carries `LocalNetworkAccessPermissionDenied`.
   `archive/lna-consent/lessons/arc-2-review.md`
+- **An Aztec local network accepts fake proofs** — `createLocalNetwork` forces `realProofs: false`;
+  `DEBUG_FORCE_TX_PROOF_VERIFICATION=true` makes it verify. (2026-10, 6.0.0-rc.3)
+  `archive/presto-rc3/lessons/phase-4.md`
 
 ## CI and release
 
@@ -89,6 +93,8 @@ not belong here. Sections are stable; append, never re-sort.
 - **tauri-plugin-updater checks the minisign signature inside `download()`** — a tampered payload
   fails there, before any size check of ours; negatives must assert which refusal fired.
   (2026-09, plugin 2.11) `archive/update-check-schedule/lessons/phase-6.md`
+- **A `release-sdk` dry run skips the dependency audit** — a red audit passes the dry run, then the
+  real dispatch publishes nothing. `archive/presto-rc3/lessons/phase-3.md`
 
 ## npm publishing
 
@@ -120,9 +126,6 @@ not belong here. Sections are stable; append, never re-sort.
 
 - **zsh aborts the entire command line when any glob has no match** — `rm -f a/*.tgz b/*.tgz` runs
   *neither* removal if the first is empty. `archive/presto-noir/lessons/phase-16.md`
-- **Tear down by process group, never by name or wrapper pid** — `pkill -f` matched the tool shell's
-  own argv; killing `npx`'s pid left the server bound. `kill -- -$pgid`.
-  `archive/presto-noir/lessons/phase-5.md`
 - **git hooks do not inherit your interactive PATH** — a lint-staged `rustfmt` step could not find its
   binary and the commit *silently aborted*. `archive/presto-noir/lessons/phase-3.md`
 - **Local shellcheck 0.11 passes what CI's 0.9 fails** (SC2015, info level, still exit 1) — check
