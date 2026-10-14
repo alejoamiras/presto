@@ -6,12 +6,36 @@ eli5_mode: off
 code_review: off
 codex_model: sol
 explainer: off
-status: approved 2026-10-14 (director, decision A)
+status: closed 2026-10-14 (PR #111); approved 2026-10-14 (director, decision A)
 created: 2026-10-14
 worktree: .claude/worktrees/presto-verifier-identity
 branch: worktree-presto-verifier-identity
 base: main @ 6835714
 ---
+
+## Outcome
+
+Closed 2026-10-14 in PR #111. Codex: plan audit sound after 2 rounds; fix loop 3 rounds, no
+identity-policy bypass found (`lessons/phase-1.md`).
+
+**Shipped:**
+- The verifier binds a provenance statement to its signing identity: `@sigstore/verify` checks the
+  bundle and an explicit policy pins the issuer, SAN and build signer, runner, repository URI and
+  IDs, ref, build config and the commit in both digests; the statement's claims must equal the
+  certificate's. Only rollback also accepts `_publish-sdk.yml`.
+- Release planning, promotion, the production playground build and the reusable workflow's
+  `verify` job (cache-free locked install, `--ignore-scripts`) use the bound verifier; the OIDC
+  publish job runs only the dependency-free `registry-consistency.ts`, and a contract test guards
+  that boundary.
+- Live gate: every current publication verifies at its tag commit, and every single-value mutation
+  is refused (70 checks).
+
+**Open items:** two issues, filed after the merge — option B (tags and releases created after the
+bound verification, the publish job without `contents: write`) as an `owner-decision`, and a
+hardening issue for release planning to read a reused package's dependency pins from the tarball
+bound to its verified digest rather than from registry metadata.
+
+**Seeds:** none were issued, and none remain.
 
 ## Summary
 

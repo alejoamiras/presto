@@ -1,7 +1,6 @@
 # Implementation plans
 
 - [verified-sites-feed](verified-sites-feed/plan.md) — approved 2026-10-08, implementing PR 1 — the verified-sites list becomes a CI-signed list served by the release-feed Worker
-- [presto-verifier-identity](presto-verifier-identity/plan.md) — approved 2026-10-14, implementing — the verifier binds a provenance statement to its signing identity
 
 Add one line per plan here when it opens; move the line to
 [`archive/index.md`](archive/index.md) when it closes. This file is read at the start of every
