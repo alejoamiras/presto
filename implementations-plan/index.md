@@ -1,7 +1,6 @@
 # Implementation plans
 
 - [verified-sites-feed](verified-sites-feed/plan.md) — approved 2026-10-08, implementing PR 1 — the verified-sites list becomes a CI-signed list served by the release-feed Worker
-- [presto-rustls-fix](presto-rustls-fix/plan.md) — approved 2026-10-14, implementing — rustls 0.23.46 in the three Cargo locks for RUSTSEC-2026-0346..0349
 
 Add one line per plan here when it opens; move the line to
 [`archive/index.md`](archive/index.md) when it closes. This file is read at the start of every
