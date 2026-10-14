@@ -21,4 +21,5 @@
 ## Foreign-reviewer consults
 
 - Plan audit: GPT-6.1 Sol at `high`, sound after 2 rounds.
-- Fix loop: GPT-6.1 Sol at `high`; what it changed is in this branch's commits.
+- Fix loop: GPT-6.1 Sol at `high`, 3 rounds; no identity-policy bypass found, and what it changed is
+  in this branch's commits.

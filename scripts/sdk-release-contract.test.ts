@@ -24,14 +24,30 @@ function before(text: string, first: string, second: string): void {
   expect(b).toBeGreaterThan(a);
 }
 
-/** npm subcommands that read the registry or audit it; `install` only with `--ignore-scripts`. */
-const NPM_SUBCOMMANDS = new Set(["view", "audit", "install"]);
+/**
+ * The npm commands that read the registry without running package code, by their arguments after
+ * `npm`: `view` takes positional values only, `audit` only `signatures`, and `install` only these
+ * flags, `--ignore-scripts` among them.
+ */
+const NPM_READS: Record<string, (rest: string[]) => boolean> = {
+  view: (rest) => rest.every((arg) => /^\w+$/.test(arg)),
+  audit: ([check, ...flags]) =>
+    check === '"signatures"' &&
+    flags.every((flag) => ['"--json"', '"--include-attestations"'].includes(flag)),
+  install: (flags) =>
+    flags.includes('"--ignore-scripts"') &&
+    flags.every((flag) =>
+      ['"--ignore-scripts"', '"--no-audit"', '"--no-fund"', '"--loglevel=error"'].includes(flag),
+    ),
+};
 
 /** A literal command array that runs npm without package code. */
 function isNpmRead(array: string | undefined): boolean {
-  const subcommand = array && /^\[\s*"npm"\s*,\s*"([a-z-]+)"/.exec(array)?.[1];
-  if (!subcommand || !NPM_SUBCOMMANDS.has(subcommand)) return false;
-  return subcommand !== "install" || array.includes('"--ignore-scripts"');
+  const [command, subcommand, ...rest] = (array?.slice(1, -1).split(",") ?? [])
+    .map((arg) => arg.trim())
+    .filter(Boolean);
+  const read = NPM_READS[subcommand?.slice(1, -1) ?? ""];
+  return command === '"npm"' && Boolean(read?.(rest));
 }
 
 /** Commands in a job that could run code other than the repository's own scripts. */
@@ -39,8 +55,13 @@ function jobViolations(text: string): string[] {
   const violations = [...text.matchAll(/\bbunx?\s+(\S+)/g)]
     .filter(([, arg]) => !arg?.startsWith("scripts/"))
     .map(([command]) => command);
-  for (const [command, , body] of text.matchAll(/\bnode\s+-[ep]\s+(['"])([\s\S]*?)\1/g)) {
-    if (/require|import|child_process|eval|Function/.test(body as string)) violations.push(command);
+  // Node runs only quoted inline code that loads nothing.
+  for (const [command, flag, , body] of text.matchAll(
+    /\bnode\s+(\S+)(?:\s+(['"])([\s\S]*?)\2)?/g,
+  )) {
+    const inline = ["-e", "-p", "--eval", "--print"].includes(flag as string) && body !== undefined;
+    if (!inline || /require|import|child_process|eval|Function/.test(body))
+      violations.push(command);
   }
   for (const [runner] of text.matchAll(/\b(npx|npm (?:exec|x|run|install|ci|test|start))\b/g)) {
     violations.push(runner);
@@ -59,12 +80,14 @@ function codeViolations(code: string): string[] {
   for (const [call] of code.matchAll(/\bimport\s*\([^)]*\)/g)) {
     if (!/^import\s*\(\s*(["'])[^"'`$]*\1\s*\)$/.test(call)) violations.push(call);
   }
-  if (/\bBun\.\$|child_process|\bBun\.spawn\s*\(/.test(code)) violations.push("subprocess API");
+  if (/\bBun\s*\.\s*(\$|spawn\s*\()|child_process/.test(code)) violations.push("subprocess API");
   const helper = /\bfunction run\(command: string\[\]/.test(code);
-  for (const [call, argument] of code.matchAll(/\bBun\.spawnSync\(\s*(\[[^\]]*\]|\w+)/g)) {
+  for (const [call, argument] of code.matchAll(
+    /\bBun\s*\.\s*spawnSync\s*\(\s*(\[[^\]]*\]|\w+\b(?!\s*[.[(]))?/g,
+  )) {
     if (!isNpmRead(argument) && !(helper && argument === "command")) violations.push(call);
   }
-  for (const [call, array] of code.matchAll(/(?<!function )\brun\(\s*(\[[^\]]*\])?/g)) {
+  for (const [call, array] of code.matchAll(/(?<!function )\brun\s*\(\s*(\[[^\]]*\])?/g)) {
     if (helper && !isNpmRead(array)) violations.push(call);
   }
   return violations;
@@ -277,6 +300,8 @@ describe("the credentialed-job guards", () => {
     ["a package runner", "run: bunx tool"],
     ["inline Node loading a module", `run: node -e "require('tool')"`],
     ["npm running package code", "run: npm exec tool"],
+    ["inline Node through --eval", `run: node --eval "require('tool')"`],
+    ["a Node script", "run: node tool.js"],
   ])("the job guard refuses %s", (_, step) => {
     expect(jobViolations(step)).not.toEqual([]);
   });
@@ -289,6 +314,15 @@ describe("the credentialed-job guards", () => {
     ["another subprocess API", 'import { execFileSync } from "node:child_process";'],
     ["npm running package code", 'Bun.spawnSync(["npm", "exec", "tool"]);'],
     ["an install that runs scripts", 'Bun.spawnSync(["npm", "install", "tool"]);'],
+    [
+      "an install that re-enables scripts",
+      'Bun.spawnSync(["npm", "install", "--ignore-scripts", "--ignore-scripts=false"]);',
+    ],
+    ["an audit that installs", 'Bun.spawnSync(["npm", "audit", "fix"]);'],
+    ["spread arguments", 'Bun.spawnSync(["npm", "view", ...args]);'],
+    ["a spaced call", 'Bun.spawnSync (["bunx", "tool"]);'],
+    ["an options object", 'Bun.spawnSync({ cmd: ["bunx", "tool"] });'],
+    ["a computed command", "Bun.spawnSync(commands.at(0));"],
     [
       "a helper called with a variable",
       "function run(command: string[], cwd: string) {\n  Bun.spawnSync(command);\n}\nrun(list, dir);",
