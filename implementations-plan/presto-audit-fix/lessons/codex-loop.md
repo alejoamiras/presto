@@ -25,3 +25,8 @@ Codex also checked, and found clean:
 Codex's caveat: wrangler loads miniflare during deploy commands as well, so "never in a shipped
 artifact" does not mean "never on a build host". sharp's imports are confined to miniflare's local
 image handlers.
+
+## Round 2: no material findings. The loop converged.
+
+Codex confirmed both fixes against the registry (wrangler 4.150.0 → miniflare 5.20261006.2-beta →
+sharp 0.35.5), and `git diff --check` is clean.
