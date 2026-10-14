@@ -52,3 +52,6 @@ with `rg --no-ignore` / `git grep`.
 - [presto-rustls-fix](presto-rustls-fix/plan.md) — closed 2026-10-14 — the dependency audit green
   again: rustls 0.23.46 for RUSTSEC-2026-0346..0349, a same-day crate taken after it diffed equal to
   its upstream tag with a fully traced delta (PR #108).
+- [presto-fixture](presto-fixture/plan.md) — closed 2026-10-14 — the published-SDK gate re-armed:
+  the interop fixture names presto 6.0.0-rc.3, its integrity taken from the npm signature audit and
+  SLSA verification, never typed (PR #110).

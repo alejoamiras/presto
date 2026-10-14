@@ -1,7 +1,6 @@
 # Implementation plans
 
 - [verified-sites-feed](verified-sites-feed/plan.md) — approved 2026-10-08, implementing PR 1 — the verified-sites list becomes a CI-signed list served by the release-feed Worker
-- [presto-fixture](presto-fixture/plan.md) — approved 2026-10-14, implementing — the legacy interop fixture names the published presto 6.0.0-rc.3 (#103)
 
 Add one line per plan here when it opens; move the line to
 [`archive/index.md`](archive/index.md) when it closes. This file is read at the start of every
