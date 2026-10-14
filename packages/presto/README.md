@@ -96,7 +96,7 @@ The defaults are `59833` for HTTP and `59834` for the desktop HTTPS listener. Th
 
 ### Automatic Version Management
 
-The presto automatically downloads and caches `bb` binaries on demand. When the SDK sends a prove request for an Aztec version the presto doesn't have yet, it downloads the correct binary from Aztec's GitHub releases, caches it, and uses it immediately.
+The presto automatically downloads and caches `bb` binaries on demand. When the SDK sends a prove request for a `bb` release the presto doesn't have yet (the SDK sends its bb.js version, which since Aztec 6.0.0-rc.3 differs from the `@aztec-labs/*` one), it downloads that binary from Aztec's GitHub releases, caches it, and uses it immediately.
 
 Cached binaries are stored in `~/.presto/versions/` with a retention policy per network tier:
 
@@ -111,7 +111,7 @@ Old versions are evicted automatically — no manual cleanup needed.
 
 ### Version Model — why an Aztec bump doesn't re-release this app
 
-Because the presto downloads `bb` at runtime (above), it is **decoupled from the Aztec protocol version**. When Aztec ships a new release, only the [SDK](../sdk/README.md) is republished — it carries the Aztec package deps and advertises its version via the `x-aztec-version` header. The **already-installed presto** (desktop *and* headless) fetches and caches the matching `bb` on the next prove request; users do nothing. You cut a new presto release only when the presto's **own** code changes (server, tray, updater, or the `bb` download/verification logic) — never merely to track an Aztec version bump.
+Because the presto downloads `bb` at runtime (above), it is **decoupled from the Aztec protocol version**. When Aztec ships a new release, only the [SDK](../sdk/README.md) is republished — it carries the Aztec package deps and advertises the `bb` release it proves with via the `x-aztec-version` header. The **already-installed presto** (desktop *and* headless) fetches and caches the matching `bb` on the next prove request; users do nothing. You cut a new presto release only when the presto's **own** code changes (server, tray, updater, or the `bb` download/verification logic) — never merely to track an Aztec version bump.
 
 ### bb Binary Resolution
 
@@ -247,7 +247,7 @@ The tray menu adapts based on the build profile:
 ```
 Settings
 ─────────────
-v<app-version> · Aztec <bundled-bb-version>
+v<app-version> · bb <bundled-bb-version>
 GitHub
 Quit
 ```
@@ -259,7 +259,7 @@ Status: Idle
   Show Logs
   Settings
 ─────────────
-v<app-version> · Aztec <bundled-bb-version>
+v<app-version> · bb <bundled-bb-version>
 GitHub
 Quit
 ```
@@ -337,7 +337,7 @@ The `scripts/uninstall.sh` wrapper locates the binary and runs this for you.
 
 ## Version Compatibility
 
-The presto supports multiple Aztec versions simultaneously. For approved origins and non-browser callers, `/health` reports the app's own version (`version`), the Aztec version whose `bb` ships with the app (`aztec_version`), every version it can prove without a download (`available_versions`, bundled first, then cached), the proving schemes the routes serve, and which `bb` each Aztec version maps to:
+The presto supports multiple Aztec versions simultaneously. For approved origins and non-browser callers, `/health` reports the app's own version (`version`), the `bb` release that ships with the app (`aztec_version`, a historical name: it is a bb.js version), every version it can prove without a download (`available_versions`, bundled first, then cached), the proving schemes the routes serve, and which `bb` each Aztec version maps to:
 
 ```json
 {

@@ -470,8 +470,9 @@ async fn health(
             available.push(v);
         }
     }
-    // An Aztec release and the bb.js package it ships are one version string by construction;
-    // the pair is spelled out so a Noir developer who only knows a bb.js version has a key to match.
+    // Versions are keyed by barretenberg release, the bb.js version clients send; since Aztec
+    // 6.0.0-rc.3 it differs from the `@aztec-labs/*` one. The server holds no mapping between them,
+    // so both keys carry the same string; `aztec_version` is the historical wire name.
     let version_pairs: Vec<_> = available
         .iter()
         .map(|v| json!({ "aztec_version": v, "bb_version": v }))

@@ -27,7 +27,7 @@ const LAYOUT = {
             5,
             {
               enabled: { type: "b", data: false },
-              label: { type: "s", data: "v1.1.4-rc.1 · Aztec 6.0.0-rc.1" },
+              label: { type: "s", data: "v1.1.4-rc.1 · bb 6.0.0-rc.6" },
             },
             [],
           ],
@@ -53,7 +53,7 @@ describe("tray-menu", () => {
     expect(layoutItems(LAYOUT)).toEqual([
       { id: 2, label: "Show Logs", enabled: true },
       { id: 3, label: "Settings", enabled: true },
-      { id: 5, label: "v1.1.4-rc.1 · Aztec 6.0.0-rc.1", enabled: false },
+      { id: 5, label: "v1.1.4-rc.1 · bb 6.0.0-rc.6", enabled: false },
       { id: 6, label: "Check for Updates…", enabled: true },
       { id: 7, label: "GitHub", enabled: true },
       { id: 8, label: "Quit", enabled: true },

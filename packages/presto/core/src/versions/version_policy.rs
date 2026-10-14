@@ -237,11 +237,12 @@ pub fn versions_to_evict_for_size(
 
 /// Aztec versions whose bundled `bb` is KNOWN to be vulnerable — a REVOCATION list, **EMPTY by default**.
 ///
-/// `x-aztec-version` carries the **Aztec** version (the SDK's pinned Aztec `stdlib` version), NOT a
-/// barretenberg/`bb` version — and many Aztec releases ship the *same* `bb`. So a "newer-is-safer" floor
+/// `x-aztec-version` carries the barretenberg release the client proves with (the SDK's exact
+/// `@aztec-foundation/bb.js` pin, which since Aztec 6.0.0-rc.3 differs from the `@aztec-labs/*`
+/// version), and each client needs exactly that `bb`. So a "newer-is-safer" floor
 /// keyed on this string would wrongly reject a legitimate older-but-compatible dApp (e.g. an Aztec 5.0.1
 /// app talking to a 5.1.0-bundled presto). Instead this is a targeted denylist: the app owner adds a
-/// version string here ONLY if a security defect is found in the `bb` shipped with that Aztec release,
+/// version string here ONLY if a security defect is found in the `bb` of that release,
 /// and a remote request for it is then refused (403). Empty ⇒ no restriction — any version the dApp
 /// requests is allowed, and it is still digest-verified against Aztec's published hash on download — which
 /// detects corruption and substitution after that digest was read, but shares a publisher and control plane with the
@@ -277,14 +278,14 @@ impl VersionRejection {
 
 /// Gate a REMOTE `x-aztec-version` request.
 ///
-/// The header is the **Aztec** version, not a `bb` version, and the presto downloads the `bb`
-/// tarball attached to the Aztec release of that exact version. We therefore CANNOT impose a
-/// "newer-is-safer" floor here — many Aztec versions share one `bb`, so a floor would break a legitimate
+/// The header names the barretenberg release the client proves with, and the presto downloads the
+/// `bb` tarball of that exact release. We therefore CANNOT impose a
+/// "newer-is-safer" floor here — an older dApp needs its older `bb`, so a floor would break a legitimate
 /// older-but-compatible dApp (this was the over-blocking bug this function replaces). Every download is
 /// digest-verified against the hash Aztec published for it, which rules out substitution *after* that
 /// digest was read — not a compromised publisher that replaced asset and digest together. The only
-/// residual risk under that assumption — an approved dApp pinning an Aztec version whose bundled `bb` is
-/// *later* found vulnerable — is handled REACTIVELY via the [`KNOWN_VULNERABLE_VERSIONS`] revocation list
+/// residual risk under that assumption — an approved dApp pinning a `bb` release *later* found
+/// vulnerable — is handled REACTIVELY via the [`KNOWN_VULNERABLE_VERSIONS`] revocation list
 /// (empty by default). Everything not on that list is allowed.
 ///
 /// Well-formedness is STILL enforced (codex denylist-review #2): the request must be canonical strict
