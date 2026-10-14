@@ -206,3 +206,68 @@ export async function decidePopup(popup: string, selector: "#allow" | "#deny"): 
     else await browser.pause(200);
   }
 }
+
+export interface InvokeResult {
+  resolved: boolean;
+  value?: unknown;
+  error?: string;
+  hasPrimitive: boolean;
+}
+
+/**
+ * Invoke a command through the REAL injected primitive and capture resolve/reject.
+ *
+ * WebKitGTK's WebDriver (via tauri-plugin-webdriver) rejects `execute/async` ("Origin header is not a valid
+ * URL"), so we kick off the async invoke with a SYNC execute that stashes the outcome on a global, then poll
+ * that global with another sync execute.
+ */
+export async function invokeHere(
+  cmd: string,
+  args: Record<string, unknown>,
+): Promise<InvokeResult> {
+  // A prior denied invoke can surface its WebDriver error here — swallow it; the loop below re-reads state.
+  await browser
+    .execute(
+      (c: string, a: Record<string, unknown>) => {
+        const w = window as unknown as {
+          __INVOKE_RESULT__?: InvokeResult;
+          __TAURI_INTERNALS__?: { invoke?: (cmd: string, args: unknown) => Promise<unknown> };
+        };
+        w.__INVOKE_RESULT__ = undefined;
+        const inv = w.__TAURI_INTERNALS__?.invoke;
+        if (typeof inv !== "function") {
+          w.__INVOKE_RESULT__ = { resolved: false, hasPrimitive: false };
+          return;
+        }
+        inv(c, a)
+          .then((v: unknown) => {
+            w.__INVOKE_RESULT__ = { resolved: true, value: v, hasPrimitive: true };
+          })
+          .catch((e: unknown) => {
+            w.__INVOKE_RESULT__ = { resolved: false, error: String(e), hasPrimitive: true };
+          });
+      },
+      cmd,
+      args,
+    )
+    .catch(() => {});
+  let res: InvokeResult | null = null;
+  await browser.waitUntil(
+    async () => {
+      try {
+        res = await browser.execute(
+          () =>
+            (window as unknown as { __INVOKE_RESULT__?: InvokeResult }).__INVOKE_RESULT__ ?? null,
+        );
+      } catch (e) {
+        // tauri-plugin-webdriver surfaces a DENIED/failed invoke as a WebDriver-protocol error on a later
+        // execute (not as a caught JS rejection). Treat that as the rejection outcome — the message carries
+        // the ACL reason (e.g. "… not allowed on window …"), which is exactly what the denial asserts.
+        res = { resolved: false, error: String(e), hasPrimitive: true };
+      }
+      return res !== null;
+    },
+    { timeout: 8000, interval: 100, timeoutMsg: `invoke(${cmd}) did not settle` },
+  );
+  return res as unknown as InvokeResult;
+}

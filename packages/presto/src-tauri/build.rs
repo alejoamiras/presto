@@ -1,3 +1,5 @@
+use std::path::Path;
+
 /// SHA-256 over raw bytes → lowercase hex. MUST match `scripts/build-frontend.ts` so the guard compares
 /// like-for-like (GATE-3 codex: strong enough to detect a swapped OUTPUT bundle, not just staleness).
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -110,6 +112,77 @@ fn verify_frontend_bundles() {
     }
 }
 
+/// `<N>.json` or `<N>.json.minisig` with `N` a positive integer without leading zeros: the version and
+/// whether it names the signature.
+fn record_name(name: &str) -> Option<(u64, bool)> {
+    let (stem, is_signature) = match name.strip_suffix(".json.minisig") {
+        Some(stem) => (stem, true),
+        None => (name.strip_suffix(".json")?, false),
+    };
+    let numeric = !stem.is_empty() && stem.bytes().all(|b| b.is_ascii_digit());
+    if !numeric || stem.starts_with('0') {
+        return None;
+    }
+    stem.parse().ok().map(|version| (version, is_signature))
+}
+
+/// The built-in verified-sites list is the newest signed record, so a build needs one: there is no
+/// unsigned fallback. Signatures are verified by the PR gate's repository test, not here. A carriage
+/// return means a CRLF checkout, which would embed bytes that were never signed.
+fn select_verified_sites_record() {
+    let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").expect("cargo sets CARGO_MANIFEST_DIR");
+    let root = Path::new(&manifest_dir).join("..").join("verified-sites");
+    let history = root.join("history");
+    let key = root.join("key.pub");
+    println!("cargo:rerun-if-changed={}", history.display());
+    println!("cargo:rerun-if-changed={}", key.display());
+
+    let entries = std::fs::read_dir(&history).unwrap_or_else(|e| {
+        panic!(
+            "no verified-sites history at {}: {e} — the app embeds the newest signed record",
+            history.display()
+        )
+    });
+    let mut names = std::collections::HashSet::new();
+    let mut newest = None;
+    for entry in entries {
+        let name = entry.expect("history entry").file_name();
+        let name = name
+            .to_str()
+            .unwrap_or_else(|| panic!("unexpected file in verified-sites history: {name:?}"));
+        let (version, is_signature) = record_name(name)
+            .unwrap_or_else(|| panic!("unexpected file in verified-sites history: {name}"));
+        if !is_signature && newest < Some(version) {
+            newest = Some(version);
+        }
+        names.insert(name.to_string());
+    }
+    let version = newest.unwrap_or_else(|| {
+        panic!(
+            "no signed verified-sites record in {} — the app embeds the newest one",
+            history.display()
+        )
+    });
+    if !names.contains(&format!("{version}.json.minisig")) {
+        panic!("verified-sites record {version}.json has no {version}.json.minisig");
+    }
+    let record = history.join(format!("{version}.json"));
+    for path in [&record, &key] {
+        let bytes =
+            std::fs::read(path).unwrap_or_else(|e| panic!("cannot read {}: {e}", path.display()));
+        if bytes.contains(&b'\r') {
+            panic!(
+                "{} contains a carriage return (a CRLF checkout changes the signed bytes)",
+                path.display()
+            );
+        }
+    }
+    println!(
+        "cargo:rustc-env=PRESTO_VERIFIED_SITES_RECORD={}",
+        record.display()
+    );
+}
+
 fn main() {
     verify_frontend_bundles();
 
@@ -123,14 +196,7 @@ fn main() {
         println!("cargo:rustc-env=AZTEC_BB_VERSION=unknown");
     }
 
-    // Build-time syntax check for verified-sites.json so malformed JSON
-    // fails the cargo build instead of bricking installed users at startup.
-    println!("cargo:rerun-if-changed=../verified-sites.json");
-    let vs_path = "../verified-sites.json";
-    let vs_contents = std::fs::read_to_string(vs_path)
-        .unwrap_or_else(|e| panic!("verified-sites.json missing or unreadable at {vs_path}: {e}"));
-    serde_json::from_str::<serde_json::Value>(&vs_contents)
-        .unwrap_or_else(|e| panic!("verified-sites.json is not valid JSON: {e}"));
+    select_verified_sites_record();
 
     // F-012: declare the app's IPC command surface. Tauri only enforces the per-window ACL for app-local
     // commands when an app manifest exists (see tauri `webview/mod.rs`: the invoke gate is

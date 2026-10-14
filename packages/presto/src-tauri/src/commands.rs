@@ -1,6 +1,6 @@
 use crate::authorization::{AuthDecision, AuthorizationManager, ResolveOutcome};
 use crate::config::{self, PrestoConfig};
-use crate::verified_sites::VerifiedSitesRegistry;
+use crate::verified_sites::VerifiedSites;
 use presto_core::update_schedule::{install_opts, InstallCaller, InstallGate, ScheduleStore};
 use std::sync::Arc;
 use tauri::Manager;
@@ -60,7 +60,7 @@ fn require_persistable(config: &ConfigState) -> Result<(), String> {
     }
 }
 pub type AuthState = Arc<AuthorizationManager>;
-pub type VerifiedSitesState = Arc<VerifiedSitesRegistry>;
+pub type VerifiedSitesState = Arc<VerifiedSites>;
 /// Shared AppState so HTTPS servers spawned later (e.g. enabling Safari) get the full
 /// state including auth_manager, config, and show_auth_popup — not a bare Default.
 pub type SharedAppState = Arc<crate::server::AppState>;
@@ -527,9 +527,13 @@ pub fn get_verified_info(
 ) -> Result<Option<VerifiedSiteDto>, String> {
     // F-012 (D6): only an authorization popup renders the verified badge.
     require_auth_window(window.label())?;
-    Ok(state.lookup(&origin).map(|s| VerifiedSiteDto {
-        display_name: s.display_name.clone(),
-    }))
+    Ok(verified_info(&state, &origin))
+}
+
+pub fn verified_info(sites: &VerifiedSites, origin: &str) -> Option<VerifiedSiteDto> {
+    sites
+        .display_name(origin)
+        .map(|display_name| VerifiedSiteDto { display_name })
 }
 
 #[tauri::command]

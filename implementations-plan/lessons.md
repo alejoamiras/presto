@@ -20,6 +20,9 @@ not belong here. Sections are stable; append, never re-sort.
   `archive/update-check-schedule/lessons/phase-3.md`
 - **An unfulfilled `#[expect]` is an error under `-D warnings`** — verify suppressions from a clean
   build, under every feature set. `archive/presto-cleanup/lessons/review-18.md`
+- **A path that goes on without the lock must still read what the lock guards** — a lock timeout
+  skipped the cache read, and the caller swapped anyway to a list older than the disk's.
+  `archive/verified-sites-feed/lessons/pr-2-review.md`
 
 ## Build, bundling and dependencies
 
@@ -38,6 +41,8 @@ not belong here. Sections are stable; append, never re-sort.
 - **Any Wrangler bump fails `release-feed`'s typecheck** — `wrangler types --check` wants
   `worker-configuration.d.ts` regenerated (`bun run --cwd packages/release-feed types`).
   `archive/workers-builds/lessons/phase-1.md`
+- **`bun --config /dev/null <script>` exits 0 without running the script** (so does `-c`); only
+  `--config=/dev/null` works. (2026-10, Bun 1.4.2) `archive/verified-sites-feed/lessons/phase-2.md`
 - **Aztec release numbers split by npm scope** — `@aztec-labs/*` 6.0.0-rc.3 pins `@aztec-foundation/*`
   (bb.js, Noir) at rc.6, and `bb` is tagged by the foundation number. (2026-10)
   `archive/presto-rc3/plan.md`
@@ -108,11 +113,9 @@ not belong here. Sections are stable; append, never re-sort.
   `archive/presto-noir/lessons/audit-fixes.md`
 - **`bun install --frozen-lockfile` still runs lifecycle scripts** — a publish job holding the OIDC
   identity should install nothing. `archive/presto-noir/lessons/audit-fixes.md`
-- **npm's attestation endpoint 404s for minutes after a successful publish** — timing, not a missing
-  signature; wait on a ten-minute scale. `archive/presto-noir/lessons/audit-fixes.md`
-- **npm says "not found" rather than "forbidden", and registry reads are CDN-cached** — an expired
-  `npm login` 404s too (check `npm whoami`); verify a promotion through an uncached read.
-  `archive/presto-noir/lessons/arc-2-review.md`
+- **npm answers 404 for "not yet" and "forbidden", and caches reads** — attestations 404 for minutes
+  after a publish (wait ten minutes), an expired login 404s too (`npm whoami`); verify uncached.
+  `archive/presto-noir/lessons/audit-fixes.md`, `archive/presto-noir/lessons/arc-2-review.md`
 - **A publish job interrupted after `npm publish` strands the version** — the planner refuses to
   reuse it. Fix forward with `packages: all`, then deprecate it. `archive/lna-consent/plan.md`
 
@@ -126,6 +129,9 @@ not belong here. Sections are stable; append, never re-sort.
   `archive/presto-noir/lessons/audit-fixes.md`
 - **Node-based actions cannot see Git Bash's `/tmp` on Windows runners** — a failure with no uploaded
   artifact is usually this. Use `$RUNNER_TEMP`. `archive/presto-noir/lessons/arc-1-review.md`
+- **Windows refuses a loopback connect in about 2 s, and opening a path beneath a regular file is
+  `NotFound` there, not an error** — tests pinning Linux's answer to either fail only on Windows.
+  `archive/verified-sites-feed/lessons/phase-10.md`
 
 ## Local tooling
 

@@ -1,16 +1,23 @@
 /**
- * The WebDriver-only tray hooks never reach a shipped build: they sit behind one `cfg`, the feature
- * is never on by default, and no release artifact is built with it. The shipped binaries' own bytes
- * are checked in the updater smokes.
+ * The WebDriver-only hooks never reach a shipped build: they sit behind one `cfg`, the feature is
+ * never on by default, and no release artifact is built with it. The shipped binaries' own bytes are
+ * checked in the updater smokes and in the release build.
  */
 import { describe, expect, test } from "bun:test";
-import { readdirSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 const PRESTO = path.resolve(import.meta.dir, "..");
 const SRC = path.join(PRESTO, "src-tauri", "src");
 const WORKFLOWS = path.resolve(PRESTO, "..", "..", ".github", "workflows");
 const GATED = '#[cfg(feature = "webdriver")]';
+/** Every variable a WebDriver-only hook reads; the scans' needle is their shared prefix. */
+const HOOK_NAMES = [
+  "PRESTO_E2E_TRAY_REPORT",
+  "PRESTO_E2E_VERIFIED_SITES_URL",
+  "PRESTO_E2E_VERIFIED_SITES_PUBKEY",
+];
 
 function rustFiles(dir: string): string[] {
   return readdirSync(dir, { recursive: true, encoding: "utf8" })
@@ -54,7 +61,7 @@ describe("WebDriver-only tray hooks", () => {
       }
     }
     const hooks = await text(path.join(SRC, "e2e_tray.rs"));
-    expect(hooks).toContain("PRESTO_E2E_TRAY_REPORT");
+    expect(HOOK_NAMES.filter((name) => !hooks.includes(name))).toEqual([]);
     expect(hooks).toContain("pub const REVERT: Duration = Duration::from_secs(2);");
   });
 
@@ -122,10 +129,40 @@ describe("WebDriver-only tray hooks", () => {
         ]);
       }
     }
-    const teeth = (await steps("_e2e-webdriver.yml")).find((s) =>
-      s.run?.includes("grep -qa PRESTO_E2E_TRAY_REPORT"),
+    const teeth = (await steps("_e2e-webdriver.yml")).find(
+      (s) => s.name === "Assert the WebDriver binary carries the test hooks",
     );
-    expect(teeth?.name).toBe("Assert the WebDriver binary carries the tray hooks");
+    const run = teeth?.run ?? "";
+    expect(teethOver(run, HOOK_NAMES)).toBe(0);
+    for (const name of HOOK_NAMES) {
+      expect(
+        teethOver(
+          run,
+          HOOK_NAMES.filter((n) => n !== name),
+        ),
+        name,
+      ).toBe(1);
+    }
+  });
+});
+
+describe("WebDriver launchers", () => {
+  test("L4: both launchers start the list feed before the app and export every hook variable", async () => {
+    const ci = await steps("_e2e-webdriver.yml");
+    const names = ci.map((s) => s.name);
+    const feed = names.indexOf("Start the verified-sites feed");
+    expect(feed).toBeGreaterThan(-1);
+    expect(feed).toBeLessThan(names.indexOf("Launch app"));
+    const local = await text(path.join(PRESTO, "scripts", "run-webdriver-local.sh"));
+    const localLaunch = local.split('setsid "$BIN"')[0] ?? "";
+    for (const before of [ci[feed]?.run ?? "", localLaunch]) {
+      expect(before).toContain("bun scripts/verified-sites-e2e-feed.ts --state");
+    }
+    for (const launch of [ci[names.indexOf("Launch app")]?.run ?? "", localLaunch]) {
+      for (const name of HOOK_NAMES) {
+        expect(launch, name).toMatch(new RegExp(`^\\s*export (\\w+ )*${name}\\b`, "m"));
+      }
+    }
   });
 });
 
@@ -168,4 +205,23 @@ function collectWithFailingScanner(script: string, os: string, role: string): [s
     },
   );
   return [String(run.stdout).trim(), run.exitCode];
+}
+
+/**
+ * Runs the WebDriver workflow's teeth step on a stand-in release binary that carries `names`.
+ * Returns the step's exit code.
+ */
+function teethOver(run: string, names: string[]): number {
+  const cwd = mkdtempSync(path.join(tmpdir(), "webdriver-teeth-"));
+  try {
+    mkdirSync(path.join(cwd, "src-tauri/target/release"), { recursive: true });
+    writeFileSync(path.join(cwd, "src-tauri/target/release/Presto"), `\0${names.join("\0")}\0`);
+    const r = Bun.spawnSync(["bash", "-e", "-c", run], {
+      cwd,
+      env: { PATH: process.env.PATH, RUNNER_OS: "Linux", MODE: "release" },
+    });
+    return r.exitCode;
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 }

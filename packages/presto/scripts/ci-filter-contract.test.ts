@@ -123,8 +123,13 @@ describe("presto CI path routing", () => {
       ["release_tooling", "verified_sites_feed"],
     ],
     [
-      "the verified-sites list, compiled into the app",
-      ["packages/presto/verified-sites.json"],
+      "the verified-sites source list, signed and recorded but never compiled in",
+      ["packages/presto/verified-sites.json", "packages/presto/verified-sites.schema.json"],
+      ["release_tooling", "verified_sites_feed"],
+    ],
+    [
+      "the pinned verified-sites key, compiled into the app",
+      ["packages/presto/verified-sites/key.pub"],
       [
         "desktop_runtime",
         "release_tooling",

@@ -33,6 +33,35 @@ function appImage(name: string, payload: string): string {
   return p;
 }
 
+/** A gzipped tar of `files` (path → body), as `tauri build` packs an .app. */
+function tarGz(name: string, files: Record<string, string>): string {
+  const stage = mkdtempSync(path.join(dir, "stage-"));
+  for (const [rel, body] of Object.entries(files)) {
+    mkdirSync(path.dirname(path.join(stage, rel)), { recursive: true });
+    writeFileSync(path.join(stage, rel), body);
+  }
+  const out = path.join(dir, name);
+  const r = Bun.spawnSync(["tar", "-czf", out, "-C", stage, "."]);
+  expect(r.exitCode, r.stderr.toString()).toBe(0);
+  return out;
+}
+
+/** A .deb: an ar archive whose `data.tar.gz` holds `files`, unless `data` is false. */
+function deb(name: string, files: Record<string, string>, data = true): string {
+  const stage = mkdtempSync(path.join(dir, "deb-"));
+  writeFileSync(path.join(stage, "debian-binary"), "2.0\n");
+  const members = ["debian-binary"];
+  if (data) {
+    const payload = tarGz(`${name}.data.tar.gz`, files);
+    Bun.spawnSync(["cp", payload, path.join(stage, "data.tar.gz")]);
+    members.push("data.tar.gz");
+  }
+  const out = path.join(dir, name);
+  const r = Bun.spawnSync(["ar", "rc", out, ...members], { cwd: stage });
+  expect(r.exitCode, r.stderr.toString()).toBe(0);
+  return out;
+}
+
 describe("assert-no-test-hooks", () => {
   test("passes clean binaries, bundles and AppImages", () => {
     const clean = file("clean/Presto", new Uint8Array([0, 1, 2, 80, 82, 69]));
@@ -41,11 +70,13 @@ describe("assert-no-test-hooks", () => {
       clean,
       path.dirname(path.dirname(path.dirname(bundle))),
       appImage("clean.AppImage", "ok"),
+      tarGz("Clean.app.tar.gz", { "Presto.app/Contents/MacOS/Presto": "release bytes" }),
+      deb("clean.deb", { "usr/bin/Presto": "release bytes" }),
     );
     expect(r.code, r.out).toBe(0);
   });
 
-  test("fails on the hook's name anywhere in a binary, a bundle or an AppImage's payload", () => {
+  test("fails on any hook name anywhere in a binary, a bundle or an extracted payload", () => {
     const binary = file(
       "hooked/Presto",
       Buffer.concat([Buffer.from([0, 0]), Buffer.from("PRESTO_E2E_TRAY_REPORT")]),
@@ -56,10 +87,14 @@ describe("assert-no-test-hooks", () => {
       binary,
       path.dirname(path.dirname(bundle)),
       appImage("hooked.AppImage", "PRESTO_E2E_TRAY_REPORT"),
+      tarGz("Hooked.app.tar.gz", {
+        "Presto.app/Contents/MacOS/Presto": "x PRESTO_E2E_VERIFIED_SITES_URL y",
+      }),
+      deb("hooked.deb", { "usr/bin/Presto": "x PRESTO_E2E_VERIFIED_SITES_PUBKEY y" }),
     ]) {
       const r = run(target);
       expect(r.code, target).toBe(1);
-      expect(r.out).toContain("contains PRESTO_E2E_TRAY_REPORT");
+      expect(r.out).toContain("contains PRESTO_E2E_");
     }
   });
 
@@ -83,7 +118,7 @@ describe("assert-no-test-hooks", () => {
     expect(r.out).toContain("grep exit 2");
   });
 
-  test("fails on empty inputs instead of passing them vacuously", () => {
+  test("fails on empty or unreadable inputs instead of passing them vacuously", () => {
     mkdirSync(path.join(dir, "Empty.app/Contents/MacOS"), { recursive: true });
     file("Stub.app/Contents/MacOS/Presto", "");
     file("NoExe.app/Contents/Resources/icon", "bytes");
@@ -93,6 +128,9 @@ describe("assert-no-test-hooks", () => {
       path.join(dir, "Stub.app"),
       path.join(dir, "NoExe.app"),
       appImage("empty.AppImage", ""),
+      tarGz("NoExe.app.tar.gz", { "Presto.app/Contents/Resources/icon": "bytes" }),
+      deb("no-data.deb", {}, false),
+      file("corrupt.tar.gz", "not gzip"),
     ]) {
       expect(run(target).code, target).toBe(1);
     }

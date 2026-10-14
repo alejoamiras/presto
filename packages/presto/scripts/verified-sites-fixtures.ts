@@ -84,6 +84,10 @@ export function buildFixtures(): Map<string, Uint8Array> {
   signed("list-5", five);
   signed("list-6", list(6, [alpha, { ...beta, displayName: "Beta Wallet" }, delta]));
 
+  // The highest version a list may carry, signed by the wrong key: trusted from the cache, it would
+  // refuse every later list for good.
+  signed("list-max-wrong-key", list(2 ** 53 - 1, [alpha]), other);
+
   // Validly signed, but a second list for version 5.
   signed("list-5-equivocating", list(5, [alpha, gamma]));
 

@@ -144,6 +144,9 @@ jobs:
       # name constraints / mismatched key) fails fast on macOS + Windows too, not just the Linux `test`
       # job. Cheap + needs no certutil/keychain, so it's safe on every matrix leg.
       - run: cargo test --test tls_handshake -- --nocapture
+      # The verified-sites client against a scripted feed and a real cache directory, so each OS's
+      # file paths (rename, lock, permissions) execute, not just Linux's.
+      - run: cargo test --test verified_sites_feed
       # Real trust-store test per OS. Windows: CurrentUser Root add/verify/remove (spike I3 — expected
       # silent in CI). macOS: headless-safe subset only (verify/status + F-05's removal
       # classification, which `security find-certificate` can answer without a prompt; the INSTALL

@@ -9,6 +9,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
@@ -479,6 +480,36 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     expect(RELEASE_SIGNER).toContain(requiredPasswordExpansion);
   });
 
+  test("every shipped bundle is scanned for test hooks after it is built and before upload", () => {
+    const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs.build?.steps ?? [];
+    const names = steps.map((s) => s.name);
+    const scans = steps.filter((s) => s.run?.includes("assert-no-test-hooks.sh"));
+    expect(scans).toHaveLength(1);
+    const scan = scans[0] as SmokeStep;
+    const at = steps.indexOf(scan);
+    expect(at).toBeGreaterThan(names.indexOf("Build Tauri bundle"));
+    expect(names.indexOf("Build Tauri bundle")).toBeGreaterThan(-1);
+    expect(at).toBeLessThan(names.indexOf("Upload artifacts"));
+    expect(scan.if).toBeUndefined();
+    expect(scan["continue-on-error"]).toBeUndefined();
+    expect(scan["working-directory"]).toBe("packages/presto");
+    expect(JSON.stringify(scan)).not.toContain("secrets.");
+    const script = "scripts/assert-no-test-hooks.sh";
+    const root = "src-tauri/target/T/release";
+    const expected: Record<string, string[]> = {
+      macOS: [`${script} ${root}/bundle/macos/*.app.tar.gz`],
+      Linux: [`${script} ${root}/bundle/appimage/*.AppImage ${root}/bundle/deb/*.deb`],
+      Windows: [`${script} ${root}/Presto.exe`],
+    };
+    for (const [os, calls] of Object.entries(expected)) {
+      expect(scanCalls(scan.run ?? "", os), os).toEqual({ calls, code: 0 });
+    }
+    expect(scanCalls(scan.run ?? "", "FreeBSD").code).toBe(1);
+    const signer = WF.split("  sign-updater-artifacts:")[1]?.split("\n  build-headless:")[0] ?? "";
+    expect(signer).toContain("environment: release-signing");
+    expect(signer).not.toContain("assert-no-test-hooks");
+  });
+
   test("dependency audit is a release publication gate", () => {
     const release = WF.split("  release:")[1]?.split("\n  packaged-e2e-on-draft:")[0] ?? "";
     expect(WF).toContain("uses: ./.github/workflows/dependency-audit.yml");
@@ -640,3 +671,21 @@ describe("release-machinery hardening (2026-08-17 GitHub asset-CDN incident)", (
     expect(UNINSTALL_WIN).toMatch(/\$taskCommands\.Count -ne 1/);
   });
 });
+
+/**
+ * Runs a release scan step's script for one runner OS, in an empty directory so no glob expands, with
+ * `bash` stubbed to record each scanner call. Returns the calls and the step's exit code.
+ */
+function scanCalls(run: string, os: string): { calls: string[]; code: number } {
+  const cwd = fs.mkdtempSync(path.join(tmpdir(), "release-scan-"));
+  try {
+    const r = Bun.spawnSync(["bash", "-c", `bash() { echo "$*"; }\n${run}`], {
+      cwd,
+      env: { PATH: process.env.PATH, RUNNER_OS: os, TARGET: "T" },
+    });
+    const calls = r.stdout.toString().split("\n").filter(Boolean);
+    return { calls: calls.filter((c) => !c.startsWith("::error::")), code: r.exitCode };
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+}
