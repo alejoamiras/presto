@@ -10,9 +10,10 @@ import { resolve } from "node:path";
 import { initializeCA, initializeCTLog, initializeTLog } from "@sigstore/mock";
 import { TrustedRoot } from "@sigstore/protobuf-specs";
 import { PolicyError, type TrustMaterial, toTrustMaterial } from "@sigstore/verify";
-import { NPM_PACKAGES, provenanceSubject } from "./npm-packages.ts";
+import { NPM_PACKAGES, type NpmPackage, provenanceSubject } from "./npm-packages.ts";
 import {
   RELEASE_IDENTITY,
+  RELEASE_SIGNERS,
   ROLLBACK_SIGNERS,
   verifySigningIdentity,
 } from "./provenance-identity.ts";
@@ -26,6 +27,7 @@ import { verifySdkPackageSignatures, verifySignedReport } from "./verify-sdk-pac
 
 const COMMIT = "b842a5322072321e6a0439399b4cc8c6e7823032";
 const VERSION = "6.0.0-rc.3";
+const CORE_COMMIT = "bc3eeee07f4f238ccce27fe2a7a4d513d5899c10";
 const fixture = (name: string) => Bun.file(resolve(import.meta.dir, "__fixtures__", name)).json();
 const buffer = (view: ArrayBufferView) =>
   Buffer.from(view.buffer, view.byteOffset, view.byteLength);
@@ -202,10 +204,14 @@ async function mockWorld() {
 }
 
 /** The `npm audit signatures --include-attestations` entry that carries `bundle`. */
-const reportFor = (bundle: object, version = VERSION): SignatureAudit => ({
+const reportFor = (
+  bundle: object,
+  version = VERSION,
+  pkg: NpmPackage = NPM_PACKAGES.presto,
+): SignatureAudit => ({
   verified: [
     {
-      name: NPM_PACKAGES.presto.name,
+      name: pkg.name,
       version,
       attestations: { provenance: { predicateType: "https://slsa.dev/provenance/v1" } },
       attestationBundles: [
@@ -214,6 +220,90 @@ const reportFor = (bundle: object, version = VERSION): SignatureAudit => ({
     },
   ],
 });
+
+// Each row changes exactly one certificate field while the statement still claims the release.
+const mutations: Array<[string, keyof CertificateFields, string]> = [
+  [
+    "another repository's workflow as SAN",
+    "san",
+    "https://github.com/someone/presto/.github/workflows/_publish-npm.yml@refs/heads/main",
+  ],
+  ["a SAN with a suffix", "san", `${workflow(".github/workflows/_publish-npm.yml")}x`],
+  ["another build signer", "9", workflow(".github/workflows/other.yml")],
+  ["another issuer", "8", "https://issuer.example"],
+  ["a self-hosted runner", "11", "self-hosted"],
+  ["another repository URI", "12", "https://github.com/someone/presto"],
+  ["another source commit", "13", "c".repeat(40)],
+  ["another source ref", "14", "refs/heads/feature"],
+  ["another repository ID", "15", "1"],
+  ["another owner ID", "17", "1"],
+  ["another build config", "18", workflow(".github/workflows/other.yml")],
+  ["another build config commit", "19", "c".repeat(40)],
+];
+// The refusal names the mutated field, so no row passes on another field's failure.
+const refusal = (field: keyof CertificateFields) =>
+  field === "san"
+    ? "certificate identity error"
+    : field === "8"
+      ? "expected issuer="
+      : `missing OID 1.3.6.1.4.1.57264.1.${field}`;
+
+// Each row tampers with a bundle signed under the release identity: the cryptographic checks, not
+// the identity policy, refuse it, whichever signers are accepted.
+type Signed = Awaited<ReturnType<Awaited<ReturnType<typeof mockWorld>>["bundle"]>>;
+const entry = (bundle: Signed) =>
+  bundle.verificationMaterial.tlogEntries[0] as Signed["verificationMaterial"]["tlogEntries"][0];
+const tampered: Array<[string, (bundle: Signed, other: Signed) => Signed]> = [
+  [
+    "a payload changed after signing",
+    (bundle) => ({
+      ...bundle,
+      dsseEnvelope: { ...bundle.dsseEnvelope, payload: b64(statement().replace("abab", "cdcd")) },
+    }),
+  ],
+  [
+    "another signer's certificate",
+    (bundle, other) => ({
+      ...bundle,
+      verificationMaterial: {
+        ...bundle.verificationMaterial,
+        x509CertificateChain: other.verificationMaterial.x509CertificateChain,
+      },
+    }),
+  ],
+  [
+    "a second envelope signature",
+    (bundle, other) => ({
+      ...bundle,
+      dsseEnvelope: {
+        ...bundle.dsseEnvelope,
+        signatures: [...bundle.dsseEnvelope.signatures, ...other.dsseEnvelope.signatures],
+      },
+    }),
+  ],
+  [
+    "a log entry with another integrated time",
+    (bundle) => ({
+      ...bundle,
+      verificationMaterial: {
+        ...bundle.verificationMaterial,
+        tlogEntries: [
+          { ...entry(bundle), integratedTime: String(Number(entry(bundle).integratedTime) + 1) },
+        ],
+      },
+    }),
+  ],
+  [
+    "another signature's log entry",
+    (bundle, other) => ({
+      ...bundle,
+      verificationMaterial: {
+        ...bundle.verificationMaterial,
+        tlogEntries: other.verificationMaterial.tlogEntries,
+      },
+    }),
+  ],
+];
 
 describe("the verifier binds a provenance statement to its signing identity", async () => {
   const world = await mockWorld();
@@ -231,32 +321,6 @@ describe("the verifier binds a provenance statement to its signing identity", as
     expect(verified.workflow).toBe(SDK_RELEASE_WORKFLOW);
   });
 
-  // Each row changes exactly one certificate field while the statement still claims the release.
-  const mutations: Array<[string, keyof CertificateFields, string]> = [
-    [
-      "another repository's workflow as SAN",
-      "san",
-      "https://github.com/someone/presto/.github/workflows/_publish-npm.yml@refs/heads/main",
-    ],
-    ["a SAN with a suffix", "san", `${workflow(".github/workflows/_publish-npm.yml")}x`],
-    ["another build signer", "9", workflow(".github/workflows/other.yml")],
-    ["another issuer", "8", "https://issuer.example"],
-    ["a self-hosted runner", "11", "self-hosted"],
-    ["another repository URI", "12", "https://github.com/someone/presto"],
-    ["another source commit", "13", "c".repeat(40)],
-    ["another source ref", "14", "refs/heads/feature"],
-    ["another repository ID", "15", "1"],
-    ["another owner ID", "17", "1"],
-    ["another build config", "18", workflow(".github/workflows/other.yml")],
-    ["another build config commit", "19", "c".repeat(40)],
-  ];
-  // The refusal names the mutated field, so no row passes on another field's failure.
-  const refusal = (field: keyof CertificateFields) =>
-    field === "san"
-      ? "certificate identity error"
-      : field === "8"
-        ? "expected issuer="
-        : `missing OID 1.3.6.1.4.1.57264.1.${field}`;
   test.each(mutations)("a certificate with %s is refused", async (_, field, value) => {
     const signed = await world.bundle({ ...releaseCertificate(), [field]: value });
     for (const verifying of [
@@ -269,6 +333,21 @@ describe("the verifier binds a provenance statement to its signing identity", as
       );
       expect(error).toBeInstanceOf(PolicyError);
       expect((error as Error).message).toContain(refusal(field));
+    }
+  });
+
+  test.each(tampered)("%s is refused before any identity is considered", async (_, tamper) => {
+    const forged = tamper(
+      await world.bundle(releaseCertificate()),
+      await world.bundle(releaseCertificate()),
+    );
+    for (const signers of [RELEASE_SIGNERS, ROLLBACK_SIGNERS]) {
+      const error = await verifySigningIdentity(forged, { signers }, world.trust).then(
+        () => undefined,
+        (cause: unknown) => cause,
+      );
+      expect(error).toBeInstanceOf(Error);
+      expect(error).not.toBeInstanceOf(PolicyError);
     }
   });
 });
@@ -288,11 +367,30 @@ describe("real publications", async () => {
     ).rejects.toBeInstanceOf(PolicyError);
   });
 
+  test("presto-core 1.2.1 verifies at its release commit", async () => {
+    const pkg = NPM_PACKAGES["presto-core"];
+    const signed = await fixture("slsa-bundle-presto-core-1.2.1.json");
+    const verified = await verifySignedReport(reportFor(signed, "1.2.1", pkg), "1.2.1", pkg, {
+      expectedCommit: CORE_COMMIT,
+      trust,
+    });
+    expect(verified.commit).toBe(CORE_COMMIT);
+  });
+
   test("presto 5.2.0, signed by the earlier reusable workflow, verifies only on the rollback path", async () => {
     const signed = await fixture("slsa-bundle-presto-5.2.0.json");
+    const report = reportFor(signed, "5.2.0");
     await expect(verifySigningIdentity(signed, {}, trust)).rejects.toBeInstanceOf(PolicyError);
+    await expect(
+      verifySignedReport(report, "5.2.0", NPM_PACKAGES.presto, { trust }),
+    ).rejects.toBeInstanceOf(PolicyError);
     const { identity } = await verifySigningIdentity(signed, { signers: ROLLBACK_SIGNERS }, trust);
     expect(identity.signer).toBe(".github/workflows/_publish-sdk.yml");
+    const verified = await verifySignedReport(report, "5.2.0", NPM_PACKAGES.presto, {
+      signers: ROLLBACK_SIGNERS,
+      trust,
+    });
+    expect(verified.commit).toBe(identity.commit);
   });
 });
 

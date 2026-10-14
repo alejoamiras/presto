@@ -4,14 +4,17 @@ import { NPM_PACKAGES } from "./npm-packages.ts";
 import { hasVerifiedSdkProvenance, verifiedProvenanceStatement } from "./registry-consistency.ts";
 import { verifyProvenanceStatement } from "./sdk-release-verification.ts";
 
-/** `npm audit signatures --json --include-attestations` for the published presto-core 1.0.0. */
+/**
+ * `npm audit signatures --json --include-attestations` for the published presto-core 1.0.0, trimmed
+ * to the statement payloads: it exercises claim extraction, not cryptographic verification.
+ */
 const realReport = () =>
   Bun.file(
     resolve(import.meta.dir, "__fixtures__/npm-audit-signatures-presto-core-1.0.0.json"),
   ).json();
 const core = NPM_PACKAGES["presto-core"];
 
-describe("SDK signature verification", () => {
+describe("registry consistency", () => {
   test("requires verified SLSA provenance for the exact package and version", () => {
     const report = {
       verified: [
@@ -28,7 +31,7 @@ describe("SDK signature verification", () => {
     expect(hasVerifiedSdkProvenance(report, "5.2.0", sibling)).toBe(false);
   });
 
-  test("the signed statement comes from the verified provenance bundle npm reported", async () => {
+  test("the statement is decoded from the provenance bundle npm reported", async () => {
     const report = await realReport();
     const statement = verifiedProvenanceStatement(report, "1.0.0", core);
     const verified = verifyProvenanceStatement(
