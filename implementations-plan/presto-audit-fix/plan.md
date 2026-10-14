@@ -6,12 +6,35 @@ eli5_mode: off
 code_review: off
 codex_model: sol
 explainer: off
-status: approved 2026-10-14 (director's brief; Phase 0 answered there)
+status: closed 2026-10-14 (PR #107); approved 2026-10-14 (director brief)
 created: 2026-10-14
 worktree: .claude/worktrees/presto-audit-fix
 branch: worktree-presto-audit-fix
 base: main @ 14c4085
 ---
+
+## Outcome
+
+Closed 2026-10-14 in PR #107 (`Closes #101`). Codex converged in 2 rounds (`lessons/codex-loop.md`).
+
+**Shipped:**
+- `sharp` 0.35.5, through an exact root override, because miniflare pins 0.35.4.
+- `source-map-js` 1.2.2, through the lock.
+- `quinn-proto` 0.11.19 in all three Cargo locks.
+- The follow-ups expiry dates corrected.
+
+No other dependency moved: `bun.lock` was spliced so that root `vite` stayed at 8.2.2. The local
+`audit:dependencies` reports 0 blocked. Evidence is in `lessons/phase-1.md`.
+
+**Known limits:**
+- source-map-js has no npm provenance.
+- sharp's provenance was checked by inspection, not by signature verification.
+
+**Open items:**
+- #106: drop the sharp override at the next wrangler bump.
+- The two undici exceptions expire 2026-10-31 (`follow-ups.md`).
+
+**Seeds:** none were issued, and none remain.
 
 ## Summary
 

@@ -16,6 +16,9 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   - The audit gate goes red on 2026-11-01 on the first two, and on 2026-12-01 on the rest. Each
     entry's `reason` says what pins it.
   - **Verified 2026-10-14** against the allowlist and PR #105's audit log.
+- **#106: drop the root `sharp` 0.35.5 override at the next wrangler bump.** wrangler 4.150.0's
+  miniflare pins sharp 0.35.5 itself. Left in place, the override would hold back sharp's later
+  fixes. `archive/presto-audit-fix/plan.md`
 
 ## Owner actions
 
@@ -61,12 +64,6 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   that install UI comes from `@alejoamiras/presto-banners`. Add them in each package's next real
   release. Any file change there makes `release-plan.ts` refuse to reuse the published version.
   `archive/bundle-v6/plan.md`.
-
-## From presto-audit-fix (closed 2026-10-14)
-
-- **#106: drop the root `sharp` 0.35.5 override at the next wrangler bump.** wrangler 4.150.0's
-  miniflare pins sharp 0.35.5 itself. Left in place, the override would hold back sharp's later
-  fixes.
 
 ## Untested paths, carried from the logs
 
