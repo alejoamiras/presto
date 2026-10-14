@@ -54,8 +54,10 @@ On the PR, the acceptance check is a green `Dependency Audit` workflow.
 - **Provenance.** Check each new release against its registry metadata: npm integrity and
   attestations where they exist, and the crates.io checksum recorded in `Cargo.lock`.
 - **sharp's prebuilt native binaries.** The `@img/sharp-*` platform packages ride along with
-  `sharp`. Confirm each one is 0.35.5 and older than the 7-day gate. sharp runs only inside
-  miniflare's local dev and tests, never in a shipped artifact.
+  `sharp`. Confirm the `@img/sharp-*` binaries are at 0.35.5 and the `@img/sharp-libvips-*` ones
+  at 1.3.4, and that every one is older than the 7-day gate. Only miniflare's local image handlers
+  import sharp. wrangler loads miniflare during deploys as well, so sharp reaches build hosts but no
+  shipped artifact.
 - **Lock drift.** The diff of each lock must touch only the target package and its own subtree.
   Anything else is a stop.
 

@@ -62,6 +62,12 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   release. Any file change there makes `release-plan.ts` refuse to reuse the published version.
   `archive/bundle-v6/plan.md`.
 
+## From presto-audit-fix (closed 2026-10-14)
+
+- **#106: drop the root `sharp` 0.35.5 override at the next wrangler bump.** wrangler 4.150.0's
+  miniflare pins sharp 0.35.5 itself. Left in place, the override would hold back sharp's later
+  fixes.
+
 ## Untested paths, carried from the logs
 
 None of these were re-checked on 2026-09-18.
