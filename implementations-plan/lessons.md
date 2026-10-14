@@ -25,6 +25,9 @@ not belong here. Sections are stable; append, never re-sort.
 
 - **`minimumReleaseAge` is npm-only — Cargo has no equivalent** — an unconstrained `cargo update` took
   27 crates from inside the 7-day window. `archive/presto-cleanup/lessons/phase-2.md`
+- **A one-line `overrides` change makes `bun install` re-dedupe the whole lock** — root `vite`
+  moved from 8.2.2 to 8.3.0. Splice only the target's entries onto the committed lock and verify
+  with `--frozen-lockfile`. (2026-10, bun 1.4.0) `archive/presto-audit-fix/lessons/phase-1.md`
 - **Vite only bundles a *literal* `new URL("./f", import.meta.url)`** — composed from a variable it
   stays unrewritten: local warning, production 404. `archive/presto-noir/lessons/phase-17.md`
 - **`require.resolve` on a dual package picks the CJS entry, which Rolldown gives Node-mode interop**
