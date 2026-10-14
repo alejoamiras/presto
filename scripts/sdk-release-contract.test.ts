@@ -24,6 +24,52 @@ function before(text: string, first: string, second: string): void {
   expect(b).toBeGreaterThan(a);
 }
 
+/** npm subcommands that read the registry or audit it; `install` only with `--ignore-scripts`. */
+const NPM_SUBCOMMANDS = new Set(["view", "audit", "install"]);
+
+/** A literal command array that runs npm without package code. */
+function isNpmRead(array: string | undefined): boolean {
+  const subcommand = array && /^\[\s*"npm"\s*,\s*"([a-z-]+)"/.exec(array)?.[1];
+  if (!subcommand || !NPM_SUBCOMMANDS.has(subcommand)) return false;
+  return subcommand !== "install" || array.includes('"--ignore-scripts"');
+}
+
+/** Commands in a job that could run code other than the repository's own scripts. */
+function jobViolations(text: string): string[] {
+  const violations = [...text.matchAll(/\bbunx?\s+(\S+)/g)]
+    .filter(([, arg]) => !arg?.startsWith("scripts/"))
+    .map(([command]) => command);
+  for (const [command, , body] of text.matchAll(/\bnode\s+-[ep]\s+(['"])([\s\S]*?)\1/g)) {
+    if (/require|import|child_process|eval|Function/.test(body as string)) violations.push(command);
+  }
+  for (const [runner] of text.matchAll(/\b(npx|npm (?:exec|x|run|install|ci|test|start))\b/g)) {
+    violations.push(runner);
+  }
+  return violations;
+}
+
+/**
+ * Code the import scanner cannot see: `require`, a non-literal `import()`, and any subprocess other
+ * than npm reading the registry, spawned from a literal array or through a `run(command)` helper
+ * whose every call passes one.
+ */
+function codeViolations(code: string): string[] {
+  const violations: string[] = [];
+  if (/\brequire\s*\(/.test(code)) violations.push("require");
+  for (const [call] of code.matchAll(/\bimport\s*\([^)]*\)/g)) {
+    if (!/^import\s*\(\s*(["'])[^"'`$]*\1\s*\)$/.test(call)) violations.push(call);
+  }
+  if (/\bBun\.\$|child_process|\bBun\.spawn\s*\(/.test(code)) violations.push("subprocess API");
+  const helper = /\bfunction run\(command: string\[\]/.test(code);
+  for (const [call, argument] of code.matchAll(/\bBun\.spawnSync\(\s*(\[[^\]]*\]|\w+)/g)) {
+    if (!isNpmRead(argument) && !(helper && argument === "command")) violations.push(call);
+  }
+  for (const [call, array] of code.matchAll(/(?<!function )\brun\(\s*(\[[^\]]*\])?/g)) {
+    if (helper && !isNpmRead(array)) violations.push(call);
+  }
+  return violations;
+}
+
 /** Every module `entries` reach through static or dynamic imports, and each non-built-in specifier. */
 function importGraph(entries: string[]): { modules: Set<string>; external: string[] } {
   const transpiler = new Bun.Transpiler({ loader: "ts" });
@@ -163,24 +209,20 @@ describe("publish job isolation", () => {
 
   test("every script the credentialed job runs imports only repository modules and built-ins", () => {
     const publishJob = job(publish, "publish");
-    // Bun runs only repository script files here: no inline code, package runner or script alias.
-    const bunArguments = [...publishJob.matchAll(/\bbunx?\s+(\S+)/g)].map(([, arg]) => arg);
-    expect(bunArguments.filter((arg) => !arg?.startsWith("scripts/"))).toEqual([]);
-    for (const [, inline] of publishJob.matchAll(/\bnode\s+-[ep]\s+'([^']*)'/g)) {
-      expect(inline).not.toMatch(/require|import/);
-    }
-    const scripts = bunArguments.map((script) => resolve(repository, script as string));
+    expect(jobViolations(publishJob)).toEqual([]);
+    const scripts = [...publishJob.matchAll(/\bbun (scripts\/\S+\.ts)/g)].map(([, script]) =>
+      resolve(repository, script as string),
+    );
     expect(scripts.length).toBeGreaterThanOrEqual(3);
     const { modules, external } = importGraph(scripts);
     expect(external).toEqual([]);
     expect(modules.has(resolve(repository, "scripts/registry-consistency.ts"))).toBe(true);
     expect(publishJob).not.toContain("verify-sdk-package-signatures");
-    // The scanner sees only literal specifiers, and spawned interpreters would be new entry points.
     for (const module of modules) {
-      const code = readFileSync(module, "utf8");
-      expect(code).not.toMatch(/\brequire\s*\(/);
-      expect(code).not.toMatch(/\bimport\s*\(\s*[^\s"'`]/);
-      expect(code).not.toMatch(/\[\s*["'](bun|bunx|node|npx)["']/);
+      expect({ module, violations: codeViolations(readFileSync(module, "utf8")) }).toEqual({
+        module,
+        violations: [],
+      });
     }
   });
 
@@ -226,6 +268,33 @@ describe("publish job isolation", () => {
       /const provenance = await verifySdkPackageSignatures\(\s*version,\s*pkg,\s*undefined,\s*allowedWorkflows,\s*rollback \? ROLLBACK_SIGNERS : RELEASE_SIGNERS,?\s*\)/,
     );
     expect(promote).toContain("tagCommit !== provenance.commit");
+  });
+});
+
+describe("the credentialed-job guards", () => {
+  test.each([
+    ["inline Bun", 'run: bun -e "1"'],
+    ["a package runner", "run: bunx tool"],
+    ["inline Node loading a module", `run: node -e "require('tool')"`],
+    ["npm running package code", "run: npm exec tool"],
+  ])("the job guard refuses %s", (_, step) => {
+    expect(jobViolations(step)).not.toEqual([]);
+  });
+
+  test.each([
+    ["a computed template import", "const load = () => import(`\u0024{name}`);"],
+    ["a computed import", "const load = () => import(name);"],
+    ["require", 'const tool = require("tool");'],
+    ["a variable executable", 'const runner = "bunx";\nBun.spawnSync([runner, "tool"]);'],
+    ["another subprocess API", 'import { execFileSync } from "node:child_process";'],
+    ["npm running package code", 'Bun.spawnSync(["npm", "exec", "tool"]);'],
+    ["an install that runs scripts", 'Bun.spawnSync(["npm", "install", "tool"]);'],
+    [
+      "a helper called with a variable",
+      "function run(command: string[], cwd: string) {\n  Bun.spawnSync(command);\n}\nrun(list, dir);",
+    ],
+  ])("the code guard refuses %s", (_, code) => {
+    expect(codeViolations(code)).not.toEqual([]);
   });
 });
 
