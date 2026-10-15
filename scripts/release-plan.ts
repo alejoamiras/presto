@@ -309,13 +309,18 @@ function remoteTagCommit(tag: string): string | undefined {
   return (peeled ?? lines[0])?.split(/\s+/)[0];
 }
 
-function githubReleaseExists(tag: string): boolean {
-  const result = Bun.spawnSync(["gh", "release", "view", tag, "--json", "tagName"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if (result.exitCode === 0) return true;
-  if (result.stderr.toString().includes("release not found")) return false;
+/** The GitHub release for `tag`: `gh release view` finds drafts too, which are not yet records. */
+function githubRelease(tag: string): "published" | "draft" | undefined {
+  const result = Bun.spawnSync(
+    ["gh", "release", "view", tag, "--json", "isDraft", "--jq", ".isDraft"],
+    {
+      stdout: "pipe",
+      stderr: "pipe",
+    },
+  );
+  if (result.exitCode === 0)
+    return result.stdout.toString().trim() === "false" ? "published" : "draft";
+  if (result.stderr.toString().includes("release not found")) return undefined;
   throw new Error(`gh release view ${tag} failed: ${result.stderr.toString().trim()}`);
 }
 
@@ -360,8 +365,11 @@ async function releaseFacts(
         releaseProblem: `provenance names ${provenance.commit}, tag ${tag} is at ${tagCommit}`,
       };
     }
-    if (!githubReleaseExists(tag)) {
-      return { releaseVerified: false, releaseProblem: `no GitHub release ${tag}` };
+    const release = githubRelease(tag);
+    if (release !== "published") {
+      const problem =
+        release === "draft" ? `GitHub release ${tag} is a draft` : `no GitHub release ${tag}`;
+      return { releaseVerified: false, releaseProblem: problem };
     }
   } catch (error) {
     return { releaseVerified: false, releaseProblem: describeError(error) };
@@ -412,7 +420,7 @@ async function packageFacts(pkg: NpmPackage): Promise<PackageFacts> {
     Object.assign(facts, await releaseFacts(pkg, candidate));
   } else {
     const tag = releaseTag(pkg, candidate);
-    facts.recordsExist = remoteTagCommit(tag) !== undefined || githubReleaseExists(tag);
+    facts.recordsExist = remoteTagCommit(tag) !== undefined || githubRelease(tag) !== undefined;
   }
   return facts;
 }

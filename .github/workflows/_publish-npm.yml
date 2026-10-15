@@ -402,10 +402,17 @@ jobs:
           assets=()
           if [ -n "$RELEASE_ASSET" ]; then assets+=("$RELEASE_ASSET"); fi
           status=0
-          draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2> "$RUNNER_TEMP/release-view.err")" || status=$?
-          if [ "$status" -eq 0 ] && [ "$draft" = "true" ]; then
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,author,name,assets \
+            > "$RUNNER_TEMP/release.json" 2> "$RUNNER_TEMP/release-view.err" || status=$?
+          if [ "$status" -eq 0 ] && jq -e '.isDraft' "$RUNNER_TEMP/release.json" > /dev/null; then
             # `gh release create` uploads assets to a draft and publishes it last, so an interrupted
-            # attempt leaves a draft behind: finish it.
+            # attempt leaves a draft behind. Finish only a draft this job could have left.
+            if ! jq -e --arg tag "$tag" --arg asset "${RELEASE_ASSET##*/}" \
+              '.author.login == "github-actions[bot]" and .name == $tag and ([.assets[].name] - [$asset] == [])' \
+              "$RUNNER_TEMP/release.json" > /dev/null; then
+              echo "::error::draft release $tag is not one this job left; inspect it by hand: $(cat "$RUNNER_TEMP/release.json")"
+              exit 1
+            fi
             if [ "${#assets[@]}" -gt 0 ]; then
               gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
             fi
@@ -438,7 +445,7 @@ jobs:
           fi
           gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,assets > "$RUNNER_TEMP/release.json"
           if ! jq -e --arg tag "$tag" --arg asset "${RELEASE_ASSET##*/}" \
-            '.tagName == $tag and .isDraft == false and ($asset == "" or any(.assets[]; .name == $asset))' \
+            '.tagName == $tag and .isDraft == false and ([.assets[].name] == ([$asset] - [""]))' \
             "$RUNNER_TEMP/release.json" > /dev/null; then
             echo "::error::GitHub release $tag must be published${RELEASE_ASSET:+ with ${RELEASE_ASSET##*/}}: $(cat "$RUNNER_TEMP/release.json")"
             exit 1

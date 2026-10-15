@@ -321,7 +321,28 @@ describe("the release-records job", () => {
     expect(importGraph(scripts).external).toEqual([]);
   });
 
-  type ReleaseState = "absent" | "draft" | "published" | "bare" | "unreadable";
+  const TAG = "@alejoamiras/presto@6.0.0";
+  const release = (isDraft: boolean, login: string, assets: string[]) =>
+    JSON.stringify({
+      tagName: TAG,
+      name: TAG,
+      isDraft,
+      author: { login },
+      assets: assets.map((name) => ({ name })),
+    });
+  /** What `gh release view` answers: an error message, or the release. */
+  const RELEASES = {
+    absent: "release not found",
+    unreadable: "HTTP 502",
+    // An interrupted `gh release create`: its draft, before the asset upload finished.
+    draft: release(true, "github-actions[bot]", []),
+    foreign: release(true, "someone", []),
+    published: release(false, "github-actions[bot]", ["MIGRATION.md"]),
+    bare: release(false, "github-actions[bot]", []),
+    extra: release(false, "github-actions[bot]", ["MIGRATION.md", "other.zip"]),
+  };
+  type ReleaseState = keyof typeof RELEASES;
+
   /** Runs one release-records step as Actions does (`bash -e`), with git, gh and bun stubbed. */
   function recordStep(name: string, state: ReleaseState): { calls: string[]; code: number } {
     const steps = (
@@ -332,6 +353,7 @@ describe("the release-records job", () => {
     const run = steps?.find((step) => step.name === name)?.run;
     expect(run).toBeString();
     const temp = mkdtempSync(join(tmpdir(), "release-records-"));
+    const answer = RELEASES[state];
     const stubs = `
       calls="$RUNNER_TEMP/calls"; : >"$calls"
       git() { echo "git $*" >>"$calls"; [ "$1" != ls-remote ] || printf '%s\\trefs/tags/x\\n' "$GITHUB_SHA"; }
@@ -339,13 +361,7 @@ describe("the release-records job", () => {
       gh() {
         echo "gh $*" >>"$calls"
         [ "$1 $2" = "release view" ] || return 0
-        case "${state}" in
-          absent) echo "release not found" >&2; return 1 ;;
-          unreadable) echo "HTTP 502" >&2; return 1 ;;
-          draft) case "$*" in *assets*) echo '{"tagName":"'"$PACKAGE_NAME@$VERSION"'","isDraft":true,"assets":[{"name":"MIGRATION.md"}]}' ;; *) echo true ;; esac ;;
-          published) case "$*" in *assets*) echo '{"tagName":"'"$PACKAGE_NAME@$VERSION"'","isDraft":false,"assets":[{"name":"MIGRATION.md"}]}' ;; *) echo false ;; esac ;;
-          bare) echo '{"tagName":"'"$PACKAGE_NAME@$VERSION"'","isDraft":false,"assets":[]}' ;;
-        esac
+        case '${answer}' in "{"*) echo '${answer}' ;; *) echo '${answer}' >&2; return 1 ;; esac
       }
     `;
     try {
@@ -372,25 +388,27 @@ describe("the release-records job", () => {
     }
   }
 
-  test("a rerun creates a missing release, finishes a draft, keeps a published one, stops otherwise", () => {
+  test("a rerun creates a missing release, finishes its own draft, keeps a published one, stops otherwise", () => {
     const create = "Create git tag and GitHub release";
     const verbs = (state: ReleaseState) => {
       const { calls, code } = recordStep(create, state);
       return { code, verbs: calls.map((call) => call.split(" ")[2]) };
     };
     expect(verbs("absent")).toEqual({ code: 0, verbs: ["view", "create"] });
-    // `gh release create` uploads assets to a draft and publishes it last.
     expect(verbs("draft")).toEqual({ code: 0, verbs: ["view", "upload", "edit"] });
     expect(recordStep(create, "draft").calls.at(-1)).toContain("--draft=false --latest=false");
+    // A draft someone else made is never published for them.
+    expect(verbs("foreign")).toEqual({ code: 1, verbs: ["view"] });
     expect(verbs("published")).toEqual({ code: 0, verbs: ["view"] });
     expect(verbs("unreadable")).toEqual({ code: 1, verbs: ["view"] });
   });
 
-  test("the records pass only as a published release carrying its asset", () => {
+  test("the records pass only as a published release carrying exactly its asset", () => {
     const check = "Verify the release records";
     expect(recordStep(check, "published").code).toBe(0);
-    expect(recordStep(check, "draft").code).not.toBe(0);
-    expect(recordStep(check, "bare").code).not.toBe(0);
+    for (const state of ["draft", "bare", "extra"] as const) {
+      expect(recordStep(check, state).code).not.toBe(0);
+    }
   });
 });
 
@@ -412,13 +430,16 @@ describe("a publication without release records", () => {
     expect(plan).toContain(
       "if (!tagCommit) return { releaseVerified: false, releaseProblem: `no release tag ${tag}` };",
     );
-    expect(plan).toContain("releaseProblem: `no GitHub release ${tag}`");
+    // An interrupted `Record` can leave a draft, which is not yet a record.
+    expect(plan).toContain('if (release !== "published")');
+    expect(plan).toContain("`no GitHub release ${tag}`");
   });
 
   test("promotion refuses it before touching npm", () => {
     const promote = readFileSync(resolve(repository, "scripts/promote-sdk-latest.ts"), "utf8");
     before(promote, "throw new Error(`remote git tag ${gitTag} does not exist`)", '"dist-tag",');
-    before(promote, 'run(["gh", "release", "view", gitTag,', '"dist-tag",');
+    before(promote, '"tagName,url,isDraft"', '"dist-tag",');
+    before(promote, "if (release.isDraft !== false)", '"dist-tag",');
   });
 });
 

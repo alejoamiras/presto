@@ -527,23 +527,27 @@ gh run list --workflow release-sdk.yml --limit 20
 - **Version absent:** no npm publish landed. Fix the root cause, then redispatch.
 - **Version present, `testnet` missing/wrong:** stop and inspect the publish output and registry state; do not mint another revision automatically.
 - **Version and `testnet` correct, tag/release missing:** the publication landed, but nothing records
-  it as ours. Do not redispatch. Find the job that failed:
+  it as ours. Do not redispatch. List the jobs that failed:
 
   ```bash
-  gh run view <run-id> --repo alejoamiras/presto --json jobs --jq '.jobs[] | select(.conclusion == "failure") | .name'
+  gh run view <run-id> --repo alejoamiras/presto --json jobs --jq '.jobs[] | select(.conclusion == "failure") | [.databaseId, .name] | @tsv'
   ```
+
+  Re-run one job at a time, which also re-runs the jobs after it:
+  `gh run rerun <run-id> --repo alejoamiras/presto --job <databaseId>`. Never use **Re-run failed
+  jobs** while a `Publish` job is among the failures: it would run that job again.
 
   - **`Publish <package>`**: npm accepted the version, then a check after it failed, so `verify` never
     ran. Never re-run this job: `npm publish` refuses an existing version. Repair the records by hand
     as below, which runs the identity-bound check first.
-  - **`Record <package>`**: use **Re-run failed jobs**. It keeps a tag or release an earlier attempt
-    wrote, and publishes a draft one left.
+  - **`Record <package>`**: re-run it. It keeps a tag or release an earlier attempt wrote, and
+    publishes a draft one left; it stops on any other draft, which you inspect by hand.
   - **`Verify <package>`**: read its log.
     1. **It could not reach npm, Sigstore or GitHub** (`TUF_REFRESH_METADATA_ERROR`, `ECONNREFUSED`,
-       `gave no answer within`): use **Re-run failed jobs** on the release run, within 30 days.
-       `publish` succeeded, so it does not run again and nothing republishes; `verify` and then
-       `Record <package>` run at the run's commit. Then check both records, which must both print, the
-       tag at the run's commit and the release not a draft:
+       `gave no answer within`): re-run `Verify <package>` within 30 days. `publish` does not run
+       again, so nothing republishes; `Verify <package>` and then `Record <package>` run at the run's
+       commit. Then check both records, which must both print, the tag at the run's commit and the
+       release not a draft:
 
        ```bash
        TAG='@alejoamiras/<name>@<version>'
@@ -552,8 +556,8 @@ gh run list --workflow release-sdk.yml --limit 20
        gh release view "$TAG" --repo alejoamiras/presto --json tagName,isDraft,url --jq '[.tagName, .isDraft, .url] | @tsv'
        ```
 
-       GitHub may not re-run a job that a failed job inside a called workflow skipped. If `Record
-       <package>` stayed skipped, or the 30 days have passed, repair the records by hand as below.
+       If `Record <package>` stayed skipped, or the 30 days have passed, repair the records by hand
+       as below.
     2. **It refused the publication** (a `PolicyError` naming a certificate field, or a statement that
        differs from its certificate): never record it. Deprecate the version (`npm deprecate
        <name>@<version> "<reason>"`), point `testnet` back at the previous version (`npm dist-tag add
@@ -589,15 +593,20 @@ git tag "$TAG" "$COMMIT"
 git push origin "refs/tags/$TAG"
 ```
 
-`gh release view` prints `false` for a published release, which needs nothing. For `release not found`, create it:
+`gh release view` prints `false` for a published release, which needs nothing. Otherwise attach the migration guide as it was at `$COMMIT`, never from your checkout, and only to an `@alejoamiras/presto` release:
 
 ```bash
-gh release create "$TAG" --title "$TAG" --notes "Recovered the release record for the provenance-verified npm package." --latest=false packages/sdk/MIGRATION.md
+ASSET_DIR="$(mktemp -d)"
+git show "$COMMIT:packages/sdk/MIGRATION.md" > "$ASSET_DIR/MIGRATION.md"
 ```
 
-For `true`, an interrupted attempt left a draft: finish it with `gh release upload "$TAG" packages/sdk/MIGRATION.md --clobber`, then `gh release edit "$TAG" --draft=false --latest=false`.
+For `release not found`, create the release:
 
-Attach `packages/sdk/MIGRATION.md` only to an `@alejoamiras/presto` release.
+```bash
+gh release create "$TAG" --title "$TAG" --notes "Recovered the release record for the provenance-verified npm package." --latest=false "$ASSET_DIR/MIGRATION.md"
+```
+
+For `true`, an attempt left a draft. Inspect it (`gh release view "$TAG"`); if it is the release job's own, finish it with `gh release upload "$TAG" "$ASSET_DIR/MIGRATION.md" --clobber`, then `gh release edit "$TAG" --draft=false --latest=false`.
 
 The tag push and the release commands mutate public state. Run them only as a deliberate repair after the read-only checks; never use them to replace an existing tag or release.
 
