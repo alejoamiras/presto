@@ -9,3 +9,7 @@
   `bun packages/presto/scripts/copy-bb.ts` first (the build script reads the bundle manifest and the
   bb sidecar).
 - Gate: core 401 + server 14 tests, `bun run lint:clippy` 0, `bun run lint` 0.
+- Windows Cert Trust failed `developer_fixture_matches_writer_output` (run 38808155956): the
+  checkout turned the fixture CRLF, and the writer emits LF. A byte-compared fixture needs `-text` in
+  `.gitattributes`; Linux and macOS runs cannot see it. Fixed in 84d86d9. Promotion candidate for
+  `lessons.md` at close-out.
