@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { TUFError } from "@sigstore/tuf";
 import { NPM_PACKAGES, type PackageKey } from "./npm-packages.ts";
 import {
+  describeError,
   describePlan,
   lockfileSlice,
   orderByDependencies,
@@ -246,6 +248,20 @@ describe("release plan: dependencies", () => {
 });
 
 describe("release plan: refusals", () => {
+  test("an error is described with its code and every cause", () => {
+    const refused = new TUFError({
+      code: "TUF_REFRESH_METADATA_ERROR",
+      message: "error refreshing TUF metadata",
+      cause: Object.assign(new TypeError("Unable to connect.\nIs the computer online?"), {
+        code: "ConnectionRefused",
+      }),
+    });
+    expect(describeError(refused)).toBe(
+      "TUF_REFRESH_METADATA_ERROR error refreshing TUF metadata: ConnectionRefused Unable to connect.",
+    );
+    expect(describeError("plain")).toBe("plain");
+  });
+
   test("a refused reuse names what failed, so an outage reads as one", () => {
     expect(() =>
       planRelease(keys(["presto-core"]), {
