@@ -698,15 +698,22 @@ for (const verified of [false, true]) {
 
     const fit = await page.evaluate(() => {
       const advanced = document.getElementById("advanced")?.parentElement as HTMLElement;
+      const full = document.documentElement.scrollHeight;
       advanced.hidden = true;
       const content = document.documentElement.scrollHeight;
       advanced.hidden = false;
-      return { content, window: document.documentElement.clientHeight };
+      const row =
+        (document.querySelector("#advanced > summary") as HTMLElement).offsetHeight +
+        Number.parseFloat(getComputedStyle(advanced).marginBottom);
+      return { content, extra: full - content, row, window: document.documentElement.clientHeight };
     });
     expect(
       fit.content,
       `the default Settings view above Advanced is ${fit.content}px in a ${fit.window}px window — raise the height in windows.rs or drop a row`,
     ).toBeLessThanOrEqual(fit.window);
+    expect(fit.extra, "Advanced adds more than its folded row and gap").toBeLessThanOrEqual(
+      fit.row,
+    );
     await expect(page.locator(".speed-section")).toBeInViewport({ ratio: 1 });
     await expectReachable(page, "#advanced > summary");
   });
@@ -754,6 +761,43 @@ test("a refused developer-mode save reverts the switch and says why", async ({ p
   await expect(developer).not.toBeChecked();
   await expect(developer).toBeEnabled();
   await expect(page.locator("#developer-section")).toBeHidden();
+});
+
+test("a reload that started before a developer-mode save does not repaint the switch", async ({
+  page,
+}) => {
+  // The first load stalls after reading developer mode off. A second load (a failed speed save
+  // reloads) hydrates, the switch is turned on, then the first load resumes with its stale read.
+  await page.addInitScript(() => {
+    const mock = (window as any).__TAURI_MOCK__;
+    mock.setHandler("get_system_info", (_args: unknown, call: number) =>
+      call === 1
+        ? new Promise((resolve) => {
+            (window as any).__resumeFirstLoad = () => resolve({ platform: "macos", cpu_count: 10 });
+          })
+        : { platform: "macos", cpu_count: 10 },
+    );
+    mock.setHandler("set_speed", () => {
+      throw new Error("speed down");
+    });
+  });
+  await page.goto("/settings.html");
+  await page.locator("#speed").evaluate((el: HTMLInputElement) => {
+    el.value = "1";
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  const developer = page.getByRole("switch", { name: "Developer mode" });
+  await page.locator("#advanced > summary").click();
+  await expect(developer).toBeEnabled();
+  await page.locator("#advanced .toggle").click();
+  await expect(page.locator("#developer-section")).toBeVisible();
+  await expect(developer).toBeEnabled();
+
+  await page.evaluate(() => (window as any).__resumeFirstLoad());
+  // The resumed load reads autostart right after it would have painted the switch.
+  await expect.poll(async () => (await callsFor(page, "get_autostart_enabled")).length).toBe(2);
+  await expect(developer).toBeChecked();
+  await expect(page.locator("#developer-section")).toBeVisible();
 });
 
 test("a stored developer mode opens Advanced with the Developer section showing", async ({

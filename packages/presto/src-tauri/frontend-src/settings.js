@@ -42,6 +42,11 @@ function updateSpeedUI(index) {
 
 const developerEl = document.getElementById("developer");
 
+// Bumped when a developer-mode save starts. A load that began earlier read the pre-save value (reloads
+// overlap: two quick Removes), so it leaves the switch to the save and to newer loads.
+let developerRevision = 0;
+let developerSaving = false;
+
 function renderDeveloper(enabled) {
   developerEl.checked = enabled;
   document.getElementById("developer-section").hidden = !enabled;
@@ -53,11 +58,12 @@ let loadGeneration = 0;
 
 async function loadSettings() {
   const generation = ++loadGeneration;
+  const revision = developerRevision;
   // Disable per call, not just via the HTML attribute: this also runs as the recovery path after a
   // failed set_theme, and by then the fieldset is enabled — leaving the awaits below open to the
   // same click-then-overwrite race the initial disabled state exists to close.
   document.getElementById("theme").disabled = true;
-  developerEl.disabled = true;
+  if (!developerSaving) developerEl.disabled = true;
 
   const [config, sysInfo] = await Promise.all([invoke("get_config"), invoke("get_system_info")]);
 
@@ -71,11 +77,13 @@ async function loadSettings() {
   if (themeInput) themeInput.checked = true;
   document.getElementById("theme").disabled = false;
 
-  const developer = config.developer?.enabled === true;
-  renderDeveloper(developer);
-  // Unfolded while on, so the switch that explains the Developer section sits right above it.
-  if (developer) document.getElementById("advanced").open = true;
-  developerEl.disabled = false;
+  if (!developerSaving && revision === developerRevision) {
+    const developer = config.developer?.enabled === true;
+    renderDeveloper(developer);
+    // Unfolded while on, so the switch that explains the Developer section sits right above it.
+    if (developer) document.getElementById("advanced").open = true;
+    developerEl.disabled = false;
+  }
 
   // codex r2 #6 / r3 #6: the autostart switch ships DISABLED (settings.html) and stays disabled until
   // its true state is CONFIRMED — so an unknown state is never presented as an actionable "off", and a
@@ -346,6 +354,8 @@ themeGroup.addEventListener("change", (e) => {
 developerEl.addEventListener("change", async () => {
   const wanted = developerEl.checked;
   developerEl.disabled = true;
+  developerRevision++;
+  developerSaving = true;
   try {
     await invoke("set_developer_mode", { enabled: wanted });
     renderDeveloper(wanted);
@@ -354,6 +364,7 @@ developerEl.addEventListener("change", async () => {
     console.error("Failed to set developer mode:", err);
     showErrorHint(developerEl, typeof err === "string" ? err : "Failed to save");
   } finally {
+    developerSaving = false;
     developerEl.disabled = false;
   }
 });

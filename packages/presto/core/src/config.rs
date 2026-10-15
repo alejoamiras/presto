@@ -84,7 +84,7 @@ pub struct DeveloperSettings {
     pub update_channel: UpdateChannel,
 }
 
-/// The update channel in effect before and after a developer-mode change.
+/// Channels in effect, not the stored choice: Stable whenever developer mode is off.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ChannelTransition {
     pub before: UpdateChannel,

@@ -1119,7 +1119,7 @@ fn main() {
 
     let dev_mode = is_dev_mode();
     if dev_mode {
-        tracing::info!("Developer mode enabled");
+        tracing::info!("Debug build");
     }
 
     // Load config early so it can be shared with AppState and Tauri commands. B4: two-stage save-capable

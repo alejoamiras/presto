@@ -8,7 +8,7 @@ const DEFAULT_BLOCK = { enabled: false, update_channel: "stable" };
 
 const developerOnDisk = () => readConfig().developer as Record<string, unknown> | undefined;
 
-/** The switch ships disabled until the stored value is known; a click before that is undone. */
+/** The switch ships disabled until the stored value is known, so wait for it before a click. */
 async function waitForHydration(): Promise<void> {
   await browser.waitUntil(
     async () =>
@@ -17,6 +17,23 @@ async function waitForHydration(): Promise<void> {
         return el !== null && !el.disabled;
       }),
     { timeout: 5000, timeoutMsg: "the developer mode switch never became enabled" },
+  );
+}
+
+/** `refresh` can return while the old document still answers, so wait for a fresh one to hydrate. */
+async function reloadSettings(): Promise<void> {
+  await browser.execute(() => {
+    (window as unknown as { __beforeReload?: boolean }).__beforeReload = true;
+  });
+  await browser.refresh();
+  await browser.waitUntil(
+    async () =>
+      await browser.execute(
+        () =>
+          !(window as unknown as { __beforeReload?: boolean }).__beforeReload &&
+          document.querySelector<HTMLInputElement>("#developer")?.disabled === false,
+      ),
+    { timeout: 5000, timeoutMsg: "Settings never hydrated after a reload" },
   );
 }
 
@@ -40,7 +57,7 @@ async function setDeveloperMode(on: boolean): Promise<void> {
 describe("Developer mode", () => {
   before(async () => {
     await ensureSettingsWindow();
-    await browser.refresh();
+    await reloadSettings();
   });
 
   after(async () => {
@@ -52,7 +69,6 @@ describe("Developer mode", () => {
   });
 
   it("should start off with the Developer section hidden", async () => {
-    await waitForHydration();
     expect(
       await browser.execute(
         () => (document.getElementById("developer") as HTMLInputElement).checked,
@@ -69,8 +85,7 @@ describe("Developer mode", () => {
     await setDeveloperMode(true);
     expect(developerOnDisk()).toEqual({ ...DEFAULT_BLOCK, enabled: true });
 
-    await browser.refresh();
-    await waitForHydration();
+    await reloadSettings();
     expect(
       await browser.execute(() => ({
         checked: (document.getElementById("developer") as HTMLInputElement).checked,
