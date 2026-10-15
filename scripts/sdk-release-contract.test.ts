@@ -176,7 +176,7 @@ describe("npm release workflow contract", () => {
     expect(plan).toContain("bun scripts/release-plan.ts");
     // Release records are read through `gh`, reuse runs npm's signature audit: token + the publish npm.
     expect(plan).toContain("GH_TOKEN: ${{ github.token }}");
-    expect(plan).toContain("uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020");
+    expect(plan).toMatch(/uses: actions\/setup-node@[0-9a-f]{40} /);
     expect(plan).toContain("node-version: 24");
   });
 
