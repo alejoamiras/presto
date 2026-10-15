@@ -401,6 +401,10 @@ jobs:
             exit 1
           fi
           echo "splice-reject OK (downgrade attack correctly refused)"
+      - name: Release signer round trip (throwaway key)
+        run: |
+          cargo build --locked --quiet --manifest-path packages/presto/core/Cargo.toml --example update-manifest
+          bash packages/presto/scripts/release-signer-roundtrip.sh packages/presto/core/target/debug/examples/update-manifest
 
   lint:
     name: Lint

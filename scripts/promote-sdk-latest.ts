@@ -5,6 +5,7 @@ import {
   packageFromArgs,
   releaseTag,
 } from "./npm-packages.ts";
+import { RELEASE_SIGNERS, ROLLBACK_SIGNERS } from "./provenance-identity.ts";
 import {
   fetchAndVerifySdkProvenance,
   LEGACY_SDK_RELEASE_WORKFLOW,
@@ -182,7 +183,13 @@ async function verifyPromotionCandidate(
     : undefined;
   await fetchAndVerifySdkProvenance(version, undefined, allowedWorkflows, pkg);
   // The signed statement's commit is the one the tag must match.
-  const provenance = await verifySdkPackageSignatures(version, pkg, undefined, allowedWorkflows);
+  const provenance = await verifySdkPackageSignatures(
+    version,
+    pkg,
+    undefined,
+    allowedWorkflows,
+    rollback ? ROLLBACK_SIGNERS : RELEASE_SIGNERS,
+  );
   const gitTag = releaseTag(pkg, version);
   const remoteRefs = run([
     "git",
@@ -201,10 +208,20 @@ async function verifyPromotionCandidate(
   }
 
   const release = JSON.parse(
-    run(["gh", "release", "view", gitTag, "--repo", "alejoamiras/presto", "--json", "tagName,url"]),
-  ) as { tagName: string; url: string };
+    run([
+      "gh",
+      "release",
+      "view",
+      gitTag,
+      "--repo",
+      "alejoamiras/presto",
+      "--json",
+      "tagName,url,isDraft",
+    ]),
+  ) as { tagName: string; url: string; isDraft: boolean };
   if (release.tagName !== gitTag)
     throw new Error(`GitHub release has unexpected tag ${release.tagName}`);
+  if (release.isDraft !== false) throw new Error(`GitHub release ${gitTag} is not published`);
   return { tags, commit: provenance.commit, releaseUrl: release.url };
 }
 

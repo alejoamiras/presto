@@ -86,6 +86,13 @@ describe("bun version pin", () => {
     expect(content).toMatch(/^\d+\.\d+\.\d+\n?$/);
   });
 
+  // Workers Builds reads only its `BUN_VERSION` build variable, which the owner copies from this doc.
+  test("the Workers Builds settings name the pinned Bun", () => {
+    const pin = readFileSync(join(ROOT, ".bun-version"), "utf8").trim();
+    const doc = readFileSync(join(ROOT, "docs/CLOUDFLARE_DEPLOYMENT.md"), "utf8");
+    expect([...doc.matchAll(/BUN_VERSION=([\w.-]+)/g)].map((match) => match[1])).toEqual([pin]);
+  });
+
   test("every setup-bun step carries bun-version-file in ITS with-block; no inline bun-version", () => {
     // Association, not co-occurrence: a new unpinned setup-bun step alongside 23 pinned ones must
     // fail, so each step is checked for a pin within its own `with:` block (bounded by the next

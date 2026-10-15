@@ -172,7 +172,8 @@ feed() {
   pubkey="${RUNNER_TEMP:-$(mktemp -d)}/smoke-pubkey.b64"
   # Relative paths from the repo root, for the same MSYS reason as stamp.
   cd "$REPO"
-  host=$(jq -er '.plugins.updater.endpoints[0] | capture("^https://(?<host>[A-Za-z0-9.-]+)/").host' packages/presto/src-tauri/tauri.conf.json)
+  # The same reserved download host as the release signer's smoke feeds, which the smoke scripts map.
+  host="updater-smoke.test"
   jq -n --arg version "$version" --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg key "$platform" \
     --arg signature "$(tr -d '\r\n' < "$payload.sig")" \
