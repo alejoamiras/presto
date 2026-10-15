@@ -1,7 +1,7 @@
 ---
 plan: custom-bb
 tier: mid
-status: draft (awaiting approval)
+status: approved (2026-10-15)
 driver: claude-code
 eli5_mode: file
 code_review: off
@@ -304,17 +304,16 @@ work, and is `async`; hashing runs on `spawn_blocking`; the webview never sends 
 - **I7 (P5).** The Windows runner checks out outside `%USERPROFILE%`, so both launchers copy the
   sidecar into a fresh directory under it (and on Unix into a `0700` directory) before launch.
 
-**Asks** (through the director). Closed: A1, A2 (D2, D3) and A3 (D5).
+**Asks** (through the director), all closed: A1, A2 (D2, D3) and A3 (D5), then at the gate:
 
-- **A4:** start after the RC-channel contract merges to `main`? Recommended: yes; P1 can start before.
-- **A5: approve the IPC commands and capability grants table** above: four new commands, four
-  `allow-*` grants, one widened `get_pending_auth` return. Its own line at the approval gate; no
-  implementation starts before it.
-- **A6:** read "refuse unsigned files" as macOS arm64 only? Intel macOS runs unsigned code, and local
-  Windows builds carry no Authenticode signature. Recommended: yes.
-- **A7:** should local requests without `Origin` (Node tests, scripts) reach the custom bb?
-  Recommended: yes, documented. It is the tinkerer's main test path, and the official bb has the same
-  exposure.
+- **A4:** yes. P1 starts now; work that needs `DeveloperSettings` waits until the RC-channel
+  developer-mode arc reaches `main` (ask the director to start it earlier).
+- **A5:** the owner approved the IPC commands and capability grants table as written: four
+  Settings-only commands, four `allow-*` grants on `settings.json`, the widened `get_pending_auth`
+  (`custom_label`), and `tauri-plugin-dialog` registered from Rust with no `dialog:*` grant.
+- **A6:** yes. "Refuse unsigned files" means macOS arm64 only.
+- **A7:** yes. Local requests without `Origin` reach the custom bb, documented as SECURITY_MODEL
+  decision 8.
 
 ## Phases
 
@@ -456,7 +455,9 @@ share the command shapes.
 - **Settled by the owner:** D2 (Codex wanted a `/health` field; Opus and the driver did not: none);
   D3 (Codex wanted failures loud in the dApp; Opus and the driver wanted Presto: Presto); D5 (the
   driver's UX picks, except popup C over the driver's late switch to A; C keeps the permanence line).
-- **Owner pending:** A4, A5, A6, A7.
+- **Approved 2026-10-15:** A5 by the owner; the remainder by the orchestrator under owner
+  delegation (A4, A6, A7 as recommended; scope desktop-only, tier `mid`, delivery arc 1 + arc 2 +
+  close-out; hardening decided later; `code_review` off).
 
 ### Audit verdicts (round 1, 2026-10-15)
 
@@ -561,7 +562,7 @@ exact."*
 Issue body sections: `## What happens` (the path, labelled demonstrated or plausible), `## Where`,
 `## Impact`, `## Possible fix`, `## Record`.
 
-## Seeds (DRAFT until approval)
+## Seeds
 
 Run inside the worktree (`agent-worktree resume custom-bb`). Recommended: `/goal`.
 
@@ -570,5 +571,5 @@ Run inside the worktree (`agent-worktree resume custom-bb`). Recommended: `/goal
 ```
 
 ```
-/loop 15m Drive implementations-plan/custom-bb forward per its plan.md (read it and lessons/ first, including Outcome & Quality Bar; on a stack read them from the top layer). If plan.md is gone, check `git fetch -q origin main && git cat-file -e FETCH_HEAD:implementations-plan/archive/custom-bb/plan.md`: merged → run the teardown (ExitWorktree keep if entered via EnterWorktree, then `agent-worktree done custom-bb --merged`), report, clear this loop, stop; else babysit CI only. Otherwise rebuild the task list from plan.md, take the next step, run the fast layers after each edit, commit and push (gh stack push). Decisions you would bring to me: consult Codex (gpt-6.1-sol, high) and log the verdict; never merge, publish, add an IPC command or capability grant beyond plan.md's approved table, or expand scope. Same step failed 5 times: reassess with Codex. Phase gate green: mark ✓, print LESSONS_FILE, advance; at an arc boundary run the Codex fix loop before `gh stack add`. All ✓: final cross-arc pass, Delivery, close-out, `gh pr checks --watch`, wrap-up report, stop.
+/loop 15m Drive implementations-plan/custom-bb forward per its plan.md (read it and lessons/ first, including Outcome & Quality Bar; on a stack read them from the top layer). If plan.md is gone, check `git fetch -q origin main && git cat-file -e FETCH_HEAD:implementations-plan/archive/custom-bb/plan.md`: merged → run the teardown (ExitWorktree keep if entered via EnterWorktree, then `agent-worktree done custom-bb --merged`), report, clear this loop, stop; else babysit CI only. Otherwise rebuild the task list from plan.md, take the next step (work needing `DeveloperSettings` waits until it is on `main`; until then, finish what does not), run the fast layers after each edit, commit and push (gh stack push). Decisions you would bring to me: consult Codex (gpt-6.1-sol, high) and log the verdict; never merge, publish, deploy, add an IPC command or capability grant beyond plan.md's approved table, or expand scope. Same step failed 5 times: reassess with Codex. Phase gate green: mark ✓, print LESSONS_FILE, advance; at an arc boundary run the Codex fix loop before `gh stack add`. All ✓: final cross-arc pass, Delivery, close-out, `gh pr checks --watch`, wrap-up report, stop.
 ```
