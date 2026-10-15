@@ -27,15 +27,17 @@ identity-policy bypass found (`lessons/phase-1.md`).
   `verify` job (cache-free locked install, `--ignore-scripts`) use the bound verifier; the OIDC
   publish job runs only the dependency-free `registry-consistency.ts`, and a contract test guards
   that boundary.
-- Live gate: every current publication verifies at its tag commit, and every single-value mutation
-  is refused (70 checks).
+- Bun 1.4.2 (`.bun-version`), whose `crypto.verify` hashes EC keys with SHA-256 when no digest is
+  named, as sigstore-js and tuf-js need; `scripts/ec-verify-without-digest.test.ts` keeps that
+  property under test. Workers Builds' `BUN_VERSION` moves to 1.4.2 when this merges.
+- Live gate, under Bun 1.4.2: every current publication verifies at its tag commit and at its
+  claimed commit, and every single-value mutation is refused (80 checks).
 
-**Open items:** three issues, filed after the merge and listed in `follow-ups.md` — an
-`owner-decision` to bump `.bun-version` to 1.4.2 with Workers Builds' `BUN_VERSION` and delete
-`scripts/ec-default-digest.ts`, option B (tags and releases created after the
-bound verification, the publish job without `contents: write`) as an `owner-decision`, and a
-hardening issue for release planning to read a reused package's dependency pins from the tarball
-bound to its verified digest rather than from registry metadata.
+**Open items:** three issues, filed after the merge and listed in `follow-ups.md` — option B (tags
+and releases created after the bound verification, the publish job without `contents: write`) as
+an `owner-decision`, a hardening issue for release planning to read a reused package's dependency
+pins from the tarball bound to its verified digest rather than from registry metadata, and the
+`JEST_WORKER_ID` test preloads, whose stated removal condition Bun 1.4.2 meets.
 
 **Seeds:** none were issued, and none remain.
 

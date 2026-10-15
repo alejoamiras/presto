@@ -74,9 +74,9 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 
 ## From presto-verifier-identity (closed 2026-10-14)
 
-- **Owner decision: bump `.bun-version` to 1.4.2 in lockstep with Workers Builds' `BUN_VERSION`
-  variable, then delete `scripts/ec-default-digest.ts`.** Bun 1.4.0 has no EC default digest, which
-  the sigstore verification needs; Workers Builds refuses a Bun that differs from `.bun-version`.
+- **Drop the `JEST_WORKER_ID` preloads** in `packages/playground/src/happydom.ts` and
+  `packages/sdk/src/test-setup.ts`: their comments wait for a Bun carrying oven-sh/bun#40271, and
+  Bun 1.4.2 does. Unverified that both suites pass without them.
 - **Owner decision: tags and releases created after the bound verification**, so the publish job
   no longer needs `contents: write`. `archive/presto-verifier-identity/plan.md`, option B.
 - **Release planning reads a reused package's dependency pins from the tarball bound to its
