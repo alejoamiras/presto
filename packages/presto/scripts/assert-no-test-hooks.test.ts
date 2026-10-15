@@ -1,5 +1,13 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -46,20 +54,28 @@ function tarGz(name: string, files: Record<string, string>): string {
   return out;
 }
 
-/** A .deb: an ar archive whose `data.tar.gz` holds `files`, unless `data` is false. */
+/**
+ * A .deb: an ar archive whose `data.tar.gz` holds `files`, unless `data` is false. Written here
+ * rather than by `ar rc`, which on CI runners intermittently outlived the test timeout.
+ */
 function deb(name: string, files: Record<string, string>, data = true): string {
-  const stage = mkdtempSync(path.join(dir, "deb-"));
-  writeFileSync(path.join(stage, "debian-binary"), "2.0\n");
-  const members = ["debian-binary"];
-  if (data) {
-    const payload = tarGz(`${name}.data.tar.gz`, files);
-    Bun.spawnSync(["cp", payload, path.join(stage, "data.tar.gz")]);
-    members.push("data.tar.gz");
+  const members: Array<[string, Uint8Array]> = [["debian-binary", Buffer.from("2.0\n")]];
+  if (data) members.push(["data.tar.gz", readFileSync(tarGz(`${name}.data.tar.gz`, files))]);
+  const parts: Uint8Array[] = [Buffer.from("!<arch>\n")];
+  for (const [member, body] of members) {
+    const header = [
+      member.padEnd(16),
+      "0".padEnd(12),
+      "0".padEnd(6),
+      "0".padEnd(6),
+      "100644".padEnd(8),
+      String(body.length).padEnd(10),
+      "`\n",
+    ].join("");
+    parts.push(Buffer.from(header), body);
+    if (body.length % 2) parts.push(Buffer.from("\n"));
   }
-  const out = path.join(dir, name);
-  const r = Bun.spawnSync(["ar", "rc", out, ...members], { cwd: stage });
-  expect(r.exitCode, r.stderr.toString()).toBe(0);
-  return out;
+  return file(name, Buffer.concat(parts));
 }
 
 describe("assert-no-test-hooks", () => {
