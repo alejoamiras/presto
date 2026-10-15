@@ -180,12 +180,16 @@ describe("npm release workflow contract", () => {
     expect(plan).toContain("node-version: 24");
   });
 
-  test("registry signatures and provenance claims are checked before the publication records", () => {
-    const publishJob = job(publish, "publish");
-    const verification = publishJob.indexOf("bun scripts/registry-consistency.ts");
-    const records = publishJob.indexOf("Create git tag and GitHub release");
-    expect(verification).toBeGreaterThan(0);
-    expect(records).toBeGreaterThan(verification);
+  test("the tag and release are written only after the identity-bound check passed", () => {
+    const records = job(publish, "release-records");
+    expect(records).toContain("needs: [pack, publish, verify]");
+    expect(records).not.toMatch(/\bif:/);
+    expect(records).toContain('git push origin "refs/tags/$tag"');
+    expect(records).toContain('gh release create "$tag"');
+    before(records, 'gh release create "$tag"', 'grep -Fx "$tag"');
+    for (const name of ["pack", "consumer-test", "publish", "verify"]) {
+      expect(job(publish, name)).not.toMatch(/^\s+(git (push|tag)|gh release create)\b/m);
+    }
   });
 });
 
@@ -209,6 +213,8 @@ describe("publish job isolation", () => {
     expect(consumer).toContain("bash scripts/sdk-tarball-consumer.sh");
     expect(publishJob).toContain("needs: [pack, consumer-test]");
     expect(publishJob).toContain("id-token: write");
+    expect(publishJob).toContain("contents: read");
+    expect(publishJob).toContain("persist-credentials: false");
     before(publishJob, 'echo "$SHA256  $TARBALL" | sha256sum -c -', "npm publish");
     // Nothing installs in the credentialed job: not the consumer host, not even the lockfile.
     for (const install of ["sdk-tarball-consumer.sh", "npx", "npm install", "bun install"]) {
@@ -236,7 +242,7 @@ describe("publish job isolation", () => {
     const scripts = [...publishJob.matchAll(/\bbun (scripts\/\S+\.ts)/g)].map(([, script]) =>
       resolve(repository, script as string),
     );
-    expect(scripts.length).toBeGreaterThanOrEqual(3);
+    expect(scripts.length).toBeGreaterThanOrEqual(2);
     const { modules, external } = importGraph(scripts);
     expect(external).toEqual([]);
     expect(modules.has(resolve(repository, "scripts/registry-consistency.ts"))).toBe(true);
@@ -291,6 +297,55 @@ describe("publish job isolation", () => {
       /const provenance = await verifySdkPackageSignatures\(\s*version,\s*pkg,\s*undefined,\s*allowedWorkflows,\s*rollback \? ROLLBACK_SIGNERS : RELEASE_SIGNERS,?\s*\)/,
     );
     expect(promote).toContain("tagCommit !== provenance.commit");
+  });
+});
+
+describe("the release-records job", () => {
+  test("the job that writes the records holds no OIDC identity and runs only repository code", () => {
+    const records = job(publish, "release-records");
+    // No job holds both the OIDC identity and write access to the repository.
+    expect(publish.match(/^\s+contents: write$/gm)?.length).toBe(1);
+    expect(records).toContain("contents: write");
+    expect(records).not.toContain("id-token");
+    expect(records).not.toContain("environment:");
+    expect(records).not.toContain("continue-on-error");
+    for (const install of ["bun install", "npm install", "npx", "actions/cache"]) {
+      expect(records).not.toContain(install);
+    }
+    expect(jobViolations(records)).toEqual([]);
+    const scripts = [...records.matchAll(/\bbun (scripts\/\S+\.ts)/g)].map(([, script]) =>
+      resolve(repository, script as string),
+    );
+    expect(scripts.length).toBeGreaterThan(0);
+    expect(importGraph(scripts).external).toEqual([]);
+  });
+});
+
+describe("a publication without release records", () => {
+  // `verify` failing after `npm publish` leaves the version on npm with no tag or release.
+  test("planning refuses to reuse it and says which record is missing", async () => {
+    const { planRelease } = await import("./release-plan.ts");
+    const core = NPM_PACKAGES["presto-core"];
+    const facts = {
+      manifest: { name: core.name, version: "1.0.0" },
+      published: ["1.0.0"],
+      releaseVerified: false,
+      releaseProblem: `no release tag ${core.name}@1.0.0`,
+    };
+    expect(() => planRelease(["presto-core"], { "presto-core": facts })).toThrow(
+      `do not verify (no release tag ${core.name}@1.0.0)`,
+    );
+    const plan = readFileSync(resolve(repository, "scripts/release-plan.ts"), "utf8");
+    expect(plan).toContain(
+      "if (!tagCommit) return { releaseVerified: false, releaseProblem: `no release tag ${tag}` };",
+    );
+    expect(plan).toContain("releaseProblem: `no GitHub release ${tag}`");
+  });
+
+  test("promotion refuses it before touching npm", () => {
+    const promote = readFileSync(resolve(repository, "scripts/promote-sdk-latest.ts"), "utf8");
+    before(promote, "throw new Error(`remote git tag ${gitTag} does not exist`)", '"dist-tag",');
+    before(promote, 'run(["gh", "release", "view", gitTag,', '"dist-tag",');
   });
 });
 

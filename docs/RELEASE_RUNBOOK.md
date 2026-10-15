@@ -106,7 +106,7 @@ The environment has no npm secret. Configure each package's [npm GitHub Actions 
 | Environment | `npm-publish` |
 | Allowed action | Direct `npm publish` enabled; npm also grants staged publishing |
 
-`_publish-npm.yml` is intentionally `workflow_call`-only. npm validates the calling workflow name for reusable workflows, so the trusted-publisher filename is `release-sdk.yml`; the reusable's `publish` job declares `id-token: write` and only the `publish-*` jobs in `release-sdk.yml` delegate it. The reusable's other jobs run with `contents: read`: `pack` builds and packs the candidate and records its SHA-256 as a job output, `consumer-test` installs the artifact from the registry with lifecycle scripts off, and `verify` performs the post-publish fresh install. The `publish` job re-asserts the recorded digest before `npm publish`, so nothing resolved from the registry ever runs beside the OIDC identity and no job that does can swap the artifact.
+`_publish-npm.yml` is intentionally `workflow_call`-only. npm validates the calling workflow name for reusable workflows, so the trusted-publisher filename is `release-sdk.yml`; the reusable's `publish` job declares `id-token: write` and only the `publish-*` jobs in `release-sdk.yml` delegate it. The `publish` job itself has only `contents: read` beside it, as do `pack`, which builds and packs the candidate and records its SHA-256 as a job output, `consumer-test`, which installs the artifact from the registry with lifecycle scripts off, and `verify`, which binds the publication's provenance to the release signing identity and performs the post-publish fresh install. Only after `verify` passes does `release-records`, the one job with `contents: write` and no OIDC identity, create the git tag and GitHub release. The `publish` job re-asserts the recorded digest before `npm publish`, so nothing resolved from the registry ever runs beside the OIDC identity and no job that does can swap the artifact.
 
 Bootstrap the package interactively with npm login and 2FA. Publish only
 `@alejoamiras/presto@0.0.0-bootstrap.0` under the `bootstrap` tag, configure the trust above,
@@ -353,14 +353,14 @@ bun scripts/get-sdk-publish-version.ts --package presto
 
 Before dispatching, verify the derived npm version, matching Git tag, and GitHub release are all absent. The workflow repeats these checks, builds and rewrites the package manifest, packs one exact tarball and records its digest (`pack`), runs the consumer test against that tarball in a read-only job (`consumer-test`), then re-checks the digest and publishes those bytes with OIDC to `testnet` (`publish`).
 
-After npm accepts the package, the workflow requires all of the following before creating the tag/release:
+After npm accepts the package, the `publish` job requires all of the following:
 
 - the exact version is readable from npm;
 - `testnet` points to it;
 - npm's current verifier cryptographically validates registry signatures and the SLSA attestation for the exact installed package;
 - the verified attestation subject digest matches npm's exact tarball integrity, and its source dependency identifies `alejoamiras/presto`, `.github/workflows/release-sdk.yml`, `refs/heads/main`, and the dispatched commit.
 
-It then tags the commit and creates a non-latest GitHub release; a final read-only job verifies the records and a fresh registry install. npm publication is irreversible, so if npm accepted the package but a later step failed, do not redispatch blindly; inspect and repair only the missing record.
+The read-only `verify` job then binds that provenance to the release signing identity and installs the package fresh from the registry. Only after it passes does `release-records` tag the commit, create a non-latest GitHub release and read both back. npm publication is irreversible: if `verify` fails, the version stays on npm under `testnet` with no tag or release, which release planning will not reuse and promotion refuses. Do not redispatch blindly; follow "tag/release missing" under [Failure classification](#failure-classification).
 
 ### HTTPS-by-default candidate canary
 
@@ -526,21 +526,44 @@ gh run list --workflow release-sdk.yml --limit 20
 
 - **Version absent:** no npm publish landed. Fix the root cause, then redispatch.
 - **Version present, `testnet` missing/wrong:** stop and inspect the publish output and registry state; do not mint another revision automatically.
-- **Version and `testnet` correct, tag/release missing:** publication landed. Do not redispatch; repair the missing Git/GitHub record only after matching it to provenance.
+- **Version and `testnet` correct, tag/release missing:** the publication landed, but `Verify <package>` or
+  `Record <package>` did not pass, so nothing records it as ours. Do not redispatch. Read the `Verify`
+  log:
+  1. **It could not reach npm, Sigstore or GitHub** (`TUF_REFRESH_METADATA_ERROR`, `ECONNREFUSED`, a
+     timeout): use **Re-run failed jobs** on the release run, within 30 days. `publish` succeeded, so
+     it does not run again and nothing republishes; `verify` and then `Record <package>` run at the
+     run's commit. Then check both records, which must both print, the tag at the run's commit:
+
+     ```bash
+     TAG='@alejoamiras/<name>@<version>'
+     gh run view <run-id> --repo alejoamiras/presto --json headSha --jq .headSha
+     git ls-remote --tags https://github.com/alejoamiras/presto.git "refs/tags/$TAG"
+     gh release view "$TAG" --repo alejoamiras/presto --json tagName,url --jq '.tagName + " " + .url'
+     ```
+
+     GitHub may not re-run a job that a failed job inside a called workflow skipped. If `Record
+     <package>` stayed skipped, or the 30 days have passed, repair the records by hand as below.
+  2. **It refused the publication** (a `PolicyError` naming a certificate field, or a statement that
+     differs from its certificate): never record it. Deprecate the version (`npm deprecate
+     <name>@<version> "<reason>"`), point `testnet` back at the previous version (`npm dist-tag add
+     <name>@<previous> testnet`), find why the signing identity changed, and fix forward with a new
+     version.
 - **Promotion command printed the successful `+latest` mutation but read-back failed:** do not immediately reverse it. Inspect the uncached registry state first; registry reads can lag writes.
 - **Unexpected third version/tag:** stop all mutation and investigate.
 
-For the partial-publish case, first run both verifiers and record the provenance commit printed by the first command:
+For the partial-publish case, first run both verifiers (`--package <key>`, as in
+`scripts/npm-packages.ts`; the second binds the provenance to the release signing identity and must
+pass) and record the provenance commit printed by the first command:
 
 ```bash
-bun scripts/sdk-release-verification.ts <VERSION>
-bun scripts/verify-sdk-package-signatures.ts <VERSION>
+bun scripts/sdk-release-verification.ts --package <key> <VERSION>
+bun scripts/verify-sdk-package-signatures.ts --package <key> <VERSION>
 ```
 
 Then confirm the exact tag and release are absent, fetch the printed commit from `origin`, and inspect it before creating anything. Only when the package digest, source dependency, workflow, branch, and commit all match may you repair the append-only records:
 
 ```bash
-TAG="@alejoamiras/presto@<VERSION>"
+TAG="@alejoamiras/<name>@<VERSION>"
 COMMIT="<PROVENANCE_COMMIT>"
 git fetch origin main
 git show --stat "$COMMIT"
@@ -550,6 +573,8 @@ git tag "$TAG" "$COMMIT"
 git push origin "refs/tags/$TAG"
 gh release create "$TAG" --title "$TAG" --notes "Recovered the release record for the provenance-verified npm package." --latest=false packages/sdk/MIGRATION.md
 ```
+
+Attach `packages/sdk/MIGRATION.md` only to an `@alejoamiras/presto` release.
 
 Those last three commands mutate public state. Run them only as a deliberate repair after the read-only checks; never use them to replace an existing tag or release.
 
