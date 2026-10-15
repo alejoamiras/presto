@@ -50,6 +50,8 @@ APP="/Applications/Presto.app"
 # a clean runner.
 HEALTH="http://127.0.0.1:59833/health"
 HOST=$(jq -er '.plugins.updater.endpoints[0] | capture("^https://(?<host>[A-Za-z0-9.-]+)/").host' "$REPO_ROOT/packages/presto/src-tauri/tauri.conf.json")
+# Smoke feeds download from this reserved host (sign-release-updater-artifacts.sh says why).
+ARTIFACT_HOST="updater-smoke.test"
 CONFIG_DIR="$HOME/.presto"
 WORK="$(mktemp -d)"
 SERVE_DIR="$WORK/serve"
@@ -75,8 +77,10 @@ cleanup() {
   # best-effort: drop ONLY the exact line we added (anchored + dots escaped, so
   # the host's literal '.' can't match an arbitrary char), not any line
   # mentioning the host — avoids clobbering an unrelated entry on self-hosted.
-  host_re="${HOST//./\\.}"
-  sudo sed -i '' "/^127\\.0\\.0\\.1 $host_re\$/d" /etc/hosts 2>/dev/null
+  for host in "$HOST" "$ARTIFACT_HOST"; do
+    host_re="${host//./\\.}"
+    sudo sed -i '' "/^127\\.0\\.0\\.1 $host_re\$/d" /etc/hosts 2>/dev/null
+  done
   # best-effort: remove the test CA we trusted (matters only on non-ephemeral /
   # self-hosted runners; GH-hosted VMs are torn down after the job).
   sudo security delete-certificate -c "updater-smoke-local-CA" \
@@ -108,14 +112,14 @@ if [ "$MODE" = "negative" ]; then
   log "NEGATIVE mode: serving a TAMPERED tarball with the genuine signature — expecting REJECTION (no update)"
 fi
 
-# ── Local CA + leaf cert (SAN = the prod host) ──
-log "generating local CA + leaf (SAN=$HOST)"
+# ── Local CA + leaf cert (SAN = the prod host and the artifact host) ──
+log "generating local CA + leaf (SAN=$HOST, $ARTIFACT_HOST)"
 openssl req -x509 -newkey rsa:2048 -nodes -keyout "$WORK/ca.key" -out "$WORK/ca.pem" \
   -days 2 -subj "/CN=updater-smoke-local-CA" >/dev/null 2>&1
 openssl req -newkey rsa:2048 -nodes -keyout "$WORK/leaf.key" -out "$WORK/leaf.csr" \
   -subj "/CN=$HOST" >/dev/null 2>&1
 cat > "$WORK/leaf.ext" <<EXT
-subjectAltName=DNS:$HOST
+subjectAltName=DNS:$HOST,DNS:$ARTIFACT_HOST
 extendedKeyUsage=serverAuth
 EXT
 openssl x509 -req -in "$WORK/leaf.csr" -CA "$WORK/ca.pem" -CAkey "$WORK/ca.key" \
@@ -124,13 +128,13 @@ openssl x509 -req -in "$WORK/leaf.csr" -CA "$WORK/ca.pem" -CAkey "$WORK/ca.key" 
 # ── Trust the CA (System keychain) + impersonate the host ──
 log "trusting CA + adding hosts entry"
 sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain "$WORK/ca.pem"
-echo "127.0.0.1 $HOST" | sudo tee -a /etc/hosts >/dev/null
+printf '127.0.0.1 %s\n' "$HOST" "$ARTIFACT_HOST" | sudo tee -a /etc/hosts >/dev/null
 
 # ── Stage the pre-signed latest.json for N (F-004 Layer A) ──
 SIGNED_FEED="$(find "$N_ARTIFACTS_DIR" -name 'smoke-latest.json' | head -1)"
 [ -n "$SIGNED_FEED" ] || { echo "::error::no pre-signed smoke-latest.json in $N_ARTIFACTS_DIR"; exit 1; }
 jq -e --arg v "$N_VERSION" --arg key "$PLATFORM_KEY" --arg sig "$N_SIG" \
-  --arg url "https://$HOST/releases/download/$N_BASENAME" --argjson size "$N_SIZE" '
+  --arg url "https://$ARTIFACT_HOST/releases/download/$N_BASENAME" --argjson size "$N_SIZE" '
     .version == $v
     and (.platforms | keys == [$key])
     and .platforms[$key].signature == $sig
@@ -161,6 +165,7 @@ for _ in $(seq 1 20); do
   sleep 0.5
 done
 curl -sf "https://$HOST/releases/latest.json" >/dev/null || { echo "::error::feed server not reachable"; cat "$WORK/feed.log"; exit 1; }
+curl -sf "https://$ARTIFACT_HOST/releases/latest.json" >/dev/null || { echo "::error::$ARTIFACT_HOST does not reach the feed server"; exit 1; }
 
 # ── Install N-1 into /Applications (writable — so the in-place swap + amfid
 #    revalidation path that broke 1.0.1 is actually exercised; NOT the

@@ -1,113 +1,67 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import { isValidVersion, NPM_PACKAGES, type NpmPackage, packageFromArgs } from "./npm-packages.ts";
+import type { TrustMaterial } from "@sigstore/verify";
+import { NPM_PACKAGES, type NpmPackage, packageFromArgs } from "./npm-packages.ts";
 import {
-  type ProvenanceStatement,
-  type VerifiedProvenance,
-  verifyProvenanceStatement,
-} from "./sdk-release-verification.ts";
+  bindToSigningIdentity,
+  RELEASE_SIGNERS,
+  verifySigningIdentity,
+} from "./provenance-identity.ts";
+import {
+  auditSignatures,
+  type SignatureAudit,
+  verifiedProvenanceBundle,
+} from "./registry-consistency.ts";
+import { type VerifiedProvenance, verifyProvenanceStatement } from "./sdk-release-verification.ts";
 
-const PROVENANCE_PREDICATE = "https://slsa.dev/provenance/v1";
-
-interface SignatureAudit {
-  verified?: Array<{
-    name?: string;
-    version?: string;
-    attestations?: { provenance?: { predicateType?: string } };
-    attestationBundles?: Array<{
-      predicateType?: string;
-      bundle?: { dsseEnvelope?: { payload?: string } };
-    }>;
-  }>;
-}
-
-function run(command: string[], cwd: string): string {
-  const result = Bun.spawnSync(command, { cwd, stdout: "pipe", stderr: "pipe" });
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `${command.join(" ")} failed (${result.exitCode}): ${result.stderr.toString().trim()}`,
-    );
-  }
-  return result.stdout.toString();
-}
-
-export function hasVerifiedSdkProvenance(
-  report: SignatureAudit,
-  version: string,
-  pkg: NpmPackage = NPM_PACKAGES.presto,
-): boolean {
-  return Boolean(
-    report.verified?.some(
-      (item) =>
-        item.name === pkg.name &&
-        item.version === version &&
-        item.attestations?.provenance?.predicateType === PROVENANCE_PREDICATE,
-    ),
-  );
+export interface SignedProvenanceOptions {
+  expectedCommit?: string;
+  allowedWorkflows?: readonly string[];
+  signers?: readonly string[];
+  /** Tests inject trust material; production fetches Sigstore's public-good root through TUF. */
+  trust?: TrustMaterial;
 }
 
 /**
- * The provenance statement npm verified: `npm audit signatures --include-attestations` lists a
- * package only after sigstore accepted its bundles and their subject digest matched the manifest
- * npm fetched, so this statement — unlike the registry's attestation endpoint or a lockfile — is
- * the one whose digest may vouch for bytes.
+ * The provenance npm verified for `pkg@version`, bound to the release signing identity: the bundle's
+ * certificate must match the identity policy before the statement inside it is trusted, and the
+ * statement's claims must then name what the certificate does.
  */
-export function verifiedProvenanceStatement(
+export async function verifySignedReport(
   report: SignatureAudit,
   version: string,
   pkg: NpmPackage = NPM_PACKAGES.presto,
-): ProvenanceStatement {
-  const entry = report.verified?.find((item) => item.name === pkg.name && item.version === version);
-  if (entry?.attestations?.provenance?.predicateType !== PROVENANCE_PREDICATE) {
-    throw new Error(`npm did not cryptographically verify provenance for ${pkg.name}@${version}`);
-  }
-  const payload = entry.attestationBundles?.find(
-    (bundle) => bundle.predicateType === PROVENANCE_PREDICATE,
-  )?.bundle?.dsseEnvelope?.payload;
-  if (!payload) {
-    throw new Error(`npm reported no verified provenance bundle for ${pkg.name}@${version}`);
-  }
-  return JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+  options: SignedProvenanceOptions = {},
+): Promise<VerifiedProvenance> {
+  const { statement, identity } = await verifySigningIdentity(
+    verifiedProvenanceBundle(report, version, pkg),
+    { commit: options.expectedCommit, signers: options.signers ?? RELEASE_SIGNERS },
+    options.trust,
+  );
+  return bindToSigningIdentity(
+    verifyProvenanceStatement(
+      statement,
+      version,
+      options.expectedCommit,
+      options.allowedWorkflows,
+      undefined,
+      pkg,
+    ),
+    identity,
+  );
 }
 
-/** Registry signatures and provenance verified by npm; the returned digest is the signed one. */
+/** Registry signatures and identity-bound provenance; the returned digest is the signed one. */
 export async function verifySdkPackageSignatures(
   version: string,
   pkg: NpmPackage = NPM_PACKAGES.presto,
   expectedCommit?: string,
   allowedWorkflows?: readonly string[],
+  signers: readonly string[] = RELEASE_SIGNERS,
 ): Promise<VerifiedProvenance> {
-  if (!isValidVersion(pkg, version)) throw new Error(`invalid ${pkg.name} version ${version}`);
-  const directory = await mkdtemp(join(tmpdir(), "presto-sdk-signature-audit-"));
-  try {
-    await Bun.write(
-      join(directory, "package.json"),
-      `${JSON.stringify({ private: true, dependencies: { [pkg.name]: version } }, null, 2)}\n`,
-    );
-    run(
-      ["npm", "install", "--ignore-scripts", "--no-audit", "--no-fund", "--loglevel=error"],
-      directory,
-    );
-    const installed = run(
-      ["node", "-p", `require('./node_modules/${pkg.name}/package.json').version`],
-      directory,
-    ).trim();
-    if (installed !== version) throw new Error(`installed ${installed}, expected ${version}`);
-    const report = JSON.parse(
-      run(["npm", "audit", "signatures", "--json", "--include-attestations"], directory),
-    ) as SignatureAudit;
-    return verifyProvenanceStatement(
-      verifiedProvenanceStatement(report, version, pkg),
-      version,
-      expectedCommit,
-      allowedWorkflows,
-      undefined,
-      pkg,
-    );
-  } finally {
-    await rm(directory, { recursive: true, force: true });
-  }
+  return verifySignedReport(await auditSignatures(version, pkg), version, pkg, {
+    expectedCommit,
+    allowedWorkflows,
+    signers,
+  });
 }
 
 if (import.meta.main) {
@@ -122,6 +76,6 @@ if (import.meta.main) {
   }
   const verified = await verifySdkPackageSignatures(version, pkg, expectedCommit);
   console.log(
-    `verified registry signatures and SLSA provenance for ${pkg.name}@${version} (${verified.commit}, ${verified.integrity})`,
+    `verified registry signatures, SLSA provenance and signing identity for ${pkg.name}@${version} (${verified.commit}, ${verified.integrity})`,
   );
 }

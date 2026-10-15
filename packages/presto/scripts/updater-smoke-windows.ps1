@@ -37,12 +37,12 @@
                        intact, and a second instance Q fully suppressed — no heal, no rearm, no
                        second download — then release and finish positive. Requires
                        UPDATER_SMOKE_BARRIER_PREFIX (run-unique prefix, baked at N build time).
-                     | copy-initiator (arc-hunt r2 F2 regression: a COPY of the install drives the
+                     | copy-initiator (regression: a COPY of the install drives the
                        update while the installed instance is closed and the copy REMAINS on disk.
                        The marker must record the INSTALLER's destination, not the copy's path —
                        pre-fix, N saw a path mismatch it could not prove absent and suppressed
                        reconciliation, stranding marker+handoff+token and skipping heal/rearm.
-                       Also proves the F1 ownership gate: autostart is OFF here, so NO
+                       Also proves the ownership gate: autostart is OFF here, so NO
                        crash-recovery task may exist afterwards.)
 #>
 param(
@@ -74,6 +74,8 @@ $TauriConfig = Get-Content (Join-Path $RepoRoot "packages/presto/src-tauri/tauri
 $FeedUri = [uri]$TauriConfig.plugins.updater.endpoints[0]
 if ($FeedUri.Scheme -ne "https" -or -not $FeedUri.Host) { throw "Invalid updater endpoint" }
 $FeedHost = $FeedUri.Host
+# Smoke feeds download from this reserved host (sign-release-updater-artifacts.sh says why).
+$ArtifactHost = "updater-smoke.test"
 $HealthUrl = "http://127.0.0.1:59833/health"
 $HostsFile = "$env:SystemRoot\System32\drivers\etc\hosts"
 $ConfigDir = Join-Path $env:USERPROFILE ".presto"
@@ -167,9 +169,12 @@ function Cleanup {
   Remove-MpPreference -ExclusionPath $InstallRoot, $ServeDir -ErrorAction SilentlyContinue
   # Drop the test CA from LocalMachine\Root (ephemeral runner is torn down anyway).
   if ($CaThumb) { Get-ChildItem "Cert:\LocalMachine\Root\$CaThumb" -ErrorAction SilentlyContinue | Remove-Item -Force -ErrorAction SilentlyContinue }
-  # Drop the hosts line we added (anchored, exact).
+  # Drop the hosts lines we added (anchored, exact).
   if (Test-Path $HostsFile) {
-    (Get-Content $HostsFile) | Where-Object { $_ -notmatch "^127\.0\.0\.1\s+$([regex]::Escape($FeedHost))$" } | Set-Content $HostsFile -ErrorAction SilentlyContinue
+    (Get-Content $HostsFile) | Where-Object {
+      $_ -notmatch "^127\.0\.0\.1\s+$([regex]::Escape($FeedHost))$" -and
+      $_ -notmatch "^127\.0\.0\.1\s+$([regex]::Escape($ArtifactHost))$"
+    } | Set-Content $HostsFile -ErrorAction SilentlyContinue
   }
   # (#96) Disarm: drop the autostart Run key + the crash-recovery task we may have armed, and
   # verify the task is gone — an armed task must not leak even on an ephemeral runner.
@@ -214,11 +219,11 @@ try {
     Log "NEGATIVE mode: serving a TAMPERED .nsis.zip with the genuine signature — expecting REJECTION"
   }
 
-  # ── Local CA + leaf (SAN = the prod host) via openssl (Git ships it on the runner) ──
-  Log "generating local CA + leaf (SAN=$FeedHost)"
+  # ── Local CA + leaf (SAN = the prod host and the artifact host) via openssl (Git ships it on the runner) ──
+  Log "generating local CA + leaf (SAN=$FeedHost, $ArtifactHost)"
   & openssl req -x509 -newkey rsa:2048 -nodes -keyout "$Work\ca.key" -out "$Work\ca.pem" -days 2 -subj "/CN=$CaCn" 2>$null
   & openssl req -newkey rsa:2048 -nodes -keyout "$Work\leaf.key" -out "$Work\leaf.csr" -subj "/CN=$FeedHost" 2>$null
-  "subjectAltName=DNS:$FeedHost`nextendedKeyUsage=serverAuth" | Set-Content "$Work\leaf.ext"
+  "subjectAltName=DNS:$FeedHost,DNS:$ArtifactHost`nextendedKeyUsage=serverAuth" | Set-Content "$Work\leaf.ext"
   & openssl x509 -req -in "$Work\leaf.csr" -CA "$Work\ca.pem" -CAkey "$Work\ca.key" -CAcreateserial -out "$Work\leaf.pem" -days 2 -extfile "$Work\leaf.ext" 2>$null
 
   # ── Trust the CA (LocalMachine\Root — schannel validates against it for reqwest) + host ──
@@ -230,8 +235,8 @@ try {
   Log "trusting CA (Import-Certificate -> LocalMachine\Root) + hosts entry"
   $CaThumb = (Import-Certificate -FilePath "$Work\ca.pem" -CertStoreLocation Cert:\LocalMachine\Root).Thumbprint
   Write-Host "CA trusted (thumbprint $CaThumb)"
-  Add-Content -Path $HostsFile -Value "127.0.0.1 $FeedHost"
-  Write-Host "hosts entry added"
+  Add-Content -Path $HostsFile -Value "127.0.0.1 $FeedHost", "127.0.0.1 $ArtifactHost"
+  Write-Host "hosts entries added"
 
   # ── Scoped Defender exclusion (the UNSIGNED installer/exe) ──
   Add-MpPreference -ExclusionPath $InstallRoot, $ServeDir -ErrorAction SilentlyContinue
@@ -244,7 +249,7 @@ try {
   $latestObj = Get-Content $SignedFeed.FullName -Raw | ConvertFrom-Json
   $platformNames = @($latestObj.platforms.PSObject.Properties.Name)
   $platform = $latestObj.platforms.$PlatformKey
-  $expectedUrl = "https://$FeedHost/releases/download/$NName"
+  $expectedUrl = "https://$ArtifactHost/releases/download/$NName"
   if ($latestObj.version -ne $NVersion -or $platformNames.Count -ne 1 -or
       $platformNames[0] -ne $PlatformKey -or -not $platform -or
       $platform.signature -ne $NSigText -or $platform.url -ne $expectedUrl -or
@@ -267,6 +272,8 @@ try {
     Start-Sleep -Milliseconds 500
   }
   if (-not $feedUp) { Dump-Logs; Write-Error "feed server not reachable"; exit 1 }
+  try { Invoke-RestMethod -Uri "https://$ArtifactHost/releases/latest.json" -TimeoutSec 3 | Out-Null }
+  catch { Dump-Logs; Write-Error "$ArtifactHost does not reach the feed server"; exit 1 }
 
   # ── Install N-1 silently (currentUser → %LOCALAPPDATA%, no UAC) ──
   # Timed (not -Wait): a non-silent NSIS prompt would hang the runner forever, so fail fast.

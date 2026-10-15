@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
+import { TUFError } from "@sigstore/tuf";
 import { NPM_PACKAGES, type PackageKey } from "./npm-packages.ts";
 import {
+  describeError,
   describePlan,
   lockfileSlice,
   orderByDependencies,
@@ -27,6 +29,7 @@ const coreFacts = (
   published: string[],
   extra: Partial<{
     releaseVerified: boolean;
+    releaseProblem: string;
     changedSinceTag: boolean;
     recordsExist: boolean;
     publishedDependencies: Record<string, string>;
@@ -241,6 +244,35 @@ describe("release plan: dependencies", () => {
         dependencyVersions: { [core.name]: "1.0.0" },
       });
     });
+  });
+});
+
+describe("release plan: refusals", () => {
+  test("an error is described with its code and every cause", () => {
+    const refused = new TUFError({
+      code: "TUF_REFRESH_METADATA_ERROR",
+      message: "error refreshing TUF metadata",
+      cause: Object.assign(new TypeError("Unable to connect.\nIs the computer online?"), {
+        code: "ConnectionRefused",
+      }),
+    });
+    expect(describeError(refused)).toBe(
+      "TUF_REFRESH_METADATA_ERROR error refreshing TUF metadata: ConnectionRefused Unable to connect.",
+    );
+    expect(describeError("plain")).toBe("plain");
+  });
+
+  test("a refused reuse names what failed, so an outage reads as one", () => {
+    expect(() =>
+      planRelease(keys(["presto-core"]), {
+        "presto-core": coreFacts(["1.0.0"], {
+          releaseVerified: false,
+          releaseProblem: "TUF_REFRESH_METADATA_ERROR error refreshing TUF metadata",
+        }),
+      } as never),
+    ).toThrow(
+      "do not verify (TUF_REFRESH_METADATA_ERROR error refreshing TUF metadata); rerun if the check could not reach",
+    );
   });
 });
 

@@ -1,20 +1,24 @@
 import { describe, expect, test } from "bun:test";
 import { resolve } from "node:path";
 import { NPM_PACKAGES } from "./npm-packages.ts";
-import { verifyProvenanceStatement } from "./sdk-release-verification.ts";
 import {
   hasVerifiedSdkProvenance,
+  run,
   verifiedProvenanceStatement,
-} from "./verify-sdk-package-signatures.ts";
+} from "./registry-consistency.ts";
+import { verifyProvenanceStatement } from "./sdk-release-verification.ts";
 
-/** `npm audit signatures --json --include-attestations` for the published presto-core 1.0.0. */
+/**
+ * `npm audit signatures --json --include-attestations` for the published presto-core 1.0.0, trimmed
+ * to the statement payloads: it exercises claim extraction, not cryptographic verification.
+ */
 const realReport = () =>
   Bun.file(
     resolve(import.meta.dir, "__fixtures__/npm-audit-signatures-presto-core-1.0.0.json"),
   ).json();
 const core = NPM_PACKAGES["presto-core"];
 
-describe("SDK signature verification", () => {
+describe("registry consistency", () => {
   test("requires verified SLSA provenance for the exact package and version", () => {
     const report = {
       verified: [
@@ -31,7 +35,7 @@ describe("SDK signature verification", () => {
     expect(hasVerifiedSdkProvenance(report, "5.2.0", sibling)).toBe(false);
   });
 
-  test("the signed statement comes from the verified provenance bundle npm reported", async () => {
+  test("the statement is decoded from the provenance bundle npm reported", async () => {
     const report = await realReport();
     const statement = verifiedProvenanceStatement(report, "1.0.0", core);
     const verified = verifyProvenanceStatement(
@@ -73,5 +77,16 @@ describe("SDK signature verification", () => {
     expect(() => verifiedProvenanceStatement({ verified: [bare] }, "1.0.0", core)).toThrow(
       "no verified provenance bundle",
     );
+  });
+});
+
+describe("npm subprocesses", () => {
+  // A registry or proxy that accepts the connection and never answers holds npm with no deadline.
+  test("a command that never answers fails, naming itself, once its time is up", () => {
+    const started = performance.now();
+    expect(() => run(["sleep", "30"], import.meta.dir, 200)).toThrow(
+      "sleep 30 gave no answer within 0.2 s",
+    );
+    expect(performance.now() - started).toBeLessThan(5_000);
   });
 });

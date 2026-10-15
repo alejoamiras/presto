@@ -59,3 +59,6 @@ with `rg --no-ignore` / `git grep`.
 - [presto-fixture](presto-fixture/plan.md) — closed 2026-10-14 — the published-SDK gate re-armed:
   the interop fixture names presto 6.0.0-rc.3, its integrity taken from the npm signature audit and
   SLSA verification, never typed (PR #110).
+- [presto-verifier-identity](presto-verifier-identity/plan.md) — closed 2026-10-14 — the verifier
+  binds a provenance statement to its signing identity at every consumer, while the OIDC publish job
+  stays dependency-free (PR #111).
