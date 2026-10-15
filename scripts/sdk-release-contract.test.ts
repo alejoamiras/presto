@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import { NPM_PACKAGES } from "./npm-packages.ts";
 
 const repository = resolve(import.meta.dir, "..");
@@ -14,6 +14,101 @@ function job(workflow: string, name: string): string {
   const rest = workflow.slice(start + 1);
   const next = rest.slice(1).search(/\n {2}[a-z-]+:\n/);
   return next === -1 ? rest : rest.slice(0, next + 1);
+}
+
+/** `first` appears in `text`, and `second` after it. */
+function before(text: string, first: string, second: string): void {
+  const a = text.indexOf(first);
+  const b = text.indexOf(second);
+  expect(a).toBeGreaterThan(0);
+  expect(b).toBeGreaterThan(a);
+}
+
+/**
+ * The npm commands that read the registry without running package code, by their arguments after
+ * `npm`: `view` takes positional values only, `audit` only `signatures`, and `install` only these
+ * flags, `--ignore-scripts` among them.
+ */
+const NPM_READS: Record<string, (rest: string[]) => boolean> = {
+  view: (rest) => rest.every((arg) => /^\w+$/.test(arg)),
+  audit: ([check, ...flags]) =>
+    check === '"signatures"' &&
+    flags.every((flag) => ['"--json"', '"--include-attestations"'].includes(flag)),
+  install: (flags) =>
+    flags.includes('"--ignore-scripts"') &&
+    flags.every((flag) =>
+      ['"--ignore-scripts"', '"--no-audit"', '"--no-fund"', '"--loglevel=error"'].includes(flag),
+    ),
+};
+
+/** A literal command array that runs npm without package code. */
+function isNpmRead(array: string | undefined): boolean {
+  const [command, subcommand, ...rest] = (array?.slice(1, -1).split(",") ?? [])
+    .map((arg) => arg.trim())
+    .filter(Boolean);
+  const read = NPM_READS[subcommand?.slice(1, -1) ?? ""];
+  return command === '"npm"' && Boolean(read?.(rest));
+}
+
+/** Commands in a job that could run code other than the repository's own scripts. */
+function jobViolations(text: string): string[] {
+  const violations = [...text.matchAll(/\bbunx?\s+(\S+)/g)]
+    .filter(([, arg]) => !arg?.startsWith("scripts/"))
+    .map(([command]) => command);
+  // Node runs only quoted inline code that loads nothing.
+  for (const [command, flag, , body] of text.matchAll(
+    /\bnode\s+(\S+)(?:\s+(['"])([\s\S]*?)\2)?/g,
+  )) {
+    const inline = ["-e", "-p", "--eval", "--print"].includes(flag as string) && body !== undefined;
+    if (!inline || /require|import|child_process|eval|Function/.test(body))
+      violations.push(command);
+  }
+  for (const [runner] of text.matchAll(/\b(npx|npm (?:exec|x|run|install|ci|test|start))\b/g)) {
+    violations.push(runner);
+  }
+  return violations;
+}
+
+/**
+ * Code the import scanner cannot see: `require`, a non-literal `import()`, and any subprocess other
+ * than npm reading the registry, spawned from a literal array or through a `run(command)` helper
+ * whose every call passes one.
+ */
+function codeViolations(code: string): string[] {
+  const violations: string[] = [];
+  if (/\brequire\s*\(/.test(code)) violations.push("require");
+  for (const [call] of code.matchAll(/\bimport\s*\([^)]*\)/g)) {
+    if (!/^import\s*\(\s*(["'])[^"'`$]*\1\s*\)$/.test(call)) violations.push(call);
+  }
+  if (/\bBun\s*\.\s*(\$|spawn\s*\()|child_process/.test(code)) violations.push("subprocess API");
+  const helper = /\bfunction run\(command: string\[\]/.test(code);
+  for (const [call, argument] of code.matchAll(
+    /\bBun\s*\.\s*spawnSync\s*\(\s*(\[[^\]]*\]|\w+\b(?!\s*[.[(]))?/g,
+  )) {
+    if (!isNpmRead(argument) && !(helper && argument === "command")) violations.push(call);
+  }
+  for (const [call, array] of code.matchAll(/(?<!function )\brun\s*\(\s*(\[[^\]]*\])?/g)) {
+    if (helper && !isNpmRead(array)) violations.push(call);
+  }
+  return violations;
+}
+
+/** Every module `entries` reach through static or dynamic imports, and each non-built-in specifier. */
+function importGraph(entries: string[]): { modules: Set<string>; external: string[] } {
+  const transpiler = new Bun.Transpiler({ loader: "ts" });
+  const modules = new Set<string>();
+  const external: string[] = [];
+  const pending = [...entries];
+  while (pending.length) {
+    const file = pending.pop() as string;
+    if (modules.has(file)) continue;
+    modules.add(file);
+    for (const { path: specifier } of transpiler.scanImports(readFileSync(file, "utf8"))) {
+      if (specifier.startsWith(".")) pending.push(Bun.resolveSync(specifier, dirname(file)));
+      else if (!/^(node:|bun:|bun$)/.test(specifier)) external.push(`${file}: ${specifier}`);
+    }
+  }
+  return { modules, external };
 }
 
 describe("npm release workflow contract", () => {
@@ -85,9 +180,10 @@ describe("npm release workflow contract", () => {
     expect(plan).toContain("node-version: 24");
   });
 
-  test("exact cryptographic verification precedes the publication records", () => {
-    const verification = publish.indexOf("bun scripts/verify-sdk-package-signatures.ts");
-    const records = publish.indexOf("Create git tag and GitHub release");
+  test("registry signatures and provenance claims are checked before the publication records", () => {
+    const publishJob = job(publish, "publish");
+    const verification = publishJob.indexOf("bun scripts/registry-consistency.ts");
+    const records = publishJob.indexOf("Create git tag and GitHub release");
     expect(verification).toBeGreaterThan(0);
     expect(records).toBeGreaterThan(verification);
   });
@@ -104,12 +200,6 @@ describe("publish job isolation", () => {
       expect(unprivileged).not.toContain("id-token");
       expect(unprivileged).not.toContain("environment:");
     }
-    const before = (text: string, first: string, second: string) => {
-      const a = text.indexOf(first);
-      const b = text.indexOf(second);
-      expect(a).toBeGreaterThan(0);
-      expect(b).toBeGreaterThan(a);
-    };
     // The digest travels as a job output, recorded before the consumer job runs.
     before(pack, "sha256sum", "upload-artifact");
     expect(pack).not.toContain("sdk-tarball-consumer.sh");
@@ -124,8 +214,39 @@ describe("publish job isolation", () => {
     for (const install of ["sdk-tarball-consumer.sh", "npx", "npm install", "bun install"]) {
       expect(publishJob).not.toContain(install);
     }
+  });
+
+  test("the identity-bound check runs unprivileged, after a locked install, and can fail the run", () => {
+    const verify = job(publish, "verify");
     expect(verify).toContain("needs: [pack, publish]");
     expect(verify).toContain("npm install --ignore-scripts");
+    before(
+      verify,
+      "bun install --frozen-lockfile --ignore-scripts",
+      "bun scripts/verify-sdk-package-signatures.ts",
+    );
+    expect(verify).not.toContain("continue-on-error");
+    // A restored cache could hold files a job running dependency code saved.
+    expect(verify).not.toContain("actions/cache");
+  });
+
+  test("every script the credentialed job runs imports only repository modules and built-ins", () => {
+    const publishJob = job(publish, "publish");
+    expect(jobViolations(publishJob)).toEqual([]);
+    const scripts = [...publishJob.matchAll(/\bbun (scripts\/\S+\.ts)/g)].map(([, script]) =>
+      resolve(repository, script as string),
+    );
+    expect(scripts.length).toBeGreaterThanOrEqual(3);
+    const { modules, external } = importGraph(scripts);
+    expect(external).toEqual([]);
+    expect(modules.has(resolve(repository, "scripts/registry-consistency.ts"))).toBe(true);
+    expect(publishJob).not.toContain("verify-sdk-package-signatures");
+    for (const module of modules) {
+      expect({ module, violations: codeViolations(readFileSync(module, "utf8")) }).toEqual({
+        module,
+        violations: [],
+      });
+    }
   });
 
   test("the consumer host never runs registry lifecycle scripts and pins its compiler exactly", () => {
@@ -140,10 +261,24 @@ describe("publish job isolation", () => {
 
   test("every caller checks the SIGNED statement's commit and workflow, not only the unsigned one", () => {
     const source = (rel: string) => readFileSync(resolve(repository, rel), "utf8");
-    // Publication: the signed statement must name the dispatched commit.
+    // Publication: the statement, bound to its signing identity, must name the dispatched commit.
     expect(job(publish, "publish")).toContain(
+      'bun scripts/registry-consistency.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"',
+    );
+    expect(job(publish, "verify")).toContain(
       'bun scripts/verify-sdk-package-signatures.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"',
     );
+    // Every consumer takes the identity-bound verifier, never the registry-consistency one.
+    for (const consumer of [
+      "scripts/release-plan.ts",
+      "scripts/promote-sdk-latest.ts",
+      "scripts/published-playground.ts",
+    ]) {
+      expect(source(consumer)).toMatch(
+        /from "\.\/verify-sdk-package-signatures(\.ts)?"|import\("\.\/verify-sdk-package-signatures\.ts"\)/,
+      );
+      expect(source(consumer)).not.toContain("registry-consistency");
+    }
     // Reuse planning: the signed statement must name the tag's commit.
     expect(source("scripts/release-plan.ts")).toContain(
       "verifySdkPackageSignatures(version, pkg, tagCommit)",
@@ -151,10 +286,49 @@ describe("publish job isolation", () => {
     // Promotion: the tag is compared against the signed commit, and a rollback's legacy-workflow
     // allowance reaches the signed verification too.
     const promote = source("scripts/promote-sdk-latest.ts");
-    expect(promote).toContain(
-      "const provenance = await verifySdkPackageSignatures(version, pkg, undefined, allowedWorkflows)",
+    // Only a rollback may accept the reusable workflow's earlier name as signer.
+    expect(promote).toMatch(
+      /const provenance = await verifySdkPackageSignatures\(\s*version,\s*pkg,\s*undefined,\s*allowedWorkflows,\s*rollback \? ROLLBACK_SIGNERS : RELEASE_SIGNERS,?\s*\)/,
     );
     expect(promote).toContain("tagCommit !== provenance.commit");
+  });
+});
+
+describe("the credentialed-job guards", () => {
+  test.each([
+    ["inline Bun", 'run: bun -e "1"'],
+    ["a package runner", "run: bunx tool"],
+    ["inline Node loading a module", `run: node -e "require('tool')"`],
+    ["npm running package code", "run: npm exec tool"],
+    ["inline Node through --eval", `run: node --eval "require('tool')"`],
+    ["a Node script", "run: node tool.js"],
+  ])("the job guard refuses %s", (_, step) => {
+    expect(jobViolations(step)).not.toEqual([]);
+  });
+
+  test.each([
+    ["a computed template import", "const load = () => import(`\u0024{name}`);"],
+    ["a computed import", "const load = () => import(name);"],
+    ["require", 'const tool = require("tool");'],
+    ["a variable executable", 'const runner = "bunx";\nBun.spawnSync([runner, "tool"]);'],
+    ["another subprocess API", 'import { execFileSync } from "node:child_process";'],
+    ["npm running package code", 'Bun.spawnSync(["npm", "exec", "tool"]);'],
+    ["an install that runs scripts", 'Bun.spawnSync(["npm", "install", "tool"]);'],
+    [
+      "an install that re-enables scripts",
+      'Bun.spawnSync(["npm", "install", "--ignore-scripts", "--ignore-scripts=false"]);',
+    ],
+    ["an audit that installs", 'Bun.spawnSync(["npm", "audit", "fix"]);'],
+    ["spread arguments", 'Bun.spawnSync(["npm", "view", ...args]);'],
+    ["a spaced call", 'Bun.spawnSync (["bunx", "tool"]);'],
+    ["an options object", 'Bun.spawnSync({ cmd: ["bunx", "tool"] });'],
+    ["a computed command", "Bun.spawnSync(commands.at(0));"],
+    [
+      "a helper called with a variable",
+      "function run(command: string[], cwd: string) {\n  Bun.spawnSync(command);\n}\nrun(list, dir);",
+    ],
+  ])("the code guard refuses %s", (_, code) => {
+    expect(codeViolations(code)).not.toEqual([]);
   });
 });
 

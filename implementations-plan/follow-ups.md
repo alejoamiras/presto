@@ -84,6 +84,14 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   `lockfileSlice` and release planning refuses to reuse 2.0.0-rc.2. Optionally, drop the workspace
   `version` from the slice: the artifact's version comes from the manifest.
 
+## From presto-verifier-identity (closed 2026-10-14)
+
+- **Owner decision: tags and releases created after the bound verification**, so the publish job
+  no longer needs `contents: write`. `archive/presto-verifier-identity/plan.md`, option B.
+- **Release planning reads a reused package's dependency pins from the tarball bound to its
+  verified digest** rather than from registry metadata. It matters only against a registry serving
+  inconsistent metadata; the bound consumers never accept the bytes either way.
+
 ## Untested paths, carried from the logs
 
 None of these were re-checked on 2026-09-18.
