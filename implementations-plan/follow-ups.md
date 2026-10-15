@@ -72,6 +72,18 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
   is a presto-core change.
 - **#104 (owner decision, optional): presto 1.2.0-rc.2, to bundle `bb` 6.0.0-rc.6.**
 
+## From bun-1-4-2 (2026-10-15)
+
+- **Drop the `JEST_WORKER_ID` preloads** in `packages/playground/src/happydom.ts` and
+  `packages/sdk/src/test-setup.ts`: their comments wait for a Bun carrying oven-sh/bun#40271, and
+  Bun 1.4.2 does. Unverified that both suites pass without them.
+- **Fold `packages/sdk-noir`'s `bun.lock` version into the next presto-noir release commit.** The
+  lock still says `2.0.0-rc.1` for the workspace whose manifest is `2.0.0-rc.2`, and so does the
+  `@alejoamiras/presto-noir@2.0.0-rc.2` tag commit. Bun 1.4.2's plain `bun install` corrects it,
+  `--frozen-lockfile` accepts either. Committed outside a noir release, the change alters noir's
+  `lockfileSlice` and release planning refuses to reuse 2.0.0-rc.2. Optionally, drop the workspace
+  `version` from the slice: the artifact's version comes from the manifest.
+
 ## Untested paths, carried from the logs
 
 None of these were re-checked on 2026-09-18.
