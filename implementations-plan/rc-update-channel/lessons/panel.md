@@ -166,3 +166,8 @@ finding was rejected; two became Asks or known limits instead of mechanisms.
 - **Resumed check** (same session): it asked to stage T20 across Phases 3 and 7, because the
   rc-v1 outputs exist only after arc 3, and to allow the CI harness on the `--smoke` list. Both
   were applied. No condition is open.
+
+## Arc 0 deviation
+
+The reserved smoke host shipped as `updater-smoke.test`, not `updater-smoke.invalid`: RFC 6761
+lets resolver APIs answer `.invalid` with NXDOMAIN before the hosts file. Ledger D23.

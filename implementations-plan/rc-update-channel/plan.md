@@ -1,8 +1,8 @@
 ---
 plan: rc-update-channel
 tier: deep
-status: draft, awaiting approval
-base: a2a3a98 (implementation starts from main at or after 7153556, #123)
+status: approved 2026-10-15; implementing
+base: 7153556 (#123)
 driver: claude-code
 eli5_mode: file (published by the director session)
 code_review: off
@@ -25,6 +25,10 @@ Owner decisions (2026-10-15): the channel ships in the release after 1.2.0; #122
 RC signing keeps `release-signing` with no reviewer; RCs auto-install when Auto-Update is on;
 joining checks at once; UX entry point A, channel control B without the version chip, prompt A.
 
+Approved 2026-10-15: A1 by the owner; the remainder by the orchestrator under owner delegation.
+Answers: A2 keep 680 px and let the default view scroll; A3 yes; A4 yes (arc 0); A5 yes. Deep tier
+and delivery as planned; harden is decided later.
+
 ## Outcome & Quality Bar
 
 **For whom.** Release testers (the owner first) who run Presto daily and want the next version
@@ -40,18 +44,19 @@ early, and every other user, who must notice nothing.
    and Windows.
 3. Joining shows the result at once (an RC prompt, or "up to date"). Leaving, or turning developer
    mode off, tells the tester in one sentence that Presto stays on the RC until a newer stable
-   exists. After that it installs no RC, except in the few-second window of limit L2.
+   exists. After that it installs no RC, except in the few-second window of limit L2 (#125).
 4. Every RC feed movement is a deliberate owner dispatch with a dry run, a live read-back and a
    one-dispatch withdrawal.
 
 **Good enough:** no RC notes in the prompt, no tray indicator of the channel, no in-app downgrade,
 no per-tester RC targeting.
 
-**Known limits:** #122. New, to file as closed `known-limit` issues at approval (Security has the
-paths): L1 a corrupt or hostile RC key shadows stable for opted-in clients until withdrawn; L2 a
-leave in the last seconds before `install()` still installs the RC; L3 `PRESTO_HOME` selects the
-config file; L4 withdrawing an RC does not revoke copies opted-in clients hold; L5 a second desktop
-instance can write its stale channel back with an unrelated settings save.
+**Known limits** (closed `known-limit` issues; Security has the paths): #122 legacy v1
+prerelease manifests and pre-channel clients; L1 #124 a corrupt or hostile RC key shadows stable for
+opted-in clients until withdrawn; L2 #125 a leave in the last seconds before `install()` still
+installs the RC; L3 #126 `PRESTO_HOME` selects the config file; L4 #127 withdrawing an RC does not
+revoke copies opted-in clients hold; L5 #128 a second desktop instance can write its stale channel
+back with an unrelated settings save.
 
 ## Scope
 
@@ -165,21 +170,21 @@ the version already in its URL. Registration touches `T/src/commands.rs`, `T/src
   asset `latest-rc.json`; a stable's stays `latest.json` v1. For each prerelease the release signer
   also emits two smoke feeds per platform: `smoke-latest.json` (v1) and `smoke-latest-rc.json`
   (rc-v1). Every smoke feed, stable or prerelease, carries artifact URLs on
-  `https://updater-smoke.invalid/releases/download/*`, a reserved name that never resolves publicly
-  (RFC 6761). The ephemeral smokes use the same name, so the release and ephemeral paths share it. The smoke scripts add it as a second certificate SAN and a second hosts line, next to
+  `https://updater-smoke.test/releases/download/*`, a reserved name that public DNS never resolves
+  and no public CA certifies (RFC 6761; D23). The ephemeral smokes use the same name, so the release and ephemeral paths share it. The smoke scripts add it as a second certificate SAN and a second hosts line, next to
   the `presto.build` ones they already add. Only `make_smoke_feed` may sign a v1 prerelease
   (`--schema v1`); a contract test pins it, and the signer asserts the production feed's schema
   matches its version.
 - **No usable v1 prerelease manifest.** After this plan a prerelease run produces one production
   manifest, `latest-rc.json` (rc-v1, GitHub URLs; the `signed-update-feed` workflow artifact and
   the 17th release asset), plus two smoke manifests per platform (nine in all) whose artifact URLs
-  name `updater-smoke.invalid`. No v1 prerelease manifest names a host anyone can serve, even with
-  the Worker or Cloudflare account compromised, so #122's exposure stops growing. Proven by the
-  behavioural release-contract test in T20, not a comment. Today every prerelease uploads two
-  usable kinds, each with the default 90-day retention: the GitHub-URL v1 `signed-update-feed`
-  (`release-presto.yml:502-507`, read only by the stable release job at `:976-987`) and the
-  per-platform v1 `smoke-latest.json` on `presto.build` (`:474-500`), which only the Worker's 404
-  keeps unusable. A4 stops both before the next RC instead of waiting for arc 3.
+  name `updater-smoke.test`. No v1 prerelease manifest names a host a public server can serve,
+  even with the Worker or Cloudflare account compromised, so #122's exposure stops growing. Proven
+  by the behavioural release-contract tests in T20, not a comment. Before arc 0 every prerelease
+  uploaded two usable kinds, each with the default 90-day retention: the GitHub-URL v1
+  `signed-update-feed` (`release-presto.yml:502-507`, read only by the stable release job at
+  `:976-987`) and the per-platform v1 `smoke-latest.json` on `presto.build` (`:474-500`), which only
+  the Worker's 404 kept unusable. Arc 0 stops both before the next RC instead of waiting for arc 3.
 - **Client admission**, one pure function in `C/update_channel.rs`:
 
 | Channel | v1, no prerelease | v1, prerelease | rc-v1 (prerelease) |
@@ -251,10 +256,12 @@ leave the channel or withdraw first.
   check: "Presto stays on <v> until a newer stable release exists. It does not go back to an
   older version." (`<v>` is `app_version`; no command supplies the stable version.)
 - Copy follows the UX pages; the controls ship disabled until hydrated, like the theme control.
-- Height: the default view must fit with no scroll (`packages/presto/e2e/settings.spec.ts:678-700`);
-  637 of 648 px is used. The folded row needs about 34 px plus a gap, so the Settings height rises
-  from 680 by the measured amount (expected 712–720) in `T/src/windows.rs:182-200` and
-  `packages/presto/e2e/window-sizes.ts`. This worsens #116; see Asks.
+- Height (A2): Settings stays 680 px (`T/src/windows.rs:182-200`), so #116 does not grow. The
+  default view uses 637 of 648 px, so the folded Advanced row (about 34 px plus a gap) sits below
+  the fold and the default view scrolls by that row only. The no-scroll test
+  (`packages/presto/e2e/settings.spec.ts:678-700`) becomes: the speed section is wholly in view, the
+  overflow is at most the Advanced row and its gap, and Advanced is reachable by scrolling.
+  `e2e/window-sizes.ts` is unchanged; no WebDriver spec pins the Settings size.
 - Prompt (A): when the version has a prerelease part, title "A release candidate is ready" and note
   "A test build of the next version. It can have bugs." in place of the rename note; same size,
   buttons and checkbox.
@@ -268,7 +275,7 @@ leave the channel or withdraw first.
   - `--channel stable|rc` checks the signature and the envelope, then applies `admits`. Promote,
     `verify-live-feed`, the signer's production feed and CI's happy path use it.
   - `--smoke` checks the signature and the envelope, applies no admission, and requires every
-    artifact URL to start with `https://updater-smoke.invalid/`. It exists because `admits` refuses
+    artifact URL to start with `https://updater-smoke.test/`. It exists because `admits` refuses
     the v1 prerelease smoke twin on both channels. Only `make_smoke_feed`, `S/ephemeral-updater.sh`
     and the secretless `updater-feed-e2e` harness in `presto.yml` may call it (contract-pinned).
   Every caller migrates in the same change: `release-presto.yml:1341,1476`,
@@ -335,9 +342,9 @@ must turn A1, A2 and C1 red on their download assertions, not only on log lines.
 |---|---|
 | Core | `C/config.rs`, `C/update_channel.rs` (new), `C/update_manifest.rs`, `C/lib.rs`, `packages/presto/core/examples/update-manifest.rs`, `packages/presto/core/tests/fixtures/updater/*` (rc-v1 and v1-prerelease fixtures, throwaway key), `packages/presto/core/tests/fixtures/config/*` (compat fixtures) |
 | Headless | `packages/presto/server/src/main.rs` |
-| Desktop | `T/src/updater.rs`, `T/src/main.rs`, `T/src/commands.rs`, `T/build.rs`, `T/capabilities/settings.json`, `T/src/windows.rs` |
+| Desktop | `T/src/updater.rs`, `T/src/main.rs`, `T/src/commands.rs`, `T/build.rs`, `T/capabilities/settings.json` |
 | Frontend | `T/frontend/settings.html`, `T/frontend-src/settings.js`, `T/frontend-src/update-prompt.js`, `T/frontend/style.css` (only if a token-built class is needed) |
-| UI tests | `packages/presto/e2e/{settings,update-prompt,window-fit}.spec.ts`, `e2e/tauri-mock.js`, `e2e/window-sizes.ts`, `e2e-webdriver/developer.spec.ts` (new), `e2e-webdriver/trust-boundary.spec.ts`, `wdio.conf.ts` (order) |
+| UI tests | `packages/presto/e2e/{settings,update-prompt,window-fit}.spec.ts`, `e2e/tauri-mock.js`, `e2e-webdriver/developer.spec.ts` (new), `e2e-webdriver/trust-boundary.spec.ts`, `wdio.conf.ts` (order) |
 | Worker | `packages/release-feed/src/index.ts`, `index.test.ts` |
 | Pipeline | `.github/workflows/release-presto.yml`, `presto.yml` (`updater-feed-e2e`), `update-feed-health.yml`, `_e2e-updater*.yml`, `smoke-updater-{unix,windows}.yml`; `S/sign-release-updater-artifacts.sh`, `S/sign-smoke-feed.sh`, `S/ephemeral-updater.sh`, `S/updater-feed-server.ts`, `S/updater-smoke*.sh`, `S/updater-smoke-windows.ps1` |
 | Script tests | `S/release-contract.test.ts`, `S/ephemeral-updater.test.ts`, `S/updater-feed-server.test.ts`, `S/update-wiring.test.ts`, `S/tauri-trust-boundary.test.ts`, `scripts/presto-domain.test.ts` |
@@ -370,7 +377,7 @@ macOS, Linux and Windows through a local feed.
 | T17 | Headless and read-only configs stay stable | server unit `headless_config_has_default_developer`; core `effective_channel_table` (enabled × channel × capability, malformed and newer configs); Playwright `read-only config shows the effective channel` |
 | T18 | "Later" on an RC; tray check on Rc; join while an install runs | existing per-version snooze tests (a8, a9) and `e_decide_invariants` (every Auto-Update × snooze × busy input); tray uses the same check path; Playwright `join during an install shows installing` |
 | T19 | RC prompt copy and fit | Playwright `update prompt shows release-candidate copy for a prerelease`; `window-fit` prompt 420×280 |
-| T20 | A prerelease run emits no v1 manifest with working URLs | release-contract `prerelease signing emits no v1 manifest with live download urls`: runs the real `S/sign-release-updater-artifacts.sh` against a temp repo root (copied `tauri.conf.json`, stub Tauri CLI) and a recording manifest tool, for `9.9.9-rc.1` and `9.9.9`; asserts every v1 output of the prerelease has only `https://updater-smoke.invalid/` URLs, its GitHub-URL output is `latest-rc.json` with schema rc-v1, and the stable run still yields v1 `latest.json`; Worker `download paths stay 404`; real round trip in `presto.yml` `updater-feed-e2e`: the real signer and the real `update-manifest` tool with a throwaway key, against a temp repo root, for `9.9.9-rc.1` and `9.9.9`, then each output through every `verify` mode (rc-v1 passes `--channel rc` and fails `--channel stable`; the v1 twin fails both channels and passes `--smoke`; a `presto.build` URL fails `--smoke`) |
+| T20 | A prerelease run emits no v1 manifest with working URLs | release-contract `release signer: prerelease feeds` runs the real `S/sign-release-updater-artifacts.sh` against a temp repo root (copied `tauri.conf.json`, stub Tauri CLI) and a recording manifest tool, for `9.9.9-rc.1` and `9.9.9`. Arc 0: the prerelease still signs every payload with the production key and emits no `latest.json`; every smoke URL starts `https://updater-smoke.test/releases/download/`; the stable run keeps its GitHub-URL `latest.json`; the `signed-update-feed` upload is stable-only; every smoke producer and consumer names the reserved host. Arc 3 adds: the prerelease's GitHub-URL output is `latest-rc.json` with schema rc-v1. Worker `download paths stay 404`. Real round trip in `presto.yml` `updater-feed-e2e` (`S/release-signer-roundtrip.sh`, arc 0): the real signer and the real `update-manifest` tool with a throwaway key, for `9.9.9-rc.1` and `9.9.9`; Phase 3 passes the outputs through their `verify` modes and Phase 7 adds the rc-v1 feed and twin (rc-v1 passes `--channel rc` and fails `--channel stable`; the v1 twin fails both channels and passes `--smoke`; a `presto.build` URL fails `--smoke`) |
 | T21 | Rollback, reinstall, downgrade (feed and floor state retained) | release-contract T15 (A5); existing floor and pending-expiry tests (`updater_state`); runbook steps; O3 drill |
 
 Runtime: ephemeral `positive` today is macOS 7 min, Linux 12 min, Windows 18 min (runs
@@ -390,24 +397,24 @@ Threats, with paths (D demonstrated in source, P plausible, U needs unsupported 
 - **Compromised Worker deploy (P).** Workers Scripts Edit is account-wide, so any Workers Build on a
   repository branch could redeploy `presto-release-feed`. Such a deploy serves any production-signed
   manifest and proxies any `presto.build` path. Today's v1 smoke feeds name `presto.build`, so a
-  pre-channel client would install a future RC from them. Fix: smoke feeds name
-  `updater-smoke.invalid`, which no public server can answer (T20); correct
-  `docs/CLOUDFLARE_DEPLOYMENT.md:67-71` ("worst case … withheld or replayed older signed feed").
+  pre-channel client would install a future RC from them. Fix (arc 0): smoke feeds name
+  `updater-smoke.test`, which no server on public DNS with a publicly trusted certificate can answer
+  (T20); `docs/CLOUDFLARE_DEPLOYMENT.md`'s worst case now names the #122 manifests.
   Residual: the legacy manifests in #122.
 - **Corrupt or hostile RC key (P).** A well-formed body with a bad signature shadows stable for
-  opted-in clients until withdrawn (availability only, L1). `verify-live-feed` at promote and the
+  opted-in clients until withdrawn (availability only, L1 #124). `verify-live-feed` at promote and the
   daily digest-bound RC probe detect it.
 - **Stale RC after a stable rollback (D, closed by A5).** Rolling stable back below an RC that a GA
   had hidden would serve that RC again; the stable promote deletes a lower RC key.
 - **Withdrawal does not revoke (D).** An open prompt or a running download still installs a
-  withdrawn RC, and its manifest stays valid (L4). Same class as a stable rollback today.
+  withdrawn RC, and its manifest stays valid (L4 #127). Same class as a stable rollback today.
 - **Second desktop instance (P).** On macOS and Linux an instance that loses the port keeps its
   own update task and cached config. The install-time disk read stops it installing an RC after a
   leave in the other instance. Residual: an unrelated settings save in that instance writes its
-  stale channel back (L5), an existing property of every setting.
+  stale channel back (L5 #128), an existing property of every setting.
 - **Opt-out races (P).** Check in flight: act-time admission. "Update Now" or an automatic
   install after leaving: the install-time re-check after the download. Residual: a change landing
-  between that re-check and `install()` still installs the RC (L2). The window is up to about 5 s
+  between that re-check and `install()` still installs the RC (L2 #125). The window is up to about 5 s
   (`record_pending`, then `terminate_and_confirm(5 s)`, `T/src/updater.rs:539,568`) plus the Windows
   marker section, and covers automatic installs too. The RC was offered while the tester was opted
   in. Known limit; a later check takes the next stable above it.
@@ -416,7 +423,7 @@ Threats, with paths (D demonstrated in source, P plausible, U needs unsupported 
   test fails if `packages/presto/server/src` or `C/server*` writes it.
 - **Environment (U).** `PRESTO_HOME` selects which `config.json` the desktop reads
   (`C/config.rs:150-159`); controlling the launch environment already equals writing that file.
-  Known limit; no channel environment variable exists (wiring guard).
+  Known limit L3 (#126); no channel environment variable exists (wiring guard).
 - **Borked config (D, closed).** Lenient block deserializer, `CONFIG_VERSION` pinned, compat fixtures
   and real-binary loads both ways.
 - **Least privilege.** No new secret, token or environment. `withdraw-rc` and the RC promote reuse
@@ -441,18 +448,19 @@ Threats, with paths (D demonstrated in source, P plausible, U needs unsupported 
   (`C/config.rs:91-123,377-385`); `CONFIG_VERSION` is 2.
 - `run_updates` skips a manual request whose receiver is closed (`C/update_schedule.rs:592-593`);
   `ManualCheckSender` is managed state (`T/src/main.rs:1153`).
-- `sign-updater-artifacts` signs a v1 `latest.json` for every version; only stable stages it
+- Before arc 0, `sign-updater-artifacts` signed a v1 `latest.json` for every version; only stable stages it
   (`release-presto.yml:502-507,977-988`); it also uploads per-platform v1 `smoke-latest.json`
   (`:474-500`). Promote refuses prereleases and requires 17 assets (`:1296-1332`).
-- Release smoke feeds point at `presto.build/releases/download/*` (`S/sign-release-updater-artifacts.sh:114-131`),
-  which the Worker answers with 404 (`packages/release-feed/src/index.ts:1-4,18-21`).
+- Before arc 0, release smoke feeds pointed at `presto.build/releases/download/*`, which the Worker
+  answers with 404 (`packages/release-feed/src/index.ts:1-4,18-21`); arc 0 moves them to
+  `updater-smoke.test`.
 - On macOS and Linux a desktop instance that loses the port stays resident and keeps its update
   task; only Windows exits (`T/src/main.rs:488-522`). `perform_update` holds a cross-process updater
   lock (`T/src/updater.rs:407-413`).
 - #123 (`7153556`) runs every release-smoke leg once per baseline: the greatest lower same-key
   release and the release whose own `latest.json` the live feed serves byte for byte.
 - The Settings default view must fit without scroll (`e2e/settings.spec.ts:678-700`); 637 of 648 px
-  used (`T/src/windows.rs:189-195`).
+  used (`T/src/windows.rs:189-195`). A2 relaxes it by the Advanced row only.
 - `presto-v1.2.0-rc.3` is published (2026-10-15); `release-presto.yml` releases from `main`
   (`:63-68`).
 
@@ -466,26 +474,28 @@ Threats, with paths (D demonstrated in source, P plausible, U needs unsupported 
 - No release may be dispatched while `main` holds only part of the arc 1–2 stack; the ruleset may
   land one level at a time (O1).
 
-**Asks (for the approval gate)**
-- A1. Approve the IPC table (two new Settings-only commands, one changed).
+**Asks (answered 2026-10-15)**
+- A1. Approve the IPC table (two new Settings-only commands, one changed). **Approved by the owner.**
 - A2. Settings height: raise to the measured fit (about 712–720 px; worsens #116), or keep 680 and
-  accept that the default view scrolls (rewrite the no-scroll test).
+  accept that the default view scrolls (rewrite the no-scroll test). **Keep 680; the default view
+  scrolls** (orchestrator): growing the window worsens #116.
 - A3. May the implementing session dispatch `smoke-updater-unix.yml`, `smoke-updater-windows.yml`
   and `presto.yml` (all secretless, on its own branch)? `UPDATER_TESTING.md` requires them before merging updater changes.
-  If not, they move to Owner steps.
+  If not, they move to Owner steps. **Yes** (orchestrator): client-arc branches are pushed without
+  a PR for the dispatches; arc 0's branch only after 1.2.0 publishes.
 - A4. Arc 0 (recommended): a separate pipeline-only PR from `main` that skips signing and uploading
   the GitHub-URL v1 feed for prereleases (smoke feeds are built from the unsigned feed) and moves
-  every smoke feed's artifact URLs to `updater-smoke.invalid` (second SAN and hosts line in the
+  every smoke feed's artifact URLs to `updater-smoke.test` (second SAN and hosts line in the
   three release smoke scripts), with T20 in its first form. Its first real run is the next RC's
   publish, whose smokes fail closed if the hosts change is wrong. It merges after the 1.2.0 stable
   publish completes, so that publish runs on an unchanged pipeline, and before the next RC of any
   version. No further 1.2.0 RC is planned and a stable run emits no prerelease manifest, so nothing
   forces it earlier. Without it, every prerelease until arc 3 merges adds usable v1 manifests to
-  #122's exposure.
+  #122's exposure. **Approved by the owner**; implemented as arc 0.
 - A5. Rollback semantics (recommended yes): a stable promote also deletes `latest-rc.json` when its
   version is below the new stable, so a later `promote-only <previous>` cannot bring back an RC that
   the GA had hidden. This makes the stable promote touch the RC key, which changes what a promote
-  and a rollback do.
+  and a rollback do. **Yes** (orchestrator).
 
 ## Owner steps (the implementing agent never performs these)
 
@@ -515,31 +525,35 @@ Threats, with paths (D demonstrated in source, P plausible, U needs unsupported 
   10. When that release's stable ships, repeat steps 4–6 from it at the next release's rc.1.
 - O5. A broken RC: run `withdraw-rc` first, then tell testers to choose Stable before reinstalling
   stable by hand (a reinstall keeps the RC setting).
-- O4. If A3 is "no": dispatch the ephemeral smokes (modes below) and paste the run IDs into the PR.
+- O4. Not needed: A3 is yes.
 
 ## Phases
 
 Each phase ends with its gate. Run the fast layers after each meaningful step.
 
-### Phase 0 (only when A4 is approved): stop usable v1 prerelease manifests
+### Phase 0 (A4 approved): stop usable v1 prerelease manifests
+
+Implemented at `ed9dffc`; Codex loop clean in round 2. Not pushed: the push, the dispatches and the
+PR wait for the director's word that 1.2.0 has published.
 
 1. Create `rc-update-channel-stop-v1-prerelease-feed` from `main`.
 2. In `S/sign-release-updater-artifacts.sh`, skip `sign_feed … latest.json` for a prerelease. Keep
    the smoke feeds, which the signer builds from the unsigned feed.
 3. In `make_smoke_feed` and `S/ephemeral-updater.sh`, write artifact URLs on
-   `https://updater-smoke.invalid/releases/download/`.
-4. In the three release smoke scripts, add `updater-smoke.invalid` as a second SAN and a second
+   `https://updater-smoke.test/releases/download/` (D23).
+4. In the three release smoke scripts, add `updater-smoke.test` as a second SAN and a second
    hosts line, and remove both on cleanup.
 5. In `release-presto.yml`, upload `signed-update-feed` only for a stable version.
-6. Add T20 in its first form: a prerelease run emits no manifest with GitHub URLs, and every smoke
-   feed names only `updater-smoke.invalid`.
+6. Add T20 in its first form: a prerelease run emits no manifest with GitHub URLs, still signs
+   every payload with the production key, and every smoke feed names only `updater-smoke.test`.
 7. In `presto.yml` `updater-feed-e2e`, run the real signer against a temp repo root with a throwaway
    key and the real `update-manifest` tool, for a prerelease and a stable version.
 
 **Validation gate:** `bun run test`, `bun run lint`, `bun run lint:actions`, shellcheck through
 `koalaman/shellcheck:v0.9.0`; per A3, `updater-feed-e2e` through `gh workflow run presto.yml --ref
 <branch>` and `positive` on both ephemeral smoke workflows. Pass: T20, the release-contract pins
-and the dispatched runs green. Layers: lint, unit (contract), real binaries. Then run the Codex loop and open the PR. The owner merges it after the 1.2.0 publish.
+and the dispatched runs green. Layers: lint, unit (contract), real binaries. Then run the Codex
+loop; push and open the PR on the director's word that 1.2.0 has published. The owner merges it.
 
 ### Phase 1: developer-mode contract (core, headless)
 
@@ -558,9 +572,10 @@ and the dispatched runs green. Layers: lint, unit (contract), real binaries. The
 ### Phase 2: developer mode in Settings
 
 1. Add `set_developer_mode` in the six registration places. Set the trust-boundary count to 21.
-2. Build the folded Advanced row and the Developer section with its empty custom-bb slot. Set the
-   Settings height per A2.
-3. Add Playwright tests: hidden by default, fits, the toggle calls the command, an error reverts.
+2. Build the folded Advanced row and the Developer section with its empty custom-bb slot. Keep
+   the Settings height at 680 (A2) and rewrite the no-scroll test as under UI.
+3. Add Playwright tests: hidden by default, the default view overflows by the Advanced row only,
+   the toggle calls the command, an error reverts.
 4. Add WebDriver `developer.spec.ts`: on and off persist on disk; the auth popup is denied. Put it
    between `tray-update.spec.ts` and `autostart.spec.ts` in `wdio.conf.ts` (autostart stays last).
 
@@ -645,7 +660,7 @@ run IDs in lessons; the mutation run red on A1, A2 and C1. Layers: all, includin
 ### Phase 7: release pipeline and docs
 
 1. Signer: schema by version, prerelease file names, the two smoke feeds on
-   `updater-smoke.invalid`, the schema assertion. Skip whatever Phase 0 already landed.
+   `updater-smoke.test`, the schema assertion. Skip whatever Phase 0 already landed.
 2. `release-presto.yml`: the `validate` checks, staging, RC promote, the pre-put guard,
    `withdraw-rc` with its polled read-back, the `verify-live-feed` RC branch, and per A5 the
    lower-RC delete after a stable promote. `update-feed-health.yml`: the digest-bound RC probe.
@@ -689,7 +704,7 @@ critical path, so no lanes.
 1. **No `/code-review`** (`code_review: off`).
 2. **Codex fix loop per arc**, at each arc boundary, before the next arc starts:
    - `~/.claude/skills/codex/scripts/run-codex.sh <prompt> <worktree> high read-only gpt-6.1-sol`.
-   - Prompt: the arc's diff, this plan, the decision ledger, the arc map ("arc N of 3, plus arc 0 when A4 is approved; later arcs
+   - Prompt: the arc's diff, this plan, the decision ledger, the arc map ("arc N of 3, plus arc 0; later arcs
      add …"), an adversarial and security ask, an ask to attack the transition matrix for missing
      transitions, and the two rules below verbatim.
    - Verify each claim against the repo; apply accepted fixes as new commits; re-run the gate; log
@@ -697,7 +712,7 @@ critical path, so no lanes.
      coordination protocol, a recovery policy or a public contract is a plan change: stop and ask.
    - Resume with `resume-codex.sh <session> <prompt> <codex-dir> high` until a round has no new
      material finding. Material findings after 3 rounds: stop and surface.
-3. **Final cross-arc pass:** a fresh Codex session over the net diff from `a2a3a98`, asking about
+3. **Final cross-arc pass:** a fresh Codex session over the net diff from `7153556`, asking about
    seams between arcs, duplication and drift from this plan; same loop.
 4. **Delivery:** only now open PRs: `gh stack sync` if `main` moved, `gh stack submit --auto`, then
    `gh pr edit` each body (runtime before/after for WebDriver and the smokes; smoke run IDs).
@@ -749,18 +764,19 @@ on one step (5 under `/loop`).
 | D8 | promote-only only; `withdraw-rc`; refuse `bump_source` on prerelease | all | move on publish | settled |
 | D9 | Three-build `rc-lifecycle` real-binary mode | driver (testing mandate) | per-transition modes (cost) | settled; legs per D20 |
 | D10 | Client arcs merge after 1.2.0 | driver | — | owner step O1 |
-| D11 | Settings height | — | — | **open: A2** |
+| D11 | Settings stays 680 px; the default view scrolls by the Advanced row only | A2, orchestrator | grow to about 716 px (worsens #116) | settled |
 | D12 | Join check present-only; later automatic checks follow Auto-Update (Q4) | director check 1, `decide` | — | settled |
-| D13 | No v1 GitHub-URL manifest for any prerelease, test-proven (T20) | director check 2 | comment-only assurance | settled; timing **open: A4** |
-| D14 | Smoke feeds name `updater-smoke.invalid` | Opus + Codex audit | known limit only | settled; in arc 0 per A4 |
+| D13 | No v1 GitHub-URL manifest for any prerelease, test-proven (T20) | director check 2 | comment-only assurance | settled; arc 0 (A4) |
+| D14 | Smoke feeds name a reserved host (`updater-smoke.test`, D23) | Opus + Codex audit | known limit only | settled; arc 0 |
 | D15 | Install-time admission re-reads `config.json` from disk | Opus + Codex audit | cross-instance reconciliation | settled; residual L5 |
-| D16 | Stable promote deletes a lower RC key | Opus audit | leave stale key | **open: A5** |
+| D16 | Stable promote deletes a lower RC key | Opus audit; A5, orchestrator | leave stale key | settled |
 | D17 | RC health probe binds bytes to the release asset digest | Opus audit | verifier in the probe job; structural only | settled |
 | D18 | Channel clients refuse every v1 prerelease | Opus audit (its round-1 position) | admit legacy on Rc | settled |
 | D19 | Admission also before the window; `verify --channel` required | Opus + Codex audit | — | settled |
 | D20 | `rc-lifecycle` C1 serves a higher RC, C2 proves GA through fallback; B pins endpoint order | Opus + Codex audit | C1 older stable, C2 left channel | settled |
-| D22 | `verify` has two modes: `--channel` (admission) and `--smoke` (no admission, `.invalid` URLs only); every caller migrates at once; real round trip in CI | final Codex pass | one mode (would abort every RC publish on the v1 twin) | settled |
+| D22 | `verify` has two modes: `--channel` (admission) and `--smoke` (no admission, `updater-smoke.test` URLs only); every caller migrates at once; real round trip in CI | final Codex pass | one mode (would abort every RC publish on the v1 twin) | settled |
 | D21 | Rejected outright | panel | a signed `channel` field (a schema split in disguise); a separate RC key (a new secret); the plugin's `version_comparator` (checks unsigned fields); moving the RC key on publish (Cloudflare credentials in the publish path); refusing setting changes during an install (new coordination, Codex r1) | settled |
+| D23 | The reserved smoke host is `updater-smoke.test` | driver at arc 0; director accepted; arc 0 Codex review concurred | `updater-smoke.invalid`: RFC 6761 §6.4 lets resolver APIs answer NXDOMAIN before the hosts file, which can defeat the smokes' hosts line. `.test` must not be special-cased (§6.2); both are undelegated and no public CA issues for either | settled |
 
 ## Audit verdicts
 
@@ -772,14 +788,16 @@ on one step (5 under `/loop`).
 | Double audit | Opus (fresh) | conditional | applied; rollback → A5 |
 | Final pass | Codex (fresh) | conditional: the v1 smoke twin fails every `--channel` (it would abort RC publishes); `presto.yml` and `S/ephemeral-updater.sh` call `verify` without the new flag | applied as D22 |
 | Final pass, resumed | Codex (same session) | conditional: stage T20 across Phases 3 and 7; let the CI harness call `--smoke` | applied; no open condition |
+| Approval gate | owner (A1), orchestrator (rest) | approved 2026-10-15 | answers above |
+| Arc 0 fix loop | Codex (Sol, high) | r1 fix (3 low: doc scope, ephemeral URL pin, stale comments); r2 clean | applied in `ed9dffc`; `lessons/arc-0-review.md` |
 
-Size: about 790 lines against the 600 target. The testing mandate (matrix, real-binary legs,
+Size: about 810 lines against the 600 target. The testing mandate (matrix, real-binary legs,
 owner protocol) and the IPC table account for the excess; restatement was cut.
 
-## Seeds (DRAFT until approval)
+## Seeds
 
 ```
-/goal All phases marked ✓ in implementations-plan/rc-update-channel/plan.md, each backed by its validation gate reported passing in the transcript, including the rc-lifecycle smoke run IDs on macOS, Linux and Windows; for each phase `LESSONS_FILE=implementations-plan/rc-update-channel/lessons/phase-N.md` printed; /code-review NOT run; the Codex fix loop converged at arc 0 (when A4 is approved) and at each of the 3 arc boundaries and in the final cross-arc pass, each evidenced by a resumed Codex pass with no new material findings quoted in the transcript; the arc 0 PR (when A4 is approved) and the stacked PRs (3 arcs + close-out) exist, created only after all loops converged (`gh stack view` output in the transcript), the close-out archived the plan (`git show --stat` of the archive-move commit); `bun run test` and `bun run lint:actions` exit 0 in the transcript.
+/goal All phases marked ✓ in implementations-plan/rc-update-channel/plan.md, each backed by its validation gate reported passing in the transcript, including the rc-lifecycle smoke run IDs on macOS, Linux and Windows; for each phase `LESSONS_FILE=implementations-plan/rc-update-channel/lessons/phase-N.md` printed; /code-review NOT run; the Codex fix loop converged at arc 0 and at each of the 3 arc boundaries and in the final cross-arc pass, each evidenced by a resumed Codex pass with no new material findings quoted in the transcript; the arc 0 PR and the stacked PRs (3 arcs + close-out) exist, created only after all loops converged and after the director's word that 1.2.0 has published (`gh stack view` output in the transcript), the close-out archived the plan (`git show --stat` of the archive-move commit); `bun run test` and `bun run lint:actions` exit 0 in the transcript.
 ```
 
 ```
