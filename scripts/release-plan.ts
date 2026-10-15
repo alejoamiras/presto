@@ -48,6 +48,8 @@ export interface PackageFacts {
    * verified by npm, GitHub release present.
    */
   releaseVerified?: boolean;
+  /** Why `releaseVerified` is false: a missing record, a mismatch, or the check that could not run. */
+  releaseProblem?: string;
   /** For a manifest version already on npm: have its build inputs changed since the tag commit? */
   changedSinceTag?: boolean;
   /** For a manifest version already on npm: the `dependencies` the published artifact carries. */
@@ -111,8 +113,9 @@ function decide(pkg: NpmPackage, facts: PackageFacts): { version: string; action
 
 function requireReusable(pkg: NpmPackage, version: string, facts: PackageFacts): void {
   if (!facts.releaseVerified) {
+    const problem = facts.releaseProblem ? ` (${facts.releaseProblem})` : "";
     throw new Error(
-      `${pkg.name}@${version} is on npm but its release records and provenance do not verify; fix forward by bumping the version`,
+      `${pkg.name}@${version} is on npm but its release records and provenance do not verify${problem}; rerun if the check could not reach npm, Sigstore or GitHub, otherwise fix forward by bumping the version`,
     );
   }
   if (facts.changedSinceTag) {
@@ -319,20 +322,32 @@ function githubReleaseExists(tag: string): boolean {
 async function releaseFacts(
   pkg: NpmPackage,
   version: string,
-): Promise<Pick<PackageFacts, "releaseVerified" | "changedSinceTag" | "publishedDependencies">> {
+): Promise<
+  Pick<
+    PackageFacts,
+    "releaseVerified" | "releaseProblem" | "changedSinceTag" | "publishedDependencies"
+  >
+> {
   const { fetchAndVerifySdkProvenance } = await import("./sdk-release-verification.ts");
   const { verifySdkPackageSignatures } = await import("./verify-sdk-package-signatures.ts");
   const tag = releaseTag(pkg, version);
   const tagCommit = remoteTagCommit(tag);
-  if (!tagCommit) return { releaseVerified: false };
+  if (!tagCommit) return { releaseVerified: false, releaseProblem: `no release tag ${tag}` };
   try {
     const provenance = await fetchAndVerifySdkProvenance(version, tagCommit, undefined, pkg);
     await verifySdkPackageSignatures(version, pkg, tagCommit);
-    if (provenance.commit !== tagCommit || !githubReleaseExists(tag)) {
-      return { releaseVerified: false };
+    if (provenance.commit !== tagCommit) {
+      return {
+        releaseVerified: false,
+        releaseProblem: `provenance names ${provenance.commit}, tag ${tag} is at ${tagCommit}`,
+      };
     }
-  } catch {
-    return { releaseVerified: false };
+    if (!githubReleaseExists(tag)) {
+      return { releaseVerified: false, releaseProblem: `no GitHub release ${tag}` };
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return { releaseVerified: false, releaseProblem: message.split("\n")[0] };
   }
   const diff = Bun.spawnSync([
     "git",

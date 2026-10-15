@@ -27,6 +27,7 @@ const coreFacts = (
   published: string[],
   extra: Partial<{
     releaseVerified: boolean;
+    releaseProblem: string;
     changedSinceTag: boolean;
     recordsExist: boolean;
     publishedDependencies: Record<string, string>;
@@ -241,6 +242,21 @@ describe("release plan: dependencies", () => {
         dependencyVersions: { [core.name]: "1.0.0" },
       });
     });
+  });
+});
+
+describe("release plan: refusals", () => {
+  test("a refused reuse names what failed, so an outage reads as one", () => {
+    expect(() =>
+      planRelease(keys(["presto-core"]), {
+        "presto-core": coreFacts(["1.0.0"], {
+          releaseVerified: false,
+          releaseProblem: "TUF_REFRESH_METADATA_ERROR error refreshing TUF metadata",
+        }),
+      } as never),
+    ).toThrow(
+      "do not verify (TUF_REFRESH_METADATA_ERROR error refreshing TUF metadata); rerun if the check could not reach",
+    );
   });
 });
 
