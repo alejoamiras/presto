@@ -13,7 +13,7 @@
 
 use parking_lot::RwLock;
 use presto_core::authorization::{AuthorizationManager, CanonicalOrigin};
-use presto_core::config::PrestoConfig;
+use presto_core::config::{ConfigStore, PrestoConfig};
 use presto_core::server::{start_on, AppState, HeadlessState};
 use std::sync::Arc;
 use tracing_subscriber::fmt;
@@ -87,22 +87,9 @@ async fn main() {
                 origins = ?origins,
                 "Origin gating enabled (deny-by-default): localhost auto-approved; non-localhost must be in ALLOWED_ORIGINS"
             );
-            let cfg = PrestoConfig {
-                approved_origins: origins,
-                // Headless has no approval popup → keep localhost auto-approved (SEC-04/R13). The
-                // prompt-once default is desktop-only; operators scope localhost via ALLOWED_ORIGINS.
-                auto_approve_localhost: true,
-                ..Default::default()
-            };
             (
                 Some(Arc::new(AuthorizationManager::new())),
-                // B4: cap = None → this env-derived config is never persisted to disk. Headless has no
-                // approval popup, so pre-approved ALLOWED_ORIGINS short-circuit the save path (the origin
-                // is already in the list); a CI tool must not clobber the user's ~/.presto config.
-                Some(Arc::new(presto_core::config::ConfigStore {
-                    lock: RwLock::new(cfg),
-                    cap: None,
-                })),
+                Some(Arc::new(headless_config(origins))),
             )
         }
     };
@@ -216,6 +203,25 @@ fn parse_allowed_origins_env(raw: &str) -> Result<Vec<CanonicalOrigin>, String> 
     Ok(out)
 }
 
+/// The gated server's config, built from defaults and the environment's origins, never from
+/// `config.json`, so developer settings always hold their defaults here.
+fn headless_config(origins: Vec<CanonicalOrigin>) -> ConfigStore {
+    let cfg = PrestoConfig {
+        approved_origins: origins,
+        // Headless has no approval popup → keep localhost auto-approved (SEC-04/R13). The
+        // prompt-once default is desktop-only; operators scope localhost via ALLOWED_ORIGINS.
+        auto_approve_localhost: true,
+        ..Default::default()
+    };
+    // cap = None → this env-derived config is never persisted to disk. Headless has no
+    // approval popup, so pre-approved ALLOWED_ORIGINS short-circuit the save path (the origin
+    // is already in the list); a CI tool must not clobber the user's ~/.presto config.
+    ConfigStore {
+        lock: RwLock::new(cfg),
+        cap: None,
+    }
+}
+
 /// Resolved origin-gating mode (SEC-01c). Pure decision over the env inputs so it is unit-testable;
 /// the side effects (process exit / warn / state construction) stay in `main`.
 enum Gating {
@@ -283,6 +289,15 @@ mod tests {
         let args = ["--allow-all".to_string(), "--port".into(), "60003".into()];
         assert_eq!(port_arg(&args).as_deref(), Some("60003"));
         assert_eq!(port_arg(&["--port".to_string()]), None);
+    }
+
+    #[test]
+    fn headless_config_has_default_developer() {
+        use presto_core::config::{DeveloperSettings, UpdateChannel};
+        let store = headless_config(vec![co("https://a.com")]);
+        assert_eq!(store.read().developer, DeveloperSettings::default());
+        assert_eq!(store.effective_channel(), UpdateChannel::Stable);
+        assert!(!store.is_persistable());
     }
 
     #[test]

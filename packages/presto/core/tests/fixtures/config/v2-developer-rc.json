@@ -1,0 +1,16 @@
+{
+  "config_version": 2,
+  "https_enabled": true,
+  "approved_origins": [
+    "https://playground.presto.build"
+  ],
+  "speed": "balanced",
+  "theme": "dark",
+  "auto_update": true,
+  "auto_approve_localhost": false,
+  "onboarding_version": 1,
+  "developer": {
+    "enabled": true,
+    "update_channel": "rc"
+  }
+}

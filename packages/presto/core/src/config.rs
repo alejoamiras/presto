@@ -62,6 +62,53 @@ impl Theme {
     }
 }
 
+/// Which release feed the desktop updater follows.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum UpdateChannel {
+    #[default]
+    Stable,
+    /// Release candidates, then stable once a stable release passes the candidate.
+    Rc,
+}
+
+/// Developer-mode settings. Only the Settings window's commands write them; no HTTP route, CLI flag
+/// or environment variable does.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeveloperSettings {
+    #[serde(default)]
+    pub enabled: bool,
+    /// Holds a choice even while `enabled` is false (a hand-edited file); only
+    /// [`PrestoConfig::update_channel`] turns it into the channel in effect.
+    #[serde(default)]
+    pub update_channel: UpdateChannel,
+}
+
+/// The update channel in effect before and after a developer-mode change.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChannelTransition {
+    pub before: UpdateChannel,
+    pub after: UpdateChannel,
+}
+
+impl ChannelTransition {
+    pub fn changed(self) -> bool {
+        self.before != self.after
+    }
+}
+
+/// The update channel is settable only while developer mode is on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DeveloperModeOff;
+
+impl std::fmt::Display for DeveloperModeOff {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("developer mode is off")
+    }
+}
+
+impl std::error::Error for DeveloperModeOff {}
+
 /// Current config schema version. Bump when fields are removed or renamed.
 /// Added fields with `#[serde(default)]` don't require a version bump.
 ///
@@ -125,6 +172,60 @@ pub struct PrestoConfig {
     /// `None` = never prompted. Skipped when `None` to keep on-disk configs clean.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_rotation_prompt_at: Option<i64>,
+    /// Additive, so `CONFIG_VERSION` stays put: an older build drops the block on its next save,
+    /// which reads as developer mode off.
+    #[serde(default, deserialize_with = "de_developer_lenient")]
+    pub developer: DeveloperSettings,
+}
+
+impl PrestoConfig {
+    /// Stable unless developer mode is on. Outside this module, read the channel through
+    /// [`ConfigStore::effective_channel`] or [`LoadedConfig::effective_channel`].
+    pub(crate) fn update_channel(&self) -> UpdateChannel {
+        if self.developer.enabled {
+            self.developer.update_channel
+        } else {
+            UpdateChannel::Stable
+        }
+    }
+
+    /// Turning developer mode off resets the whole block, so no developer setting outlives it.
+    pub fn set_developer_mode(&mut self, on: bool) -> ChannelTransition {
+        let before = self.update_channel();
+        if on {
+            self.developer.enabled = true;
+        } else {
+            self.developer = DeveloperSettings::default();
+        }
+        ChannelTransition {
+            before,
+            after: self.update_channel(),
+        }
+    }
+
+    pub fn set_update_channel(
+        &mut self,
+        channel: UpdateChannel,
+    ) -> Result<ChannelTransition, DeveloperModeOff> {
+        if !self.developer.enabled {
+            return Err(DeveloperModeOff);
+        }
+        let before = self.update_channel();
+        self.developer.update_channel = channel;
+        Ok(ChannelTransition {
+            before,
+            after: channel,
+        })
+    }
+}
+
+/// A config this build may not write is never on the candidate channel: leaving it would be
+/// impossible from here.
+fn effective_channel(config: &PrestoConfig, cap: Option<&PersistCapability>) -> UpdateChannel {
+    match cap {
+        Some(_) => config.update_channel(),
+        None => UpdateChannel::Stable,
+    }
 }
 
 impl Default for PrestoConfig {
@@ -139,6 +240,7 @@ impl Default for PrestoConfig {
             auto_approve_localhost: false,
             onboarding_version: 0,
             last_rotation_prompt_at: None,
+            developer: DeveloperSettings::default(),
         }
     }
 }
@@ -216,6 +318,10 @@ impl LoadedConfig {
             cap: Some(PersistCapability { _seal: () }),
         }
     }
+
+    pub fn effective_channel(&self) -> UpdateChannel {
+        effective_channel(&self.config, self.cap.as_ref())
+    }
 }
 
 /// B4: the config lock bundled with its persist capability. Shared between the desktop's Tauri-managed
@@ -259,6 +365,11 @@ impl ConfigStore {
     /// gate: [`save_to`] re-checks the on-disk version under the cross-process lock at write time.
     pub fn is_persistable(&self) -> bool {
         self.cap.is_some()
+    }
+
+    /// The channel the updater follows, as of this store's load-time capability.
+    pub fn effective_channel(&self) -> UpdateChannel {
+        effective_channel(&self.lock.read(), self.cap.as_ref())
     }
 }
 
@@ -427,6 +538,19 @@ where
         tracing::warn!(count = dropped.len(), dropped = ?dropped, "Dropped un-canonicalizable approved_origins entries on load");
     }
     Ok(out)
+}
+
+/// A damaged `developer` block loads as the default block (developer mode off) with a warning; a
+/// strict error would fail the whole config into read-only defaults.
+fn de_developer_lenient<'de, D>(d: D) -> Result<DeveloperSettings, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let raw = serde_json::Value::deserialize(d)?;
+    Ok(serde_json::from_value(raw).unwrap_or_else(|e| {
+        tracing::warn!(error = %e, "Malformed developer settings; developer mode is off");
+        DeveloperSettings::default()
+    }))
 }
 
 /// FAIL-CLOSED overwrite decision, shared by the save-time re-check and the [`on_disk_is_overwritable`]
@@ -1246,5 +1370,174 @@ mod tests {
         let cfg: PrestoConfig =
             serde_json::from_str(r#"{"approved_origins":["HTTPS://NULO.SH:443"]}"#).unwrap();
         assert_eq!(cfg.approved_origins, vec![co("https://nulo.sh")]);
+    }
+
+    const V1_SAFARI: &str = include_str!("../tests/fixtures/config/v1-safari-support.json");
+    const V2_WITHOUT_DEVELOPER: &str =
+        include_str!("../tests/fixtures/config/v2-without-developer.json");
+    const V2_DEVELOPER_RC: &str = include_str!("../tests/fixtures/config/v2-developer-rc.json");
+
+    fn load_str(contents: &str) -> LoadedConfig {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        std::fs::write(&path, contents).unwrap();
+        load_with_cap_from(&path)
+    }
+
+    #[test]
+    fn config_version_stays_two() {
+        // Developer settings are additive. A bump would open every config this build writes
+        // read-only in each older build.
+        assert_eq!(CONFIG_VERSION, 2);
+    }
+
+    #[test]
+    fn config_without_developer_loads_with_capability() {
+        for fixture in [V1_SAFARI, V2_WITHOUT_DEVELOPER] {
+            let loaded = load_str(fixture);
+            assert!(loaded.cap.is_some());
+            assert_eq!(loaded.config.developer, DeveloperSettings::default());
+            assert_eq!(loaded.effective_channel(), UpdateChannel::Stable);
+            assert!(loaded.config.https_enabled);
+            assert_eq!(
+                loaded.config.approved_origins,
+                vec![co("https://playground.presto.build")]
+            );
+            assert_eq!(loaded.config.speed, Speed::Balanced);
+        }
+    }
+
+    #[test]
+    fn developer_fixture_matches_writer_output() {
+        // Compat checks seed this file into older builds, so it must stay what this build writes.
+        // `developer` serializes last, so the fixture without it is the previous writer's output.
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let mut config = load_str(V2_WITHOUT_DEVELOPER).config;
+        config.set_developer_mode(true);
+        config.set_update_channel(UpdateChannel::Rc).unwrap();
+        save_to(&config, &path, &PersistCapability::for_test()).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&path).unwrap(),
+            V2_DEVELOPER_RC.trim_end()
+        );
+
+        let loaded = load_str(V2_DEVELOPER_RC);
+        assert!(loaded.cap.is_some());
+        assert_eq!(loaded.effective_channel(), UpdateChannel::Rc);
+    }
+
+    #[test]
+    fn malformed_developer_block_keeps_other_settings() {
+        for block in [
+            "7",
+            "null",
+            r#"{"enabled": "yes"}"#,
+            r#"{"enabled": true, "update_channel": 1}"#,
+            r#"{"enabled": true, "update_channel": "beta"}"#,
+        ] {
+            let loaded = load_str(&format!(
+                r#"{{"config_version": 2, "https_enabled": true, "speed": "low", "developer": {block}}}"#
+            ));
+            assert!(loaded.cap.is_some(), "{block}");
+            assert!(loaded.config.https_enabled, "{block}");
+            assert_eq!(loaded.config.speed, Speed::Low, "{block}");
+            assert_eq!(
+                loaded.config.developer,
+                DeveloperSettings::default(),
+                "{block}"
+            );
+        }
+    }
+
+    #[test]
+    fn developer_off_resets_block_in_same_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let lock = parking_lot::RwLock::new(load_str(V2_DEVELOPER_RC).config);
+        let mut transition = None;
+        lock_mutate_save_to(&lock, Some(&path), &PersistCapability::for_test(), |cfg| {
+            transition = Some(cfg.set_developer_mode(false));
+            true
+        })
+        .unwrap();
+        assert_eq!(
+            transition,
+            Some(ChannelTransition {
+                before: UpdateChannel::Rc,
+                after: UpdateChannel::Stable
+            })
+        );
+        let on_disk: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        assert_eq!(
+            on_disk["developer"],
+            serde_json::json!({"enabled": false, "update_channel": "stable"})
+        );
+
+        let mut back_on = lock.read().clone();
+        assert!(
+            !back_on.set_developer_mode(true).changed(),
+            "the earlier candidate choice is gone"
+        );
+    }
+
+    #[test]
+    fn set_update_channel_requires_developer_mode() {
+        let mut cfg = PrestoConfig::default();
+        assert_eq!(
+            cfg.set_update_channel(UpdateChannel::Rc),
+            Err(DeveloperModeOff)
+        );
+        assert_eq!(cfg.developer, DeveloperSettings::default());
+
+        cfg.set_developer_mode(true);
+        assert_eq!(
+            cfg.set_update_channel(UpdateChannel::Rc),
+            Ok(ChannelTransition {
+                before: UpdateChannel::Stable,
+                after: UpdateChannel::Rc
+            })
+        );
+    }
+
+    #[test]
+    fn effective_channel_table() {
+        for enabled in [false, true] {
+            for update_channel in [UpdateChannel::Stable, UpdateChannel::Rc] {
+                let config = PrestoConfig {
+                    developer: DeveloperSettings {
+                        enabled,
+                        update_channel,
+                    },
+                    ..Default::default()
+                };
+                let expected = if enabled {
+                    update_channel
+                } else {
+                    UpdateChannel::Stable
+                };
+                assert_eq!(
+                    ConfigStore::for_test(config.clone()).effective_channel(),
+                    expected
+                );
+                let read_only = ConfigStore {
+                    lock: parking_lot::RwLock::new(config),
+                    cap: None,
+                };
+                assert_eq!(read_only.effective_channel(), UpdateChannel::Stable);
+            }
+        }
+
+        let newer =
+            load_str(&V2_DEVELOPER_RC.replace(r#""config_version": 2"#, r#""config_version": 3"#));
+        assert!(newer.cap.is_none() && newer.config.developer.enabled);
+        assert_eq!(newer.effective_channel(), UpdateChannel::Stable);
+
+        let malformed = load_str(
+            r#"{"https_enabled": "x", "developer": {"enabled": true, "update_channel": "rc"}}"#,
+        );
+        assert!(malformed.cap.is_none());
+        assert_eq!(malformed.effective_channel(), UpdateChannel::Stable);
     }
 }
