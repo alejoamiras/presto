@@ -33,7 +33,7 @@ branch decision lives in `scripts/workers-build.ts`.
 | Build command | `bun scripts/workers-build.ts landing` | `bun scripts/workers-build.ts playground` |
 | Deploy command | `bunx wrangler deploy --config packages/landing/wrangler.jsonc` | `bunx wrangler deploy --config packages/playground/wrangler.jsonc` |
 | Preview command | `bunx wrangler preview --config packages/landing/wrangler.jsonc` | `bunx wrangler preview --config packages/playground/wrangler.jsonc` |
-| Build variables | `BUN_VERSION=1.4.0`, `SKIP_DEPENDENCY_INSTALL=1` | same, plus `NODE_VERSION=24.20.0` |
+| Build variables | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1` | same, plus `NODE_VERSION=24.20.0` |
 | Build watch paths (include) | `packages/landing/*`, `scripts/*`, `package.json`, `bun.lock`, `bunfig.toml`, `.bun-version` | `packages/playground/*`, `packages/sdk/*`, `packages/sdk-core/*`, `packages/sdk-noir/*`, `packages/banners/*`, `fixtures/noir/*`, `scripts/*`, `.github/scripts/*`, `package.json`, `bun.lock`, `bunfig.toml`, `.bun-version`, `tsconfig.json` |
 | API token | the custom build token below | same |
 
