@@ -895,3 +895,164 @@ function macBuildCalls(run: string, unstapled: number): { calls: string[]; code:
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 }
+
+const SMOKE_DOWNLOAD_PREFIX = "https://updater-smoke.test/releases/download/";
+
+/**
+ * Runs the release signer for `version` against a temp repo root with the Tauri CLI and the
+ * update-manifest tool stubbed: the CLI records which key signed which file, and the tool assembles
+ * feeds with jq and records the public key each payload was verified against.
+ */
+function runReleaseSigner(version: string) {
+  const work = fs.mkdtempSync(path.join(tmpdir(), "release-signer-"));
+  const repo = path.join(work, "repo");
+  const artifacts = path.join(work, "artifacts");
+  const calls = path.join(work, "calls");
+  const conf = path.join(repo, "packages/presto/src-tauri/tauri.conf.json");
+  fs.mkdirSync(path.dirname(conf), { recursive: true });
+  fs.copyFileSync(path.join(REPO, "packages/presto/src-tauri/tauri.conf.json"), conf);
+  const bin = path.join(repo, "packages/presto/node_modules/.bin");
+  fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(
+    path.join(bin, "tauri"),
+    `#!/usr/bin/env bash\necho "sign $(basename "$3") key=$TAURI_SIGNING_PRIVATE_KEY" >>"${calls}"\nprintf sig >"$3.sig"\n`,
+    { mode: 0o755 },
+  );
+  const tool = path.join(work, "update-manifest");
+  fs.writeFileSync(
+    tool,
+    `#!/usr/bin/env bash
+cmd=$1; shift
+while [ $# -gt 0 ]; do
+  case $1 in
+    --feed) feed=$2 ;; --envelope) envelope=$2 ;; --sig) sig=$2 ;;
+    --artifact) artifact=$2 ;; --pubkey) pubkey=$2 ;;
+  esac
+  shift 2
+done
+case $cmd in
+  verify-artifact) echo "verify-artifact $(basename "$artifact") pubkey=$(cat "$pubkey")" >>"${calls}" ;;
+  envelope) jq '{schema: "presto-update-manifest-v1", version, pub_date, platforms}' "$feed" ;;
+  splice) jq --rawfile m "$envelope" --rawfile s "$sig" '. + {manifest: $m, manifest_sig: $s}' "$feed" ;;
+  verify) echo "verify $(basename "$feed")" >>"${calls}" ;;
+esac
+`,
+    { mode: 0o755 },
+  );
+  const payloads = [
+    ["macos-arm64", `Presto-${version}-macOS-Apple-Silicon.app.tar.gz`],
+    ["macos-x86_64", `Presto-${version}-macOS-Intel.app.tar.gz`],
+    ["linux-x86_64", `Presto-${version}-Linux-x86_64.AppImage`],
+    ["windows-x86_64", `Presto-${version}-Windows-x86_64-setup.nsis.zip`],
+  ] as const;
+  for (const [dir, name] of payloads) {
+    fs.mkdirSync(path.join(artifacts, `unsigned-presto-${dir}`), { recursive: true });
+    fs.writeFileSync(path.join(artifacts, `unsigned-presto-${dir}`, name), "payload");
+  }
+  try {
+    const run = Bun.spawnSync(
+      [
+        "bash",
+        path.join(REPO, "packages/presto/scripts/sign-release-updater-artifacts.sh"),
+        artifacts,
+        version,
+        `presto-v${version}`,
+        repo,
+        tool,
+      ],
+      {
+        env: {
+          PATH: process.env.PATH,
+          TAURI_SIGNING_PRIVATE_KEY: "production-key",
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "production-password",
+        },
+      },
+    );
+    const manifests = [...new Bun.Glob("**/*.json").scanSync(artifacts)].map((file) => ({
+      file,
+      feed: JSON.parse(fs.readFileSync(path.join(artifacts, file), "utf8")) as {
+        platforms: Record<string, { url: string }>;
+      },
+    }));
+    const config = JSON.parse(fs.readFileSync(conf, "utf8")) as {
+      plugins: { updater: { pubkey: string } };
+    };
+    return {
+      code: run.exitCode,
+      stderr: run.stderr.toString(),
+      calls: fs.readFileSync(calls, "utf8").split("\n").filter(Boolean),
+      manifests,
+      payloads: payloads.map(([, name]) => name),
+      pubkey: config.plugins.updater.pubkey,
+    };
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+}
+
+describe("release signer: prerelease feeds", () => {
+  test("a prerelease still signs every payload with the production key, but emits no latest.json", () => {
+    const run = runReleaseSigner("9.9.9-rc.1");
+    expect(run.code, run.stderr).toBe(0);
+    for (const payload of run.payloads) {
+      expect(run.calls).toContain(`sign ${payload} key=production-key`);
+      expect(run.calls).toContain(`verify-artifact ${payload} pubkey=${run.pubkey}`);
+    }
+    expect(run.manifests.map((m) => path.basename(m.file))).toEqual(
+      Array(4).fill("smoke-latest.json"),
+    );
+    expect(run.calls.filter((call) => call === "verify smoke-latest.json")).toHaveLength(4);
+  });
+
+  test("no prerelease manifest names a download host anyone can serve", () => {
+    const urls = runReleaseSigner("9.9.9-rc.1").manifests.flatMap((m) =>
+      Object.values(m.feed.platforms).map((platform) => platform.url),
+    );
+    expect(urls).toHaveLength(4);
+    for (const url of urls) expect(url.startsWith(SMOKE_DOWNLOAD_PREFIX), url).toBe(true);
+  });
+
+  test("a stable release keeps its GitHub-URL latest.json and moves only its smoke feeds", () => {
+    const run = runReleaseSigner("9.9.9");
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.manifests.map((m) => m.file)).toContain("latest.json");
+    for (const { file, feed } of run.manifests) {
+      const prefix =
+        file === "latest.json"
+          ? "https://github.com/alejoamiras/presto/releases/download/presto-v9.9.9/"
+          : SMOKE_DOWNLOAD_PREFIX;
+      for (const { url } of Object.values(feed.platforms)) {
+        expect(url.startsWith(prefix), url).toBe(true);
+      }
+    }
+  });
+
+  test("the production feed is uploaded only for a stable release", () => {
+    const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs["sign-updater-artifacts"]?.steps ?? [];
+    const upload = steps.find((step) => step.name === "Upload signed production update feed");
+    expect(upload?.if).toBe("needs.validate.outputs.is_prerelease == 'false'");
+    const payloadUploads = steps.filter((s) => s.name?.startsWith("Upload signed") && s !== upload);
+    expect(payloadUploads).toHaveLength(4);
+    for (const step of payloadUploads) expect(step.if, step.name).toBeUndefined();
+  });
+
+  test("every smoke feed producer and consumer uses the reserved download host", () => {
+    const ephemeral = fs.readFileSync(
+      path.join(REPO, "packages/presto/scripts/ephemeral-updater.sh"),
+      "utf8",
+    );
+    for (const script of [RELEASE_SIGNER, ephemeral, ...UPDATER_SMOKE_SCRIPTS]) {
+      expect(script).toContain('"updater-smoke.test"');
+    }
+    for (const script of UPDATER_SMOKE_SCRIPTS) {
+      expect(script).not.toMatch(/https:\/\/\$(HOST|FeedHost)\/releases\/download/);
+    }
+    // Only a dispatched smoke runs the ephemeral feed step, so pin the one URL it builds.
+    expect(ephemeral.match(/^\s*host=.*$/gm)?.map((line) => line.trim())).toEqual([
+      'host="updater-smoke.test"',
+    ]);
+    expect(ephemeral.match(/https:\/\/[^/"\s]*\/releases\/download\//g)).toEqual([
+      "https://$host/releases/download/",
+    ]);
+  });
+});

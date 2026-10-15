@@ -514,6 +514,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload signed production update feed
+        if: needs.validate.outputs.is_prerelease == 'false'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signed-update-feed
@@ -923,7 +924,7 @@ jobs:
   # PUBLISHED). The packaged-E2E gate then runs against the DRAFT's OWN uploaded assets; `tag` (moved after
   # the gate) pushes the reviewed tag; `finalize` flips the draft to published. So a failed packaged gate
   # NEVER burns the version tag against a bad SHA. The isolated signer always runs before
-  # updater smokes; prereleases simply omit its already-produced latest.json from release assets.
+  # updater smokes, and produces latest.json for a stable release only.
   release:
     name: Create draft release
     needs: [validate, dependency-audit, resolve-updater-baseline, build, build-headless, sign-updater-artifacts, smoke, smoke-intel, update-smoke, update-smoke-linux, update-smoke-windows, update-smoke-windows-negative, e2e-webdriver]
