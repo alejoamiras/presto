@@ -208,10 +208,20 @@ async function verifyPromotionCandidate(
   }
 
   const release = JSON.parse(
-    run(["gh", "release", "view", gitTag, "--repo", "alejoamiras/presto", "--json", "tagName,url"]),
-  ) as { tagName: string; url: string };
+    run([
+      "gh",
+      "release",
+      "view",
+      gitTag,
+      "--repo",
+      "alejoamiras/presto",
+      "--json",
+      "tagName,url,isDraft",
+    ]),
+  ) as { tagName: string; url: string; isDraft: boolean };
   if (release.tagName !== gitTag)
     throw new Error(`GitHub release has unexpected tag ${release.tagName}`);
+  if (release.isDraft !== false) throw new Error(`GitHub release ${gitTag} is not published`);
   return { tags, commit: provenance.commit, releaseUrl: release.url };
 }
 

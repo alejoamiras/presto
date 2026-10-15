@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { NPM_PACKAGES } from "./npm-packages.ts";
 
 const repository = resolve(import.meta.dir, "..");
@@ -180,12 +181,16 @@ describe("npm release workflow contract", () => {
     expect(plan).toContain("node-version: 24");
   });
 
-  test("registry signatures and provenance claims are checked before the publication records", () => {
-    const publishJob = job(publish, "publish");
-    const verification = publishJob.indexOf("bun scripts/registry-consistency.ts");
-    const records = publishJob.indexOf("Create git tag and GitHub release");
-    expect(verification).toBeGreaterThan(0);
-    expect(records).toBeGreaterThan(verification);
+  test("the tag and release are written only after the identity-bound check passed", () => {
+    const records = job(publish, "release-records");
+    expect(records).toContain("needs: [pack, publish, verify]");
+    expect(records).not.toMatch(/\bif:/);
+    expect(records).toContain('git push origin "refs/tags/$tag"');
+    expect(records).toContain('gh release create "$tag"');
+    before(records, 'gh release create "$tag"', ".isDraft == false");
+    for (const name of ["pack", "consumer-test", "publish", "verify"]) {
+      expect(job(publish, name)).not.toMatch(/^\s+(git (push|tag)|gh release create)\b/m);
+    }
   });
 });
 
@@ -209,6 +214,8 @@ describe("publish job isolation", () => {
     expect(consumer).toContain("bash scripts/sdk-tarball-consumer.sh");
     expect(publishJob).toContain("needs: [pack, consumer-test]");
     expect(publishJob).toContain("id-token: write");
+    expect(publishJob).toContain("contents: read");
+    expect(publishJob).toContain("persist-credentials: false");
     before(publishJob, 'echo "$SHA256  $TARBALL" | sha256sum -c -', "npm publish");
     // Nothing installs in the credentialed job: not the consumer host, not even the lockfile.
     for (const install of ["sdk-tarball-consumer.sh", "npx", "npm install", "bun install"]) {
@@ -236,7 +243,7 @@ describe("publish job isolation", () => {
     const scripts = [...publishJob.matchAll(/\bbun (scripts\/\S+\.ts)/g)].map(([, script]) =>
       resolve(repository, script as string),
     );
-    expect(scripts.length).toBeGreaterThanOrEqual(3);
+    expect(scripts.length).toBeGreaterThanOrEqual(2);
     const { modules, external } = importGraph(scripts);
     expect(external).toEqual([]);
     expect(modules.has(resolve(repository, "scripts/registry-consistency.ts"))).toBe(true);
@@ -291,6 +298,187 @@ describe("publish job isolation", () => {
       /const provenance = await verifySdkPackageSignatures\(\s*version,\s*pkg,\s*undefined,\s*allowedWorkflows,\s*rollback \? ROLLBACK_SIGNERS : RELEASE_SIGNERS,?\s*\)/,
     );
     expect(promote).toContain("tagCommit !== provenance.commit");
+  });
+});
+
+const TAG = "@alejoamiras/presto@6.0.0";
+const releaseJson = (isDraft: boolean, login: string, assets: string[]) =>
+  JSON.stringify({
+    tagName: TAG,
+    name: TAG,
+    isDraft,
+    author: { login },
+    assets: assets.map((name) => ({ name })),
+  });
+/** What `gh release view` answers: an error message, or the release. */
+const RELEASES = {
+  absent: "release not found",
+  unreadable: "HTTP 502",
+  // An interrupted `gh release create`: its draft, before the asset upload finished.
+  draft: releaseJson(true, "github-actions[bot]", []),
+  foreign: releaseJson(true, "someone", []),
+  published: releaseJson(false, "github-actions[bot]", ["MIGRATION.md"]),
+  bare: releaseJson(false, "github-actions[bot]", []),
+  extra: releaseJson(false, "github-actions[bot]", ["MIGRATION.md", "other.zip"]),
+};
+type ReleaseState = keyof typeof RELEASES;
+const SHA = "a".repeat(40);
+/** What `git ls-remote` answers for the tag: nothing, or the ref lines GitHub prints. */
+const TAGS = {
+  absent: "",
+  lightweight: `${SHA}\\trefs/tags/${TAG}\\n`,
+  // An annotated tag lists its object first and the commit it points at as the peeled line.
+  annotated: `${"b".repeat(40)}\\trefs/tags/${TAG}\\n${SHA}\\trefs/tags/${TAG}^{}\\n`,
+  elsewhere: `${"c".repeat(40)}\\trefs/tags/${TAG}\\n`,
+};
+type TagState = keyof typeof TAGS;
+
+/** Runs one release-records step as Actions does (`bash -e`), with git, gh and bun stubbed. */
+function recordStep(
+  name: string,
+  state: ReleaseState,
+  tag: TagState = "lightweight",
+): { calls: string[]; git: string[]; code: number } {
+  const steps = (
+    Bun.YAML.parse(publish) as {
+      jobs: Record<string, { steps: Array<{ name?: string; run?: string }> }>;
+    }
+  ).jobs["release-records"]?.steps;
+  const run = steps?.find((step) => step.name === name)?.run;
+  expect(run).toBeString();
+  const temp = mkdtempSync(join(tmpdir(), "release-records-"));
+  const answer = RELEASES[state];
+  const stubs = `
+    calls="$RUNNER_TEMP/calls"; : >"$calls"
+    git() { echo "git $*" >>"$calls"; [ "$1" != ls-remote ] || printf '%b' '${TAGS[tag]}'; }
+    bun() { echo 1.0.0; }
+    gh() {
+      echo "gh $*" >>"$calls"
+      [ "$1 $2" = "release view" ] || return 0
+      case '${answer}' in "{"*) echo '${answer}' ;; *) echo '${answer}' >&2; return 1 ;; esac
+    }
+  `;
+  try {
+    const result = Bun.spawnSync(["bash", "-e", "-c", `${stubs}\n${run}`], {
+      cwd: temp,
+      env: {
+        PATH: process.env.PATH,
+        RUNNER_TEMP: temp,
+        GITHUB_REPOSITORY: "alejoamiras/presto",
+        GITHUB_SHA: SHA,
+        PACKAGE_NAME: "@alejoamiras/presto",
+        VERSION: "6.0.0",
+        VERSION_MODE: "manifest",
+        RELEASE_ASSET: "packages/sdk/MIGRATION.md",
+      },
+    });
+    const calls = readFileSync(join(temp, "calls"), "utf8").split("\n").filter(Boolean);
+    return {
+      calls: calls.filter((call) => call.startsWith("gh release")),
+      git: calls.filter((call) => /^git (tag|push) /.test(call)),
+      code: result.exitCode,
+    };
+  } finally {
+    rmSync(temp, { recursive: true, force: true });
+  }
+}
+
+describe("the release-records job", () => {
+  test("the job that writes the records holds no OIDC identity and runs only repository code", () => {
+    const records = job(publish, "release-records");
+    // No job holds both the OIDC identity and write access to the repository.
+    expect(publish.match(/^\s+contents: write$/gm)?.length).toBe(1);
+    expect(records).toContain("contents: write");
+    expect(records).not.toContain("id-token");
+    expect(records).not.toContain("environment:");
+    expect(records).not.toContain("continue-on-error");
+    for (const install of ["bun install", "npm install", "npx", "actions/cache"]) {
+      expect(records).not.toContain(install);
+    }
+    expect(jobViolations(records)).toEqual([]);
+    const scripts = [...records.matchAll(/\bbun (scripts\/\S+\.ts)/g)].map(([, script]) =>
+      resolve(repository, script as string),
+    );
+    expect(scripts.length).toBeGreaterThan(0);
+    expect(importGraph(scripts).external).toEqual([]);
+  });
+
+  test("a rerun creates a missing release, finishes its own draft, keeps a published one, stops otherwise", () => {
+    const create = "Create git tag and GitHub release";
+    const verbs = (state: ReleaseState) => {
+      const { calls, code } = recordStep(create, state);
+      return { code, verbs: calls.map((call) => call.split(" ")[2]) };
+    };
+    expect(verbs("absent")).toEqual({ code: 0, verbs: ["view", "create"] });
+    expect(verbs("draft")).toEqual({ code: 0, verbs: ["view", "upload", "edit"] });
+    expect(recordStep(create, "draft").calls.at(-1)).toContain("--draft=false --latest=false");
+    // A draft someone else made is never published for them.
+    expect(verbs("foreign")).toEqual({ code: 1, verbs: ["view"] });
+    expect(verbs("published")).toEqual({ code: 0, verbs: ["view"] });
+    expect(verbs("unreadable")).toEqual({ code: 1, verbs: ["view"] });
+  });
+
+  test("the tag is pushed only when absent, kept at this commit however it was made, refused elsewhere", () => {
+    const create = "Create git tag and GitHub release";
+    expect(recordStep(create, "absent", "absent")).toMatchObject({
+      code: 0,
+      git: [`git tag ${TAG}`, `git push origin refs/tags/${TAG}`],
+    });
+    // A hand repair leaves a signed annotated tag; a lightweight push of the same name cannot
+    // replace it, so the job must not try.
+    for (const tag of ["lightweight", "annotated"] as const) {
+      const run = recordStep(create, "absent", tag);
+      expect(run, tag).toMatchObject({ code: 0, git: [] });
+      expect(run.calls.map((call) => call.split(" ")[2])).toEqual(["view", "create"]);
+    }
+    expect(recordStep(create, "absent", "elsewhere")).toMatchObject({
+      code: 1,
+      git: [],
+      calls: [],
+    });
+  });
+
+  test("the records pass only as a published release carrying exactly its asset", () => {
+    const check = "Verify the release records";
+    expect(recordStep(check, "published").code).toBe(0);
+    expect(recordStep(check, "published", "annotated").code).toBe(0);
+    for (const state of ["draft", "bare", "extra"] as const) {
+      expect(recordStep(check, state).code).not.toBe(0);
+    }
+    for (const tag of ["absent", "elsewhere"] as const) {
+      expect(recordStep(check, "published", tag).code, tag).not.toBe(0);
+    }
+  });
+});
+
+describe("a publication without release records", () => {
+  // `verify` failing after `npm publish` leaves the version on npm with no tag or release.
+  test("planning refuses to reuse it and says which record is missing", async () => {
+    const { planRelease } = await import("./release-plan.ts");
+    const core = NPM_PACKAGES["presto-core"];
+    const facts = {
+      manifest: { name: core.name, version: "1.0.0" },
+      published: ["1.0.0"],
+      releaseVerified: false,
+      releaseProblem: `no release tag ${core.name}@1.0.0`,
+    };
+    expect(() => planRelease(["presto-core"], { "presto-core": facts })).toThrow(
+      `do not verify (no release tag ${core.name}@1.0.0)`,
+    );
+    const plan = readFileSync(resolve(repository, "scripts/release-plan.ts"), "utf8");
+    expect(plan).toContain(
+      "if (!tagCommit) return { releaseVerified: false, releaseProblem: `no release tag ${tag}` };",
+    );
+    // An interrupted `Record` can leave a draft, which is not yet a record.
+    expect(plan).toContain('if (release !== "published")');
+    expect(plan).toContain("`no GitHub release ${tag}`");
+  });
+
+  test("promotion refuses it before touching npm", () => {
+    const promote = readFileSync(resolve(repository, "scripts/promote-sdk-latest.ts"), "utf8");
+    before(promote, "throw new Error(`remote git tag ${gitTag} does not exist`)", '"dist-tag",');
+    before(promote, '"tagName,url,isDraft"', '"dist-tag",');
+    before(promote, "if (release.isDraft !== false)", '"dist-tag",');
   });
 });
 

@@ -6,10 +6,11 @@ name: _Publish npm package (reusable)
 #
 # The job holding the publish credentials executes no dependency lifecycle script, only repository code: `pack`
 # builds the candidate and records its digest, `consumer-test` runs the registry-resolved consumer
-# host with read-only permissions, `publish` re-asserts the digest before `npm publish`, and
-# `verify` binds the publication's provenance to the release signing identity and does the
-# post-publish registry install. The digest travels as a job output because an
-# artifact can be replaced within a run and a recorded output cannot.
+# host with read-only permissions, `publish` re-asserts the digest before `npm publish`, `verify`
+# binds the publication's provenance to the release signing identity and does the post-publish
+# registry install, and only then does `release-records` create the git tag and GitHub release. No
+# job holds both the OIDC identity and `contents: write`. The digest travels as a job output because
+# an artifact can be replaced within a run and a recorded output cannot.
 on:
   workflow_call:
     inputs:
@@ -225,7 +226,7 @@ jobs:
     environment: npm-publish
     permissions:
       id-token: write
-      contents: write
+      contents: read
     outputs:
       version: ${{ steps.version.outputs.version }}
     env:
@@ -235,6 +236,8 @@ jobs:
       PACKAGE_NAME: ${{ needs.pack.outputs.name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
@@ -301,37 +304,6 @@ jobs:
       - name: Verify registry signatures and provenance claims
         run: bun scripts/registry-consistency.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"
 
-      - name: Create git tag and GitHub release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          PACKAGE_DIR: ${{ needs.pack.outputs.dir }}
-          VERSION_MODE: ${{ needs.pack.outputs.version_mode }}
-          RELEASE_ASSET: ${{ inputs.release_asset }}
-        run: |
-          tag="${PACKAGE_NAME}@${VERSION}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "$tag"
-          git push origin "$tag"
-
-          if [ "$VERSION_MODE" = "aztec-derived" ]; then
-            aztec_version="$(bun scripts/aztec-manifest.ts "$PACKAGE_DIR/package.json")"
-            if [ "$VERSION" = "$aztec_version" ]; then
-              notes="Aligned with Aztec testnet version \`$aztec_version\`."
-            else
-              notes="SDK revision for Aztec testnet version \`$aztec_version\`."
-            fi
-          else
-            notes="Release of \`$PACKAGE_NAME\` $VERSION."
-          fi
-          assets=()
-          if [ -n "$RELEASE_ASSET" ]; then assets+=("$RELEASE_ASSET"); fi
-          gh release create "$tag" \
-            --title "$tag" \
-            --notes "$notes" \
-            --latest=false \
-            "${assets[@]}"
-
   # A fresh registry install of the published version and its identity-bound provenance, with a
   # read-only token and no OIDC identity.
   verify:
@@ -365,20 +337,8 @@ jobs:
       - name: Verify provenance against the release signing identity
         run: bun scripts/verify-sdk-package-signatures.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"
 
-      - name: Verify release records and a fresh registry install
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Verify a fresh registry install
         run: |
-          tag="${PACKAGE_NAME}@${VERSION}"
-          remote_refs="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$tag" "refs/tags/$tag^{}")"
-          remote_sha="$(printf '%s\n' "$remote_refs" | awk '/\^\{\}$/ {print $1; exit}')"
-          [ -z "$remote_sha" ] && remote_sha="$(printf '%s\n' "$remote_refs" | awk 'NR==1 {print $1}')"
-          if [ "$remote_sha" != "$GITHUB_SHA" ]; then
-            echo "::error::remote tag resolves to $remote_sha, expected $GITHUB_SHA"
-            exit 1
-          fi
-          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName' | grep -Fx "$tag"
-
           work="$(mktemp -d)"
           trap 'rm -rf "$work"' EXIT
           cd "$work"
@@ -390,3 +350,116 @@ jobs:
             exit 1
           }
           echo "Verified $PACKAGE_NAME@$VERSION; npm latest remains unchanged."
+
+  # The tag and GitHub release say a publication is ours: they are written only after `verify` bound
+  # its provenance to the release signing identity, by a job with `contents: write` and no OIDC
+  # identity that installs nothing. A publication whose verification failed stays on npm without
+  # records, which release planning and promotion refuse. Records an earlier attempt of this run
+  # wrote are kept and a draft it left is published, so "Re-run failed jobs" completes a run whose
+  # verification or recording failed transiently.
+  release-records:
+    name: Record ${{ inputs.package }}
+    needs: [pack, publish, verify]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.publish.outputs.version }}
+      PACKAGE_NAME: ${{ needs.pack.outputs.name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # No install: the release notes read the manifest through a repository script only.
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Create git tag and GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_DIR: ${{ needs.pack.outputs.dir }}
+          VERSION_MODE: ${{ needs.pack.outputs.version_mode }}
+          RELEASE_ASSET: ${{ inputs.release_asset }}
+        run: |
+          tag="${PACKAGE_NAME}@${VERSION}"
+          # A tag already at this commit is kept whether it is lightweight or annotated (a hand
+          # repair makes a signed one, which a lightweight push of the same name cannot update);
+          # one at any other commit stops the job.
+          remote_refs="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$tag" "refs/tags/$tag^{}")"
+          remote_sha="$(printf '%s\n' "$remote_refs" | awk '/\^\{\}$/ {print $1; exit}')"
+          [ -z "$remote_sha" ] && remote_sha="$(printf '%s\n' "$remote_refs" | awk 'NR==1 {print $1}')"
+          if [ -z "$remote_sha" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "$tag"
+            git push origin "refs/tags/$tag"
+          elif [ "$remote_sha" = "$GITHUB_SHA" ]; then
+            echo "tag $tag is already at $GITHUB_SHA"
+          else
+            echo "::error::tag $tag resolves to $remote_sha, expected $GITHUB_SHA"
+            exit 1
+          fi
+
+          if [ "$VERSION_MODE" = "aztec-derived" ]; then
+            aztec_version="$(bun scripts/aztec-manifest.ts "$PACKAGE_DIR/package.json")"
+            if [ "$VERSION" = "$aztec_version" ]; then
+              notes="Aligned with Aztec testnet version \`$aztec_version\`."
+            else
+              notes="SDK revision for Aztec testnet version \`$aztec_version\`."
+            fi
+          else
+            notes="Release of \`$PACKAGE_NAME\` $VERSION."
+          fi
+          assets=()
+          if [ -n "$RELEASE_ASSET" ]; then assets+=("$RELEASE_ASSET"); fi
+          status=0
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft,author,name,assets \
+            > "$RUNNER_TEMP/release.json" 2> "$RUNNER_TEMP/release-view.err" || status=$?
+          if [ "$status" -eq 0 ] && jq -e '.isDraft' "$RUNNER_TEMP/release.json" > /dev/null; then
+            # `gh release create` uploads assets to a draft and publishes it last, so an interrupted
+            # attempt leaves a draft behind. Finish only a draft this job could have left.
+            if ! jq -e --arg tag "$tag" --arg asset "${RELEASE_ASSET##*/}" \
+              '.author.login == "github-actions[bot]" and .name == $tag and ([.assets[].name] - [$asset] == [])' \
+              "$RUNNER_TEMP/release.json" > /dev/null; then
+              echo "::error::draft release $tag is not one this job left; inspect it by hand: $(cat "$RUNNER_TEMP/release.json")"
+              exit 1
+            fi
+            if [ "${#assets[@]}" -gt 0 ]; then
+              gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+            fi
+            gh release edit "$tag" --draft=false --latest=false --repo "$GITHUB_REPOSITORY"
+          elif [ "$status" -eq 0 ]; then
+            echo "GitHub release $tag already exists"
+          elif grep -q "release not found" "$RUNNER_TEMP/release-view.err"; then
+            gh release create "$tag" \
+              --title "$tag" \
+              --notes "$notes" \
+              --latest=false \
+              "${assets[@]}"
+          else
+            echo "::error::gh release view $tag failed: $(cat "$RUNNER_TEMP/release-view.err")"
+            exit 1
+          fi
+
+      - name: Verify the release records
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ASSET: ${{ inputs.release_asset }}
+        run: |
+          tag="${PACKAGE_NAME}@${VERSION}"
+          remote_refs="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$tag" "refs/tags/$tag^{}")"
+          remote_sha="$(printf '%s\n' "$remote_refs" | awk '/\^\{\}$/ {print $1; exit}')"
+          [ -z "$remote_sha" ] && remote_sha="$(printf '%s\n' "$remote_refs" | awk 'NR==1 {print $1}')"
+          if [ "$remote_sha" != "$GITHUB_SHA" ]; then
+            echo "::error::remote tag resolves to $remote_sha, expected $GITHUB_SHA"
+            exit 1
+          fi
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,assets > "$RUNNER_TEMP/release.json"
+          if ! jq -e --arg tag "$tag" --arg asset "${RELEASE_ASSET##*/}" \
+            '.tagName == $tag and .isDraft == false and ([.assets[].name] == ([$asset] - [""]))' \
+            "$RUNNER_TEMP/release.json" > /dev/null; then
+            echo "::error::GitHub release $tag must be published${RELEASE_ASSET:+ with ${RELEASE_ASSET##*/}}: $(cat "$RUNNER_TEMP/release.json")"
+            exit 1
+          fi
+          echo "Recorded $tag at $GITHUB_SHA"
