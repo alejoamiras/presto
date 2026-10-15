@@ -22,6 +22,7 @@
     "allow-set-speed",
     "allow-set-theme",
     "allow-set-developer-mode",
+    "allow-set-update-channel",
     "allow-enable-https",
     "allow-disable-https",
     "allow-remove-https-trust",

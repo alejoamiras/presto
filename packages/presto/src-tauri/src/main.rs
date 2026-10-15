@@ -301,7 +301,7 @@ fn act_on(
     mode: presto::updater::CheckMode,
     outcome: presto::updater::CheckOutcome,
 ) -> presto::updater::ManualCheckResult {
-    use presto::updater::{decide, Decision, ManualCheckResult, OutcomeKind};
+    use presto::updater::{after_admission, decide, Decision, ManualCheckResult, OutcomeKind};
 
     let (Some(store), Some(gate), Some(slot), Some(config)) = (
         app.try_state::<Arc<ScheduleStore>>(),
@@ -313,6 +313,10 @@ fn act_on(
         return ManualCheckResult::Failed;
     };
     let (kind, update) = outcome.into_parts();
+    let admission = update
+        .as_ref()
+        .map_or(Ok(()), |u| u.found().admission(config.effective_channel()));
+    let kind = after_admission(kind, admission);
     let now = presto_core::updater_state::now_unix();
     let snoozed = update
         .as_ref()
@@ -336,9 +340,9 @@ fn act_on(
             ManualCheckResult::Presented
         }
         (Decision::SetAndPresent { focus }, Some(update)) => {
-            let version = update.version().clone();
+            let found = update.found();
             slot.set(update);
-            present(app, &store, &gate, mode, &version, focus, pref).manual_result()
+            present(app, &store, &gate, mode, &found, focus, pref).manual_result()
         }
         (Decision::ClearAndInstall, Some(update)) => {
             install_automatically(app, &gate, &slot, update);
@@ -391,6 +395,13 @@ fn install_automatically(
     );
 }
 
+#[cfg(not(feature = "webdriver"))]
+fn clear_pending(app: &AppHandle) {
+    if let Some(slot) = app.try_state::<PendingUpdate>() {
+        slot.clear();
+    }
+}
+
 /// Presents the version this check just verified, never one read back from the slot.
 #[cfg(not(feature = "webdriver"))]
 fn present(
@@ -398,21 +409,23 @@ fn present(
     store: &ScheduleStore,
     gate: &InstallGate,
     mode: presto::updater::CheckMode,
-    version: &semver::Version,
+    found: &presto::updater::FoundUpdate,
     focus: bool,
     pref: Option<bool>,
 ) -> presto::updater::Presentation {
     use presto::updater::Presentation;
 
+    let version = found.version();
     let busy = gate.is_busy();
     let snoozed_now = store.is_snoozed(version, presto_core::updater_state::now_unix());
-    if !presto::updater::should_present(mode, snoozed_now, busy) {
-        tracing::info!(version = %version, busy, "Update prompt skipped: answered while checking");
-        return if busy {
-            Presentation::SkippedBusy
-        } else {
-            Presentation::SkippedSnoozed
-        };
+    let admission = found.admission(presto::updater::current_channel(app));
+    if admission.is_err() {
+        // The slot holds this update, which belongs to the channel just left.
+        clear_pending(app);
+    }
+    if let Some(skip) = presto::updater::skip_presenting(mode, snoozed_now, busy, admission) {
+        tracing::info!(version = %version, ?skip, "Update prompt skipped: answered while checking");
+        return skip;
     }
     tracing::info!(?pref, version = %version, "Showing update prompt");
     if windows::show_update_prompt_window(
@@ -436,11 +449,11 @@ fn present(
     _store: &ScheduleStore,
     _gate: &InstallGate,
     _mode: presto::updater::CheckMode,
-    version: &semver::Version,
+    found: &presto::updater::FoundUpdate,
     _focus: bool,
     _pref: Option<bool>,
 ) -> presto::updater::Presentation {
-    tracing::error!(version = %version, "Update prompt reached in a WebDriver build; not shown");
+    tracing::error!(version = %found.version(), "Update prompt reached in a WebDriver build; not shown");
     presto::updater::Presentation::Failed
 }
 
@@ -1159,6 +1172,7 @@ fn main() {
             commands::set_speed,
             commands::set_theme,
             commands::set_developer_mode,
+            commands::set_update_channel,
             commands::remove_approved_origin,
             commands::get_system_info,
             commands::get_verified_info,

@@ -72,6 +72,16 @@ pub enum UpdateChannel {
     Rc,
 }
 
+/// The serialized name; the release smokes match it in `channel=` log fields.
+impl std::fmt::Display for UpdateChannel {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(match self {
+            Self::Stable => "stable",
+            Self::Rc => "rc",
+        })
+    }
+}
+
 /// Developer-mode settings. Only the Settings window's commands write them; no HTTP route, CLI flag
 /// or environment variable does.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -1425,6 +1435,13 @@ mod tests {
         let loaded = load_str(V2_DEVELOPER_RC);
         assert!(loaded.cap.is_some());
         assert_eq!(loaded.effective_channel(), UpdateChannel::Rc);
+        for channel in [UpdateChannel::Stable, UpdateChannel::Rc] {
+            assert_eq!(
+                serde_json::to_value(channel).unwrap(),
+                channel.to_string(),
+                "Display is the serialized name"
+            );
+        }
     }
 
     #[test]

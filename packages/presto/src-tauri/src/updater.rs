@@ -9,34 +9,80 @@ mod decision;
 
 pub use decision::*;
 
+use presto_core::config::UpdateChannel;
+use presto_core::update_channel::{admits, Refusal};
+use presto_core::update_manifest::ManifestKind;
 use presto_core::update_schedule::{
     download_guarded, run_claimed, GuardedError, InstallClaim, InstallOpts, Observation,
 };
 use presto_core::{update_manifest, updater_state};
 use semver::Version;
 use std::future::Future;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::thread::ThreadId;
 use std::time::Duration;
 use tauri::{AppHandle, Manager};
 use tauri_plugin_updater::UpdaterExt;
+use url::Url;
 
-/// The pinned updater public key, read ONCE from the bundled `tauri.conf.json` — the exact same key
-/// the plugin uses to verify artifact signatures. Reading it from the config (instead of duplicating
-/// the string) guarantees Layer A verifies against the key the build actually trusts. Panics at first
-/// use only if the config is malformed, which is a build-time invariant, not a runtime input.
-fn updater_pubkey() -> &'static str {
-    static PUBKEY: OnceLock<String> = OnceLock::new();
-    PUBKEY.get_or_init(|| {
-        const CONF: &str = include_str!("../tauri.conf.json");
-        let conf: serde_json::Value =
-            serde_json::from_str(CONF).expect("tauri.conf.json is valid JSON");
-        conf["plugins"]["updater"]["pubkey"]
-            .as_str()
-            .expect("tauri.conf.json plugins.updater.pubkey is present")
-            .to_string()
+/// The bundled `plugins.updater` block, parsed once: the config the plugin itself reads. Panics at
+/// first use only if the config is malformed, which is a build-time invariant, not a runtime input.
+fn bundled_updater_config() -> &'static serde_json::Value {
+    static CONF: OnceLock<serde_json::Value> = OnceLock::new();
+    CONF.get_or_init(|| {
+        let conf: serde_json::Value = serde_json::from_str(include_str!("../tauri.conf.json"))
+            .expect("tauri.conf.json is valid JSON");
+        conf["plugins"]["updater"].clone()
     })
+}
+
+/// The pinned updater public key — the exact same key the plugin uses to verify artifact
+/// signatures. Reading it from the config (instead of duplicating the string) guarantees Layer A
+/// verifies against the key the build actually trusts.
+fn updater_pubkey() -> &'static str {
+    bundled_updater_config()["pubkey"]
+        .as_str()
+        .expect("tauri.conf.json plugins.updater.pubkey is present")
+}
+
+/// The stable feed, the only endpoint `tauri.conf.json` lists.
+fn stable_endpoint() -> &'static Url {
+    static URL: OnceLock<Url> = OnceLock::new();
+    URL.get_or_init(|| {
+        bundled_updater_config()["endpoints"][0]
+            .as_str()
+            .and_then(|url| Url::parse(url).ok())
+            .expect("tauri.conf.json plugins.updater.endpoints[0] is a URL")
+    })
+}
+
+/// Each request's timeout on the candidate channel, so both feeds can answer inside
+/// [`FEED_TIMEOUT`]. It bounds the feed requests only: the plugin (2.11.0) builds the `Update` it
+/// returns with no timeout, so the download stays under the stall watchdog alone.
+pub const RC_ENDPOINT_TIMEOUT: Duration = Duration::from_secs(12);
+
+/// The feeds a check on `channel` asks, in order. The candidate feed sits beside the stable one and
+/// is never listed in `tauri.conf.json`, where a stable client's plugin would fall through to it.
+/// The plugin moves on only after a non-2xx answer, a transport error or a body that is not a
+/// release, so a candidate client still gets stable releases while the candidate route is down.
+pub fn feed_endpoints(channel: UpdateChannel, stable: &Url) -> Result<Vec<Url>, url::ParseError> {
+    Ok(match channel {
+        UpdateChannel::Stable => vec![stable.clone()],
+        UpdateChannel::Rc => vec![stable.join("latest-rc.json")?, stable.clone()],
+    })
+}
+
+/// The channel this instance follows. Stable when the config is not managed (never, after setup).
+pub fn current_channel(app: &AppHandle) -> UpdateChannel {
+    app.try_state::<crate::commands::ConfigState>()
+        .map_or(UpdateChannel::Stable, |config| config.effective_channel())
+}
+
+/// The channel according to the config on disk: read-only and unreadable configs are Stable, as at
+/// load.
+fn channel_on_disk(path: &Path) -> UpdateChannel {
+    crate::config::load_with_cap_from(path).effective_channel()
 }
 
 /// Absolute path to the monotonic version-floor state file. Lives alongside the app's other private
@@ -175,12 +221,43 @@ pub struct VerifiedUpdate {
     /// The signed artifact byte size (authoritative — from the signed envelope, so the size cap in
     /// [`perform_update`] cannot be defeated by a lying feed).
     signed_size: u64,
+    kind: ManifestKind,
 }
 
 impl VerifiedUpdate {
     /// The verified SemVer version — for logging and the post-launch floor commit.
     pub fn version(&self) -> &Version {
         &self.version
+    }
+
+    pub fn found(&self) -> FoundUpdate {
+        FoundUpdate {
+            version: self.version.clone(),
+            kind: self.kind,
+        }
+    }
+}
+
+/// What channel admission needs from a verified update, kept once the update itself has moved into
+/// the pending slot.
+#[derive(Clone, Debug)]
+pub struct FoundUpdate {
+    version: Version,
+    kind: ManifestKind,
+}
+
+impl FoundUpdate {
+    pub fn version(&self) -> &Version {
+        &self.version
+    }
+
+    /// Admission again, for a channel read after the check. Logs a refusal.
+    pub fn admission(&self, channel: UpdateChannel) -> Result<(), Refusal> {
+        let admission = admits(channel, self.kind, &self.version);
+        if let Err(refusal) = admission {
+            tracing::error!("SECURITY: update refused on channel {channel}: {refusal}");
+        }
+        admission
     }
 }
 
@@ -191,10 +268,18 @@ impl VerifiedUpdate {
 /// re-check ([`perform_update`]) so the two can never diverge (audit M5). `current` is passed in so the
 /// caller parses it once and a parse failure is handled as fail-closed there.
 fn layer_b_gate(candidate: &Version, current: &Version) -> Result<(), String> {
-    let Some(path) = updater_state_path() else {
+    layer_b_gate_at(updater_state_path().as_deref(), candidate, current)
+}
+
+fn layer_b_gate_at(
+    path: Option<&Path>,
+    candidate: &Version,
+    current: &Version,
+) -> Result<(), String> {
+    let Some(path) = path else {
         return Err("cannot resolve the updater-state path".to_string());
     };
-    let state = updater_state::load_state(&path, updater_state::now_unix());
+    let state = updater_state::load_state(path, updater_state::now_unix());
     if updater_state::running_below_floor(current, &state) {
         // F-04: a DIAGNOSTIC, not a veto. Refusing every update here was the permanent, silent
         // lockout: reachable by a forged floor *or* by a user deliberately downgrading to an older
@@ -218,10 +303,70 @@ fn layer_b_gate(candidate: &Version, current: &Version) -> Result<(), String> {
     Ok(())
 }
 
-/// F-004 gate: verify the signed manifest (Layer A) and enforce the monotonic version floor
-/// (Layer B). Returns a proof-carrying [`VerifiedUpdate`] iff BOTH pass; on any failure it logs a
-/// `SECURITY:`-prefixed reason and returns `None` (fail closed — the app stays on its current build).
-fn verify_and_gate(update: tauri_plugin_updater::Update) -> Option<VerifiedUpdate> {
+/// What the feed advertised, as the plugin parsed it.
+struct Advertised<'a> {
+    raw_json: &'a serde_json::Value,
+    version: &'a str,
+    download_url: &'a str,
+    signature: &'a str,
+}
+
+#[derive(Debug)]
+enum GateRefusal {
+    Manifest(update_manifest::ManifestError),
+    Channel(Refusal),
+    Floor(String),
+}
+
+impl GateRefusal {
+    fn log(&self, channel: UpdateChannel) {
+        match self {
+            Self::Manifest(e) => {
+                tracing::error!(
+                    "SECURITY: update-manifest verification failed ({e}); refusing update"
+                );
+            }
+            Self::Channel(refusal) => {
+                tracing::error!("SECURITY: update refused on channel {channel}: {refusal}");
+            }
+            Self::Floor(reason) => tracing::error!("SECURITY: {reason}; refusing update"),
+        }
+    }
+}
+
+/// Layer A, then channel admission, then Layer B.
+fn gate(
+    feed: &Advertised<'_>,
+    pubkey: &str,
+    channel: UpdateChannel,
+    current: &Version,
+    state_path: Option<&Path>,
+) -> Result<update_manifest::VerifiedManifest, GateRefusal> {
+    // Layer A — bind the advertised version to the signed artifact set. Closes the F-004 splice: a
+    // feed advertising a high version while pointing url/signature at an old, still-validly-signed
+    // artifact is rejected here, BEFORE any download.
+    let verified = update_manifest::verify_manifest(
+        feed.raw_json,
+        pubkey,
+        feed.version,
+        feed.download_url,
+        feed.signature,
+    )
+    .map_err(GateRefusal::Manifest)?;
+    admits(channel, verified.kind, &verified.version).map_err(GateRefusal::Channel)?;
+    // Layer B — the monotonic anti-rollback floor (shared fail-closed gate).
+    layer_b_gate_at(state_path, &verified.version, current).map_err(GateRefusal::Floor)?;
+    Ok(verified)
+}
+
+/// F-004 gate plus channel admission: verify the signed manifest (Layer A), check that a client on
+/// `channel` wants it, and enforce the monotonic version floor (Layer B). Returns a proof-carrying
+/// [`VerifiedUpdate`] iff all three pass; on any failure it logs a `SECURITY:`-prefixed reason and
+/// returns `None` (fail closed — the app stays on its current build).
+fn verify_and_gate(
+    update: tauri_plugin_updater::Update,
+    channel: UpdateChannel,
+) -> Option<VerifiedUpdate> {
     let current = match Version::parse(env!("CARGO_PKG_VERSION")) {
         Ok(v) => v,
         Err(e) => {
@@ -232,42 +377,38 @@ fn verify_and_gate(update: tauri_plugin_updater::Update) -> Option<VerifiedUpdat
             return None;
         }
     };
-
-    // Layer A — bind the advertised version to the signed artifact set. Closes the F-004 splice: a
-    // feed advertising a high version while pointing url/signature at an old, still-validly-signed
-    // artifact is rejected here, BEFORE any download.
-    let verified = match update_manifest::verify_manifest(
-        &update.raw_json,
-        updater_pubkey(),
-        &update.version,
-        update.download_url.as_str(),
-        &update.signature,
-    ) {
-        Ok(v) => v,
-        Err(e) => {
-            tracing::error!("SECURITY: update-manifest verification failed ({e}); refusing update");
-            return None;
-        }
+    let feed = Advertised {
+        raw_json: &update.raw_json,
+        version: &update.version,
+        download_url: update.download_url.as_str(),
+        signature: &update.signature,
     };
-
-    // Layer B — the monotonic anti-rollback floor (shared fail-closed gate).
-    if let Err(reason) = layer_b_gate(&verified.version, &current) {
-        tracing::error!("SECURITY: {reason}; refusing update");
-        return None;
+    match gate(
+        &feed,
+        updater_pubkey(),
+        channel,
+        &current,
+        updater_state_path().as_deref(),
+    ) {
+        Ok(verified) => Some(VerifiedUpdate {
+            update,
+            version: verified.version,
+            signed_size: verified.size,
+            kind: verified.kind,
+        }),
+        Err(refusal) => {
+            refusal.log(channel);
+            None
+        }
     }
-
-    Some(VerifiedUpdate {
-        update,
-        version: verified.version,
-        signed_size: verified.size,
-    })
 }
 
 /// The result of one feed check.
 pub enum CheckOutcome {
     UpToDate,
     Available(Box<VerifiedUpdate>),
-    /// The feed answered with a candidate that failed F-004 (signature or version floor).
+    /// The feed answered with a candidate that failed F-004 (signature or version floor) or that
+    /// this client's channel does not admit.
     Rejected,
     Failed,
     InstallInProgress,
@@ -312,8 +453,20 @@ async fn with_feed_timeout<F: Future>(fetch: F) -> Option<F::Output> {
 /// [`verify_and_gate`] first, so only a verified candidate comes back as `Available`. Never
 /// installs: the caller records the check, then acts on it.
 pub async fn check_for_update(app: &AppHandle) -> CheckOutcome {
-    tracing::info!("Checking for updates...");
-    let update = match fetch_feed(app).await {
+    let channel = current_channel(app);
+    let endpoints = match feed_endpoints(channel, stable_endpoint()) {
+        Ok(endpoints) => endpoints,
+        Err(e) => {
+            tracing::error!(%channel, "Cannot derive the update feeds ({e})");
+            return CheckOutcome::Failed;
+        }
+    };
+    tracing::info!(
+        %channel,
+        endpoint = endpoints.first().map_or("", Url::path),
+        "Checking for updates..."
+    );
+    let update = match fetch_feed(app, channel, endpoints).await {
         Ok(update) => update,
         Err(outcome) => return outcome,
     };
@@ -322,15 +475,36 @@ pub async fn check_for_update(app: &AppHandle) -> CheckOutcome {
         new = %update.version,
         "Update advertised (pre-verification)"
     );
-    match verify_and_gate(update) {
+    match verify_and_gate(update, channel) {
         Some(verified) => CheckOutcome::Available(Box::new(verified)),
         None => CheckOutcome::Rejected,
     }
 }
 
+/// The plugin's own updater on the stable channel; on the candidate channel, `endpoints` with a
+/// per-request timeout.
+fn channel_updater(
+    app: &AppHandle,
+    channel: UpdateChannel,
+    endpoints: Vec<Url>,
+) -> tauri_plugin_updater::Result<tauri_plugin_updater::Updater> {
+    match channel {
+        UpdateChannel::Stable => app.updater(),
+        UpdateChannel::Rc => app
+            .updater_builder()
+            .endpoints(endpoints)?
+            .timeout(RC_ENDPOINT_TIMEOUT)
+            .build(),
+    }
+}
+
 /// The advertised update, or the outcome that ends the check without one.
-async fn fetch_feed(app: &AppHandle) -> Result<tauri_plugin_updater::Update, CheckOutcome> {
-    let updater = app.updater().map_err(|e| {
+async fn fetch_feed(
+    app: &AppHandle,
+    channel: UpdateChannel,
+    endpoints: Vec<Url>,
+) -> Result<tauri_plugin_updater::Update, CheckOutcome> {
+    let updater = channel_updater(app, channel, endpoints).map_err(|e| {
         tracing::warn!("Failed to build updater: {e}");
         CheckOutcome::Failed
     })?;
@@ -402,6 +576,7 @@ async fn perform_update(app: &AppHandle, verified: VerifiedUpdate, opts: Install
         update,
         version,
         signed_size,
+        kind,
     } = verified;
     tracing::info!(version = %version, signed_size, "Downloading verified update");
 
@@ -509,6 +684,17 @@ async fn perform_update(app: &AppHandle, verified: VerifiedUpdate, opts: Install
             got = bytes.len(),
             expected = signed_size,
             "SECURITY: downloaded artifact size does not match the signed size; refusing to install"
+        );
+        return;
+    }
+
+    // Admission against the config on disk, not this instance's cached copy: a leave saved since
+    // the check, by this instance or another, refuses a candidate here, before any state is written.
+    let channel = channel_on_disk(&crate::config::config_path());
+    if let Err(refusal) = admits(channel, kind, &version) {
+        tracing::error!(
+            candidate = %version,
+            "SECURITY: update refused on channel {channel}: {refusal}; aborting install"
         );
         return;
     }
@@ -843,8 +1029,7 @@ impl<F: FnMut()> Drop for CrashRecoveryGuard<F> {
 
 #[cfg(test)]
 mod tests {
-    use super::{with_feed_timeout, CrashRecoveryGuard, FEED_TIMEOUT};
-    use std::time::Duration;
+    use super::*;
 
     /// A feed that never answers fails at 30 s instead of holding the update task.
     #[tokio::test(start_paused = true)]
@@ -907,5 +1092,142 @@ mod tests {
         );
         // An empty development key deliberately fails the separate release-readiness gate.
         // Never substitute a test key here or bypass that gate for a release build.
+    }
+
+    #[test]
+    fn rc_endpoints_are_rc_then_stable() {
+        let stable = stable_endpoint();
+        assert_eq!(stable.as_str(), "https://presto.build/releases/latest.json");
+        assert_eq!(
+            feed_endpoints(UpdateChannel::Stable, stable).unwrap(),
+            std::slice::from_ref(stable)
+        );
+        let rc = feed_endpoints(UpdateChannel::Rc, stable).unwrap();
+        let rc: Vec<_> = rc.iter().map(Url::as_str).collect();
+        assert_eq!(
+            rc,
+            [
+                "https://presto.build/releases/latest-rc.json",
+                "https://presto.build/releases/latest.json"
+            ]
+        );
+        assert_eq!(RC_ENDPOINT_TIMEOUT, Duration::from_secs(12));
+        assert!(RC_ENDPOINT_TIMEOUT * 2 < FEED_TIMEOUT);
+    }
+
+    const RC_PUBKEY: &str = include_str!("../../core/tests/fixtures/updater/rc/pubkey.b64");
+    const RC_CANDIDATE: &str = include_str!("../../core/tests/fixtures/updater/rc/candidate.json");
+    const RC_LEGACY: &str =
+        include_str!("../../core/tests/fixtures/updater/rc/legacy-prerelease.json");
+
+    fn gate_fixture(
+        fixture: &str,
+        pubkey: &str,
+        channel: UpdateChannel,
+        current: &str,
+        state: &Path,
+    ) -> Result<update_manifest::VerifiedManifest, GateRefusal> {
+        let raw_json: serde_json::Value = serde_json::from_str(fixture).unwrap();
+        let feed = Advertised {
+            raw_json: &raw_json,
+            version: raw_json["version"].as_str().unwrap(),
+            download_url: "https://example.test/app.AppImage",
+            signature: "ARTIFACT_SIG_PLACEHOLDER",
+        };
+        gate(
+            &feed,
+            pubkey.trim(),
+            channel,
+            &Version::parse(current).unwrap(),
+            Some(state),
+        )
+    }
+
+    /// A signed candidate clears all three layers only on the candidate channel and only above
+    /// the running build and a live pending install.
+    #[test]
+    fn verify_and_gate_rc_fixture_passes_floor() {
+        let dir = tempfile::tempdir().unwrap();
+        let state = dir.path().join("updater-state.json");
+        let run =
+            |fixture, channel, current| gate_fixture(fixture, RC_PUBKEY, channel, current, &state);
+
+        let verified = run(RC_CANDIDATE, UpdateChannel::Rc, "1.0.9-rc.0").unwrap();
+        assert_eq!(verified.kind, ManifestKind::Candidate);
+        assert_eq!(verified.version.to_string(), "1.0.9-rc.1");
+        assert!(matches!(
+            run(RC_CANDIDATE, UpdateChannel::Stable, "1.0.9-rc.0"),
+            Err(GateRefusal::Channel(Refusal::CandidateOffChannel))
+        ));
+        assert!(matches!(
+            run(RC_LEGACY, UpdateChannel::Rc, "1.0.9-rc.0"),
+            Err(GateRefusal::Channel(Refusal::PrereleaseNotCandidate))
+        ));
+        assert!(matches!(
+            run(RC_CANDIDATE, UpdateChannel::Rc, "1.0.9-rc.1"),
+            Err(GateRefusal::Floor(_))
+        ));
+        assert!(matches!(
+            gate_fixture(
+                RC_CANDIDATE,
+                updater_pubkey(),
+                UpdateChannel::Rc,
+                "1.0.8",
+                &state
+            ),
+            Err(GateRefusal::Manifest(_))
+        ));
+
+        updater_state::record_pending(
+            &state,
+            &Version::parse("1.0.9-rc.0").unwrap(),
+            &Version::parse("1.0.9-rc.2").unwrap(),
+        )
+        .unwrap();
+        assert!(matches!(
+            run(RC_CANDIDATE, UpdateChannel::Rc, "1.0.9-rc.0"),
+            Err(GateRefusal::Floor(_))
+        ));
+    }
+
+    /// Install time trusts the file, not the copy this instance cached at its last load.
+    #[test]
+    fn install_admission_reads_config_from_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let candidate = Version::parse("1.3.0-rc.1").unwrap();
+        let admitted =
+            |path: &Path| admits(channel_on_disk(path), ManifestKind::Candidate, &candidate);
+        let write = |developer: &str| {
+            std::fs::write(&path, format!(r#"{{"config_version": 2, {developer}}}"#)).unwrap()
+        };
+
+        write(r#""developer": {"enabled": true, "update_channel": "rc"}"#);
+        let cached = crate::config::ConfigStore::new(crate::config::load_with_cap_from(&path));
+        assert_eq!(cached.effective_channel(), UpdateChannel::Rc);
+        assert_eq!(admitted(&path), Ok(()));
+
+        write(r#""developer": {"enabled": false, "update_channel": "stable"}"#);
+        assert_eq!(cached.effective_channel(), UpdateChannel::Rc);
+        assert_eq!(admitted(&path), Err(Refusal::CandidateOffChannel));
+
+        std::fs::write(
+            &path,
+            r#"{"config_version": 99, "developer": {"enabled": true, "update_channel": "rc"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            admitted(&path),
+            Err(Refusal::CandidateOffChannel),
+            "read-only"
+        );
+
+        std::fs::remove_file(&path).unwrap();
+        std::fs::create_dir(&path).unwrap();
+        assert_eq!(
+            admitted(&path),
+            Err(Refusal::CandidateOffChannel),
+            "unreadable"
+        );
     }
 }
