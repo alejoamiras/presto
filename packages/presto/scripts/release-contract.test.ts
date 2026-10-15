@@ -513,6 +513,8 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
   test("macOS ships a DMG only once its app validates as stapled, before the updater pass re-notarizes", () => {
     const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs.build?.steps ?? [];
     const run = steps.find((s) => s.name === "Build Tauri bundle")?.run ?? "";
+    // The diagnostic staple only explains a failure, so it must not spend the retry budget.
+    expect(run).toContain('STAPLE_ATTEMPTS=1 xcrun stapler staple -v "$RUNNER_TEMP/staple-diag/');
     const dmgPass = [
       "bunx tauri bundle --target T --bundles dmg --verbose",
       "hdiutil attach",
@@ -734,7 +736,8 @@ function macBuildCalls(run: string, unstapled: number): { calls: string[]; code:
     calls="$RUNNER_TEMP/calls"; validations=0
     bunx() {
       case "$*" in *"tauri bundle"*)
-        cmp -s "\${PATH%%:*}/xcrun" "$GITHUB_WORKSPACE/.github/scripts/xcrun-staple-retry.sh" \\
+        { [ -x "\${PATH%%:*}/xcrun" ] \\
+          && cmp -s "\${PATH%%:*}/xcrun" "$GITHUB_WORKSPACE/.github/scripts/xcrun-staple-retry.sh"; } \\
           || echo "tauri bundle without the staple-retry xcrun first on PATH" >>"$calls" ;;
       esac
       case "$*" in

@@ -265,12 +265,13 @@ jobs:
       # updater artifacts under an EPHEMERAL key (.app.tar.gz/.sig) and assert the
       # bundle-structure invariant — all in one step so the signing secrets live in a single
       # place. Rationale:
-      #   - Every tauri bundle pass re-signs, re-notarizes and re-staples the .app, and tauri
-      #     ignores `xcrun stapler staple`'s exit status. A staple right after re-submitting
-      #     an already-notarized app can fail (Intel, 1.2.0-rc.2: twice, while the first
-      #     submission's staple never has), so the DMG, which users open under Gatekeeper,
-      #     gets the first submission, and counts only once the app inside it validates.
-      #     The updater payload is never quarantined, so it does not depend on a staple.
+      #   - Every tauri bundle pass re-signs, re-notarizes and re-staples the .app. tauri
+      #     staples once and ignores `xcrun stapler staple`'s exit status, and Apple's ticket
+      #     service often drops the runners' connections (Intel, 1.2.0-rc.3: six passes in a
+      #     row), so tauri runs with `xcrun-staple-retry.sh` first on PATH as `xcrun`. The DMG,
+      #     which users open under Gatekeeper, still counts only once the app inside it
+      #     validates. The updater payload is never quarantined, so it does not depend on a
+      #     staple.
       #   - Retrying ONLY the DMG pass absorbs the chronic hdiutil/create-dmg flake on GH
       #     runners (esp. macos-15-intel — actions/runner-images#7522; the app signs and
       #     notarizes fine, only `bundle_dmg.sh` dies).
@@ -310,7 +311,6 @@ jobs:
           fi
           MACOS_DIR="src-tauri/target/$TARGET/release/bundle/macos"
           DMG_DIR="src-tauri/target/$TARGET/release/bundle/dmg"
-          # tauri staples once and ignores the result; this `xcrun` retries the staple.
           shim_dir="$RUNNER_TEMP/xcrun-shim"
           mkdir -p "$shim_dir"
           cp "$GITHUB_WORKSPACE/.github/scripts/xcrun-staple-retry.sh" "$shim_dir/xcrun"
@@ -335,7 +335,8 @@ jobs:
               rm -rf "$RUNNER_TEMP/staple-diag"
               mkdir "$RUNNER_TEMP/staple-diag"
               ditto "$app" "$RUNNER_TEMP/staple-diag/$(basename "$app")"
-              xcrun stapler staple -v "$RUNNER_TEMP/staple-diag/$(basename "$app")" || true
+              # One try: this staple only explains the failure, it never ships.
+              STAPLE_ATTEMPTS=1 xcrun stapler staple -v "$RUNNER_TEMP/staple-diag/$(basename "$app")" || true
             fi
             hdiutil detach "$mnt" >/dev/null || true
             return "$status"
