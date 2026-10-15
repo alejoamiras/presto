@@ -9,6 +9,7 @@
  */
 import { describe, expect, test } from "bun:test";
 import fs from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 
 const REPO = path.resolve(import.meta.dir, "..", "..", "..");
@@ -479,6 +480,69 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     expect(RELEASE_SIGNER).toContain(requiredPasswordExpansion);
   });
 
+  test("every shipped bundle is scanned for test hooks after it is built and before upload", () => {
+    const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs.build?.steps ?? [];
+    const names = steps.map((s) => s.name);
+    const scans = steps.filter((s) => s.run?.includes("assert-no-test-hooks.sh"));
+    expect(scans).toHaveLength(1);
+    const scan = scans[0] as SmokeStep;
+    const at = steps.indexOf(scan);
+    expect(at).toBeGreaterThan(names.indexOf("Build Tauri bundle"));
+    expect(names.indexOf("Build Tauri bundle")).toBeGreaterThan(-1);
+    expect(at).toBeLessThan(names.indexOf("Upload artifacts"));
+    expect(scan.if).toBeUndefined();
+    expect(scan["continue-on-error"]).toBeUndefined();
+    expect(scan["working-directory"]).toBe("packages/presto");
+    expect(JSON.stringify(scan)).not.toContain("secrets.");
+    const script = "scripts/assert-no-test-hooks.sh";
+    const root = "src-tauri/target/T/release";
+    const expected: Record<string, string[]> = {
+      macOS: [`${script} ${root}/bundle/macos/*.app.tar.gz`],
+      Linux: [`${script} ${root}/bundle/appimage/*.AppImage ${root}/bundle/deb/*.deb`],
+      Windows: [`${script} ${root}/Presto.exe`],
+    };
+    for (const [os, calls] of Object.entries(expected)) {
+      expect(scanCalls(scan.run ?? "", os), os).toEqual({ calls, code: 0 });
+    }
+    expect(scanCalls(scan.run ?? "", "FreeBSD").code).toBe(1);
+    const signer = WF.split("  sign-updater-artifacts:")[1]?.split("\n  build-headless:")[0] ?? "";
+    expect(signer).toContain("environment: release-signing");
+    expect(signer).not.toContain("assert-no-test-hooks");
+  });
+
+  test("macOS ships a DMG only once its app validates as stapled, before the updater pass re-notarizes", () => {
+    const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs.build?.steps ?? [];
+    const run = steps.find((s) => s.name === "Build Tauri bundle")?.run ?? "";
+    const dmgPass = [
+      "bunx tauri bundle --target T --bundles dmg --verbose",
+      "hdiutil attach",
+      "xcrun stapler validate",
+    ];
+    const unstapled = [...dmgPass, "ditto", "xcrun stapler staple", "hdiutil detach", "sleep 60"];
+    const head = ["bunx tauri signer generate", "bunx tauri build --target T --no-bundle"];
+    const app = "bunx tauri bundle --target T --bundles app";
+    expect(macBuildCalls(run, 0)).toEqual({
+      calls: [...head, ...dmgPass, "hdiutil detach", app],
+      code: 0,
+    });
+    expect(macBuildCalls(run, 2)).toEqual({
+      calls: [...head, ...unstapled, ...unstapled, ...dmgPass, "hdiutil detach", app],
+      code: 0,
+    });
+    expect(macBuildCalls(run, 3)).toEqual({
+      calls: [
+        ...head,
+        ...unstapled,
+        ...unstapled,
+        ...dmgPass,
+        "ditto",
+        "xcrun stapler staple",
+        "hdiutil detach",
+      ],
+      code: 1,
+    });
+  });
+
   test("dependency audit is a release publication gate", () => {
     const release = WF.split("  release:")[1]?.split("\n  packaged-e2e-on-draft:")[0] ?? "";
     expect(WF).toContain("uses: ./.github/workflows/dependency-audit.yml");
@@ -640,3 +704,61 @@ describe("release-machinery hardening (2026-08-17 GitHub asset-CDN incident)", (
     expect(UNINSTALL_WIN).toMatch(/\$taskCommands\.Count -ne 1/);
   });
 });
+
+/**
+ * Runs a release scan step's script for one runner OS, in an empty directory so no glob expands, with
+ * `bash` stubbed to record each scanner call. Returns the calls and the step's exit code.
+ */
+function scanCalls(run: string, os: string): { calls: string[]; code: number } {
+  const cwd = fs.mkdtempSync(path.join(tmpdir(), "release-scan-"));
+  try {
+    const r = Bun.spawnSync(["bash", "-c", `bash() { echo "$*"; }\n${run}`], {
+      cwd,
+      env: { PATH: process.env.PATH, RUNNER_OS: os, TARGET: "T" },
+    });
+    const calls = r.stdout.toString().split("\n").filter(Boolean);
+    return { calls: calls.filter((c) => !c.startsWith("::error::")), code: r.exitCode };
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Runs the macOS branch of the build step with tauri, hdiutil, xcrun, ditto and sleep stubbed: each
+ * bundle pass writes the files tauri would, and the first `unstapled` stapler validations fail.
+ * Returns the stubbed calls in order and the step's exit code.
+ */
+function macBuildCalls(run: string, unstapled: number): { calls: string[]; code: number } {
+  const cwd = fs.mkdtempSync(path.join(tmpdir(), "release-mac-"));
+  const stubs = `
+    calls="$RUNNER_TEMP/calls"; validations=0
+    bunx() {
+      case "$*" in
+        *"signer generate"*) echo "bunx tauri signer generate" >>"$calls"; : >"\${@: -1}"; return ;;
+        *"--bundles dmg"*) mkdir -p "$DMG_DIR"; : >"$DMG_DIR/Presto_x64.dmg" ;;
+        *"--bundles app"*)
+          mkdir -p "$MACOS_DIR/Presto.app/Contents/MacOS"
+          touch "$MACOS_DIR/Presto.app/Contents/MacOS/"{Presto,bb} "$MACOS_DIR/Presto.app.tar.gz"{,.sig} ;;
+      esac
+      echo "bunx $*" >>"$calls"
+    }
+    hdiutil() { echo "hdiutil $1" >>"$calls"; [ "$1" != attach ] || mkdir -p "\${@: -1}/Presto.app"; }
+    xcrun() {
+      echo "xcrun $1 $2" >>"$calls"
+      [ "$2" = validate ] || return 0
+      validations=$((validations + 1)); [ "$validations" -gt ${unstapled} ]
+    }
+    ditto() { echo ditto >>"$calls"; }
+    sleep() { echo "sleep $*" >>"$calls"; }
+  `;
+  try {
+    const r = Bun.spawnSync(["bash", "-c", `${stubs}\n${run}`], {
+      cwd,
+      env: { PATH: process.env.PATH, RUNNER_OS: "macOS", RUNNER_TEMP: cwd, TARGET: "T" },
+    });
+    const calls = fs.readFileSync(path.join(cwd, "calls"), "utf8").split("\n").filter(Boolean);
+    return { calls, code: r.exitCode };
+  } finally {
+    fs.rmSync(cwd, { recursive: true, force: true });
+  }
+}

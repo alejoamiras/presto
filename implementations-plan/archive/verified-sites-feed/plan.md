@@ -1,7 +1,7 @@
 ---
 plan: verified-sites-feed
 tier: deep
-status: approved 2026-10-08, implementing PR 1
+status: completed 2026-10-13
 base: 3ebb19b
 driver: claude-code
 eli5_mode: artifact
@@ -11,6 +11,52 @@ codex_model: sol
 harden: none (declined by the owner at the gate)
 delivery: two sequential PRs (publishing path, then client)
 ---
+
+## Outcome
+
+- **2026-10-13: completed.** PR 1 #92 (`34784d2`) shipped the publishing path. The first signed
+  record landed through release-bot PR #93 (`14c4085`) and is live at
+  `https://presto.build/releases/verified-sites.json` (publish run 38480207618). PR 2 #100 is the
+  client, and this close-out rides as its final commits.
+- **Shipped in PR 1:**
+  - the strict list parser and minisign verifier in core;
+  - the signer CLI and its round trip;
+  - `sign-verified-sites.yml`, behind the owner's approval of `verified-sites-signing`;
+  - append-only history, PR-gated by the `verified-sites-feed` job;
+  - `publish-verified-sites.yml` with its KV guard, and the daily health probe;
+  - the Worker route.
+- **Shipped in PR 2:**
+  - **Core:** the verified, locked, never-backwards cache (`store.rs`) and the bounded HTTPS fetch
+    (`fetch.rs`).
+  - **App:**
+    - `build.rs` embeds the newest record;
+    - the registry replaces whole, persists before it swaps, and re-judges under its write lock;
+    - the refresh runs on the update check's cadence through the production `run_updates`;
+    - the 25-case integration test runs on every OS.
+  - **WebDriver:** the feed, the spec, and the hook in `e2e_tray.rs`.
+  - **Release:** the `PRESTO_E2E_` scan over every bundle in `release-presto.yml`'s `build` job (D22).
+  - **Docs:** `VERIFIED_SITES.md`, `PRIVACY.md` and `CLAUDE.md`.
+- **Evidence:** `lessons/pre-pr.md` has the CI run IDs, `lessons/pr-1-review.md` and
+  `lessons/pr-2-review.md` the Codex loops (both converged), and `lessons/phase-*.md` each gate
+  with its mutations.
+- **Changed or dropped, each recorded in the ledger or lessons:**
+  - O1b (a narrowed agent token) was skipped by the owner (A3 reversed).
+  - `start_background_tasks` gained `spawn_production_refresh(app)`, not a literal `spawn_refresh`
+    line, because the pinned key parses into an `Option`.
+  - Case 19: a FIFO at the cache path is replaced by the save; only a directory fails it.
+  - The skip-the-refresh mutant fails at step 2, not step 4.
+  - `autostart-test.sh` copies `LICENSE`, fixing a breakage already on `main`.
+  - Each "rebase on `origin/main`" became a merge of `main`, because PR 1 landed as a squash.
+  - Open follow-ups went to GitHub issues instead of `follow-ups.md`.
+  - The PR 2 review's case-19 subprocess harness was declined, since the core FIFO test is
+    deadline-bound.
+  - tauri-plugin-webdriver's early-returning `refresh()` is harmless noise, noted only.
+- **Open items:** #94 (no expiry), #95 (the approval gap, a second approval factor), #96 (Firefox
+  extensions), #97 (the O8 canary, after the first release with the client), #98 (auth-flow's
+  `afterEach`). **Known limits:** #99 (a same-user symlink at `~/.presto`). Owner steps O6 (merge
+  PR 2) and O7 (release and promote) are the delivery itself.
+- **This plan's `/goal` and `/loop` seeds are retired.** This file is a record of what was decided,
+  not instructions.
 
 # Signed, remotely fetched verified-sites list
 
@@ -809,7 +855,8 @@ passes.
 
 ### PR 2: client
 
-**Phase 7: store and fetch (core;** may start before `history/1` lands).
+**Phase 7: store and fetch (core;** may start before `history/1` lands). ✓ (a FIFO at the cache
+path is replaced by the save, a directory fails it; see `lessons/phase-7.md`).
 - Gate: core tests and clippy; the Windows cross-check.
 - Pass: store: corrupt, forged (TEST 2 key, version 2^53 − 1), oversized, FIFO and directory
   (`cfg(unix)`), never lowers under the lock, releases the lock. Fetch, against a house-style
@@ -819,7 +866,9 @@ passes.
 - Mutations: remove the byte counter; save without re-reading.
 - Layers: unit, integration.
 
-**Phase 8: app wiring and the in-process integration test.**
+**Phase 8: app wiring and the in-process integration test.** ✓ against an uncommitted local
+stand-in for `history/1`: no src-tauri build works without a record, so this branch builds in CI only
+once `history/1` is on `main` (`lessons/phase-8.md` lists what waits for it).
 - `src-tauri/tests/verified_sites_feed.rs`: multi-thread runtime, aws-lc-rs provider, a scripted local
   HTTP server, fixture lists, a temporary store, a 2 s feed timeout, built-in = list 4, and an outer
   `tokio::time::timeout` on every case so a missing production timeout fails instead of hanging. Every
@@ -833,7 +882,7 @@ passes.
 | 2 | Restart | A new `VerifiedSites` on the same store is at 5; serving 4 is refused |
 | 3 | List 6 drops a built-in entry | That origin answers None, also after a restart |
 | 4–16 | Tampered signature; wrong key; older; same version, different body; malformed JSON; signed schema violation; oversized with and without `Content-Length`; drip; hang; 404; 503; connection refused; 302 to a valid document | Nothing changes; returns within its bound; `reached` only for 200s within the cap |
-| 17–20 | Cache corrupt; forged; FIFO or directory (unix); oversized | `load` returns the built-in in under 200 ms; the next accepted list overwrites the file (a FIFO or directory: the save fails, memory still advances) |
+| 17–20 | Cache corrupt; forged; FIFO or directory (unix); oversized | `load` returns the built-in in under 200 ms; the next accepted list overwrites the file (a FIFO is replaced like any bad file; a directory fails the save, and memory still advances) |
 | 21 | Unwritable store directory | The swap still happens; the error is logged |
 | 22 | Another instance already wrote list 6; this one fetches 5 | Memory moves to 6 (the disk winner), never to 5 |
 | 23 | Disk holds a different list at the fetched version | Equivocation: nothing changes |
@@ -849,7 +898,9 @@ passes.
   accepted; union instead of replace.
 - Layers: integration, contract.
 
-**Phase 9: WebDriver hook, feed, spec and scan** (including D22's release scan).
+**Phase 9: WebDriver hook, feed, spec and scan** (including D22's release scan). ✓ against the same
+local stand-in for `history/1`; the spec's run and the build pair repeat in Phase 10 on the real record
+(`lessons/phase-9.md`).
 - Gate: `bun test packages/presto/scripts/webdriver-only-hooks.test.ts packages/presto/scripts/assert-no-test-hooks.test.ts packages/presto/scripts/verified-sites-e2e-feed.test.ts packages/presto/scripts/release-contract.test.ts`;
   the extended scanner passes the published 1.2.0-rc.1 `.deb`, `.app.tar.gz` and AppImage (fetched with
   `gh release download`, deleted after) and fails a `.tar.gz` and a `.deb` that carry the needle;
@@ -861,11 +912,16 @@ passes.
 - Pass (D22): `release-contract.test.ts` pins the step inside `build`, after the bundles are built
   and before upload, with no `secrets.` reference, one target set per OS, and no scan anywhere in
   `sign-updater-artifacts`.
-- Mutations: sign the `tampered` list validly (step 3 fails); skip the refresh (step 4 fails); move the
+- Mutations: sign the `tampered` list validly (step 3 fails); skip the refresh (step 2 fails); move the
   release scan after upload, or drop the `.deb` target (the contract test fails).
 - Layers: E2E, contract.
 
 **Phase 10: PR 2 pre-PR gate**, the Codex fix loop, the close-out commits, checkpoint, open PR 2.
+✓ on the real `history/1` (`lessons/phase-10.md`, `lessons/pre-pr.md`); the director opens PR 2.
+- First, once this branch sits on `main` after PR 1: add a fixture to `verified-sites-fixtures.ts`,
+  a valid list at version 2^53 − 1 signed with TEST 2, and a store test that a forged cache at that
+  version never raises the stored version floor (the bricking attack). The list-5 wrong-key store
+  test stays.
 
 ### Pre-PR gate (blocks each PR)
 
@@ -991,6 +1047,10 @@ display-only boundary, no new IPC or ACL, Firefox deferred.
   checkers agree it follows from D11. Still offered as A2.
 
 **Changed after approval:**
+- **Case 19 corrected (implementation, 2026-10-13):** `rename(2)` replaces a FIFO at the cache path,
+  healing it like any bad file; only a directory fails the save.
+- **Skip-the-refresh mutation corrected (implementation, 2026-10-13):** the popup reads its badge only
+  when it loads, so the mutant fails at step 2, the first badge that needs a reload, not step 4.
 - **A3 reversed (owner, 2026-10-13): O1b skipped.** The narrowed agent token and its four-403
   verification are dropped; agents keep the owner's `gh` OAuth token (`repo` scope). An agent can
   therefore approve a signing run with one API call and change the environment or its secret. The
@@ -1146,6 +1206,28 @@ accepted (details in `lessons/pr-1-review.md`):
 
 Minors fixed: tripwire file names cannot break the summary's markup and a failed tripwire diff fails
 the step; the runbook's failed-record recovery deletes the record branch; two comments cut.
+
+### Implementation review: PR 2 (Codex `gpt-6.1-sol`, high, one session)
+
+**VERDICT: ready** (round 2, high confidence). Round 1 raised one material finding, accepted
+(details in `lessons/pr-2-review.md`):
+
+| # | Finding | Severity | Fix |
+|---|---|---|---|
+| 1 | A save that could not take the lock returned `WriteFailed` before reading the disk, and the caller swaps memory anyway (D18). Another instance holding the lock over a newer list let a replayed older list become current | important | The disk is judged whether or not the lock was taken; only then does a lock error become `WriteFailed`. A held-lock test covers both a newer and an equivocating disk list. |
+
+Minors fixed:
+- The E2E tampered list is signed for its own version, so only the signature refuses it.
+- The core FIFO test fails on a deadline instead of hanging.
+- One comment went with the restructure, and the integration test's deadline claim was narrowed.
+
+Not changed:
+- src-tauri case 19's FIFO: the core test names that regression, and the CI job's timeout bounds
+  it.
+- The spec's numbered step comments: they state expectations the assertions do not spell out.
+
+Rounds 3 to 5 resumed the session to verify, not reopen: the `history/1` merge and two Windows-only
+test corrections CI forced (`2e79326`, `34c65ff`). Each returned `VERDICT: ready`.
 
 ## Rejected and deferred alternatives
 

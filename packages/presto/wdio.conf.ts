@@ -13,15 +13,16 @@ export const config: WebdriverIO.Config = {
   framework: "mocha",
   reporters: ["spec"],
   // Explicit order: smoke first (basic health), settings, trust-boundary (F-012), auth-flow,
-  // ultra-honk (the only spec that runs bb), then autostart LAST — it seeds a broken on-disk
-  // artifact and refreshes the Settings window, so it must never run before the specs that assert
-  // the pristine unchecked state.
+  // verified-sites (the signed list feed), ultra-honk (the only spec that runs bb), tray-update, then
+  // autostart LAST — it seeds a broken on-disk artifact and refreshes the Settings window, so it must
+  // never run before the specs that assert the pristine unchecked state.
   specs: [
     "./e2e-webdriver/smoke.spec.ts",
     "./e2e-webdriver/settings.spec.ts",
     "./e2e-webdriver/theme.spec.ts",
     "./e2e-webdriver/trust-boundary.spec.ts",
     "./e2e-webdriver/auth-flow.spec.ts",
+    "./e2e-webdriver/verified-sites.spec.ts",
     "./e2e-webdriver/ultra-honk.spec.ts",
     "./e2e-webdriver/tray-update.spec.ts",
     "./e2e-webdriver/autostart.spec.ts",

@@ -3,7 +3,10 @@
 `verified-sites.json` is a curated list of origins that the Presto
 maintainers recognize. When one of these origins requests authorization, the
 popup shows the friendly name + a verified ✓ next to the raw origin, instead
-of just the raw origin string.
+of just the raw origin string. Settings → Approved Sites shows the same name
+and ✓ above a muted origin for each approved origin on the list. The origin
+always stays in full there: an approval belongs to one origin, and one name
+can cover several (a site and its extension).
 
 ## **NOT a security guarantee**
 
@@ -149,9 +152,36 @@ Signing, publishing, recovery and key rotation are in
 
 ## In the app
 
-The desktop app compiles `verified-sites.json` in at build time and reads that
-copy. If it ever fails to load in a release build, the registry loads as empty
-and a `tracing::error!` is logged; the popup falls back to showing only the
-raw origin — no crash. Debug builds (`cargo tauri dev`) panic immediately so
-developer errors surface loudly. `build.rs` also parses the file as JSON
-during `cargo build`, so malformed JSON fails the build before it can ship.
+- **Built in.** `build.rs` compiles in the newest record from
+  `verified-sites/history/`, and the build fails without one or without its
+  `.minisig`. The built-in copy is trusted as compiled: the PR gate verified
+  its signature.
+- **Fetched.** The desktop app asks
+  `https://presto.build/releases/verified-sites.json` for the list on the
+  update check's cadence: 5 seconds after launch, then whenever 6 hours have
+  passed, sampled every 15 minutes. A check that does not reach the server is
+  retried every 15 minutes. It is a plain `GET` with no cookies, no query
+  string and no body, sending nothing about the sites you use or approved.
+  Redirects are refused, and so is any answer that is not a `200` within
+  96 KiB and 30 seconds. `PRESTO_NO_UPDATE=1` turns it off, as it does the
+  update check, and debug builds skip it unless `PRESTO_FORCE_UPDATE_CHECK=1`
+  is set. The headless server shows no popup and fetches nothing.
+- **Accepted only when newer and signed.** The list must verify under
+  `verified-sites/key.pub` with the trusted comment, pass the strict parser,
+  and carry a higher `version` than the list in use. An older signed list is
+  ignored, so a stale or replayed copy can never roll the badges back. A
+  different list signed for the same version is refused, and the app logs it
+  as a `SECURITY` error.
+- **Replaced whole.** An accepted list replaces the one in use, so removing
+  an entry takes its badge away, even from a built-in entry. The list is
+  written to `~/.presto/verified-sites-accepted.json` (`0600` on macOS and
+  Linux) before memory switches over. If that write fails, the switch still
+  happens, for this session only. A popup already on screen shows the change
+  when it is next opened or reloaded.
+- **At launch** the app uses the newer of the built-in list and the cached
+  one. The cache is re-verified on every read, so a corrupt, forged or
+  oversized file is ignored and then overwritten by the next accepted list.
+- **Failure is quiet.** Anything wrong leaves the current list in place,
+  and a list that does not parse leaves the registry empty rather than
+  crashing. The popup then shows only the raw origin, which it always shows
+  anyway.

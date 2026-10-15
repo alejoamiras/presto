@@ -9,12 +9,14 @@ PKG_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$PKG_DIR"
 
 OWNED_PGIDS=()
+RUN_DIR="$(mktemp -d "${TMPDIR:-/tmp}/presto-webdriver.XXXXXX")"
 cleanup() {
   for pgid in "${OWNED_PGIDS[@]:-}"; do
     if [ -n "$pgid" ]; then
       kill -- "-$pgid" 2>/dev/null || true
     fi
   done
+  rm -rf "$RUN_DIR"
 }
 trap cleanup EXIT INT TERM
 
@@ -68,9 +70,33 @@ if [ ! -x "$BIN" ]; then
   exit 1
 fi
 
-# ── Launch the app in its own process group, logs captured ──
+# ── The loopback verified-sites feed, in its own process group (as _e2e-webdriver.yml) ──
 LOG_DIR="${WEBDRIVER_LOG_DIR:-implementations-plan/presto-visual-rebrand/lessons}"
 mkdir -p "$PKG_DIR/../../$LOG_DIR" 2>/dev/null || LOG_DIR="."
+export VERIFIED_SITES_E2E_FEED_STATE="$RUN_DIR/verified-sites-feed.json"
+FEED_LOG="$PKG_DIR/../../$LOG_DIR/webdriver-verified-sites-feed.log"
+setsid bun scripts/verified-sites-e2e-feed.ts --state "$VERIFIED_SITES_E2E_FEED_STATE" >"$FEED_LOG" 2>&1 &
+OWNED_PGIDS+=("$!")
+for _ in $(seq 1 100); do
+  [ -s "$VERIFIED_SITES_E2E_FEED_STATE" ] && break
+  sleep 0.1
+done
+if [ ! -s "$VERIFIED_SITES_E2E_FEED_STATE" ]; then
+  echo "ERROR: the verified-sites feed wrote no state; log: $FEED_LOG" >&2
+  exit 1
+fi
+# The key is a two-line document whose final newline `$(...)` strips, so it is put back.
+field() {
+  F="$1" bun -e 'const s = await Bun.file(process.env.VERIFIED_SITES_E2E_FEED_STATE).json()
+    process.stdout.write(String(s[process.env.F]))'
+}
+PRESTO_E2E_VERIFIED_SITES_URL=$(field url)
+PRESTO_E2E_VERIFIED_SITES_PUBKEY="$(field pubkey)"$'\n'
+export PRESTO_E2E_VERIFIED_SITES_URL PRESTO_E2E_VERIFIED_SITES_PUBKEY
+# The app's WebDriver-only tray driver writes here, and tray-update.spec.ts reads it.
+export PRESTO_E2E_TRAY_REPORT="$RUN_DIR/tray-report.json"
+
+# ── Launch the app in its own process group, logs captured ──
 APP_LOG="$PKG_DIR/../../$LOG_DIR/webdriver-app.log"
 setsid "$BIN" >"$APP_LOG" 2>&1 &
 OWNED_PGIDS+=("$!")

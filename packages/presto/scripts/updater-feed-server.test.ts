@@ -44,6 +44,12 @@ describe("updater feed server", () => {
     expect((await fetch(`${plain.url}releases/download/missing`)).status).toBe(404);
   });
 
+  // The smokes impersonate presto.build with this server, so a passing smoke is the updater working
+  // while the app's verified-sites fetch fails.
+  test("answers the verified-sites list path with 404", async () => {
+    expect((await fetch(`${plain.url}releases/verified-sites.json`)).status).toBe(404);
+  });
+
   test("--stall-after sends a genuine prefix, logs the last chunk, and keeps the connection open", async () => {
     const before = Math.floor(Date.now() / 1000);
     const res = await fetch(`${stalling.url}releases/download/Presto.app.tar.gz`);

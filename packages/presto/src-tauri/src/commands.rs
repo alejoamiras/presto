@@ -1,6 +1,6 @@
 use crate::authorization::{AuthDecision, AuthorizationManager, ResolveOutcome};
 use crate::config::{self, PrestoConfig};
-use crate::verified_sites::VerifiedSitesRegistry;
+use crate::verified_sites::VerifiedSites;
 use presto_core::update_schedule::{install_opts, InstallCaller, InstallGate, ScheduleStore};
 use std::sync::Arc;
 use tauri::Manager;
@@ -60,7 +60,7 @@ fn require_persistable(config: &ConfigState) -> Result<(), String> {
     }
 }
 pub type AuthState = Arc<AuthorizationManager>;
-pub type VerifiedSitesState = Arc<VerifiedSitesRegistry>;
+pub type VerifiedSitesState = Arc<VerifiedSites>;
 /// Shared AppState so HTTPS servers spawned later (e.g. enabling Safari) get the full
 /// state including auth_manager, config, and show_auth_popup — not a bare Default.
 pub type SharedAppState = Arc<crate::server::AppState>;
@@ -512,8 +512,8 @@ pub fn get_system_info(window: tauri::WebviewWindow) -> Result<SystemInfo, Strin
     })
 }
 
-/// DTO returned to the authorization popup when an origin is on the recognized list.
-/// `description` is intentionally NOT exposed — keep endorsement copy out of the popup.
+/// DTO returned to the authorization popup and Settings when an origin is on the recognized list.
+/// `description` is intentionally NOT exposed — keep endorsement copy out of the app.
 #[derive(serde::Serialize)]
 pub struct VerifiedSiteDto {
     pub display_name: String,
@@ -525,11 +525,14 @@ pub fn get_verified_info(
     origin: String,
     state: tauri::State<'_, VerifiedSitesState>,
 ) -> Result<Option<VerifiedSiteDto>, String> {
-    // F-012 (D6): only an authorization popup renders the verified badge.
-    require_auth_window(window.label())?;
-    Ok(state.lookup(&origin).map(|s| VerifiedSiteDto {
-        display_name: s.display_name.clone(),
-    }))
+    require_badge_window(window.label())?;
+    Ok(verified_info(&state, &origin))
+}
+
+pub fn verified_info(sites: &VerifiedSites, origin: &str) -> Option<VerifiedSiteDto> {
+    sites
+        .display_name(origin)
+        .map(|display_name| VerifiedSiteDto { display_name })
 }
 
 #[tauri::command]
@@ -709,6 +712,16 @@ fn is_auth_label(label: &str) -> bool {
     label
         .strip_prefix(AUTH_LABEL_PREFIX)
         .is_some_and(|h| h.len() == 32 && h.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')))
+}
+
+/// The verified badge renders in two places: an authorization popup and Settings' approved-sites list.
+/// No other window may ask, so the capability ACL and this check stay in step.
+fn require_badge_window(actual: &str) -> Result<(), String> {
+    if actual == SETTINGS_LABEL {
+        Ok(())
+    } else {
+        require_auth_window(actual)
+    }
 }
 
 /// Require the caller to be an authorization popup (any `auth-<hash>`). Generic error on mismatch.
@@ -1240,8 +1253,8 @@ fn close_update_prompt(app: &tauri::AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::{
-        is_auth_label, require_auth_window, require_label, sanitize_window_label, theme_script,
-        ThemeSource,
+        is_auth_label, require_auth_window, require_badge_window, require_label,
+        sanitize_window_label, theme_script, ThemeSource,
     };
     use crate::config::Theme;
 
@@ -1321,6 +1334,24 @@ mod tests {
         ] {
             assert!(!is_auth_label(bad), "{bad} must not be a valid auth label");
             assert!(require_auth_window(bad).is_err(), "{bad} must be rejected");
+        }
+    }
+
+    #[test]
+    fn the_badge_answers_settings_and_auth_popups_only() {
+        let popup = format!("auth-{}", sanitize_window_label("some-request-id"));
+        assert!(require_badge_window(&popup).is_ok());
+        assert!(require_badge_window("settings").is_ok());
+        for bad in [
+            "onboarding",
+            "renewal",
+            "update-prompt",
+            "Settings",
+            "settings ",
+            "",
+            "auth-abc",
+        ] {
+            assert!(require_badge_window(bad).is_err(), "{bad} must be rejected");
         }
     }
 

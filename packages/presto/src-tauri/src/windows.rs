@@ -187,11 +187,12 @@ pub fn open_settings_window(app: &AppHandle) {
             url: "settings.html".to_string(),
             title: "Presto Settings",
             width: 500.0,
-            // 664, not 600: the Encrypted Connection section and the Appearance row both add height,
+            // 680, not 600: the Encrypted Connection section and the Appearance row both add height,
             // and the title bar spends `WEBVIEW_CHROME_HEIGHT` of whatever is set here. The collapsed
-            // view measures 622, so this clears it by 10 — the speed slider was clipped by the bottom
-            // edge the last two times this number lagged the content.
-            height: 664.0,
+            // view measures 637 with one verified approved site (a two-line row), so this clears it
+            // by 11 — the speed slider was clipped by the bottom edge the last two times this number
+            // lagged the content.
+            height: 680.0,
             always_on_top: false,
             focus_if_open: true,
             focus_on_create: true,

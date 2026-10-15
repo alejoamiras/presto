@@ -1029,6 +1029,7 @@ fn start_background_tasks(app: &tauri::AppHandle, poll_allowed: bool, manual: Ma
             async move { presto::updater::check_for_update(&app).await }
         });
         spawn_floor_tracker();
+        verified_sites::spawn_production_refresh(app);
     }
 }
 
@@ -1144,7 +1145,7 @@ fn main() {
         .manage(config_state.clone())
         .manage(auth_manager.clone())
         .manage::<commands::VerifiedSitesState>(Arc::new(
-            verified_sites::VerifiedSitesRegistry::load(),
+            verified_sites::VerifiedSites::production(),
         ))
         .manage::<PendingUpdate>(PendingUpdate::default())
         .manage::<Arc<ScheduleStore>>(Arc::new(schedule_store()))
