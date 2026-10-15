@@ -63,8 +63,7 @@ APP_DIR="$HOME/Applications"
 APP_BIN="$APP_DIR/presto.AppImage"
 # Run-unique CA name (CN + on-disk filename) so cleanup removes only THIS run's
 # trust anchor — a fixed name could clobber a concurrent/leftover entry on a
-# non-ephemeral self-hosted runner. (Plan security item; the macOS script's
-# fixed-name retro-hardening is tracked as a separate follow-up.)
+# non-ephemeral self-hosted runner.
 CA_ID="updater-smoke-local-CA-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-0}"
 CA_DEST="/usr/local/share/ca-certificates/${CA_ID}.crt"
 WORK="$(mktemp -d)"

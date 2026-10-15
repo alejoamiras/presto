@@ -1018,5 +1018,12 @@ describe("release signer: prerelease feeds", () => {
     for (const script of UPDATER_SMOKE_SCRIPTS) {
       expect(script).not.toMatch(/https:\/\/\$(HOST|FeedHost)\/releases\/download/);
     }
+    // Only a dispatched smoke runs the ephemeral feed step, so pin the one URL it builds.
+    expect(ephemeral.match(/^\s*host=.*$/gm)?.map((line) => line.trim())).toEqual([
+      'host="updater-smoke.test"',
+    ]);
+    expect(ephemeral.match(/https:\/\/[^/"\s]*\/releases\/download\//g)).toEqual([
+      "https://$host/releases/download/",
+    ]);
   });
 });

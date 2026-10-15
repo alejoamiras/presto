@@ -905,7 +905,7 @@ jobs:
   # PUBLISHED). The packaged-E2E gate then runs against the DRAFT's OWN uploaded assets; `tag` (moved after
   # the gate) pushes the reviewed tag; `finalize` flips the draft to published. So a failed packaged gate
   # NEVER burns the version tag against a bad SHA. The isolated signer always runs before
-  # updater smokes; prereleases simply omit its already-produced latest.json from release assets.
+  # updater smokes, and produces latest.json for a stable release only.
   release:
     name: Create draft release
     needs: [validate, dependency-audit, resolve-updater-baseline, build, build-headless, sign-updater-artifacts, smoke, smoke-intel, update-smoke, update-smoke-linux, update-smoke-windows, update-smoke-windows-negative, e2e-webdriver]

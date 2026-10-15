@@ -37,12 +37,12 @@
                        intact, and a second instance Q fully suppressed — no heal, no rearm, no
                        second download — then release and finish positive. Requires
                        UPDATER_SMOKE_BARRIER_PREFIX (run-unique prefix, baked at N build time).
-                     | copy-initiator (arc-hunt r2 F2 regression: a COPY of the install drives the
+                     | copy-initiator (regression: a COPY of the install drives the
                        update while the installed instance is closed and the copy REMAINS on disk.
                        The marker must record the INSTALLER's destination, not the copy's path —
                        pre-fix, N saw a path mismatch it could not prove absent and suppressed
                        reconciliation, stranding marker+handoff+token and skipping heal/rearm.
-                       Also proves the F1 ownership gate: autostart is OFF here, so NO
+                       Also proves the ownership gate: autostart is OFF here, so NO
                        crash-recovery task may exist afterwards.)
 #>
 param(

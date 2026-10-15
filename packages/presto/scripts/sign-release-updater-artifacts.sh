@@ -24,8 +24,8 @@ SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:?protected up
 unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
 # Smoke feeds are production-signed, and released clients accept them whatever their version,
 # prereleases included. Their downloads name a reserved .test host (RFC 6761: never delegated, and
-# no public CA issues for it), so no server, a compromised release-feed Worker included, can answer
-# them; the smoke runners map it to their local feed server.
+# no public CA issues for it), so no public server, a compromised release-feed Worker included, can
+# answer them; the smoke runners map it to their local feed server.
 SMOKE_ARTIFACT_HOST="updater-smoke.test"
 case "$VERSION" in
   *-*) PRERELEASE=true ;;
