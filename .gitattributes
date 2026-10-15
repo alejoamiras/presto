@@ -5,3 +5,5 @@ implementations-plan/follow-ups.md -linguist-generated
 packages/presto/verified-sites.json -text
 packages/presto/verified-sites/** -text
 packages/presto/core/tests/fixtures/verified_sites/** -text
+# Compared byte for byte with the config writer's output.
+packages/presto/core/tests/fixtures/config/** -text
