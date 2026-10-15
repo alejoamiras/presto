@@ -79,7 +79,6 @@ jobs:
               - 'scripts/npm-pack-result.ts'
               - 'scripts/npm-packages.ts'
               - 'scripts/sdk-release-verification.ts'
-              - 'scripts/ec-default-digest.ts'
               - 'scripts/provenance-identity.ts'
               - 'scripts/registry-consistency.ts'
               - 'scripts/verify-sdk-package-signatures.ts'
