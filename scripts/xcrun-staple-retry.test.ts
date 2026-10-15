@@ -24,7 +24,10 @@ afterEach(() => {
  * working directory. Its `stapler staple` fails until call number `stapleOkFrom`, and
  * `stapler validate` fails for the first `validateFails` calls.
  */
-function shim(args: string[], { stapleOkFrom = 1, validateFails = 0, attempts = 6 } = {}) {
+function shim(
+  args: string[],
+  { stapleOkFrom = 1, validateFails = 0, validateCode = 68, attempts = 6 } = {},
+) {
   const dir = mkdtempSync(join(tmpdir(), "xcrun-shim-"));
   dirs.push(dir);
   const real = join(dir, "real-xcrun");
@@ -35,7 +38,7 @@ echo "$(basename "$PWD"): $*" >>"${dir}/calls"
 n() { local c; c=$(cat "${dir}/$1" 2>/dev/null || echo 0); echo $((c + 1)) | tee "${dir}/$1"; }
 case "$1 $2" in
   "stapler staple") [ "$(n staples)" -ge ${stapleOkFrom} ] ;;
-  "stapler validate") [ "$(n validations)" -gt ${validateFails} ] ;;
+  "stapler validate") [ "$(n validations)" -gt ${validateFails} ] || exit ${validateCode} ;;
   *) exit 7 ;;
 esac
 `,
@@ -87,6 +90,27 @@ describe("xcrun staple retry shim", () => {
       "bundle: stapler validate Presto.app",
     ]);
     expect(r.log.at(-1)).toBe("stapled Presto.app on attempt 3");
+  });
+
+  test("retries a lone validate that fails, without stapling", () => {
+    const r = shim(["stapler", "validate", "Presto.app"], { validateFails: 2 });
+    expect(r.code).toBe(0);
+    expect(r.calls).toEqual(Array(3).fill("bundle: stapler validate Presto.app"));
+    expect(r.log).toEqual([
+      "validate attempt 1/6 failed (exit 68) for Presto.app",
+      "validate attempt 2/6 failed (exit 68) for Presto.app",
+    ]);
+  });
+
+  test("fails a lone validate after the attempt budget", () => {
+    const r = shim(["stapler", "validate", "Presto.app"], { validateFails: 99, attempts: 2 });
+    expect(r.code).toBe(68);
+    expect(r.calls).toEqual(Array(2).fill("bundle: stapler validate Presto.app"));
+  });
+
+  test("fails a lone validate at once when the app has no ticket", () => {
+    const r = shim(["stapler", "validate", "Presto.app"], { validateFails: 99, validateCode: 65 });
+    expect(r).toEqual({ code: 65, calls: ["bundle: stapler validate Presto.app"], log: [] });
   });
 
   test("gives up with a failure after the attempt budget", () => {
