@@ -13,7 +13,6 @@ pub(crate) use ultra_honk::{
 
 type BbError = Box<dyn std::error::Error + Send + Sync>;
 
-/// Which bb a proof runs.
 #[derive(Clone)]
 pub enum BbBinary<'a> {
     /// Through [`find_bb`]: the bundled chain for `None`, the verified version cache otherwise.
@@ -42,6 +41,8 @@ pub trait SpawnGate: Send + Sync {
 }
 
 /// Whatever keeps a [`SpawnGate`]'s answer true until the spawn has happened (a lock guard).
+/// Deliberately not `Send`: holding one across an `.await` makes the proof future non-`Send`, so
+/// nothing can be awaited between admission and the spawn.
 pub trait AdmitGuard {}
 impl<T> AdmitGuard for T {}
 
@@ -1151,7 +1152,10 @@ mod containment {
             }
         }
 
+        /// bb has exited; terminate whatever it left in the job before the caller frees its permit,
+        /// as the Unix group kill does. The job object itself stays for the next bb.
         pub(super) fn finish(mut self) {
+            self.kill_tree();
             self.armed = false;
         }
     }
@@ -1785,6 +1789,37 @@ mod tests {
         assert!(
             reaped(pid),
             "the timed-out bb must be reaped before prove returns (guards are released after it)"
+        );
+    }
+
+    #[cfg(windows)]
+    #[tokio::test]
+    #[serial]
+    async fn a_successful_run_leaves_nothing_in_the_job() {
+        // A bb that exits 0 while a descendant keeps running: the run must not end with the
+        // descendant still in the job, or it would outlive the permit that serializes bb.
+        let dir = tempfile::tempdir().unwrap();
+        let mut cmd = tokio::process::Command::new("cmd.exe");
+        cmd.current_dir(dir.path());
+        cmd.args(["/C", "start /B ping -n 30 127.0.0.1 & exit 0"]);
+        cmd.stdout(std::process::Stdio::null());
+        finish_command(&mut cmd, None);
+        let binary = BbBinary::Find(None);
+        run_bb(&mut cmd, &binary, Duration::from_secs(60), None)
+            .await
+            .expect("cmd.exe exits 0");
+        let mut active = None;
+        for _ in 0..100 {
+            active = super::containment::active_processes_for_test();
+            if active == Some(0) {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert_eq!(
+            active,
+            Some(0),
+            "the descendant must not survive a successful run"
         );
     }
 

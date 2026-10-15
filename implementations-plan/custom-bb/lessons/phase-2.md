@@ -60,3 +60,26 @@
 - **I5:** the release bb (bb.js 6.0.0-rc.6, `amd64-linux`) is 44.7 MB and hashes in 0.18 s with
   64 KiB reads. That figure is a stand-in from Python's OpenSSL hashing; the Rust `sha2` crate is
   in the same range. A 500 MB debug build would take about 2 s per proof, small beside a proof.
+
+## Arc 1 Codex fix loop
+
+**Round 1** (`gpt-6.1-sol`, high, session `01a14169-ee8f-7dc0-9836-f9256232afe2`): **reject**,
+findings 1–3 blocking. Each was triaged against the code and accepted.
+
+| # | Severity | Claim | Disposition |
+|---|---|---|---|
+| 1 | high | The private-group exception checks the group's name and its member list but not other accounts' primary gid. A second account created with `-g alice` gets group write through "alice's private group". | Fixed. `is_private_group` also requires that no other account has the gid as its primary group. On glibc the accounts come from `getpwent_r` under a process mutex, and an error drops the exception. Other Unix systems (macOS, where accounts default to `staff`) get no exception. Pure counterexample test added. Residual: accounts that an NSS source declines to enumerate (sssd's default) are not seen. |
+| 2 | medium | On Windows, `Guard::finish` only disarms, so children bb left in the job survive the permit's release. | Fixed: `finish` terminates the job first, the Unix group kill's equivalent. A Windows-only regression test (`start /B ping`, then the job must hold no processes) was compile-checked here; it runs in CI. |
+| 3 | medium | `/prove/ultra-honk` maps a workspace-creation error with `prove_failed(e)`, so on the custom route the temp path reaches the body. | Fixed: it goes through `bb_failure`. Test: `prove-tmp` is a file and `TMPDIR` doesn't exist, so the request gets a 500 with no path, the detail reaches the activity record, and the fake never ran. |
+| 4 | low | No test proves that the test run holds the prove permit while bb runs. | Test added: a fake that marks its start and sleeps; while it runs, `take_test_permit` is `Busy`, and afterwards the permit is back. |
+| 5 | low | Narrating comments on `BbBinary` and `BbSource`; `AdmitGuard`'s deliberate `!Send` is undocumented. | Fixed. |
+
+Mutation check: dropping the permit at the top of `test_run_within` fails the new permit test.
+Binding the parameter as `_` is an equivalent mutant, because a function argument lives until the
+function returns. Reverting the ultra-honk mapping fails the workspace test. Dropping the account
+scan fails the group test.
+
+Observed, out of scope: `verified_sites::store::tests::a_save_waits_for_the_lock_and_releases_it`
+failed once in five full runs at `assert!(held.is_some())`, and never when run alone. It looks
+pre-existing: a concurrent test's fork can inherit the lock fd (`O_CLOEXEC` releases it only at
+exec) just as the save drops it.

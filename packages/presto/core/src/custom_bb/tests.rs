@@ -439,9 +439,27 @@ mod unix {
         let proof = take_test_permit(&prove).unwrap();
         assert!(matches!(take_test_permit(&prove), Err(TestRunError::Busy)));
         drop(proof);
-        let f = fixture("echo 6.0.0-dev.1");
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn a_test_run_holds_the_prove_permit_until_bb_has_finished() {
+        let _home = crate::ScopedPrestoHome::new();
+        let f = fixture("touch \"$0.started\"\nsleep 1\necho 6.0.0-dev.1");
+        let started = f.root.join("bb.started");
+        let prove = Arc::new(Semaphore::new(1));
         let permit = take_test_permit(&prove).unwrap();
-        test_run(&f.bb, &f.pin.sha256, permit).await.unwrap();
+        let (bb, sha256) = (f.bb.clone(), f.pin.sha256.clone());
+        let run = tokio::spawn(async move { test_run(&bb, &sha256, permit).await });
+        tokio::time::timeout(Duration::from_secs(5), async {
+            while !started.exists() {
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("bb started");
+        assert!(matches!(take_test_permit(&prove), Err(TestRunError::Busy)));
+        run.await.unwrap().unwrap();
         assert_eq!(prove.available_permits(), 1, "the permit comes back");
     }
 

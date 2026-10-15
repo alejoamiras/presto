@@ -51,7 +51,6 @@ pub(crate) struct ResolvedVersion {
     pub(crate) needs_download: bool,
 }
 
-/// Which bb serves a request.
 #[derive(Debug)]
 pub(crate) enum BbSource {
     Official(ResolvedVersion),

@@ -80,8 +80,9 @@ struct NodeMode {
 #[cfg(unix)]
 struct Viewer {
     uid: u32,
-    /// The user's own group (same name, the primary gid, no listed members): group write through
-    /// it reaches no other account, which keeps Debian's `umask 002` builds usable.
+    /// The user's own group (same name, the primary gid, no listed members, nobody else's primary
+    /// gid): group write through it reaches no other account, which keeps Debian's `umask 002`
+    /// builds usable.
     private_gid: Option<u32>,
 }
 
@@ -182,9 +183,51 @@ fn private_gid(uid: u32) -> Option<u32> {
     if rc != 0 || gfound.is_null() {
         return None;
     }
-    let same_name = unsafe { CStr::from_ptr(grp.gr_name) }.to_bytes() == user.as_slice();
-    let no_members = grp.gr_mem.is_null() || unsafe { (*grp.gr_mem).is_null() };
-    (same_name && no_members).then_some(gid)
+    let group = unsafe { CStr::from_ptr(grp.gr_name) }.to_bytes();
+    let has_members = !grp.gr_mem.is_null() && !unsafe { *grp.gr_mem }.is_null();
+    let accounts = primary_groups()?;
+    is_private_group(uid, gid, &user, group, has_members, &accounts).then_some(gid)
+}
+
+#[cfg(unix)]
+fn is_private_group(
+    uid: u32,
+    gid: u32,
+    user: &[u8],
+    group: &[u8],
+    has_members: bool,
+    accounts: &[(u32, u32)],
+) -> bool {
+    user == group && !has_members && accounts.iter().all(|&(u, g)| u == uid || g != gid)
+}
+
+/// Every account's (uid, primary gid), or None when they cannot all be listed. Accounts an NSS
+/// source declines to enumerate (sssd's default) stay unseen.
+#[cfg(all(target_os = "linux", target_env = "gnu"))]
+fn primary_groups() -> Option<Vec<(u32, u32)>> {
+    // The enumeration cursor is process-wide.
+    static CURSOR: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    let _cursor = CURSOR.lock().unwrap_or_else(|e| e.into_inner());
+    let mut buf = vec![0 as libc::c_char; 16 * 1024];
+    let mut accounts = Vec::new();
+    unsafe { libc::setpwent() };
+    let listed = loop {
+        let mut pwd: libc::passwd = unsafe { std::mem::zeroed() };
+        let mut found = std::ptr::null_mut();
+        match unsafe { libc::getpwent_r(&mut pwd, buf.as_mut_ptr(), buf.len(), &mut found) } {
+            0 if !found.is_null() => accounts.push((pwd.pw_uid, pwd.pw_gid)),
+            libc::ENOENT => break Some(accounts),
+            _ => break None,
+        }
+    };
+    unsafe { libc::endpwent() };
+    listed
+}
+
+/// No reentrant enumeration here, and macOS accounts default to the shared `staff` group anyway.
+#[cfg(all(unix, not(all(target_os = "linux", target_env = "gnu"))))]
+fn primary_groups() -> Option<Vec<(u32, u32)>> {
+    None
 }
 
 /// Linux: the POSIX access ACL, read raw from its xattr. A named user or group entry holding write
@@ -378,6 +421,16 @@ mod tests {
             check_mode(node(ME, MINE, 0o775), &no_private, true),
             Err(WritableByOthers)
         );
+    }
+
+    #[test]
+    fn a_group_is_private_only_when_no_other_account_has_it_as_its_primary() {
+        let alone = [(0, 0), (ME, MINE), (1001, 1001)];
+        assert!(is_private_group(ME, MINE, b"me", b"me", false, &alone));
+        assert!(!is_private_group(ME, MINE, b"me", b"devs", false, &alone));
+        assert!(!is_private_group(ME, MINE, b"me", b"me", true, &alone));
+        let shared = [(ME, MINE), (1001, MINE)];
+        assert!(!is_private_group(ME, MINE, b"me", b"me", false, &shared));
     }
 
     #[cfg(target_os = "linux")]

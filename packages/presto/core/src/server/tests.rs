@@ -2111,6 +2111,33 @@ mod custom_bb {
         );
     }
 
+    #[tokio::test]
+    #[serial]
+    async fn a_custom_route_workspace_failure_keeps_its_path_off_the_wire() {
+        let _home = crate::ScopedPrestoHome::new();
+        let f = pinned("");
+        let data = PathBuf::from(std::env::var_os("PRESTO_HOME").unwrap()).join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::write(data.join("prove-tmp"), "").unwrap();
+        let tmpdir = std::env::var_os("TMPDIR");
+        std::env::set_var("TMPDIR", f.pin.path.with_file_name("no-tmp"));
+        let response = router(f.state.clone())
+            .oneshot(ultra_honk_labelled())
+            .await
+            .unwrap();
+        match tmpdir {
+            Some(previous) => std::env::set_var("TMPDIR", previous),
+            None => std::env::remove_var("TMPDIR"),
+        }
+        let (status, code, body) = outcome(response).await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(code, "prove_failed");
+        assert!(!body.contains("no-tmp"), "{body}");
+        assert!(!f.ran.exists());
+        let detail = f.state.custom_bb_activity.lock().last_failure.clone();
+        assert!(detail.is_some_and(|failure| failure.detail.contains("no-tmp")));
+    }
+
     #[test]
     #[serial]
     fn the_label_is_refused_under_bb_binary_path_and_unrouted_by_a_store_that_cannot_persist() {

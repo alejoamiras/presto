@@ -299,10 +299,6 @@ where
     Ok((held, out?))
 }
 
-fn prove_failed(e: impl std::fmt::Display) -> ProveError {
-    ProveError::ProveFailed(e.to_string())
-}
-
 /// A Settings removal that happened after this request's grant means the user withdrew consent
 /// while the job was queued; chonk keeps its authorize-once behaviour, this path re-checks.
 fn ensure_not_revoked(state: &AppState, approval: &Approval) -> Result<(), ProveError> {
@@ -342,8 +338,10 @@ pub(crate) async fn prove_ultra_honk(
         vk: decoded.vk,
         target,
     };
+    // A workspace error names the temp path, so the custom route must redact it too.
+    let creating = state.clone();
     let (held, workspace) = on_worker(held, move |_| {
-        UltraHonkWorkspace::create(&job).map_err(prove_failed)
+        UltraHonkWorkspace::create(&job).map_err(|e| bb_failure(&creating, custom, &e))
     })
     .await?;
     // Last check before bb starts: the workspace write is another window for a Settings removal.
