@@ -106,5 +106,27 @@
       <div class="speed-description" id="speed-desc"></div>
     </div>
   </div>
+
+  <!-- Folded so nobody meets developer settings by accident; the Settings window keeps its height,
+       so the default view scrolls by this row. -->
+  <div class="section">
+    <details id="advanced" class="disclosure">
+      <summary>Advanced</summary>
+      <div class="row">
+        <span class="row-text">
+          <span id="developer-label">Developer mode</span>
+          <span class="row-sub">Shows settings for testing Presto before release. Turning it off resets them.</span>
+        </span>
+        <label class="toggle">
+          <input type="checkbox" id="developer" role="switch" aria-labelledby="developer-label" disabled />
+          <span class="slider"></span>
+        </label>
+      </div>
+    </details>
+  </div>
+
+  <div id="developer-section" class="section" hidden>
+    <h2>Developer</h2>
+  </div>
 </body>
 </html>

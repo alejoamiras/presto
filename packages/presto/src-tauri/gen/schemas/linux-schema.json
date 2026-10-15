@@ -285,6 +285,12 @@
           "markdownDescription": "Enables the set_autostart command without any pre-configured scope."
         },
         {
+          "description": "Enables the set_developer_mode command without any pre-configured scope.",
+          "type": "string",
+          "const": "allow-set-developer-mode",
+          "markdownDescription": "Enables the set_developer_mode command without any pre-configured scope."
+        },
+        {
           "description": "Enables the set_speed command without any pre-configured scope.",
           "type": "string",
           "const": "allow-set-speed",
@@ -403,6 +409,12 @@
           "type": "string",
           "const": "deny-set-autostart",
           "markdownDescription": "Denies the set_autostart command without any pre-configured scope."
+        },
+        {
+          "description": "Denies the set_developer_mode command without any pre-configured scope.",
+          "type": "string",
+          "const": "deny-set-developer-mode",
+          "markdownDescription": "Denies the set_developer_mode command without any pre-configured scope."
         },
         {
           "description": "Denies the set_speed command without any pre-configured scope.",

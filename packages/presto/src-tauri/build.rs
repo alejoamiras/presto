@@ -213,6 +213,7 @@ fn main() {
         "repair_autostart",
         "set_speed",
         "set_theme",
+        "set_developer_mode",
         "remove_approved_origin",
         "get_system_info",
         "get_verified_info",
