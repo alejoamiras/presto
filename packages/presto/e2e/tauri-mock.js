@@ -42,6 +42,8 @@ const defaults = {
     storedPath: null,
   }),
   get_system_info: () => ({ platform: "macos", cpu_count: 10 }),
+  // Option<VerifiedSiteDto>: None serializes as null, so an unlisted origin answers null.
+  get_verified_info: () => null,
   set_speed: () => null,
   set_theme: () => null,
   set_autostart: () => null,

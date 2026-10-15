@@ -3,7 +3,10 @@
 `verified-sites.json` is a curated list of origins that the Presto
 maintainers recognize. When one of these origins requests authorization, the
 popup shows the friendly name + a verified ✓ next to the raw origin, instead
-of just the raw origin string.
+of just the raw origin string. Settings → Approved Sites shows the same name
+and ✓ above a muted origin for each approved origin on the list. The origin
+always stays in full there: an approval belongs to one origin, and one name
+can cover several (a site and its extension).
 
 ## **NOT a security guarantee**
 
