@@ -171,6 +171,70 @@ test("remove origin calls invoke and re-renders", async ({ page }) => {
   await expect(page.getByText("No approved sites yet")).toBeVisible();
 });
 
+test("a reload that stalls after reading the config cannot repaint a removed site", async ({
+  page,
+}) => {
+  // Remove A, and hold that reload after its config read (it saw [B]); remove B, whose reload
+  // paints the empty list; then release the first. It must not bring B back.
+  await page.addInitScript(() => {
+    const w = window as any;
+    const approved = ["https://a.example", "https://b.example"];
+    w.__hold = false;
+    w.__release = null;
+    w.__TAURI_MOCK__.setHandler("get_config", () => ({
+      config_version: 1,
+      https_enabled: false,
+      approved_origins: [...approved],
+      speed: "full",
+    }));
+    w.__TAURI_MOCK__.setHandler("remove_approved_origin", ({ origin }: { origin: string }) => {
+      approved.splice(approved.indexOf(origin), 1);
+      return null;
+    });
+    const healthy = {
+      intentEnabled: false,
+      healthy: true,
+      unreadable: false,
+      pointsElsewhere: false,
+      canRepairNow: true,
+      storedPath: null,
+    };
+    w.__TAURI_MOCK__.setHandler("get_autostart_enabled", () => {
+      if (!w.__hold) return healthy;
+      w.__hold = false;
+      return new Promise((resolve) => {
+        w.__release = () => resolve(healthy);
+      });
+    });
+  });
+  await page.goto("/settings.html");
+  const rows = page.locator("#origins .origin-item");
+  await expect(rows).toHaveCount(2);
+  const remove = (origin: string) =>
+    rows.filter({ hasText: origin }).getByRole("button", { name: "Remove" }).click();
+
+  await page.evaluate(() => {
+    (window as any).__hold = true;
+  });
+  await remove("https://a.example");
+  await page.waitForFunction(() => typeof (window as any).__release === "function");
+  await remove("https://b.example");
+  await expect(page.getByText("No approved sites yet")).toBeVisible();
+
+  const lookups = (await callsFor(page, "get_verified_info")).length;
+  await page.evaluate(() => (window as any).__release());
+  // The released reload looks B up before it may paint; wait for that, then for its paint turn.
+  await page.waitForFunction(
+    (n) =>
+      (window as any).__TAURI_MOCK__.calls.filter((c: any) => c.cmd === "get_verified_info")
+        .length > n,
+    lookups,
+  );
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 0)));
+  await expect(rows).toHaveCount(0);
+  await expect(page.getByText("No approved sites yet")).toBeVisible();
+});
+
 test("speed slider input event updates label without IPC", async ({ page }) => {
   await page.goto("/settings.html");
 

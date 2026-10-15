@@ -136,10 +136,11 @@ describe("Verified sites: the signed list feed", () => {
     settingsHandle = await browser.getWindowHandle();
     await removeOriginViaUI(E2E_ORIGIN);
     await closeExtraWindows(settingsHandle);
-    if (builtIn) {
-      await removeOriginViaUI(builtIn.origin);
-      await approve(builtIn.origin, settingsHandle);
-    }
+    // Settings' tick needs an approved origin the list names; an emptied record must fail here,
+    // not quietly drop that coverage.
+    if (!builtIn) throw new Error("the newest verified-sites record lists no origin to approve");
+    await removeOriginViaUI(builtIn.origin);
+    await approve(builtIn.origin, settingsHandle);
   });
 
   after(async () => {

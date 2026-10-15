@@ -40,7 +40,12 @@ function updateSpeedUI(index) {
   document.getElementById("speed").dataset.fill = String(index);
 }
 
+// Each load is numbered as it starts, and only the newest may paint the approved list: an older one
+// can still be holding a config read from before a removal (a Remove, a failed set_theme).
+let loadGeneration = 0;
+
 async function loadSettings() {
+  const generation = ++loadGeneration;
   // Disable per call, not just via the HTML attribute: this also runs as the recovery path after a
   // failed set_theme, and by then the fieldset is enabled — leaving the awaits below open to the
   // same click-then-overwrite race the initial disabled state exists to close.
@@ -77,7 +82,7 @@ async function loadSettings() {
   document.getElementById("speed").value = idx;
   updateSpeedUI(idx);
 
-  await renderOrigins(config.approved_origins || []);
+  await renderOrigins(config.approved_origins || [], generation);
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -95,11 +100,7 @@ function verifiedCheck() {
   return svg;
 }
 
-// Overlapping loads (a Remove, a failed set_theme) each look names up; only the newest may paint.
-let originsRender = 0;
-
-async function renderOrigins(origins) {
-  const render = ++originsRender;
+async function renderOrigins(origins, generation) {
   // A failed lookup shows the bare origin: a missing tick is the safe direction.
   const names = await Promise.all(
     origins.map((origin) =>
@@ -109,7 +110,7 @@ async function renderOrigins(origins) {
       ),
     ),
   );
-  if (render !== originsRender) return;
+  if (generation !== loadGeneration) return;
 
   const list = document.getElementById("origins");
   const empty = document.getElementById("origins-empty");
