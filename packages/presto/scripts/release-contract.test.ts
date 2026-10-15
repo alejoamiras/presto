@@ -111,7 +111,7 @@ test("both ephemeral updater smokes prepare their builds and signed feed through
   const feed = script.split("\nfeed() {")[1]?.split("\n}\n")[0] ?? "";
   expect(feed).toContain('feed="$dir/smoke-latest.json"');
   expect(feed).toContain('bash packages/presto/scripts/sign-smoke-feed.sh "$feed" "$PWD"');
-  expect(feed).toContain('verify --feed "$feed" --pubkey "$pubkey"');
+  expect(feed).toContain('verify --feed "$feed" --pubkey "$pubkey" --smoke');
   expect(script).not.toMatch(/secrets\.|\$\{\{/);
 
   const call = "bash packages/presto/scripts/ephemeral-updater.sh ";
@@ -901,7 +901,8 @@ const SMOKE_DOWNLOAD_PREFIX = "https://updater-smoke.test/releases/download/";
 /**
  * Runs the release signer for `version` against a temp repo root with the Tauri CLI and the
  * update-manifest tool stubbed: the CLI records which key signed which file, and the tool assembles
- * feeds with jq and records the public key each payload was verified against.
+ * feeds with jq and records each envelope's schema, each feed's verify mode and the public key each
+ * payload was verified against.
  */
 function runReleaseSigner(version: string) {
   const work = fs.mkdtempSync(path.join(tmpdir(), "release-signer-"));
@@ -923,18 +924,23 @@ function runReleaseSigner(version: string) {
     tool,
     `#!/usr/bin/env bash
 cmd=$1; shift
+mode=
 while [ $# -gt 0 ]; do
   case $1 in
     --feed) feed=$2 ;; --envelope) envelope=$2 ;; --sig) sig=$2 ;;
-    --artifact) artifact=$2 ;; --pubkey) pubkey=$2 ;;
+    --artifact) artifact=$2 ;; --pubkey) pubkey=$2 ;; --schema) schema=$2 ;;
+    --channel) mode="--channel $2" ;;
+    --smoke) mode=--smoke; shift; continue ;;
   esac
   shift 2
 done
 case $cmd in
   verify-artifact) echo "verify-artifact $(basename "$artifact") pubkey=$(cat "$pubkey")" >>"${calls}" ;;
-  envelope) jq '{schema: "presto-update-manifest-v1", version, pub_date, platforms}' "$feed" ;;
+  envelope)
+    echo "envelope $(basename "$feed") schema=$schema" >>"${calls}"
+    jq '{schema: "presto-update-manifest-v1", version, pub_date, platforms}' "$feed" ;;
   splice) jq --rawfile m "$envelope" --rawfile s "$sig" '. + {manifest: $m, manifest_sig: $s}' "$feed" ;;
-  verify) echo "verify $(basename "$feed")" >>"${calls}" ;;
+  verify) echo "verify $(basename "$feed") $mode" >>"${calls}" ;;
 esac
 `,
     { mode: 0o755 },
@@ -1001,7 +1007,13 @@ describe("release signer: prerelease feeds", () => {
     expect(run.manifests.map((m) => path.basename(m.file))).toEqual(
       Array(4).fill("smoke-latest.json"),
     );
-    expect(run.calls.filter((call) => call === "verify smoke-latest.json")).toHaveLength(4);
+    // A prerelease's only v1 envelopes are its smoke twins, verified as smoke feeds.
+    expect(run.calls.filter((call) => call.startsWith("envelope "))).toEqual(
+      Array(4).fill("envelope smoke-latest.unsigned.json schema=v1"),
+    );
+    expect(run.calls.filter((call) => call.startsWith("verify "))).toEqual(
+      Array(4).fill("verify smoke-latest.json --smoke"),
+    );
   });
 
   test("no prerelease manifest names a download host anyone can serve", () => {
@@ -1016,6 +1028,8 @@ describe("release signer: prerelease feeds", () => {
     const run = runReleaseSigner("9.9.9");
     expect(run.code, run.stderr).toBe(0);
     expect(run.manifests.map((m) => m.file)).toContain("latest.json");
+    expect(run.calls).toContain("envelope latest.unsigned.json schema=v1");
+    expect(run.calls).toContain("verify latest.json --channel stable");
     for (const { file, feed } of run.manifests) {
       const prefix =
         file === "latest.json"
@@ -1054,5 +1068,88 @@ describe("release signer: prerelease feeds", () => {
     expect(ephemeral.match(/https:\/\/[^/"\s]*\/releases\/download\//g)).toEqual([
       "https://$host/releases/download/",
     ]);
+  });
+});
+
+/** The text of shell function `name`, from its header to the closing brace at column 0. */
+function shellFunction(script: string, name: string): string {
+  return script.split(`\n${name}() {`)[1]?.split("\n}\n")[0] ?? "";
+}
+
+describe("update-manifest verify modes", () => {
+  // `--smoke` skips channel admission, so it is reserved for feeds whose downloads it pins to the
+  // reserved host; everything a client may act on is verified as that client's channel would.
+  test("only smoke feed producers verify with --smoke; the release verifies as a channel", () => {
+    const scripts = path.join(REPO, "packages/presto/scripts");
+    const workflows = path.join(REPO, ".github/workflows");
+    const files = [
+      ...[...new Bun.Glob("*.{sh,ps1}").scanSync(scripts)].map((f) => path.join(scripts, f)),
+      ...[...new Bun.Glob("*.yml").scanSync(workflows)].map((f) => path.join(workflows, f)),
+    ];
+    expect(files.some((file) => file.endsWith("release-presto.yml"))).toBe(true);
+    const smokeUsers = files
+      .filter((file) => /--smoke\b/.test(fs.readFileSync(file, "utf8")))
+      .map((file) => path.relative(REPO, file))
+      .sort();
+    expect(smokeUsers).toEqual([
+      "packages/presto/scripts/ephemeral-updater.sh",
+      "packages/presto/scripts/release-signer-roundtrip.sh",
+      "packages/presto/scripts/sign-release-updater-artifacts.sh",
+    ]);
+    const ephemeral = fs.readFileSync(path.join(scripts, "ephemeral-updater.sh"), "utf8");
+    for (const [script, owner] of [
+      [RELEASE_SIGNER, "make_smoke_feed"],
+      [ephemeral, "feed"],
+    ] as const) {
+      const inOwner = shellFunction(script, owner).match(/--smoke\b/g)?.length ?? 0;
+      expect(inOwner, owner).toBeGreaterThan(0);
+      expect(script.match(/--smoke\b/g)?.length, `--smoke outside ${owner}`).toBe(inOwner);
+    }
+    const ci = fs.readFileSync(path.join(REPO, ".github/workflows/presto.yml"), "utf8");
+    expect(ci).toContain("bash packages/presto/scripts/release-signer-roundtrip.sh");
+
+    const releaseVerifies = WF.match(/^\s*verify --feed .*$/gm) ?? [];
+    expect(releaseVerifies).toHaveLength(2);
+    for (const call of releaseVerifies) expect(call).toMatch(/ --channel stable$/);
+  });
+
+  test("the smoke feed signer derives the schema from the version", () => {
+    const work = fs.mkdtempSync(path.join(tmpdir(), "smoke-feed-"));
+    try {
+      fs.mkdirSync(path.join(work, "repo/packages/presto"), { recursive: true });
+      fs.mkdirSync(path.join(work, "bin"));
+      fs.writeFileSync(path.join(work, "bin/bunx"), '#!/usr/bin/env bash\nprintf sig >"$4.sig"\n', {
+        mode: 0o755,
+      });
+      const sign = (version: string, ...flags: string[]) => {
+        const feed = path.join(work, "feed.json");
+        fs.writeFileSync(feed, JSON.stringify({ version, pub_date: "2026-01-01", platforms: {} }));
+        const run = Bun.spawnSync(
+          [
+            "bash",
+            path.join(REPO, "packages/presto/scripts/sign-smoke-feed.sh"),
+            feed,
+            path.join(work, "repo"),
+            ...flags,
+          ],
+          {
+            env: {
+              PATH: `${path.join(work, "bin")}:${process.env.PATH}`,
+              TAURI_SIGNING_PRIVATE_KEY: "throwaway",
+            },
+          },
+        );
+        if (run.exitCode !== 0) return run.exitCode;
+        return JSON.parse(fs.readFileSync(path.join(work, "envelope.json"), "utf8")).schema;
+      };
+      expect(sign("9.9.9")).toBe("presto-update-manifest-v1");
+      expect(sign("1.0.0+build-7")).toBe("presto-update-manifest-v1");
+      expect(sign("9.9.9-rc.1")).toBe("presto-update-manifest-rc-v1");
+      expect(sign("9.9.9-rc.1", "--schema", "v1")).toBe("presto-update-manifest-v1");
+      expect(sign("9.9.9", "--schema", "beta")).toBe(2);
+      expect(sign("9.9.9", "--schema")).toBe(2);
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
   });
 });

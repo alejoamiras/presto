@@ -390,14 +390,18 @@ jobs:
           tool envelope --feed "$work/latest.json" > "$work/envelope.json"
           ( cd packages/presto && bunx tauri signer sign "$work/envelope.json" )
           tool splice --feed "$work/latest.json" --envelope "$work/envelope.json" --sig "$work/envelope.json.sig" > "$work/signed.json"
-          tool verify --feed "$work/signed.json" --pubkey "$work/pubkey.b64"
+          tool verify --feed "$work/signed.json" --pubkey "$work/pubkey.b64" --channel stable
           echo "happy-path verify OK"
 
           # 4. F-004 splice attack: bump the OUTER version; the signed envelope stays at 1.2.3. verify
-          #    MUST reject (OuterMismatch). A pass here is a regression.
+          #    MUST reject it as OuterMismatch, not as a usage error (exit 2) or for any other reason.
           jq '.version = "9.9.9"' "$work/signed.json" > "$work/tampered.json"
-          if tool verify --feed "$work/tampered.json" --pubkey "$work/pubkey.b64"; then
-            echo "::error::version-splice feed VERIFIED but must have been rejected — signed-manifest downgrade protection regressed"
+          status=0
+          tool verify --feed "$work/tampered.json" --pubkey "$work/pubkey.b64" --channel stable \
+            2> "$work/tampered.err" || status=$?
+          if [ "$status" -ne 1 ] || ! grep -q 'OuterMismatch("version")' "$work/tampered.err"; then
+            cat "$work/tampered.err"
+            echo "::error::version-splice feed was not refused as OuterMismatch (exit $status) — signed-manifest downgrade protection regressed"
             exit 1
           fi
           echo "splice-reject OK (downgrade attack correctly refused)"

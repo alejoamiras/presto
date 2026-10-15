@@ -185,7 +185,7 @@ feed() {
   # Verify against the stamped config: the key the built app will actually trust.
   jq -er '.plugins.updater.pubkey' packages/presto/src-tauri/tauri.conf.json > "$pubkey"
   cargo run --locked --manifest-path packages/presto/core/Cargo.toml --example update-manifest -- \
-    verify --feed "$feed" --pubkey "$pubkey"
+    verify --feed "$feed" --pubkey "$pubkey" --smoke
 }
 
 case "${1:-}" in
