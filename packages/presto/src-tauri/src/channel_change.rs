@@ -63,7 +63,7 @@ pub async fn join_check(checks: Option<ManualCheckSender>) -> ManualCheckResult 
 #[allow(clippy::unwrap_used, clippy::panic, clippy::indexing_slicing)]
 mod tests {
     use super::*;
-    use crate::commands::try_mutate_config_at;
+    use crate::commands::{save_developer_mode, save_update_channel};
     use crate::config::{load_with_cap_from, ConfigStore};
     use crate::updater::{mode_and_reply, CheckMode, ManualReply, MANUAL_QUEUE};
     use presto_core::update_schedule::CheckReason;
@@ -200,8 +200,7 @@ mod tests {
         std::fs::write(&blocker, "").unwrap();
         let path = blocker.join("config.json");
         let store = ConfigStore::new(load_with_cap_from(&path));
-        let saved =
-            try_mutate_config_at(&store, Some(&path), |cfg| Ok(cfg.set_developer_mode(true)));
+        let saved = save_developer_mode(&store, Some(&path), true);
         assert!(saved.is_err());
         assert!(!store.read().developer.enabled, "memory follows the disk");
 
@@ -216,9 +215,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("config.json");
         let store = ConfigStore::new(load_with_cap_from(&path));
-        let saved = try_mutate_config_at(&store, Some(&path), |cfg| {
-            cfg.set_update_channel(Rc).map_err(|e| e.to_string())
-        });
+        let saved = save_update_channel(&store, Some(&path), Rc);
         assert_eq!(saved, Err("developer mode is off".to_string()));
         assert!(!path.exists(), "nothing saved");
         assert_eq!(store.effective_channel(), Stable);
@@ -227,5 +224,42 @@ mod tests {
         assert!(apply(saved, &effects).await.is_err());
         assert_eq!(effects.counts(), (0, 0));
         assert!(requests.try_recv().is_err());
+    }
+
+    /// The join check can fail, here on a queue whose update task is gone, and the save stands:
+    /// both commands answer with the result, never an error that would make Settings revert.
+    #[tokio::test]
+    async fn a_failed_join_keeps_the_save() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        // Hand-edited: a candidate choice stored with developer mode off.
+        let mut stored: serde_json::Value = serde_json::from_str(include_str!(
+            "../../core/tests/fixtures/config/v2-developer-rc.json"
+        ))
+        .unwrap();
+        stored["developer"]["enabled"] = false.into();
+        std::fs::write(&path, stored.to_string()).unwrap();
+        let store = ConfigStore::new(load_with_cap_from(&path));
+        assert_eq!(store.effective_channel(), Stable);
+
+        let gone = || {
+            let (effects, requests) = Recorded::new();
+            drop(requests);
+            effects
+        };
+        let saved = save_developer_mode(&store, Some(&path), true);
+        let joined = apply(saved, &gone()).await;
+        assert_eq!(joined, Ok(Some(ManualCheckResult::Failed)));
+        assert_eq!(load_with_cap_from(&path).effective_channel(), Rc);
+
+        let (effects, _requests) = Recorded::new();
+        let left = save_update_channel(&store, Some(&path), Stable);
+        assert_eq!(apply(left, &effects).await, Ok(None));
+        let saved = save_update_channel(&store, Some(&path), Rc);
+        assert_eq!(
+            apply(saved, &gone()).await,
+            Ok(Some(ManualCheckResult::Failed))
+        );
+        assert_eq!(load_with_cap_from(&path).effective_channel(), Rc);
     }
 }

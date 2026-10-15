@@ -1,5 +1,5 @@
 use crate::authorization::{AuthDecision, AuthorizationManager, ResolveOutcome};
-use crate::config::{self, PrestoConfig, UpdateChannel};
+use crate::config::{self, ChannelTransition, PrestoConfig, UpdateChannel};
 use crate::updater::{ManualCheckResult, ManualCheckSender};
 use crate::verified_sites::VerifiedSites;
 use presto_core::update_schedule::{install_opts, InstallCaller, InstallGate, ScheduleStore};
@@ -522,8 +522,32 @@ impl crate::channel_change::ChannelEffects for AppChannelEffects<'_> {
     }
 }
 
+/// The save [`set_developer_mode`] makes; `path` stands in for `config.json` in tests.
+pub(crate) fn save_developer_mode(
+    config: &ConfigStore,
+    path: Option<&Path>,
+    enabled: bool,
+) -> Result<ChannelTransition, String> {
+    try_mutate_config_at(config, path, |cfg| Ok(cfg.set_developer_mode(enabled)))
+}
+
+/// The save [`set_update_channel`] makes; `path` stands in for `config.json` in tests.
+pub(crate) fn save_update_channel(
+    config: &ConfigStore,
+    path: Option<&Path>,
+    channel: UpdateChannel,
+) -> Result<ChannelTransition, String> {
+    try_mutate_config_at(config, path, |cfg| {
+        cfg.set_update_channel(channel).map_err(|e| e.to_string())
+    })
+}
+
 /// Turning developer mode off resets every developer setting in the same save. Turning it on over a
 /// stored candidate choice joins that channel, as [`set_update_channel`] does.
+///
+/// Returns the join check's result when this save made the candidate channel effective, and `None`
+/// when it did not, in which case no check ran. `Err` means nothing was saved: a check that fails
+/// or times out is `Some(Failed)`, and the save stands.
 #[tauri::command]
 pub async fn set_developer_mode(
     window: tauri::WebviewWindow,
@@ -532,12 +556,13 @@ pub async fn set_developer_mode(
     enabled: bool,
 ) -> Result<Option<ManualCheckResult>, String> {
     require_label(window.label(), SETTINGS_LABEL)?;
-    let saved = try_mutate_config(&config, |cfg| Ok(cfg.set_developer_mode(enabled)));
+    let saved = save_developer_mode(&config, None, enabled);
     crate::channel_change::apply(saved, &AppChannelEffects(&app)).await
 }
 
-/// Refused while developer mode is off. Joining the candidate channel checks once and returns that
-/// check's result.
+/// Refused while developer mode is off. Returns as [`set_developer_mode`] does: the join check's
+/// result when the candidate channel became effective, `None` when no check ran, `Err` only when
+/// nothing was saved.
 #[tauri::command]
 pub async fn set_update_channel(
     window: tauri::WebviewWindow,
@@ -546,9 +571,7 @@ pub async fn set_update_channel(
     channel: UpdateChannel,
 ) -> Result<Option<ManualCheckResult>, String> {
     require_label(window.label(), SETTINGS_LABEL)?;
-    let saved = try_mutate_config(&config, |cfg| {
-        cfg.set_update_channel(channel).map_err(|e| e.to_string())
-    });
+    let saved = save_update_channel(&config, None, channel);
     crate::channel_change::apply(saved, &AppChannelEffects(&app)).await
 }
 

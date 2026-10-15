@@ -980,3 +980,230 @@ test("the recovery reload disables the appearance control again while it re-hydr
   await expect(option).toBeEnabled({ timeout: 5000 });
   await expect(page.locator('#theme input[value="system"]')).toBeChecked();
 });
+
+// ── Update channel ──
+
+type Channel = "stable" | "rc";
+
+/** Opens Settings on a stored developer block, running `version`. */
+async function openChannel(
+  page: Page,
+  {
+    enabled = true,
+    channel = "stable",
+    version = "1.2.0",
+    effective = enabled ? channel : "stable",
+  }: { enabled?: boolean; channel?: Channel; version?: string; effective?: Channel } = {},
+) {
+  await page.addInitScript(
+    ({ enabled, channel, version, effective }) => {
+      const mock = (window as any).__TAURI_MOCK__;
+      mock.setHandler("get_config", () => ({
+        config_version: 2,
+        https_enabled: false,
+        approved_origins: [],
+        speed: "full",
+        theme: "system",
+        onboarding_version: 1,
+        developer: { enabled, update_channel: channel },
+      }));
+      mock.setHandler("get_system_info", () => ({
+        platform: "macos",
+        cpu_count: 10,
+        app_version: version,
+        effective_channel: effective,
+      }));
+    },
+    { enabled, channel, version, effective },
+  );
+  await page.goto("/settings.html");
+}
+
+/** Holds every call of `cmd` until `answer` settles the oldest one with a result. */
+async function hold(page: Page, cmd: string) {
+  await page.addInitScript((cmd) => {
+    const w = window as any;
+    w.__held = [];
+    w.__TAURI_MOCK__.setHandler(cmd, () => new Promise((resolve) => w.__held.push(resolve)));
+  }, cmd);
+}
+
+async function answer(page: Page, result: string | null, call: "oldest" | "newest" = "oldest") {
+  await expect.poll(() => page.evaluate(() => (window as any).__held.length)).toBeGreaterThan(0);
+  await page.evaluate(
+    ({ result, call }) => {
+      const held = (window as any).__held;
+      (call === "oldest" ? held.shift() : held.pop())(result);
+    },
+    { result, call },
+  );
+}
+
+const channelRadio = (page: Page, value: Channel) =>
+  page.locator(`#channel input[value="${value}"]`);
+const pick = (page: Page, label: string) =>
+  page.locator("#channel label", { hasText: label }).click();
+const STAYS =
+  "Presto stays on 1.3.0-rc.2 until a newer stable release exists. It does not go back to an older version.";
+
+test("joining shows checking, then the result", async ({ page }) => {
+  await hold(page, "set_update_channel");
+  await openChannel(page);
+  await expect(page.locator("#channel-status")).toHaveText("Stable releases only.");
+
+  await pick(page, "Release candidates");
+  await expect(page.locator("#channel-result")).toHaveText("Checking…");
+  await expect(page.locator("#channel-status")).toHaveText(
+    "The newer of the next release candidate and the next stable release. You run 1.2.0.",
+  );
+  await answer(page, "up-to-date");
+  await expect(page.locator("#channel-result")).toHaveText("Up to date");
+  await expect(channelRadio(page, "rc")).toBeChecked();
+  expect((await callsFor(page, "set_update_channel")).map((c: any) => c.args)).toEqual([
+    { channel: "rc" },
+  ]);
+});
+
+test("join during an install shows installing", async ({ page }) => {
+  await hold(page, "set_update_channel");
+  await openChannel(page);
+  await pick(page, "Release candidates");
+  await answer(page, "installing");
+  await expect(page.locator("#channel-result")).toHaveText("Installing an update…");
+});
+
+test("a join that opens the prompt adds no line, and one that fails keeps the choice", async ({
+  page,
+}) => {
+  await hold(page, "set_update_channel");
+  await openChannel(page);
+  await pick(page, "Release candidates");
+  await answer(page, "presented");
+  await expect(page.locator("#channel-result")).toBeHidden();
+
+  await pick(page, "Stable");
+  await answer(page, null);
+  await pick(page, "Release candidates");
+  await answer(page, "failed");
+  await expect(page.locator("#channel-result")).toHaveText("Couldn't check — try again");
+  await expect(channelRadio(page, "rc")).toBeChecked();
+});
+
+test("a superseded join result is dropped", async ({ page }) => {
+  await hold(page, "set_update_channel");
+  await openChannel(page);
+  await pick(page, "Release candidates");
+  await pick(page, "Stable");
+  // The leave lands first; the join's answer arrives after it and must not overwrite it.
+  await answer(page, null, "newest");
+  await answer(page, "up-to-date");
+  await expect.poll(() => page.evaluate(() => (window as any).__held.length)).toBe(0);
+  await expect(page.locator("#channel-result")).toBeHidden();
+  await expect(channelRadio(page, "stable")).toBeChecked();
+  await expect(page.locator("#channel-status")).toHaveText("Stable releases only.");
+});
+
+test("leaving on a release candidate asks first", async ({ page }) => {
+  await openChannel(page, { channel: "rc", version: "1.3.0-rc.2" });
+  await expect(page.locator("#channel-status")).toHaveText("You run 1.3.0-rc.2.");
+
+  await pick(page, "Stable");
+  const check = page.locator("#leave-check");
+  await expect(check).toBeVisible();
+  await expect(check).toContainText(STAYS);
+  await expect(channelRadio(page, "rc")).toBeChecked();
+  await page.getByRole("button", { name: "Keep Release Candidates" }).click();
+  await expect(check).toBeHidden();
+  expect(await callsFor(page, "set_update_channel")).toEqual([]);
+
+  await pick(page, "Stable");
+  await page.getByRole("button", { name: "Switch to Stable" }).click();
+  await expect(check).toBeHidden();
+  await expect(channelRadio(page, "stable")).toBeChecked();
+  await expect(page.locator("#channel-status")).toHaveText(
+    "Stable releases only. You stay on 1.3.0-rc.2 until a newer stable release is out.",
+  );
+  expect((await callsFor(page, "set_update_channel")).map((c: any) => c.args)).toEqual([
+    { channel: "stable" },
+  ]);
+});
+
+test("leaving while running a stable release needs no check", async ({ page }) => {
+  await openChannel(page, { channel: "rc" });
+  await pick(page, "Stable");
+  await expect(page.locator("#leave-check")).toBeHidden();
+  await expect.poll(async () => (await callsFor(page, "set_update_channel")).length).toBe(1);
+});
+
+test("developer mode off on a release candidate uses the leave check", async ({ page }) => {
+  await openChannel(page, { channel: "rc", version: "1.3.0-rc.2" });
+  const developer = page.getByRole("switch", { name: "Developer mode" });
+  const check = page.locator("#developer-off-check");
+
+  await page.locator("#advanced .toggle").click();
+  await expect(check).toBeVisible();
+  await expect(check).toContainText(STAYS);
+  await expect(developer).toBeChecked();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(check).toBeHidden();
+  expect(await callsFor(page, "set_developer_mode")).toEqual([]);
+
+  await page.locator("#advanced .toggle").click();
+  await page.getByRole("button", { name: "Turn Off" }).click();
+  await expect(developer).not.toBeChecked();
+  await expect(page.locator("#developer-section")).toBeHidden();
+  expect((await callsFor(page, "set_developer_mode")).map((c: any) => c.args)).toEqual([
+    { enabled: false },
+  ]);
+});
+
+test("turning developer mode on over a stored candidate choice joins and keeps the switch on", async ({
+  page,
+}) => {
+  // A hand-edited config: the candidate channel stored while developer mode is off. The join can
+  // fail, but the save stands, so the switch and the choice stay.
+  await hold(page, "set_developer_mode");
+  await openChannel(page, { enabled: false, channel: "rc" });
+  await page.locator("#advanced > summary").click();
+  await page.locator("#advanced .toggle").click();
+
+  await expect(page.locator("#channel-result")).toHaveText("Checking…");
+  await answer(page, "failed");
+  await expect(page.locator("#channel-result")).toHaveText("Couldn't check — try again");
+  await expect(page.getByRole("switch", { name: "Developer mode" })).toBeChecked();
+  await expect(channelRadio(page, "rc")).toBeChecked();
+});
+
+test("a refused channel save goes back and says why", async ({ page }) => {
+  await page.addInitScript((message) => {
+    (window as any).__TAURI_MOCK__.setHandler("set_update_channel", () => {
+      throw message;
+    });
+  }, NEWER_CONFIG);
+  await openChannel(page);
+  await pick(page, "Release candidates");
+  await expect(page.locator("#developer-section .error-hint")).toHaveText(NEWER_CONFIG);
+  await expect(channelRadio(page, "stable")).toBeChecked();
+  await expect(page.locator("#channel-result")).toBeHidden();
+});
+
+test("read-only config shows the effective channel", async ({ page }) => {
+  await openChannel(page, { channel: "rc", effective: "stable" });
+  await expect(channelRadio(page, "stable")).toBeChecked();
+  await expect(page.locator("#channel-status")).toHaveText("Stable releases only.");
+});
+
+test("at the real window size the Developer section and the leave check are reachable", async ({
+  page,
+}) => {
+  await page.setViewportSize(VIEWPORT_SIZES.settings);
+  await openChannel(page, { channel: "rc", version: "1.3.0-rc.2" });
+  await pick(page, "Stable");
+  await expectReachable(page, "#channel");
+  await expectReachable(page, "#leave-confirm");
+  const width = await page.evaluate(() => ({
+    page: document.documentElement.scrollWidth,
+    window: document.documentElement.clientWidth,
+  }));
+  expect(width.page, "the channel row overflows sideways").toBeLessThanOrEqual(width.window);
+});

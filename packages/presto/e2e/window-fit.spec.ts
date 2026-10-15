@@ -15,17 +15,23 @@ import { VIEWPORT_SIZES } from "./window-sizes.js";
 const MOCK_PATH = path.join(import.meta.dirname, "tauri-mock.js");
 
 const POPUPS = [
-  { page: "renewal", actions: ["#renew", "#later"] },
-  { page: "update-prompt", actions: ["#update", "#later"] },
-  { page: "authorize", actions: ["#allow", "#deny"] },
+  { page: "renewal", query: "", actions: ["#renew", "#later"] },
+  { page: "update-prompt", query: "", actions: ["#update", "#later"] },
+  // The release-candidate copy replaces the note with a longer one.
+  {
+    page: "update-prompt",
+    query: "?current=1.2.0&version=1.3.0-rc.10",
+    actions: ["#update", "#later"],
+  },
+  { page: "authorize", query: "", actions: ["#allow", "#deny"] },
 ] as const;
 
-for (const { page: name, actions } of POPUPS) {
-  test(`${name}: content fits the webview viewport`, async ({ page }) => {
+for (const { page: name, query, actions } of POPUPS) {
+  test(`${name}${query}: content fits the webview viewport`, async ({ page }) => {
     const viewport = VIEWPORT_SIZES[name];
     await page.setViewportSize(viewport);
     await page.addInitScript({ path: MOCK_PATH });
-    await page.goto(`/${name}.html`);
+    await page.goto(`/${name}.html${query}`);
 
     const content = await page.evaluate(() => document.documentElement.scrollHeight);
     expect(
@@ -34,12 +40,12 @@ for (const { page: name, actions } of POPUPS) {
     ).toBeLessThanOrEqual(viewport.height);
   });
 
-  test(`${name}: both actions are fully visible`, async ({ page }) => {
+  test(`${name}${query}: both actions are fully visible`, async ({ page }) => {
     // The assertion that matters to a user. A dialog can "fit" by the numbers and still bury its
     // buttons if a later row grows, and none of these three can be scrolled to recover them.
     await page.setViewportSize(VIEWPORT_SIZES[name]);
     await page.addInitScript({ path: MOCK_PATH });
-    await page.goto(`/${name}.html`);
+    await page.goto(`/${name}.html${query}`);
 
     for (const selector of actions) {
       await expect(page.locator(selector)).toBeInViewport({ ratio: 1 });
