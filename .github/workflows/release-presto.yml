@@ -100,11 +100,14 @@ jobs:
     if: ${{ !inputs.auth_probe && inputs.mode == 'publish' }}
     uses: ./.github/workflows/dependency-audit.yml
 
-  # Resolve the greatest real, published, complete release below N that uses the current updater key.
-  # Prereleases are eligible so RC2 can exercise RC1 and GA can exercise the latest RC. Every release
-  # fails closed when no compatible baseline exists.
+  # Every updater smoke runs once per baseline: the greatest real, published, complete release below N
+  # under the current updater key (prereleases included, so RC2 exercises RC1 and GA the latest RC),
+  # and the release installed users run, i.e. the one whose own signed latest.json the live feed
+  # serves byte for byte. The two collapse into one when they are the same release. Either one
+  # missing or incompatible fails the release closed; publishing reads the public feed but holds no
+  # Cloudflare credential.
   resolve-updater-baseline:
-    name: Resolve updater smoke baseline
+    name: Resolve updater smoke baselines
     needs: validate
     if: ${{ !inputs.auth_probe && inputs.mode == 'publish' }}
     runs-on: ubuntu-latest
@@ -112,33 +115,35 @@ jobs:
     permissions:
       contents: read
     outputs:
-      tag: ${{ steps.resolve.outputs.tag }}
-      version: ${{ steps.resolve.outputs.version }}
+      baselines: ${{ steps.resolve.outputs.baselines }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
-      - name: Select the greatest lower complete release under the current updater key
+      - name: Select the greatest lower same-key release and the live stable
         id: resolve
         env:
           GITHUB_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
           REPOSITORY: ${{ github.repository }}
         run: |
-          PUBKEY=$(jq -r '.plugins.updater.pubkey' packages/presto/src-tauri/tauri.conf.json)
+          set -euo pipefail
+          PUBKEY=$(jq -er '.plugins.updater.pubkey' packages/presto/src-tauri/tauri.conf.json)
+          FEED_URL=$(jq -er '.plugins.updater.endpoints[0]' packages/presto/src-tauri/tauri.conf.json)
           RESULT=$(bun packages/presto/scripts/resolve-updater-baseline.ts \
             --repository "$REPOSITORY" \
             --version "$RELEASE_VERSION" \
-            --pubkey "$PUBKEY")
-          echo "$RESULT" | jq .
-          {
-            echo "tag=$(echo "$RESULT" | jq -r .tag)"
-            echo "version=$(echo "$RESULT" | jq -r .version)"
-          } >> "$GITHUB_OUTPUT"
+            --pubkey "$PUBKEY" \
+            --feed-url "$FEED_URL")
+          BASELINES=$(jq -ce '.baselines' <<<"$RESULT")
+          echo "baselines=$BASELINES" >> "$GITHUB_OUTPUT"
+          jq -r '"Updater smokes start from \(.baselines | map(.version) | join(" and ")): greatest lower same-key release \(.greatestLower), live stable \(.liveStable)."' \
+            <<<"$RESULT" | tee -a "$GITHUB_STEP_SUMMARY"
 
-  # Explicit credentials probe only. Publishing deliberately has no Cloudflare credential and never
-  # depends on feed availability; promotion validates and uses the write token in its own isolated job.
+  # Explicit credentials probe only. Publishing deliberately has no Cloudflare credential (it only reads
+  # the public feed to pick the live-stable smoke baseline); promotion validates and uses the write token
+  # in its own isolated job.
   release-auth-preflight:
     name: Release feed access preflight
     needs: [validate]
@@ -266,9 +271,10 @@ jobs:
       # bundle-structure invariant — all in one step so the signing secrets live in a single
       # place. Rationale:
       #   - Every tauri bundle pass re-signs, re-notarizes and re-staples the .app. tauri
-      #     staples once and ignores `xcrun stapler staple`'s exit status, and Apple's ticket
-      #     service often drops the runners' connections (Intel, 1.2.0-rc.3: six passes in a
-      #     row), so tauri runs with `xcrun-staple-retry.sh` first on PATH as `xcrun`. The DMG,
+      #     staples once and ignores `xcrun stapler staple`'s exit status, and the Intel runner
+      #     drops stapler's HTTP/3 connections to Apple's ticket service (the step above blocks
+      #     UDP 443 so it uses TCP), so tauri runs with `xcrun-staple-retry.sh` first on PATH as
+      #     `xcrun`, which also retries the DMG check's `stapler validate`. The DMG,
       #     which users open under Gatekeeper, still counts only once the app inside it
       #     validates. The updater payload is never quarantined, so it does not depend on a
       #     staple.
@@ -280,6 +286,10 @@ jobs:
       # Linux: single `tauri build` (deb + AppImage + ephemeral updater sig).
       # The ephemeral signatures are discarded. A later `release-signing` environment job
       # production-signs the exact updater payload bytes after all build tooling has exited.
+      - name: Block HTTP/3 to Apple's ticket service (Intel runner)
+        if: matrix.runner == 'macos-15-intel'
+        run: bash .github/scripts/block-udp-443.sh
+
       - name: Build Tauri bundle
         working-directory: packages/presto
         env:
@@ -392,6 +402,10 @@ jobs:
           fi
           echo "Bundle structure OK"
 
+      - name: Show how often the UDP 443 block fired
+        if: always() && matrix.runner == 'macos-15-intel'
+        run: sudo pfctl -vsr || true
+
       # What ships must carry no WebDriver-only test hook. The DMG packs the same .app as the
       # .app.tar.gz; the NSIS installer is LZMA-compressed, so its binary is scanned instead.
       - name: Assert no test hooks in the bundles
@@ -500,6 +514,7 @@ jobs:
           if-no-files-found: error
 
       - name: Upload signed production update feed
+        if: needs.validate.outputs.is_prerelease == 'false'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signed-update-feed
@@ -602,10 +617,13 @@ jobs:
     name: Post-build Smoke
     needs: [validate, sign-updater-artifacts, e2e-webdriver]
     runs-on: macos-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: presto-macos-arm64
@@ -632,12 +650,13 @@ jobs:
 
           # Gatekeeper / notarization verification: an unstapled or improperly
           # signed DMG can still "launch fine" in CI yet be REJECTED on a real
-          # user's first double-click. These offline checks catch that class
-          # (which a launch-only smoke misses).
+          # user's first double-click. These checks catch that class (which a
+          # launch-only smoke misses).
           APP_PATH=$(find /Volumes/Presto -maxdepth 1 -name '*.app' | head -1)
           echo "Verifying signature + stapled notarization of $APP_PATH..."
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          xcrun stapler validate "$APP_PATH"
+          # Validation asks Apple's ticket service, which drops runner connections; retry it.
+          STAPLE_DELAY=5 bash .github/scripts/xcrun-staple-retry.sh stapler validate "$APP_PATH"
           echo "Signature + stapled notarization OK"
 
           echo "Launching $APP_BIN..."
@@ -693,15 +712,20 @@ jobs:
     name: Post-build Smoke (Intel notarization)
     needs: [validate, sign-updater-artifacts, e2e-webdriver]
     runs-on: macos-15-intel
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: presto-macos-x86_64
           path: artifacts
-      - name: Verify Intel DMG signature + stapled notarization (offline)
+      - name: Block HTTP/3 to Apple's ticket service
+        run: bash .github/scripts/block-udp-443.sh
+      - name: Verify Intel DMG signature + stapled notarization
         run: |
           DMG=$(find artifacts -name '*.dmg' | head -1)
           if [ -z "$DMG" ]; then
@@ -714,7 +738,8 @@ jobs:
           fi
           echo "Verifying signature + stapled notarization of $APP_PATH..."
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          xcrun stapler validate "$APP_PATH"
+          # Validation asks Apple's ticket service, which drops runner connections; retry it.
+          STAPLE_DELAY=5 bash .github/scripts/xcrun-staple-retry.sh stapler validate "$APP_PATH"
           echo "Intel signature + stapled notarization OK"
       - name: Cleanup
         if: always()
@@ -724,9 +749,10 @@ jobs:
   # positive legs prove install-resolver-selected-N-1 → auto-update → relaunch → /health==N (the
   # 1.0.1 amfid failure class); the arm64 negative leg proves a tampered artifact
   # is REJECTED (signature enforcement). Linux and Windows have their own
-  # release-blocking updater jobs below.
+  # release-blocking updater jobs below. Every leg runs once per resolved baseline; `leg` is a
+  # dimension rather than `include` entries, which would overwrite one another across `baseline`.
   update-smoke:
-    name: Updater Smoke (${{ matrix.platform-key }} / ${{ matrix.mode }})
+    name: Updater Smoke (${{ matrix.leg.platform-key }} / ${{ matrix.leg.mode }} / from ${{ matrix.baseline.version }})
     needs: [validate, resolve-updater-baseline, sign-updater-artifacts, e2e-webdriver]
     # The isolated signer requires all four build legs, then each matrix leg downloads only its
     # own production-signed updater artifact.
@@ -734,7 +760,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
+        baseline: ${{ fromJSON(needs.resolve-updater-baseline.outputs.baselines) }}
+        leg:
           - runner: macos-latest
             platform-key: darwin-aarch64
             n-artifact: presto-macos-arm64
@@ -757,58 +784,67 @@ jobs:
             mode: negative
     uses: ./.github/workflows/_e2e-updater.yml
     with:
-      runner: ${{ matrix.runner }}
-      platform-key: ${{ matrix.platform-key }}
+      runner: ${{ matrix.leg.runner }}
+      platform-key: ${{ matrix.leg.platform-key }}
       n-version: ${{ needs.validate.outputs.version }}
-      n-artifact: ${{ matrix.n-artifact }}
-      n1-tag: ${{ needs.resolve-updater-baseline.outputs.tag }}
-      n1-version: ${{ needs.resolve-updater-baseline.outputs.version }}
-      n1-dmg-glob: ${{ matrix.n1-dmg-glob }}
-      mode: ${{ matrix.mode }}
+      n-artifact: ${{ matrix.leg.n-artifact }}
+      n1-tag: ${{ matrix.baseline.tag }}
+      n1-version: ${{ matrix.baseline.version }}
+      n1-dmg-glob: ${{ matrix.leg.n1-dmg-glob }}
+      mode: ${{ matrix.leg.mode }}
 
   # Linux/AppImage updater smoke — BLOCKING (in `tag.needs` + `release.needs`).
-  # Proves a user on the greatest lower same-key AppImage auto-updates to N AND the
+  # Proves a user on each resolved baseline's AppImage auto-updates to N AND the
   # relaunched app rebinds :59833 — the EADDRINUSE restart race fixed by the
   # server's bind-retry (#251). Started advisory; flipped to blocking after a
   # green 1.0.3-rc dry-run. To revert: drop it from tag/release `needs` and
   # restore `continue-on-error` on the smoke step in _e2e-updater-linux.yml.
   update-smoke-linux:
-    name: Updater Smoke (linux-x86_64 / ${{ matrix.mode }})
+    name: Updater Smoke (linux-x86_64 / ${{ matrix.mode }} / from ${{ matrix.baseline.version }})
     needs: [validate, resolve-updater-baseline, sign-updater-artifacts, e2e-webdriver]
     if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.sign-updater-artifacts.result == 'success' && needs.e2e-webdriver.result == 'success' }}
     strategy:
       fail-fast: false
       matrix:
+        baseline: ${{ fromJSON(needs.resolve-updater-baseline.outputs.baselines) }}
         mode: [positive, negative]
     uses: ./.github/workflows/_e2e-updater-linux.yml
     with:
       n-version: ${{ needs.validate.outputs.version }}
-      n1-tag: ${{ needs.resolve-updater-baseline.outputs.tag }}
-      n1-version: ${{ needs.resolve-updater-baseline.outputs.version }}
+      n1-tag: ${{ matrix.baseline.tag }}
+      n1-version: ${{ matrix.baseline.version }}
       mode: ${{ matrix.mode }}
   # Windows/NSIS updater smoke — BLOCKING (in tag.needs + release.needs), proven green on the
   # 1.0.4-rc.3 dry-run (positive + negative). Tests the REAL prod-signed Windows artifact (this run's
-  # isolated signer output) installing as an auto-update FROM the resolver-selected real Windows release
+  # isolated signer output) installing as an auto-update FROM each resolver-selected real Windows release
   # (complete asset set + 4-point fixture preflight) — full parity with the mac/linux
   # smokes. The ephemeral/current-ref sibling (incl. the L8 barrier) is smoke-updater-windows.yml.
   # REVERT (if it flakes): drop both jobs from tag.needs/release.needs to demote back to advisory.
   update-smoke-windows:
-    name: Updater Smoke (windows-x86_64 / positive)
+    name: Updater Smoke (windows-x86_64 / positive / from ${{ matrix.baseline.version }})
     needs: [validate, resolve-updater-baseline, sign-updater-artifacts]
     if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.sign-updater-artifacts.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        baseline: ${{ fromJSON(needs.resolve-updater-baseline.outputs.baselines) }}
     uses: ./.github/workflows/_e2e-updater-windows.yml
     with:
       n-version: ${{ needs.validate.outputs.version }}
-      n1-version: ${{ needs.resolve-updater-baseline.outputs.version }}
+      n1-version: ${{ matrix.baseline.version }}
       mode: positive
   update-smoke-windows-negative:
-    name: Updater Smoke (windows-x86_64 / negative)
+    name: Updater Smoke (windows-x86_64 / negative / from ${{ matrix.baseline.version }})
     needs: [validate, resolve-updater-baseline, sign-updater-artifacts]
     if: ${{ !inputs.auth_probe && inputs.mode == 'publish' && needs.validate.result == 'success' && needs.resolve-updater-baseline.result == 'success' && needs.sign-updater-artifacts.result == 'success' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        baseline: ${{ fromJSON(needs.resolve-updater-baseline.outputs.baselines) }}
     uses: ./.github/workflows/_e2e-updater-windows.yml
     with:
       n-version: ${{ needs.validate.outputs.version }}
-      n1-version: ${{ needs.resolve-updater-baseline.outputs.version }}
+      n1-version: ${{ matrix.baseline.version }}
       mode: negative
   # B4/F: MOVED AFTER the packaged-E2E gate (was pre-gate). `packaged-e2e-on-draft` transitively needs the
   # whole build+smoke+e2e-webdriver chain, so a failed
@@ -817,7 +853,7 @@ jobs:
   # anchor (codex F-consult: keep `tag`, don't retire it).
   tag:
     name: Create Git Tag
-    needs: [validate, release, packaged-e2e-on-draft]
+    needs: [validate, resolve-updater-baseline, release, packaged-e2e-on-draft]
     # F-005: skip in auth_probe mode so a probe never pushes a tag. always()+!cancelled()+explicit .result
     # gating (NOT implicit success(), so explicit prerequisites remain the authorization policy).
     # `release` is a DIRECT need with its own success gate, so a future packaged-condition edit can never
@@ -825,6 +861,7 @@ jobs:
     if: >-
       ${{ always() && !cancelled() && !inputs.auth_probe && inputs.mode == 'publish'
       && needs.validate.result == 'success' && needs.release.result == 'success'
+      && needs.resolve-updater-baseline.result == 'success'
       && needs.packaged-e2e-on-draft.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -834,6 +871,22 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-tags: true
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+      # "Re-run failed jobs" keeps earlier attempts' baselines, so a promote or rollback between attempts
+      # would otherwise ship a release never smoked from what installed users now run. Checked here while
+      # the draft is still replaceable, and again in `finalize` for a rerun that starts there.
+      - name: Require that the updater smokes started from the release the live feed serves
+        env:
+          SMOKED: ${{ needs.resolve-updater-baseline.outputs.baselines }}
+        run: |
+          set -euo pipefail
+          FEED_URL=$(jq -er '.plugins.updater.endpoints[0]' packages/presto/src-tauri/tauri.conf.json)
+          if ! bun packages/presto/scripts/resolve-updater-baseline.ts --feed-url "$FEED_URL" --smoked "$SMOKED"; then
+            echo "::error::no tag is pushed yet: Re-run all jobs, which replaces the draft and smokes from the live stable"
+            exit 1
+          fi
       # codex audit #9: pin the tag to the EXACT commit the whole pipeline validated. checkout@v6
       # defaults to github.sha, but assert it explicitly so the pushed tag can never target a
       # different HEAD than the one build/smoke/e2e all ran against (shipped-integrity anchor).
@@ -871,7 +924,7 @@ jobs:
   # PUBLISHED). The packaged-E2E gate then runs against the DRAFT's OWN uploaded assets; `tag` (moved after
   # the gate) pushes the reviewed tag; `finalize` flips the draft to published. So a failed packaged gate
   # NEVER burns the version tag against a bad SHA. The isolated signer always runs before
-  # updater smokes; prereleases simply omit its already-produced latest.json from release assets.
+  # updater smokes, and produces latest.json for a stable release only.
   release:
     name: Create draft release
     needs: [validate, dependency-audit, resolve-updater-baseline, build, build-headless, sign-updater-artifacts, smoke, smoke-intel, update-smoke, update-smoke-linux, update-smoke-windows, update-smoke-windows-negative, e2e-webdriver]
@@ -1170,7 +1223,7 @@ jobs:
   # unchanged since the gate (assets are mutable pre-publish) before `--draft=false --verify-tag`.
   finalize:
     name: Publish release (finalize)
-    needs: [validate, release, packaged-e2e-on-draft, tag]
+    needs: [validate, resolve-updater-baseline, release, packaged-e2e-on-draft, tag]
     # codex F-review: EXPLICIT success of ALL needs. always()+!cancelled() up front so the RC's skipped
     # an explicit result chain so a skipped prerequisite cannot silently skip the publish (the first RC to
     # reach this area once drafted but never finalized). The explicit .result==success chain
@@ -1178,6 +1231,7 @@ jobs:
     if: >-
       ${{ always() && !cancelled() && !inputs.auth_probe && inputs.mode == 'publish'
       && needs.validate.result == 'success'
+      && needs.resolve-updater-baseline.result == 'success'
       && needs.release.result == 'success'
       && needs.packaged-e2e-on-draft.result == 'success'
       && needs.tag.result == 'success' }}
@@ -1187,6 +1241,22 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      # A rerun that starts here skips `tag`'s identical check. The tag is already pushed, so the draft
+      # cannot be replaced: a release that fails this check is fixed forward.
+      - name: Require that the updater smokes started from the release the live feed serves
+        env:
+          SMOKED: ${{ needs.resolve-updater-baseline.outputs.baselines }}
+        run: |
+          set -euo pipefail
+          FEED_URL=$(jq -er '.plugins.updater.endpoints[0]' packages/presto/src-tauri/tauri.conf.json)
+          if ! bun packages/presto/scripts/resolve-updater-baseline.ts --feed-url "$FEED_URL" --smoked "$SMOKED"; then
+            echo "::error::the tag is already pushed, so this draft cannot be replaced: dispatch a new version"
+            exit 1
+          fi
 
       - name: Re-assert the pushed remote tag targets the reviewed commit
         env:

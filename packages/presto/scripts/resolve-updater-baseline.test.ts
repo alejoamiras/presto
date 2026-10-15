@@ -1,12 +1,21 @@
 import { describe, expect, test } from "bun:test";
+import path from "node:path";
 import {
+  assertLiveStableSmoked,
+  type LiveFeed,
+  loadLiveFeed,
   loadUpdaterReleaseCandidates,
+  selectLiveStableBaseline,
   selectUpdaterBaseline,
   type UpdaterReleaseCandidate,
+  updaterBaselines,
 } from "./resolve-updater-baseline";
 
 const OLD_KEY = "old-updater-key";
 const NEW_KEY = "new-updater-key";
+const FEED_BYTES = '{"version":"1.1.3","platforms":{}}';
+const FEED_SHA256 = new Bun.CryptoHasher("sha256").update(FEED_BYTES).digest("hex");
+const FEED: LiveFeed = { version: "1.1.3", sha256: FEED_SHA256 };
 
 function candidate(
   version: string,
@@ -16,6 +25,7 @@ function candidate(
   return {
     tagName: `presto-v${version}`,
     draft: false,
+    prerelease: version.includes("-"),
     pubkey,
     assetNames: [
       `Presto-${version}-macOS-Apple-Silicon.dmg`,
@@ -71,7 +81,7 @@ describe("updater smoke baseline selection", () => {
         return Response.json(
           calls === 1
             ? Array.from({ length: 100 }, (_, n) => ({ tag_name: `sdk-v0.0.${n}`, draft: false }))
-            : [{ tag_name: "presto-v0.9.0", draft: true, assets: [] }],
+            : [{ tag_name: "presto-v0.9.0", draft: true, prerelease: false, assets: [] }],
         );
       },
     );
@@ -143,3 +153,115 @@ describe("updater smoke baseline selection", () => {
     expect(result.version).toBe("3.0.0-rc.1");
   });
 });
+
+describe("live stable baseline", () => {
+  const stable = candidate("1.1.3", NEW_KEY, { feedDigest: `sha256:${FEED_SHA256}` });
+  const releases = [candidate("1.2.0-rc.2", NEW_KEY), stable];
+  const select = (
+    overrides: Partial<UpdaterReleaseCandidate> = {},
+    feed = FEED,
+    version = "1.2.0",
+  ) =>
+    selectLiveStableBaseline({
+      version,
+      currentPubkey: NEW_KEY,
+      releases: [releases[0] as UpdaterReleaseCandidate, { ...stable, ...overrides }],
+      feed,
+    });
+
+  test("joins the greatest lower release unless it is the same one, and gates finalize", () => {
+    const live = select();
+    const greatestLower = selectUpdaterBaseline({
+      version: "1.2.0",
+      currentPubkey: NEW_KEY,
+      releases,
+    });
+    expect(updaterBaselines(greatestLower, live)).toEqual([
+      { tag: "presto-v1.2.0-rc.2", version: "1.2.0-rc.2" },
+      { tag: "presto-v1.1.3", version: "1.1.3" },
+    ]);
+    expect(updaterBaselines(live, select())).toEqual([live]);
+
+    expect(() => assertLiveStableSmoked(FEED, [greatestLower, live])).not.toThrow();
+    expect(() => assertLiveStableSmoked(FEED, [greatestLower])).toThrow(
+      "live updater feed now serves 1.1.3, but this run's updater smokes started only from 1.2.0-rc.2",
+    );
+  });
+
+  test("fails closed unless the feed is a published same-key stable's own signed feed below N", () => {
+    const cases: Array<[string, () => unknown]> = [
+      ["no published release presto-v1.1.4", () => select({}, { ...FEED, version: "1.1.4" })],
+      ["presto-v1.1.3 has no latest.json digest", () => select({ feedDigest: undefined })],
+      ["presto-v1.1.3 has no latest.json digest", () => select({ feedDigest: "sha256:XYZ" })],
+      [
+        "bytes are not presto-v1.1.3's own signed latest.json",
+        () => select({}, { ...FEED, sha256: "0".repeat(64) }),
+      ],
+      ["presto-v1.1.3 is not a published stable release", () => select({ draft: true })],
+      ["presto-v1.1.3 is not a published stable release", () => select({ prerelease: true })],
+      ["presto-v1.1.3 lacks a complete installer set", () => select({ assetNames: [] })],
+      ["presto-v1.1.3 uses another updater key", () => select({ pubkey: OLD_KEY })],
+      ["not below 1.1.3", () => select({}, FEED, "1.1.3")],
+    ];
+    for (const [reason, run] of cases) {
+      expect(run, reason).toThrow(`live updater feed serves `);
+      expect(run, reason).toThrow(reason);
+    }
+  });
+
+  test("reads the feed without credentials or redirects, retries transport, hashes exact bytes", async () => {
+    const inits: (RequestInit | undefined)[] = [];
+    const replies = [new Response("busy", { status: 503 }), new Response(FEED_BYTES)];
+    const feed = await loadLiveFeed(
+      "https://presto.build/releases/latest.json",
+      async (_url, init) => {
+        inits.push(init);
+        return replies.shift() ?? Response.error();
+      },
+      0,
+    );
+    expect(feed).toEqual(FEED);
+    expect(inits).toHaveLength(2);
+    for (const init of inits) {
+      expect(init?.headers).toBeUndefined();
+      expect(init?.redirect).toBe("error");
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+    }
+
+    const down = async () => {
+      throw new Error("connection refused");
+    };
+    await expect(
+      loadLiveFeed("https://presto.build/releases/latest.json", down, 0),
+    ).rejects.toThrow("unreachable after 5 attempts: connection refused");
+    const versionless = async () => new Response("{}");
+    await expect(
+      loadLiveFeed("https://presto.build/releases/latest.json", versionless, 0),
+    ).rejects.toThrow("carries no version");
+  });
+});
+
+// Real-data check of the external contract: the served feed is byte-identical to a published
+// stable's `latest.json` asset digest. Opt-in, read-only.
+describe.skipIf(!process.env.UPDATER_BASELINE_LIVE || !process.env.GITHUB_TOKEN)(
+  "live stable baseline against the real feed and releases",
+  () => {
+    test("the served feed binds to a published same-key stable release", async () => {
+      const conf = await Bun.file(
+        path.join(import.meta.dir, "../src-tauri/tauri.conf.json"),
+      ).json();
+      const feed = await loadLiveFeed(conf.plugins.updater.endpoints[0]);
+      const releases = await loadUpdaterReleaseCandidates(
+        "alejoamiras/presto",
+        process.env.GITHUB_TOKEN ?? "",
+      );
+      const live = selectLiveStableBaseline({
+        version: "9999.0.0",
+        currentPubkey: conf.plugins.updater.pubkey,
+        releases,
+        feed,
+      });
+      expect(live.tag).toBe(`presto-v${feed.version}`);
+    }, 120_000);
+  },
+);

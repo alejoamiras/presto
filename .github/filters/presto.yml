@@ -163,6 +163,7 @@ updater_feed:
   - 'packages/presto/src-tauri/src/updater.rs'
   - 'packages/presto/scripts/ephemeral-updater.sh'
   - 'packages/presto/scripts/resolve-updater-baseline*.ts'
+  - 'packages/presto/scripts/release-signer-roundtrip.sh'
   - 'packages/presto/scripts/sign-release-updater-artifacts.sh'
   - 'packages/presto/scripts/sign-smoke-feed.sh'
   - 'packages/presto/scripts/updater-feed-server.ts'

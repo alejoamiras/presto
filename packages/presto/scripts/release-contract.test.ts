@@ -327,6 +327,97 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     expect(RELEASE_RUNBOOK).toContain("separately reviewed migration");
   });
 
+  test("every updater smoke leg runs once per resolved baseline, and tag and finalize recheck the feed", () => {
+    // [mut: drop the baseline dimension from any smoke job, pin a leg to one baseline, or move or
+    //  disable a recheck → fails]
+    type Job = {
+      needs?: string[];
+      if?: string;
+      strategy?: { matrix?: Record<string, unknown> };
+      with?: Record<string, unknown>;
+      steps?: SmokeStep[];
+    };
+    const jobs = (Bun.YAML.parse(WF) as { jobs: Record<string, Job> }).jobs;
+    const gha = (expression: string) => `\${{ ${expression} }}`;
+
+    const resolve = jobs["resolve-updater-baseline"]?.steps?.find((s) => s.id === "resolve");
+    expect(resolve?.run).toContain(".plugins.updater.endpoints[0]");
+    expect(resolve?.run).toContain('--feed-url "$FEED_URL"');
+
+    const macLeg = (runner: string, key: string, artifact: string, glob: string, mode: string) => ({
+      runner,
+      "platform-key": key,
+      "n-artifact": artifact,
+      "n1-dmg-glob": glob,
+      mode,
+    });
+    const arm64 = [
+      "macos-latest",
+      "darwin-aarch64",
+      "presto-macos-arm64",
+      "*macOS-Apple-Silicon.dmg",
+    ];
+    const [runner, key, artifact, glob] = arm64 as [string, string, string, string];
+    const dimensions: Record<string, Record<string, unknown[]>> = {
+      "update-smoke": {
+        leg: [
+          macLeg(runner, key, artifact, glob, "positive"),
+          macLeg(
+            "macos-15-intel",
+            "darwin-x86_64",
+            "presto-macos-x86_64",
+            "*macOS-Intel.dmg",
+            "positive",
+          ),
+          macLeg(runner, key, artifact, glob, "negative"),
+        ],
+      },
+      "update-smoke-linux": { mode: ["positive", "negative"] },
+      "update-smoke-windows": {},
+      "update-smoke-windows-negative": {},
+    };
+    let legsPerBaseline = 0;
+    for (const [name, others] of Object.entries(dimensions)) {
+      const job = jobs[name];
+      // Exact equality also rules out `include`/`exclude`, which could drop or rewrite legs.
+      expect(job?.strategy?.matrix, name).toEqual({
+        baseline: gha("fromJSON(needs.resolve-updater-baseline.outputs.baselines)"),
+        ...others,
+      });
+      expect(job?.with?.["n1-version"], name).toBe(gha("matrix.baseline.version"));
+      if (!name.startsWith("update-smoke-windows")) {
+        expect(job?.with?.["n1-tag"], name).toBe(gha("matrix.baseline.tag"));
+      }
+      legsPerBaseline += Object.values(others).reduce((legs, values) => legs * values.length, 1);
+    }
+    // 7 legs for a shared baseline, 14 when the live stable is another release.
+    expect(legsPerBaseline).toBe(7);
+    expect(WF).not.toMatch(/resolve-updater-baseline\.outputs\.(tag|version)\b/);
+
+    // Both side effects re-read the feed first: `tag` while the draft is replaceable, `finalize`
+    // for a rerun that starts there. Neither check nor side effect may be conditional.
+    for (const [name, sideEffect] of [
+      ["tag", "git push origin"],
+      ["finalize", "gh release edit"],
+    ] as const) {
+      const job = jobs[name];
+      expect(job?.needs, name).toContain("resolve-updater-baseline");
+      expect(job?.if, name).toContain("needs.resolve-updater-baseline.result == 'success'");
+      const steps = job?.steps ?? [];
+      const recheck = steps.findIndex((s) => s.run?.includes('--smoked "$SMOKED"'));
+      const effect = steps.findIndex((s) => s.run?.includes(sideEffect));
+      expect(recheck, name).toBeGreaterThan(0);
+      expect(recheck, name).toBeLessThan(effect);
+      expect(steps[recheck]?.env, name).toEqual({
+        SMOKED: gha("needs.resolve-updater-baseline.outputs.baselines"),
+      });
+      for (const step of [steps[recheck], steps[effect]]) {
+        expect(step?.if, name).toBeUndefined();
+        expect(step?.["continue-on-error"], name).toBeUndefined();
+      }
+    }
+  });
+
   test("mode split: `promote` runs only under promote-only; publish gated across release/tag/finalize", () => {
     // [mut: drop the mode guard on `release` → its always()/!cancelled() would run it under promote-only → fails]
     expect(WF).toContain("inputs.mode == 'promote-only'");
@@ -508,6 +599,35 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     const signer = WF.split("  sign-updater-artifacts:")[1]?.split("\n  build-headless:")[0] ?? "";
     expect(signer).toContain("environment: release-signing");
     expect(signer).not.toContain("assert-no-test-hooks");
+  });
+
+  test("post-build smokes retry stapler validate through the checked-out retry script", () => {
+    const jobs = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs;
+    for (const name of ["smoke", "smoke-intel"]) {
+      const steps = jobs[name]?.steps ?? [];
+      expect(steps[0]?.uses, name).toStartWith("actions/checkout@");
+      const checkout = steps[0]?.with as Record<string, unknown> | undefined;
+      expect(checkout?.["sparse-checkout"], name).toBe(".github/scripts");
+      const runs = steps.map((s) => s.run ?? "").join("\n");
+      expect(runs, name).not.toMatch(/(^|[^/])xcrun stapler validate/m);
+      expect(runs, name).toContain("bash .github/scripts/xcrun-staple-retry.sh stapler validate");
+    }
+  });
+
+  test("Intel macOS jobs block UDP 443 before any stapler call", () => {
+    const jobs = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs;
+    const block = "bash .github/scripts/block-udp-443.sh";
+    const build = jobs.build?.steps ?? [];
+    const buildBlock = build.findIndex((s) => s.run === block);
+    expect(build[buildBlock]?.if).toBe("matrix.runner == 'macos-15-intel'");
+    expect(buildBlock).toBeLessThan(build.findIndex((s) => s.name === "Build Tauri bundle"));
+    const intel = jobs["smoke-intel"]?.steps ?? [];
+    const intelBlock = intel.findIndex((s) => s.run === block);
+    expect(intelBlock).toBeGreaterThan(-1);
+    expect(intel[intelBlock]?.if).toBeUndefined();
+    expect(intelBlock).toBeLessThan(
+      intel.findIndex((s) => (s.run ?? "").includes("stapler validate")),
+    );
   });
 
   test("macOS ships a DMG only once its app validates as stapled, before the updater pass re-notarizes", () => {
@@ -775,3 +895,164 @@ function macBuildCalls(run: string, unstapled: number): { calls: string[]; code:
     fs.rmSync(cwd, { recursive: true, force: true });
   }
 }
+
+const SMOKE_DOWNLOAD_PREFIX = "https://updater-smoke.test/releases/download/";
+
+/**
+ * Runs the release signer for `version` against a temp repo root with the Tauri CLI and the
+ * update-manifest tool stubbed: the CLI records which key signed which file, and the tool assembles
+ * feeds with jq and records the public key each payload was verified against.
+ */
+function runReleaseSigner(version: string) {
+  const work = fs.mkdtempSync(path.join(tmpdir(), "release-signer-"));
+  const repo = path.join(work, "repo");
+  const artifacts = path.join(work, "artifacts");
+  const calls = path.join(work, "calls");
+  const conf = path.join(repo, "packages/presto/src-tauri/tauri.conf.json");
+  fs.mkdirSync(path.dirname(conf), { recursive: true });
+  fs.copyFileSync(path.join(REPO, "packages/presto/src-tauri/tauri.conf.json"), conf);
+  const bin = path.join(repo, "packages/presto/node_modules/.bin");
+  fs.mkdirSync(bin, { recursive: true });
+  fs.writeFileSync(
+    path.join(bin, "tauri"),
+    `#!/usr/bin/env bash\necho "sign $(basename "$3") key=$TAURI_SIGNING_PRIVATE_KEY" >>"${calls}"\nprintf sig >"$3.sig"\n`,
+    { mode: 0o755 },
+  );
+  const tool = path.join(work, "update-manifest");
+  fs.writeFileSync(
+    tool,
+    `#!/usr/bin/env bash
+cmd=$1; shift
+while [ $# -gt 0 ]; do
+  case $1 in
+    --feed) feed=$2 ;; --envelope) envelope=$2 ;; --sig) sig=$2 ;;
+    --artifact) artifact=$2 ;; --pubkey) pubkey=$2 ;;
+  esac
+  shift 2
+done
+case $cmd in
+  verify-artifact) echo "verify-artifact $(basename "$artifact") pubkey=$(cat "$pubkey")" >>"${calls}" ;;
+  envelope) jq '{schema: "presto-update-manifest-v1", version, pub_date, platforms}' "$feed" ;;
+  splice) jq --rawfile m "$envelope" --rawfile s "$sig" '. + {manifest: $m, manifest_sig: $s}' "$feed" ;;
+  verify) echo "verify $(basename "$feed")" >>"${calls}" ;;
+esac
+`,
+    { mode: 0o755 },
+  );
+  const payloads = [
+    ["macos-arm64", `Presto-${version}-macOS-Apple-Silicon.app.tar.gz`],
+    ["macos-x86_64", `Presto-${version}-macOS-Intel.app.tar.gz`],
+    ["linux-x86_64", `Presto-${version}-Linux-x86_64.AppImage`],
+    ["windows-x86_64", `Presto-${version}-Windows-x86_64-setup.nsis.zip`],
+  ] as const;
+  for (const [dir, name] of payloads) {
+    fs.mkdirSync(path.join(artifacts, `unsigned-presto-${dir}`), { recursive: true });
+    fs.writeFileSync(path.join(artifacts, `unsigned-presto-${dir}`, name), "payload");
+  }
+  try {
+    const run = Bun.spawnSync(
+      [
+        "bash",
+        path.join(REPO, "packages/presto/scripts/sign-release-updater-artifacts.sh"),
+        artifacts,
+        version,
+        `presto-v${version}`,
+        repo,
+        tool,
+      ],
+      {
+        env: {
+          PATH: process.env.PATH,
+          TAURI_SIGNING_PRIVATE_KEY: "production-key",
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: "production-password",
+        },
+      },
+    );
+    const manifests = [...new Bun.Glob("**/*.json").scanSync(artifacts)].map((file) => ({
+      file,
+      feed: JSON.parse(fs.readFileSync(path.join(artifacts, file), "utf8")) as {
+        platforms: Record<string, { url: string }>;
+      },
+    }));
+    const config = JSON.parse(fs.readFileSync(conf, "utf8")) as {
+      plugins: { updater: { pubkey: string } };
+    };
+    return {
+      code: run.exitCode,
+      stderr: run.stderr.toString(),
+      calls: fs.readFileSync(calls, "utf8").split("\n").filter(Boolean),
+      manifests,
+      payloads: payloads.map(([, name]) => name),
+      pubkey: config.plugins.updater.pubkey,
+    };
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true });
+  }
+}
+
+describe("release signer: prerelease feeds", () => {
+  test("a prerelease still signs every payload with the production key, but emits no latest.json", () => {
+    const run = runReleaseSigner("9.9.9-rc.1");
+    expect(run.code, run.stderr).toBe(0);
+    for (const payload of run.payloads) {
+      expect(run.calls).toContain(`sign ${payload} key=production-key`);
+      expect(run.calls).toContain(`verify-artifact ${payload} pubkey=${run.pubkey}`);
+    }
+    expect(run.manifests.map((m) => path.basename(m.file))).toEqual(
+      Array(4).fill("smoke-latest.json"),
+    );
+    expect(run.calls.filter((call) => call === "verify smoke-latest.json")).toHaveLength(4);
+  });
+
+  test("no prerelease manifest names a download host anyone can serve", () => {
+    const urls = runReleaseSigner("9.9.9-rc.1").manifests.flatMap((m) =>
+      Object.values(m.feed.platforms).map((platform) => platform.url),
+    );
+    expect(urls).toHaveLength(4);
+    for (const url of urls) expect(url.startsWith(SMOKE_DOWNLOAD_PREFIX), url).toBe(true);
+  });
+
+  test("a stable release keeps its GitHub-URL latest.json and moves only its smoke feeds", () => {
+    const run = runReleaseSigner("9.9.9");
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.manifests.map((m) => m.file)).toContain("latest.json");
+    for (const { file, feed } of run.manifests) {
+      const prefix =
+        file === "latest.json"
+          ? "https://github.com/alejoamiras/presto/releases/download/presto-v9.9.9/"
+          : SMOKE_DOWNLOAD_PREFIX;
+      for (const { url } of Object.values(feed.platforms)) {
+        expect(url.startsWith(prefix), url).toBe(true);
+      }
+    }
+  });
+
+  test("the production feed is uploaded only for a stable release", () => {
+    const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs["sign-updater-artifacts"]?.steps ?? [];
+    const upload = steps.find((step) => step.name === "Upload signed production update feed");
+    expect(upload?.if).toBe("needs.validate.outputs.is_prerelease == 'false'");
+    const payloadUploads = steps.filter((s) => s.name?.startsWith("Upload signed") && s !== upload);
+    expect(payloadUploads).toHaveLength(4);
+    for (const step of payloadUploads) expect(step.if, step.name).toBeUndefined();
+  });
+
+  test("every smoke feed producer and consumer uses the reserved download host", () => {
+    const ephemeral = fs.readFileSync(
+      path.join(REPO, "packages/presto/scripts/ephemeral-updater.sh"),
+      "utf8",
+    );
+    for (const script of [RELEASE_SIGNER, ephemeral, ...UPDATER_SMOKE_SCRIPTS]) {
+      expect(script).toContain('"updater-smoke.test"');
+    }
+    for (const script of UPDATER_SMOKE_SCRIPTS) {
+      expect(script).not.toMatch(/https:\/\/\$(HOST|FeedHost)\/releases\/download/);
+    }
+    // Only a dispatched smoke runs the ephemeral feed step, so pin the one URL it builds.
+    expect(ephemeral.match(/^\s*host=.*$/gm)?.map((line) => line.trim())).toEqual([
+      'host="updater-smoke.test"',
+    ]);
+    expect(ephemeral.match(/https:\/\/[^/"\s]*\/releases\/download\//g)).toEqual([
+      "https://$host/releases/download/",
+    ]);
+  });
+});
