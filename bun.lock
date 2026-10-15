@@ -131,7 +131,7 @@
     },
     "packages/sdk-noir": {
       "name": "@alejoamiras/presto-noir",
-      "version": "2.0.0-rc.2",
+      "version": "2.0.0-rc.1",
       "dependencies": {
         "@alejoamiras/presto-core": "workspace:*",
         "@logtape/logtape": "^2.3.2",
