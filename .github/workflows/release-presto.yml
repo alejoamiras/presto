@@ -271,9 +271,10 @@ jobs:
       # bundle-structure invariant — all in one step so the signing secrets live in a single
       # place. Rationale:
       #   - Every tauri bundle pass re-signs, re-notarizes and re-staples the .app. tauri
-      #     staples once and ignores `xcrun stapler staple`'s exit status, and Apple's ticket
-      #     service often drops the runners' connections (Intel, 1.2.0-rc.3: six passes in a
-      #     row), so tauri runs with `xcrun-staple-retry.sh` first on PATH as `xcrun`. The DMG,
+      #     staples once and ignores `xcrun stapler staple`'s exit status, and the Intel runner
+      #     drops stapler's HTTP/3 connections to Apple's ticket service (the step above blocks
+      #     UDP 443 so it uses TCP), so tauri runs with `xcrun-staple-retry.sh` first on PATH as
+      #     `xcrun`, which also retries the DMG check's `stapler validate`. The DMG,
       #     which users open under Gatekeeper, still counts only once the app inside it
       #     validates. The updater payload is never quarantined, so it does not depend on a
       #     staple.
@@ -285,6 +286,10 @@ jobs:
       # Linux: single `tauri build` (deb + AppImage + ephemeral updater sig).
       # The ephemeral signatures are discarded. A later `release-signing` environment job
       # production-signs the exact updater payload bytes after all build tooling has exited.
+      - name: Block HTTP/3 to Apple's ticket service (Intel runner)
+        if: matrix.runner == 'macos-15-intel'
+        run: bash .github/scripts/block-udp-443.sh
+
       - name: Build Tauri bundle
         working-directory: packages/presto
         env:
@@ -396,6 +401,10 @@ jobs:
             exit 1
           fi
           echo "Bundle structure OK"
+
+      - name: Show how often the UDP 443 block fired
+        if: always() && matrix.runner == 'macos-15-intel'
+        run: sudo pfctl -vsr || true
 
       # What ships must carry no WebDriver-only test hook. The DMG packs the same .app as the
       # .app.tar.gz; the NSIS installer is LZMA-compressed, so its binary is scanned instead.
@@ -607,10 +616,13 @@ jobs:
     name: Post-build Smoke
     needs: [validate, sign-updater-artifacts, e2e-webdriver]
     runs-on: macos-latest
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: presto-macos-arm64
@@ -637,12 +649,13 @@ jobs:
 
           # Gatekeeper / notarization verification: an unstapled or improperly
           # signed DMG can still "launch fine" in CI yet be REJECTED on a real
-          # user's first double-click. These offline checks catch that class
-          # (which a launch-only smoke misses).
+          # user's first double-click. These checks catch that class (which a
+          # launch-only smoke misses).
           APP_PATH=$(find /Volumes/Presto -maxdepth 1 -name '*.app' | head -1)
           echo "Verifying signature + stapled notarization of $APP_PATH..."
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          xcrun stapler validate "$APP_PATH"
+          # Validation asks Apple's ticket service, which drops runner connections; retry it.
+          STAPLE_DELAY=5 bash .github/scripts/xcrun-staple-retry.sh stapler validate "$APP_PATH"
           echo "Signature + stapled notarization OK"
 
           echo "Launching $APP_BIN..."
@@ -698,15 +711,20 @@ jobs:
     name: Post-build Smoke (Intel notarization)
     needs: [validate, sign-updater-artifacts, e2e-webdriver]
     runs-on: macos-15-intel
-    timeout-minutes: 5
+    timeout-minutes: 10
     permissions:
       contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          sparse-checkout: .github/scripts
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: presto-macos-x86_64
           path: artifacts
-      - name: Verify Intel DMG signature + stapled notarization (offline)
+      - name: Block HTTP/3 to Apple's ticket service
+        run: bash .github/scripts/block-udp-443.sh
+      - name: Verify Intel DMG signature + stapled notarization
         run: |
           DMG=$(find artifacts -name '*.dmg' | head -1)
           if [ -z "$DMG" ]; then
@@ -719,7 +737,8 @@ jobs:
           fi
           echo "Verifying signature + stapled notarization of $APP_PATH..."
           codesign --verify --deep --strict --verbose=2 "$APP_PATH"
-          xcrun stapler validate "$APP_PATH"
+          # Validation asks Apple's ticket service, which drops runner connections; retry it.
+          STAPLE_DELAY=5 bash .github/scripts/xcrun-staple-retry.sh stapler validate "$APP_PATH"
           echo "Intel signature + stapled notarization OK"
       - name: Cleanup
         if: always()
