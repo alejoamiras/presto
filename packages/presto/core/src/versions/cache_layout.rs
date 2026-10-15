@@ -112,7 +112,7 @@ pub(crate) fn version_bb_marker_path(version: &AztecVersion) -> Option<PathBuf> 
     versions_base_dir().map(|b| b.join(version.as_str()).join(MARKER_NAME))
 }
 
-fn is_hex64(s: &str) -> bool {
+pub(crate) fn is_hex64(s: &str) -> bool {
     s.len() == 64
         && s.bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))

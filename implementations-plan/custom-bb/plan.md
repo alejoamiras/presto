@@ -187,10 +187,10 @@ work, and is `async`; hashing runs on `spawn_blocking`; the webview never sends 
   proves the file starts on this host: a wrong architecture, a missing library, Smart App Control and
   Gatekeeper all fail here.
 - **D7 path policy**, at pick time and at spawn time:
-  - **Unix:** the file and every ancestor are owned by the user or root; the file is neither group-
-    nor world-writable; no ancestor is world-writable without the sticky bit; an ancestor may be
-    group-writable only through the user's private group (same name as the user, the user's primary
-    gid, no listed members). Debian user-private groups keep working; macOS `staff` is refused.
+  - **Unix:** the file and every ancestor are owned by the user or root. Nothing is world-writable,
+    and group write is allowed only through the user's private group (same name as the user, the
+    user's primary gid, no listed members), except that a sticky ancestor (`/tmp`) may be writable
+    by both. Debian user-private groups keep working; macOS `staff` is refused.
     Extended ACLs on the file or any ancestor are refused when an **allow** entry grants a
     write-class right (write, append, delete, delete-child, add-file, add-subdirectory, write
     attributes or security, chown) to anyone, since macOS evaluates ACLs before mode bits. Deny
@@ -324,6 +324,9 @@ with the output or run ID in the transcript.
 
 ### Phase 1: core pin, label gate, inspection, test run
 
+**Status:** steps 1, 2 and 4 are green (`lessons/phase-1.md`). Step 3 and the off-clears half of T6
+wait for `DeveloperSettings` on `main`.
+
 1. `custom_bb.rs`: `CustomBbPin`, `de_custom_bb`, `check_label`, `inspect` (with D7),
    `verify_for_spawn`, `test_run` (takes a permit), `env_override_active`.
 2. Re-export `sha256_file` for non-test use.
@@ -455,6 +458,9 @@ share the command shapes.
 - **Settled by the owner:** D2 (Codex wanted a `/health` field; Opus and the driver did not: none);
   D3 (Codex wanted failures loud in the dApp; Opus and the driver wanted Presto: Presto); D5 (the
   driver's UX picks, except popup C over the driver's late switch to A; C keeps the permanence line).
+- **Implementation (P1):** D7's mode rule gives the file the same private-group exception as its
+  folders, and lets a sticky folder be writable by group as well as world. The plan's wording would
+  refuse every `umask 002` rebuild and `/tmp` itself. The principle is unchanged.
 - **Approved 2026-10-15:** A5 by the owner; the remainder by the orchestrator under owner
   delegation (A4, A6, A7 as recommended; scope desktop-only, tier `mid`, delivery arc 1 + arc 2 +
   close-out; hardening decided later; `code_review` off).

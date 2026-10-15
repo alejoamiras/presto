@@ -12,16 +12,18 @@ mod leases;
 mod release_metadata;
 mod version_policy;
 
+#[cfg(test)]
+pub(crate) use cache_layout::write_bb_marker;
 pub use cache_layout::{
     bb_binary_name, list_cached_versions, mark_cached_bb_active, verify_cached_bb, version_bb_path,
     versions_base_dir,
 };
-#[cfg(test)]
-pub(crate) use cache_layout::{sha256_file, write_bb_marker};
+pub(crate) use cache_layout::{is_hex64, sha256_file};
 pub use download_budget::{BudgetExhausted, DownloadBudget, PER_ORIGIN_DOWNLOADS};
 pub use downloader::download_bb;
 pub use leases::{acquire as acquire_lease, Contended, Lease};
 pub use release_metadata::{current_platform, download_url};
+pub(crate) use version_policy::{check_version_against, KNOWN_VULNERABLE_VERSIONS};
 pub use version_policy::{
     check_version_selectable, cleanup_old_versions, is_valid_version, sweep_cache_on_start,
     versions_to_evict, versions_to_evict_for_size, AztecVersion, NetworkTier, VersionRejection,

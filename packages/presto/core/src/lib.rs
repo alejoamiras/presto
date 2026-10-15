@@ -10,6 +10,7 @@
 pub mod authorization;
 pub mod bb;
 pub mod config;
+pub mod custom_bb;
 pub(crate) mod file_lock;
 pub mod server;
 pub mod update_channel;

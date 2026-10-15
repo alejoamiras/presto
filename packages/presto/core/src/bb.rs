@@ -46,11 +46,8 @@ const MAX_PROOF_BYTES: u64 = 64 * 1024 * 1024;
 /// q7e3-F-08: `version` is the validated `&AztecVersion` — the cache-path lookup is traversal-safe.
 pub fn find_bb(version: Option<&versions::AztecVersion>) -> Result<PathBuf, String> {
     // 0. Explicit override via environment variable (trusted, unversioned — A4).
-    if let Ok(path) = std::env::var("BB_BINARY_PATH") {
-        let explicit = PathBuf::from(&path);
-        if explicit.exists() {
-            return Ok(explicit);
-        }
+    if let Some(explicit) = env_override() {
+        return Ok(explicit);
     }
 
     // 1. Version cache — a requested non-bundled version MUST resolve to a marker-verified entry, with
@@ -89,6 +86,13 @@ pub fn find_bb(version: Option<&versions::AztecVersion>) -> Result<PathBuf, Stri
     }
 
     Err("bb binary not found. Install via bbup or bundle as sidecar.".to_string())
+}
+
+/// `BB_BINARY_PATH` when it names an existing path: the override [`find_bb`] puts ahead of every
+/// request.
+pub(crate) fn env_override() -> Option<PathBuf> {
+    let path = PathBuf::from(std::env::var("BB_BINARY_PATH").ok()?);
+    path.exists().then_some(path)
 }
 
 fn home_dir_fallback() -> Option<PathBuf> {
@@ -371,7 +375,56 @@ async fn run_bb(
     cancel: Option<Cancel>,
 ) -> Result<(), BbError> {
     // Spawn and register atomically so quiescing never observes an untracked bb process tree.
-    let (mut child, guard) = containment::spawn_and_register(cmd)?;
+    let spawned = containment::spawn_and_register(cmd)?;
+    let (status, _) = supervise(spawned, timeout, cancel, None).await?;
+    require_success(status)
+}
+
+/// What a `bb --version` run printed. The caller judges the exit status.
+pub(crate) struct VersionProbe {
+    pub(crate) status: std::process::ExitStatus,
+    pub(crate) stdout: Vec<u8>,
+}
+
+pub(crate) enum ProbeError {
+    /// No private working directory could be created.
+    Workspace(std::io::Error),
+    /// The OS refused to start the file.
+    Spawn(std::io::Error),
+    /// It outlived `timeout` (or the wait failed); the tree was killed and reaped.
+    DidNotFinish(BbError),
+}
+
+/// Run `bb --version` once from a fresh private directory, with no witness, stdin closed and stdout
+/// captured up to `stdout_cap` bytes. The caller must hold the prove permit: containment tracks one
+/// bb at a time, so a second concurrent spawn would orphan a proof's registration.
+pub(crate) async fn run_version_probe(
+    bb_path: &Path,
+    timeout: Duration,
+    stdout_cap: usize,
+) -> Result<VersionProbe, ProbeError> {
+    let workspace = create_prove_tempdir().map_err(ProbeError::Workspace)?;
+    let mut cmd = tokio::process::Command::new(bb_path);
+    cmd.arg("--version")
+        .current_dir(workspace.path())
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped());
+    finish_command(&mut cmd, None);
+    let spawned = containment::spawn_and_register(&mut cmd).map_err(ProbeError::Spawn)?;
+    let (status, stdout) = supervise(spawned, timeout, None, Some(stdout_cap))
+        .await
+        .map_err(ProbeError::DidNotFinish)?;
+    Ok(VersionProbe { status, stdout })
+}
+
+/// The wait half of [`run_bb`]. Returns the exit status and at most `stdout_cap` bytes of stdout,
+/// which must have been piped before the spawn (empty when `stdout_cap` is `None`).
+async fn supervise(
+    (mut child, guard): (tokio::process::Child, containment::Guard),
+    timeout: Duration,
+    cancel: Option<Cancel>,
+    stdout_cap: Option<usize>,
+) -> Result<(std::process::ExitStatus, Vec<u8>), BbError> {
     // Drain stderr concurrently so a full pipe cannot block bb and a grandchild holding the pipe open
     // cannot delay clearing the containment registration after bb exits.
     let stderr_pipe = child.stderr.take().expect("spawn captures stderr");
@@ -382,6 +435,14 @@ async fn run_bb(
         STDERR_RETAIN_CAP,
         stderr_acc.clone(),
     )));
+    let stdout_acc: DrainAcc = std::sync::Arc::new(std::sync::Mutex::new((Vec::new(), 0)));
+    let mut stdout_drain = stdout_cap.zip(child.stdout.take()).map(|(cap, pipe)| {
+        AbortingDrain(tokio::spawn(drain_capped_into(
+            pipe,
+            cap,
+            stdout_acc.clone(),
+        )))
+    });
 
     let waited = match cancel {
         Some(cancel) => tokio::select! {
@@ -409,8 +470,12 @@ async fn run_bb(
     // grandchild holding the pipe open is now dead and stderr EOFs promptly. The two-second bound is a
     // backstop; partial retained bytes survive in `stderr_acc` if `drain` must abort.
     let _ = tokio::time::timeout(Duration::from_secs(2), &mut drain.0).await;
+    if let Some(stdout_drain) = stdout_drain.as_mut() {
+        let _ = tokio::time::timeout(Duration::from_secs(2), &mut stdout_drain.0).await;
+    }
     log_bb_stderr(&stderr_acc);
-    require_success(status)
+    let stdout = stdout_acc.lock().unwrap().0.clone();
+    Ok((status, stdout))
 }
 
 fn acquire_version_lease(

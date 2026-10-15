@@ -298,7 +298,10 @@ pub fn check_version_selectable(requested: &str) -> Result<(), VersionRejection>
 /// Inner, denylist-parameterized core of [`check_version_selectable`] — unit-testable against an
 /// arbitrary revocation list (the production const is empty). Validates well-formedness FIRST, then the
 /// revocation match.
-fn check_version_against(requested: &str, denylist: &[&str]) -> Result<(), VersionRejection> {
+pub(crate) fn check_version_against(
+    requested: &str,
+    denylist: &[&str],
+) -> Result<(), VersionRejection> {
     // Canonical strict semver, no build metadata — same well-formedness the earlier gate enforced.
     let v = semver::Version::parse(requested).map_err(|_| VersionRejection::NotSemver)?;
     if v.to_string() != requested {
