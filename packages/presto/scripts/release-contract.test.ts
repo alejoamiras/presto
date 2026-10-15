@@ -613,6 +613,22 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     }
   });
 
+  test("Intel macOS jobs block UDP 443 before any stapler call", () => {
+    const jobs = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs;
+    const block = "bash .github/scripts/block-udp-443.sh";
+    const build = jobs.build?.steps ?? [];
+    const buildBlock = build.findIndex((s) => s.run === block);
+    expect(build[buildBlock]?.if).toBe("matrix.runner == 'macos-15-intel'");
+    expect(buildBlock).toBeLessThan(build.findIndex((s) => s.name === "Build Tauri bundle"));
+    const intel = jobs["smoke-intel"]?.steps ?? [];
+    const intelBlock = intel.findIndex((s) => s.run === block);
+    expect(intelBlock).toBeGreaterThan(-1);
+    expect(intel[intelBlock]?.if).toBeUndefined();
+    expect(intelBlock).toBeLessThan(
+      intel.findIndex((s) => (s.run ?? "").includes("stapler validate")),
+    );
+  });
+
   test("macOS ships a DMG only once its app validates as stapled, before the updater pass re-notarizes", () => {
     const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs.build?.steps ?? [];
     const run = steps.find((s) => s.name === "Build Tauri bundle")?.run ?? "";

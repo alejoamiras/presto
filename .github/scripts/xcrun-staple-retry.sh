@@ -3,7 +3,9 @@
 # `xcrun stapler staple` once and ignores its status, and Apple's ticket service
 # (api.apple-cloudkit.com) drops runner connections often enough to ship an unstapled app.
 # This retries the staple until the ticket validates. `stapler validate` also asks that service,
-# so a lone validate is retried too; every other call passes straight through.
+# so a lone validate is retried too, except when it reports a missing ticket (exit 65), which
+# no retry can change. Its network failure prints "Error 68". Every other call passes straight
+# through.
 set -uo pipefail
 
 real="${XCRUN_REAL:-/usr/bin/xcrun}"
@@ -17,12 +19,14 @@ fi
 
 if [ "$2" = validate ]; then
   for ((attempt = 1; ; attempt++)); do
-    if "$real" "$@"; then
-      exit 0
+    "$real" "$@"
+    status=$?
+    if ((status == 0 || status == 65)); then
+      exit "$status"
     fi
-    echo "validate attempt $attempt/$attempts failed for ${!#}" >>"$log"
+    echo "validate attempt $attempt/$attempts could not reach the ticket service for ${!#}" >>"$log"
     if ((attempt >= attempts)); then
-      exit 1
+      exit "$status"
     fi
     sleep $((delay * attempt))
   done
