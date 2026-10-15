@@ -42,8 +42,9 @@ function updateSpeedUI(index) {
 
 const developerEl = document.getElementById("developer");
 
-// Bumped when a developer-mode save starts. A load that began earlier read the pre-save value (reloads
-// overlap: two quick Removes), so it leaves the switch to the save and to newer loads.
+// Bumped when a developer-mode save starts and again when it ends. A load overlapping a save may hold
+// the pre-save value (reloads overlap: two quick Removes), so it leaves the switch to the save and to
+// newer loads.
 let developerRevision = 0;
 let developerSaving = false;
 
@@ -364,6 +365,7 @@ developerEl.addEventListener("change", async () => {
     console.error("Failed to set developer mode:", err);
     showErrorHint(developerEl, typeof err === "string" ? err : "Failed to save");
   } finally {
+    developerRevision++;
     developerSaving = false;
     developerEl.disabled = false;
   }

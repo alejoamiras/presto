@@ -800,6 +800,51 @@ test("a reload that started before a developer-mode save does not repaint the sw
   await expect(page.locator("#developer-section")).toBeVisible();
 });
 
+test("a reload that started during a developer-mode save does not repaint the switch", async ({
+  page,
+}) => {
+  // The save is held; a reload starts, reads developer mode still off and stalls; the save lands,
+  // then the reload resumes with its stale read.
+  await page.addInitScript(() => {
+    const w = window as any;
+    w.__TAURI_MOCK__.setHandler(
+      "set_developer_mode",
+      () =>
+        new Promise((resolve) => {
+          w.__finishSave = () => resolve(null);
+        }),
+    );
+    w.__TAURI_MOCK__.setHandler("get_system_info", (_args: unknown, call: number) =>
+      call === 2
+        ? new Promise((resolve) => {
+            w.__resumeReload = () => resolve({ platform: "macos", cpu_count: 10 });
+          })
+        : { platform: "macos", cpu_count: 10 },
+    );
+    w.__TAURI_MOCK__.setHandler("set_speed", () => {
+      throw new Error("speed down");
+    });
+  });
+  await page.goto("/settings.html");
+  const developer = page.getByRole("switch", { name: "Developer mode" });
+  await page.locator("#advanced > summary").click();
+  await expect(developer).toBeEnabled();
+  await page.locator("#advanced .toggle").click();
+  await page.locator("#speed").evaluate((el: HTMLInputElement) => {
+    el.value = "1";
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  });
+  await expect.poll(async () => (await callsFor(page, "get_system_info")).length).toBe(2);
+
+  await page.evaluate(() => (window as any).__finishSave());
+  await expect(page.locator("#developer-section")).toBeVisible();
+  await page.evaluate(() => (window as any).__resumeReload());
+  await expect.poll(async () => (await callsFor(page, "get_autostart_enabled")).length).toBe(2);
+  await expect(developer).toBeChecked();
+  await expect(developer).toBeEnabled();
+  await expect(page.locator("#developer-section")).toBeVisible();
+});
+
 test("a stored developer mode opens Advanced with the Developer section showing", async ({
   page,
 }) => {
