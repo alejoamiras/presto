@@ -327,6 +327,97 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     expect(RELEASE_RUNBOOK).toContain("separately reviewed migration");
   });
 
+  test("every updater smoke leg runs once per resolved baseline, and tag and finalize recheck the feed", () => {
+    // [mut: drop the baseline dimension from any smoke job, pin a leg to one baseline, or move or
+    //  disable a recheck → fails]
+    type Job = {
+      needs?: string[];
+      if?: string;
+      strategy?: { matrix?: Record<string, unknown> };
+      with?: Record<string, unknown>;
+      steps?: SmokeStep[];
+    };
+    const jobs = (Bun.YAML.parse(WF) as { jobs: Record<string, Job> }).jobs;
+    const gha = (expression: string) => `\${{ ${expression} }}`;
+
+    const resolve = jobs["resolve-updater-baseline"]?.steps?.find((s) => s.id === "resolve");
+    expect(resolve?.run).toContain(".plugins.updater.endpoints[0]");
+    expect(resolve?.run).toContain('--feed-url "$FEED_URL"');
+
+    const macLeg = (runner: string, key: string, artifact: string, glob: string, mode: string) => ({
+      runner,
+      "platform-key": key,
+      "n-artifact": artifact,
+      "n1-dmg-glob": glob,
+      mode,
+    });
+    const arm64 = [
+      "macos-latest",
+      "darwin-aarch64",
+      "presto-macos-arm64",
+      "*macOS-Apple-Silicon.dmg",
+    ];
+    const [runner, key, artifact, glob] = arm64 as [string, string, string, string];
+    const dimensions: Record<string, Record<string, unknown[]>> = {
+      "update-smoke": {
+        leg: [
+          macLeg(runner, key, artifact, glob, "positive"),
+          macLeg(
+            "macos-15-intel",
+            "darwin-x86_64",
+            "presto-macos-x86_64",
+            "*macOS-Intel.dmg",
+            "positive",
+          ),
+          macLeg(runner, key, artifact, glob, "negative"),
+        ],
+      },
+      "update-smoke-linux": { mode: ["positive", "negative"] },
+      "update-smoke-windows": {},
+      "update-smoke-windows-negative": {},
+    };
+    let legsPerBaseline = 0;
+    for (const [name, others] of Object.entries(dimensions)) {
+      const job = jobs[name];
+      // Exact equality also rules out `include`/`exclude`, which could drop or rewrite legs.
+      expect(job?.strategy?.matrix, name).toEqual({
+        baseline: gha("fromJSON(needs.resolve-updater-baseline.outputs.baselines)"),
+        ...others,
+      });
+      expect(job?.with?.["n1-version"], name).toBe(gha("matrix.baseline.version"));
+      if (!name.startsWith("update-smoke-windows")) {
+        expect(job?.with?.["n1-tag"], name).toBe(gha("matrix.baseline.tag"));
+      }
+      legsPerBaseline += Object.values(others).reduce((legs, values) => legs * values.length, 1);
+    }
+    // 7 legs for a shared baseline, 14 when the live stable is another release.
+    expect(legsPerBaseline).toBe(7);
+    expect(WF).not.toMatch(/resolve-updater-baseline\.outputs\.(tag|version)\b/);
+
+    // Both side effects re-read the feed first: `tag` while the draft is replaceable, `finalize`
+    // for a rerun that starts there. Neither check nor side effect may be conditional.
+    for (const [name, sideEffect] of [
+      ["tag", "git push origin"],
+      ["finalize", "gh release edit"],
+    ] as const) {
+      const job = jobs[name];
+      expect(job?.needs, name).toContain("resolve-updater-baseline");
+      expect(job?.if, name).toContain("needs.resolve-updater-baseline.result == 'success'");
+      const steps = job?.steps ?? [];
+      const recheck = steps.findIndex((s) => s.run?.includes('--smoked "$SMOKED"'));
+      const effect = steps.findIndex((s) => s.run?.includes(sideEffect));
+      expect(recheck, name).toBeGreaterThan(0);
+      expect(recheck, name).toBeLessThan(effect);
+      expect(steps[recheck]?.env, name).toEqual({
+        SMOKED: gha("needs.resolve-updater-baseline.outputs.baselines"),
+      });
+      for (const step of [steps[recheck], steps[effect]]) {
+        expect(step?.if, name).toBeUndefined();
+        expect(step?.["continue-on-error"], name).toBeUndefined();
+      }
+    }
+  });
+
   test("mode split: `promote` runs only under promote-only; publish gated across release/tag/finalize", () => {
     // [mut: drop the mode guard on `release` → its always()/!cancelled() would run it under promote-only → fails]
     expect(WF).toContain("inputs.mode == 'promote-only'");

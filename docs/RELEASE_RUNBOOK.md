@@ -155,8 +155,13 @@ gh workflow run release-presto.yml --ref main -f version=X.Y.Z-rc.N
 ```
 
 Every ordinary publish requires a complete, published, lower release using the current updater key.
-The resolver includes prereleases and selects the greatest compatible version. Missing baselines
-fail closed. Future key rotation requires a separately reviewed migration. There is no dispatch override.
+The resolver includes prereleases and selects the greatest compatible version. It also requires the
+live stable: the release whose own signed `latest.json` the public feed serves byte for byte, which
+must be a published, complete, same-key stable below the new version. Every updater smoke runs from
+both, once when they are the same release. Missing baselines, an unreachable feed, or a feed that
+is not some release's own `latest.json` fail closed. Right after a promote or rollback the feed may
+still be propagating: if the resolver names the previous release, re-run it a few minutes later.
+Future key rotation requires a separately reviewed migration. There is no dispatch override.
 
 The release path is:
 
@@ -164,15 +169,15 @@ The release path is:
 validate/main-only + 3-OS WebDriver
   → 4 desktop builds + 4 headless builds
   → isolated production updater signing
-  → resolve the greatest lower complete same-key updater baseline
+  → resolve the updater baselines: the greatest lower complete same-key release and the live stable
   → notarization, launch, updater, and tamper-rejection smokes
   → draft release
   → packaged E2E against the draft's own assets
-  → tag the dispatched commit
-  → re-check asset digests and publish the draft
+  → re-check that the live stable was smoked, then tag the dispatched commit
+  → re-check that again and the asset digests, then publish the draft
 ```
 
-Desktop builds use fresh throwaway updater keys so a new binary can be produced without exposing the production key. Their temporary signatures are excluded. The `release-signing` job then signs the four exact updater payloads with the production key and verifies every payload and feed against the embedded public key. That job does not build, install, launch, or smoke-test applications. Smokes consume only the pre-signed artifacts. The updater baseline may be a prerelease: this is intentional, so RC2 exercises RC1 and GA exercises the newest same-key RC instead of falling back to an older incompatible key.
+Desktop builds use fresh throwaway updater keys so a new binary can be produced without exposing the production key. Their temporary signatures are excluded. The `release-signing` job then signs the four exact updater payloads with the production key and verifies every payload and feed against the embedded public key. That job does not build, install, launch, or smoke-test applications. Smokes consume only the pre-signed artifacts. The greatest lower baseline may be a prerelease: this is intentional, so RC2 exercises RC1 and GA exercises the newest same-key RC instead of falling back to an older incompatible key. The live-stable baseline covers the update installed users take, including after a rollback, when the feed serves an older release than GitHub's Latest badge. Publishing reads that public feed but holds no Cloudflare credential. **Re-run failed jobs** keeps the first attempt's baselines, so if a promote or rollback lands between attempts, the tag job refuses to push until the smokes ran from the newly served release: use **Re-run all jobs**, which replaces the untagged draft. If it lands after the tag is pushed, finalize refuses to publish and the version is fixed forward.
 
 The packaged composed-proof legs replace the playground's workspace SDK with the packed tarball, build the production playground, and serve that bundle only on `127.0.0.1:5173`. They deliberately do not use Vite's development dependency optimizer. Playwright is exact-pinned identically in the desktop and playground packages, and every browser install resolves from the consuming workspace instead of allowing a root-context `bunx` to fetch a different release. Each composed-proof step has a 35-minute ceiling; a failure or cancellation retains the presto, node, preview-server, and Playwright trace output in the attempt-specific Actions artifact.
 
@@ -196,7 +201,7 @@ The Windows installer is deliberately not Authenticode-signed. SmartScreen there
 - Confirm the workflow finalized the draft and the Git tag resolves to the dispatched commit.
 - Confirm the exact asset count: 16 for a prerelease, 17 for stable.
 - Confirm macOS signature and notarization jobs passed.
-- Confirm macOS, Linux, and Windows updater smokes passed, including negative tamper controls.
+- Confirm macOS, Linux, and Windows updater smokes passed from every resolved baseline (the run summary names them), including negative tamper controls.
 - For a stable, download its `latest.json` asset and confirm its version, four platform entries, non-empty signatures, sizes, and exact release URLs.
 - For Windows trust/certificate/HTTPS changes, complete the manual Windows composed-proof check in the [presto README](../packages/presto/README.md#windows-composed-proof--manual-pre-ga-check).
 
