@@ -265,12 +265,13 @@ jobs:
       # updater artifacts under an EPHEMERAL key (.app.tar.gz/.sig) and assert the
       # bundle-structure invariant — all in one step so the signing secrets live in a single
       # place. Rationale:
-      #   - Every tauri bundle pass re-signs, re-notarizes and re-staples the .app, and tauri
-      #     ignores `xcrun stapler staple`'s exit status. A staple right after re-submitting
-      #     an already-notarized app can fail (Intel, 1.2.0-rc.2: twice, while the first
-      #     submission's staple never has), so the DMG, which users open under Gatekeeper,
-      #     gets the first submission, and counts only once the app inside it validates.
-      #     The updater payload is never quarantined, so it does not depend on a staple.
+      #   - Every tauri bundle pass re-signs, re-notarizes and re-staples the .app. tauri
+      #     staples once and ignores `xcrun stapler staple`'s exit status, and Apple's ticket
+      #     service often drops the runners' connections (Intel, 1.2.0-rc.3: six passes in a
+      #     row), so tauri runs with `xcrun-staple-retry.sh` first on PATH as `xcrun`. The DMG,
+      #     which users open under Gatekeeper, still counts only once the app inside it
+      #     validates. The updater payload is never quarantined, so it does not depend on a
+      #     staple.
       #   - Retrying ONLY the DMG pass absorbs the chronic hdiutil/create-dmg flake on GH
       #     runners (esp. macos-15-intel — actions/runner-images#7522; the app signs and
       #     notarizes fine, only `bundle_dmg.sh` dies).
@@ -310,6 +311,12 @@ jobs:
           fi
           MACOS_DIR="src-tauri/target/$TARGET/release/bundle/macos"
           DMG_DIR="src-tauri/target/$TARGET/release/bundle/dmg"
+          shim_dir="$RUNNER_TEMP/xcrun-shim"
+          mkdir -p "$shim_dir"
+          cp "$GITHUB_WORKSPACE/.github/scripts/xcrun-staple-retry.sh" "$shim_dir/xcrun"
+          chmod +x "$shim_dir/xcrun"
+          export PATH="$shim_dir:$PATH" STAPLE_LOG="$RUNNER_TEMP/staple.log"
+          staple_log() { if [ -s "$STAPLE_LOG" ]; then cat "$STAPLE_LOG"; fi; }
           # True once the DMG's app carries its notarization ticket; otherwise prints the
           # stapler's own error from a copy of that app, for the log.
           dmg_app_stapled() {
@@ -328,7 +335,8 @@ jobs:
               rm -rf "$RUNNER_TEMP/staple-diag"
               mkdir "$RUNNER_TEMP/staple-diag"
               ditto "$app" "$RUNNER_TEMP/staple-diag/$(basename "$app")"
-              xcrun stapler staple -v "$RUNNER_TEMP/staple-diag/$(basename "$app")" || true
+              # One try: this staple only explains the failure, it never ships.
+              STAPLE_ATTEMPTS=1 xcrun stapler staple -v "$RUNNER_TEMP/staple-diag/$(basename "$app")" || true
             fi
             hdiutil detach "$mnt" >/dev/null || true
             return "$status"
@@ -344,6 +352,7 @@ jobs:
             fi
             echo "::warning::DMG attempt $attempt/3 failed: bundling (transient hdiutil flake) or no stapled ticket in its app"
             if [ "$attempt" = 3 ]; then
+              staple_log
               echo "::error::no DMG whose app carries a stapled notarization ticket after 3 attempts"
               exit 1
             fi
@@ -351,6 +360,7 @@ jobs:
           done
           # 3) App + updater artifacts.
           bunx tauri bundle --target "$TARGET" --bundles app
+          staple_log
           if ! ls "$MACOS_DIR"/*.app.tar.gz >/dev/null 2>&1 \
              || ! ls "$MACOS_DIR"/*.app.tar.gz.sig >/dev/null 2>&1; then
             echo "::error::--bundles app did not emit updater artifacts (.app.tar.gz/.sig) in $MACOS_DIR"
