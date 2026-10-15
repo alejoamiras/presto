@@ -319,6 +319,24 @@ function githubReleaseExists(tag: string): boolean {
   throw new Error(`gh release view ${tag} failed: ${result.stderr.toString().trim()}`);
 }
 
+/**
+ * An error and its `cause` chain, one line each with its `code`: a wrapper's message alone hides why
+ * it failed (`error refreshing TUF metadata` says nothing of a refused connection).
+ */
+export function describeError(error: unknown): string {
+  const parts: string[] = [];
+  let at: unknown = error;
+  while (at !== undefined && parts.length < 4) {
+    const { code, message } =
+      at instanceof Error ? (at as Error & { code?: unknown }) : { message: String(at) };
+    parts.push(
+      [typeof code === "string" ? code : "", message.split("\n")[0]].filter(Boolean).join(" "),
+    );
+    at = at instanceof Error ? at.cause : undefined;
+  }
+  return parts.join(": ").slice(0, 500);
+}
+
 async function releaseFacts(
   pkg: NpmPackage,
   version: string,
@@ -346,8 +364,7 @@ async function releaseFacts(
       return { releaseVerified: false, releaseProblem: `no GitHub release ${tag}` };
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return { releaseVerified: false, releaseProblem: message.split("\n")[0] };
+    return { releaseVerified: false, releaseProblem: describeError(error) };
   }
   const diff = Bun.spawnSync([
     "git",
