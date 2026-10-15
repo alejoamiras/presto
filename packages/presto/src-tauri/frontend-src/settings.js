@@ -77,10 +77,40 @@ async function loadSettings() {
   document.getElementById("speed").value = idx;
   updateSpeedUI(idx);
 
-  renderOrigins(config.approved_origins || []);
+  await renderOrigins(config.approved_origins || []);
 }
 
-function renderOrigins(origins) {
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+/** The authorization popup's verified check, built in script because the list is. */
+function verifiedCheck() {
+  const svg = document.createElementNS(SVG_NS, "svg");
+  svg.setAttribute("class", "verified-check");
+  svg.setAttribute("role", "img");
+  svg.setAttribute("aria-label", "Verified by Presto maintainers");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  const path = document.createElementNS(SVG_NS, "path");
+  path.setAttribute("d", "M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z");
+  svg.appendChild(path);
+  return svg;
+}
+
+// Overlapping loads (a Remove, a failed set_theme) each look names up; only the newest may paint.
+let originsRender = 0;
+
+async function renderOrigins(origins) {
+  const render = ++originsRender;
+  // A failed lookup shows the bare origin: a missing tick is the safe direction.
+  const names = await Promise.all(
+    origins.map((origin) =>
+      invoke("get_verified_info", { origin }).then(
+        (info) => info?.display_name ?? null,
+        () => null,
+      ),
+    ),
+  );
+  if (render !== originsRender) return;
+
   const list = document.getElementById("origins");
   const empty = document.getElementById("origins-empty");
   list.innerHTML = "";
@@ -89,7 +119,7 @@ function renderOrigins(origins) {
   empty.hidden = origins.length !== 0;
   if (origins.length === 0) return;
 
-  for (const origin of origins) {
+  for (const [i, origin] of origins.entries()) {
     const li = document.createElement("li");
     li.className = "origin-item";
 
@@ -113,7 +143,22 @@ function renderOrigins(origins) {
       await loadSettings();
     };
 
-    li.appendChild(span);
+    // A verified site leads with the list's name and tick, as the popup does. The origin stays in
+    // full underneath: a grant is per origin, and one name can cover several (a site and its
+    // extension), so the name alone cannot say which grant Remove ends.
+    let label = span;
+    if (names[i]) {
+      span.classList.add("quiet");
+      label = document.createElement("span");
+      label.className = "origin-stack";
+      const name = document.createElement("span");
+      name.className = "site-name";
+      name.textContent = names[i];
+      name.appendChild(verifiedCheck());
+      label.append(name, span);
+    }
+
+    li.appendChild(label);
     li.appendChild(btn);
     list.appendChild(li);
   }

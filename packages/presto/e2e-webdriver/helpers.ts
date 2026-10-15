@@ -115,7 +115,7 @@ export async function removeOriginViaUI(origin: string): Promise<void> {
   const clickRemove = (target: string) =>
     browser.execute((t: string) => {
       for (const li of document.querySelectorAll(".origin-item")) {
-        if (li.querySelector("span")?.textContent === t) {
+        if (li.querySelector(".origin-text")?.textContent === t) {
           (li.querySelector("button") as HTMLElement | null)?.click();
           return true;
         }
