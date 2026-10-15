@@ -44,6 +44,18 @@ every branch, so a preview proves the image can run the production path. Keep `B
 `.bun-version`: a Bun bump that forgets the dashboard fails the build instead of building on the
 wrong Bun. An empty commit bypasses watch paths and always builds.
 
+**Moving the Bun version.** Each Worker has two build triggers, production (`main`) and preview
+(every other branch), and each keeps its own build variables. The dashboard's Build variables edit
+the production trigger, and saving branch or build settings there has been seen to recreate the
+preview trigger with no variables
+([workers-sdk#15349](https://github.com/cloudflare/workers-sdk/issues/15349)), so read both back
+through the API after any change: `GET /accounts/<account>/builds/workers/<worker>/triggers` lists
+them, and `GET` or `PATCH /accounts/<account>/builds/triggers/<trigger>/environment_variables` reads
+or sets one (`{"BUN_VERSION":{"value":"<version>","is_secret":false}}`). Set the preview trigger
+first, so the bump's own PR previews build; set production immediately before merging the bump, so
+no `main` build runs on the old pin with the new Bun. A failed production build deploys nothing, and
+the previous deployment keeps serving.
+
 **Production playground.** A playground build of `main` installs the SDK publications named in
 `packages/playground/published-sdk.json`, verified against their signed provenance
 (`scripts/published-playground.ts`), instead of the workspace SDK. Every other build, previews
