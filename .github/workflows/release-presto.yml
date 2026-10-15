@@ -310,6 +310,13 @@ jobs:
           fi
           MACOS_DIR="src-tauri/target/$TARGET/release/bundle/macos"
           DMG_DIR="src-tauri/target/$TARGET/release/bundle/dmg"
+          # tauri staples once and ignores the result; this `xcrun` retries the staple.
+          shim_dir="$RUNNER_TEMP/xcrun-shim"
+          mkdir -p "$shim_dir"
+          cp "$GITHUB_WORKSPACE/.github/scripts/xcrun-staple-retry.sh" "$shim_dir/xcrun"
+          chmod +x "$shim_dir/xcrun"
+          export PATH="$shim_dir:$PATH" STAPLE_LOG="$RUNNER_TEMP/staple.log"
+          staple_log() { if [ -s "$STAPLE_LOG" ]; then cat "$STAPLE_LOG"; fi; }
           # True once the DMG's app carries its notarization ticket; otherwise prints the
           # stapler's own error from a copy of that app, for the log.
           dmg_app_stapled() {
@@ -344,6 +351,7 @@ jobs:
             fi
             echo "::warning::DMG attempt $attempt/3 failed: bundling (transient hdiutil flake) or no stapled ticket in its app"
             if [ "$attempt" = 3 ]; then
+              staple_log
               echo "::error::no DMG whose app carries a stapled notarization ticket after 3 attempts"
               exit 1
             fi
@@ -351,6 +359,7 @@ jobs:
           done
           # 3) App + updater artifacts.
           bunx tauri bundle --target "$TARGET" --bundles app
+          staple_log
           if ! ls "$MACOS_DIR"/*.app.tar.gz >/dev/null 2>&1 \
              || ! ls "$MACOS_DIR"/*.app.tar.gz.sig >/dev/null 2>&1; then
             echo "::error::--bundles app did not emit updater artifacts (.app.tar.gz/.sig) in $MACOS_DIR"

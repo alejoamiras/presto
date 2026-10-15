@@ -733,6 +733,10 @@ function macBuildCalls(run: string, unstapled: number): { calls: string[]; code:
   const stubs = `
     calls="$RUNNER_TEMP/calls"; validations=0
     bunx() {
+      case "$*" in *"tauri bundle"*)
+        cmp -s "\${PATH%%:*}/xcrun" "$GITHUB_WORKSPACE/.github/scripts/xcrun-staple-retry.sh" \\
+          || echo "tauri bundle without the staple-retry xcrun first on PATH" >>"$calls" ;;
+      esac
       case "$*" in
         *"signer generate"*) echo "bunx tauri signer generate" >>"$calls"; : >"\${@: -1}"; return ;;
         *"--bundles dmg"*) mkdir -p "$DMG_DIR"; : >"$DMG_DIR/Presto_x64.dmg" ;;
@@ -754,7 +758,13 @@ function macBuildCalls(run: string, unstapled: number): { calls: string[]; code:
   try {
     const r = Bun.spawnSync(["bash", "-c", `${stubs}\n${run}`], {
       cwd,
-      env: { PATH: process.env.PATH, RUNNER_OS: "macOS", RUNNER_TEMP: cwd, TARGET: "T" },
+      env: {
+        PATH: process.env.PATH,
+        RUNNER_OS: "macOS",
+        RUNNER_TEMP: cwd,
+        GITHUB_WORKSPACE: REPO,
+        TARGET: "T",
+      },
     });
     const calls = fs.readFileSync(path.join(cwd, "calls"), "utf8").split("\n").filter(Boolean);
     return { calls, code: r.exitCode };
