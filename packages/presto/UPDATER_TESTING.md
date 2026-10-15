@@ -10,8 +10,9 @@ After all four desktop builds finish, the `release-signing` environment exposes 
 
 - sign the four updater payloads;
 - verify every payload signature against the public key embedded in `tauri.conf.json`;
-- assemble and verify `latest.json`;
-- assemble and verify one-platform `smoke-latest.json` feeds.
+- assemble and verify `latest.json`, for a stable release only;
+- assemble and verify one-platform `smoke-latest.json` feeds, whose downloads name the reserved
+  `updater-smoke.test` host.
 
 It never builds, installs, launches, or smoke-tests an application. Downstream jobs receive only signed artifacts and feeds.
 
@@ -23,7 +24,7 @@ The throwaway build keys therefore test whether a new binary can be produced. Th
 
 `release-presto.yml` blocks draft creation unless all of these pass:
 
-- **macOS Apple Silicon and Intel, positive:** install the current stable N-1 DMG, serve the production-signed N payload from a local TLS endpoint impersonating the configured production host, then require the app to update, relaunch, and report N from `/health`.
+- **macOS Apple Silicon and Intel, positive:** install the current stable N-1 DMG, serve the production-signed N payload from a local TLS endpoint impersonating the configured production host and `updater-smoke.test`, then require the app to update, relaunch, and report N from `/health`.
 - **macOS Apple Silicon, negative:** append a byte to the genuine payload while retaining its signature and require N-1 to reject it and still answer `/health`.
 - **Linux x86_64, positive:** run the N-1 AppImage natively under FUSE/Xvfb, update the file in place, require its checksum to change, then require the relaunched app to report N.
 - **Windows x86_64, positive and negative:** install the pinned real N-1 NSIS fixture, require a production-signed N update to apply, and separately require a tampered payload to be rejected with N-1 still running.
@@ -47,7 +48,7 @@ gh workflow run smoke-updater-windows.yml --ref <branch> -f mode=<positive|negat
 
 The macOS and Linux scripts share `updater-smoke-modes.sh`, which launches the app as its own process group so a relaunch stops exactly that app. Every script refuses a mode its workflow does not allow, and `release-contract.test.ts` pins each list to its workflow's. `ephemeral-updater.sh build` fails a build of N-1 or N that contains any `PRESTO_E2E_` name (`assert-no-test-hooks.sh`), so the WebDriver-only hooks never reach a binary built like a release; `release-presto.yml`'s `build` job runs the same scan over the bundles it uploads (the `.app.tar.gz`, the AppImage and `.deb`, and `Presto.exe`).
 
-The local feed is never public and never writes the production KV feed. A prerelease publish is also safe for installed users: it is a GitHub prerelease without `latest.json`, and publishing never flips the live feed.
+The local feed is never public and never writes the production KV feed. A prerelease publish is also safe for installed users: the signer produces no `latest.json` for it, and publishing never flips the live feed. Every smoke feed is production-signed, so its downloads name `updater-smoke.test`: RFC 6761 reserves `.test`, it is never delegated and no public CA issues certificates for it, so nobody, not even someone controlling the release-feed Worker, can serve a download for a smoke feed outside a smoke runner's hosts file. The release-contract tests and `scripts/release-signer-roundtrip.sh` (run by `presto.yml`) pin both properties.
 
 ## What remains manual
 

@@ -17,12 +17,20 @@ TAURI_CLI="$REPO_ROOT/packages/presto/node_modules/.bin/tauri"
   exit 1
 }
 
-# Keep the credentials in this shell only. Child processes inherit them solely for the nine
-# direct, pinned Tauri signer invocations below; find/jq/date and the verifier never receive them.
+# Keep the credentials in this shell only. Child processes inherit them solely for the direct,
+# pinned Tauri signer invocations below; find/jq/date and the verifier never receive them.
 SIGNING_PRIVATE_KEY="$TAURI_SIGNING_PRIVATE_KEY"
 SIGNING_PRIVATE_KEY_PASSWORD="${TAURI_SIGNING_PRIVATE_KEY_PASSWORD:?protected updater key password is required}"
 unset TAURI_SIGNING_PRIVATE_KEY TAURI_SIGNING_PRIVATE_KEY_PASSWORD
-SMOKE_HOST=$(jq -er '.plugins.updater.endpoints[0] | capture("^https://(?<host>[A-Za-z0-9.-]+)/").host' "$REPO_ROOT/packages/presto/src-tauri/tauri.conf.json")
+# Smoke feeds are production-signed, and released clients accept them whatever their version,
+# prereleases included. Their downloads name a reserved .test host (RFC 6761: never delegated, and
+# no public CA issues for it), so no server, a compromised release-feed Worker included, can answer
+# them; the smoke runners map it to their local feed server.
+SMOKE_ARTIFACT_HOST="updater-smoke.test"
+case "$VERSION" in
+  *-*) PRERELEASE=true ;;
+  *) PRERELEASE=false ;;
+esac
 
 find_one() {
   local directory="$1" pattern="$2"
@@ -109,14 +117,18 @@ sign_feed() {
   "$MANIFEST_TOOL" verify --feed "$signed" --pubkey "$PUBKEY"
 }
 
-sign_feed "$UNSIGNED_FEED" "$ARTIFACTS_ROOT/latest.json"
+# Only a stable release ships a production feed. A prerelease one, with live GitHub download URLs,
+# is a manifest released clients would install if it ever reached the live feed.
+if [ "$PRERELEASE" = false ]; then
+  sign_feed "$UNSIGNED_FEED" "$ARTIFACTS_ROOT/latest.json"
+fi
 
 make_smoke_feed() {
   local platform="$1" payload="$2" directory="$3"
   local unsigned="$directory/smoke-latest.unsigned.json"
   local basename
   basename="$(basename "$payload")"
-  jq --arg platform "$platform" --arg url "https://$SMOKE_HOST/releases/download/$basename" '
+  jq --arg platform "$platform" --arg url "https://$SMOKE_ARTIFACT_HOST/releases/download/$basename" '
     .notes = ("updater smoke " + .version)
     | .platforms = {($platform): .platforms[$platform]}
     | .platforms[$platform].url = $url

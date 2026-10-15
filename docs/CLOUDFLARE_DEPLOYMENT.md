@@ -67,8 +67,9 @@ on the custom domains, add Zone `presto.build` › DNS Edit. Install the Cloudfl
 **The real boundary is the account.** Workers Scripts Edit is account-wide, so any code that runs
 in a build (a preview branch included) could in the worst case redeploy any Worker in the account,
 the release-feed Worker among them. Clients verify the feed's Ed25519 signature, so the worst case
-on the updater path is a withheld or replayed older signed feed; on the landing it is altered
-download links. Builds come from pushes to branches of this repository (the owner and the
+on the updater path is a withheld feed or a replayed signed one, including the prerelease
+manifests that #122 records; on the landing it is altered download links. Builds come from pushes
+to branches of this repository (the owner and the
 release-bot App). Cloudflare's docs say nothing about fork PRs; the cutover's fork check passed on
 2026-09-27 (a fork PR touching `scripts/` got no build, check or comment), so recheck it after any
 change to the Builds connection or Cloudflare's preview behaviour. Build variables are compiled

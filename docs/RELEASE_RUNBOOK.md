@@ -181,7 +181,7 @@ Desktop builds use fresh throwaway updater keys so a new binary can be produced 
 
 The packaged composed-proof legs replace the playground's workspace SDK with the packed tarball, build the production playground, and serve that bundle only on `127.0.0.1:5173`. They deliberately do not use Vite's development dependency optimizer. Playwright is exact-pinned identically in the desktop and playground packages, and every browser install resolves from the consuming workspace instead of allowing a root-context `bunx` to fetch a different release. Each composed-proof step has a 35-minute ceiling; a failure or cancellation retains the presto, node, preview-server, and Playwright trace output in the attempt-specific Actions artifact.
 
-A prerelease is public with `--latest=false` and omits `latest.json`. A stable release includes `latest.json`, but publishing still does not write KV, alter what installed clients receive, or mark the release GitHub Latest. After a real forward GA promotion verifies the signed public feed, the workflow marks that release GitHub Latest. A rollback changes only the authoritative updater feed and deliberately leaves GitHub Latest on the newest GA.
+A prerelease is public with `--latest=false` and omits `latest.json`; the signer does not produce one for it. A stable release includes `latest.json`, but publishing still does not write KV, alter what installed clients receive, or mark the release GitHub Latest. After a real forward GA promotion verifies the signed public feed, the workflow marks that release GitHub Latest. A rollback changes only the authoritative updater feed and deliberately leaves GitHub Latest on the newest GA.
 
 ### Expected assets
 
