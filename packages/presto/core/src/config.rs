@@ -1474,6 +1474,8 @@ mod tests {
             on_disk["developer"],
             serde_json::json!({"enabled": false, "update_channel": "stable"})
         );
+        // Whole-struct equality, so a developer setting added later must reset with the block.
+        assert_eq!(lock.read().developer, DeveloperSettings::default());
 
         let mut back_on = lock.read().clone();
         assert!(
@@ -1505,13 +1507,11 @@ mod tests {
     fn effective_channel_table() {
         for enabled in [false, true] {
             for update_channel in [UpdateChannel::Stable, UpdateChannel::Rc] {
-                let config = PrestoConfig {
-                    developer: DeveloperSettings {
-                        enabled,
-                        update_channel,
-                    },
-                    ..Default::default()
-                };
+                let mut config = PrestoConfig::default();
+                config.set_developer_mode(true);
+                config.set_update_channel(update_channel).unwrap();
+                // A hand-edited file can hold a channel while developer mode is off.
+                config.developer.enabled = enabled;
                 let expected = if enabled {
                     update_channel
                 } else {
@@ -1533,6 +1533,12 @@ mod tests {
             load_str(&V2_DEVELOPER_RC.replace(r#""config_version": 2"#, r#""config_version": 3"#));
         assert!(newer.cap.is_none() && newer.config.developer.enabled);
         assert_eq!(newer.effective_channel(), UpdateChannel::Stable);
+
+        // A field from a newer build inside the block is ignored, not a reason to reset it.
+        let extra = load_str(
+            r#"{"developer": {"enabled": true, "update_channel": "rc", "custom_bb": {"path": "bb"}}}"#,
+        );
+        assert_eq!(extra.effective_channel(), UpdateChannel::Rc);
 
         let malformed = load_str(
             r#"{"https_enabled": "x", "developer": {"enabled": true, "update_channel": "rc"}}"#,
