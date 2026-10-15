@@ -355,7 +355,8 @@ jobs:
   # its provenance to the release signing identity, by a job with `contents: write` and no OIDC
   # identity that installs nothing. A publication whose verification failed stays on npm without
   # records, which release planning and promotion refuse. Records an earlier attempt of this run
-  # wrote are kept, so "Re-run failed jobs" completes a run whose verification failed transiently.
+  # wrote are kept and a draft it left is published, so "Re-run failed jobs" completes a run whose
+  # verification or recording failed transiently.
   release-records:
     name: Record ${{ inputs.package }}
     needs: [pack, publish, verify]
@@ -401,8 +402,15 @@ jobs:
           assets=()
           if [ -n "$RELEASE_ASSET" ]; then assets+=("$RELEASE_ASSET"); fi
           status=0
-          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName > /dev/null 2> "$RUNNER_TEMP/release-view.err" || status=$?
-          if [ "$status" -eq 0 ]; then
+          draft="$(gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2> "$RUNNER_TEMP/release-view.err")" || status=$?
+          if [ "$status" -eq 0 ] && [ "$draft" = "true" ]; then
+            # `gh release create` uploads assets to a draft and publishes it last, so an interrupted
+            # attempt leaves a draft behind: finish it.
+            if [ "${#assets[@]}" -gt 0 ]; then
+              gh release upload "$tag" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+            fi
+            gh release edit "$tag" --draft=false --latest=false --repo "$GITHUB_REPOSITORY"
+          elif [ "$status" -eq 0 ]; then
             echo "GitHub release $tag already exists"
           elif grep -q "release not found" "$RUNNER_TEMP/release-view.err"; then
             gh release create "$tag" \
@@ -418,6 +426,7 @@ jobs:
       - name: Verify the release records
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_ASSET: ${{ inputs.release_asset }}
         run: |
           tag="${PACKAGE_NAME}@${VERSION}"
           remote_refs="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$tag" "refs/tags/$tag^{}")"
@@ -427,5 +436,11 @@ jobs:
             echo "::error::remote tag resolves to $remote_sha, expected $GITHUB_SHA"
             exit 1
           fi
-          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName --jq '.tagName' | grep -Fx "$tag"
+          gh release view "$tag" --repo "$GITHUB_REPOSITORY" --json tagName,isDraft,assets > "$RUNNER_TEMP/release.json"
+          if ! jq -e --arg tag "$tag" --arg asset "${RELEASE_ASSET##*/}" \
+            '.tagName == $tag and .isDraft == false and ($asset == "" or any(.assets[]; .name == $asset))' \
+            "$RUNNER_TEMP/release.json" > /dev/null; then
+            echo "::error::GitHub release $tag must be published${RELEASE_ASSET:+ with ${RELEASE_ASSET##*/}}: $(cat "$RUNNER_TEMP/release.json")"
+            exit 1
+          fi
           echo "Recorded $tag at $GITHUB_SHA"

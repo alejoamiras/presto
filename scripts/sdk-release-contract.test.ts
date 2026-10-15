@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { dirname, join, resolve } from "node:path";
 import { NPM_PACKAGES } from "./npm-packages.ts";
 
 const repository = resolve(import.meta.dir, "..");
@@ -186,7 +187,7 @@ describe("npm release workflow contract", () => {
     expect(records).not.toMatch(/\bif:/);
     expect(records).toContain('git push origin "refs/tags/$tag"');
     expect(records).toContain('gh release create "$tag"');
-    before(records, 'gh release create "$tag"', 'grep -Fx "$tag"');
+    before(records, 'gh release create "$tag"', ".isDraft == false");
     for (const name of ["pack", "consumer-test", "publish", "verify"]) {
       expect(job(publish, name)).not.toMatch(/^\s+(git (push|tag)|gh release create)\b/m);
     }
@@ -318,6 +319,78 @@ describe("the release-records job", () => {
     );
     expect(scripts.length).toBeGreaterThan(0);
     expect(importGraph(scripts).external).toEqual([]);
+  });
+
+  type ReleaseState = "absent" | "draft" | "published" | "bare" | "unreadable";
+  /** Runs one release-records step as Actions does (`bash -e`), with git, gh and bun stubbed. */
+  function recordStep(name: string, state: ReleaseState): { calls: string[]; code: number } {
+    const steps = (
+      Bun.YAML.parse(publish) as {
+        jobs: Record<string, { steps: Array<{ name?: string; run?: string }> }>;
+      }
+    ).jobs["release-records"]?.steps;
+    const run = steps?.find((step) => step.name === name)?.run;
+    expect(run).toBeString();
+    const temp = mkdtempSync(join(tmpdir(), "release-records-"));
+    const stubs = `
+      calls="$RUNNER_TEMP/calls"; : >"$calls"
+      git() { echo "git $*" >>"$calls"; [ "$1" != ls-remote ] || printf '%s\\trefs/tags/x\\n' "$GITHUB_SHA"; }
+      bun() { echo 1.0.0; }
+      gh() {
+        echo "gh $*" >>"$calls"
+        [ "$1 $2" = "release view" ] || return 0
+        case "${state}" in
+          absent) echo "release not found" >&2; return 1 ;;
+          unreadable) echo "HTTP 502" >&2; return 1 ;;
+          draft) case "$*" in *assets*) echo '{"tagName":"'"$PACKAGE_NAME@$VERSION"'","isDraft":true,"assets":[{"name":"MIGRATION.md"}]}' ;; *) echo true ;; esac ;;
+          published) case "$*" in *assets*) echo '{"tagName":"'"$PACKAGE_NAME@$VERSION"'","isDraft":false,"assets":[{"name":"MIGRATION.md"}]}' ;; *) echo false ;; esac ;;
+          bare) echo '{"tagName":"'"$PACKAGE_NAME@$VERSION"'","isDraft":false,"assets":[]}' ;;
+        esac
+      }
+    `;
+    try {
+      const result = Bun.spawnSync(["bash", "-e", "-c", `${stubs}\n${run}`], {
+        cwd: temp,
+        env: {
+          PATH: process.env.PATH,
+          RUNNER_TEMP: temp,
+          GITHUB_REPOSITORY: "alejoamiras/presto",
+          GITHUB_SHA: "a".repeat(40),
+          PACKAGE_NAME: "@alejoamiras/presto",
+          VERSION: "6.0.0",
+          VERSION_MODE: "manifest",
+          RELEASE_ASSET: "packages/sdk/MIGRATION.md",
+        },
+      });
+      const calls = readFileSync(join(temp, "calls"), "utf8").split("\n").filter(Boolean);
+      return {
+        calls: calls.filter((call) => call.startsWith("gh release")),
+        code: result.exitCode,
+      };
+    } finally {
+      rmSync(temp, { recursive: true, force: true });
+    }
+  }
+
+  test("a rerun creates a missing release, finishes a draft, keeps a published one, stops otherwise", () => {
+    const create = "Create git tag and GitHub release";
+    const verbs = (state: ReleaseState) => {
+      const { calls, code } = recordStep(create, state);
+      return { code, verbs: calls.map((call) => call.split(" ")[2]) };
+    };
+    expect(verbs("absent")).toEqual({ code: 0, verbs: ["view", "create"] });
+    // `gh release create` uploads assets to a draft and publishes it last.
+    expect(verbs("draft")).toEqual({ code: 0, verbs: ["view", "upload", "edit"] });
+    expect(recordStep(create, "draft").calls.at(-1)).toContain("--draft=false --latest=false");
+    expect(verbs("published")).toEqual({ code: 0, verbs: ["view"] });
+    expect(verbs("unreadable")).toEqual({ code: 1, verbs: ["view"] });
+  });
+
+  test("the records pass only as a published release carrying its asset", () => {
+    const check = "Verify the release records";
+    expect(recordStep(check, "published").code).toBe(0);
+    expect(recordStep(check, "draft").code).not.toBe(0);
+    expect(recordStep(check, "bare").code).not.toBe(0);
   });
 });
 

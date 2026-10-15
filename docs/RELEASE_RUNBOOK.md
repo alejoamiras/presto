@@ -526,28 +526,39 @@ gh run list --workflow release-sdk.yml --limit 20
 
 - **Version absent:** no npm publish landed. Fix the root cause, then redispatch.
 - **Version present, `testnet` missing/wrong:** stop and inspect the publish output and registry state; do not mint another revision automatically.
-- **Version and `testnet` correct, tag/release missing:** the publication landed, but `Verify <package>` or
-  `Record <package>` did not pass, so nothing records it as ours. Do not redispatch. Read the `Verify`
-  log:
-  1. **It could not reach npm, Sigstore or GitHub** (`TUF_REFRESH_METADATA_ERROR`, `ECONNREFUSED`, a
-     timeout): use **Re-run failed jobs** on the release run, within 30 days. `publish` succeeded, so
-     it does not run again and nothing republishes; `verify` and then `Record <package>` run at the
-     run's commit. Then check both records, which must both print, the tag at the run's commit:
+- **Version and `testnet` correct, tag/release missing:** the publication landed, but nothing records
+  it as ours. Do not redispatch. Find the job that failed:
 
-     ```bash
-     TAG='@alejoamiras/<name>@<version>'
-     gh run view <run-id> --repo alejoamiras/presto --json headSha --jq .headSha
-     git ls-remote --tags https://github.com/alejoamiras/presto.git "refs/tags/$TAG"
-     gh release view "$TAG" --repo alejoamiras/presto --json tagName,url --jq '.tagName + " " + .url'
-     ```
+  ```bash
+  gh run view <run-id> --repo alejoamiras/presto --json jobs --jq '.jobs[] | select(.conclusion == "failure") | .name'
+  ```
 
-     GitHub may not re-run a job that a failed job inside a called workflow skipped. If `Record
-     <package>` stayed skipped, or the 30 days have passed, repair the records by hand as below.
-  2. **It refused the publication** (a `PolicyError` naming a certificate field, or a statement that
-     differs from its certificate): never record it. Deprecate the version (`npm deprecate
-     <name>@<version> "<reason>"`), point `testnet` back at the previous version (`npm dist-tag add
-     <name>@<previous> testnet`), find why the signing identity changed, and fix forward with a new
-     version.
+  - **`Publish <package>`**: npm accepted the version, then a check after it failed, so `verify` never
+    ran. Never re-run this job: `npm publish` refuses an existing version. Repair the records by hand
+    as below, which runs the identity-bound check first.
+  - **`Record <package>`**: use **Re-run failed jobs**. It keeps a tag or release an earlier attempt
+    wrote, and publishes a draft one left.
+  - **`Verify <package>`**: read its log.
+    1. **It could not reach npm, Sigstore or GitHub** (`TUF_REFRESH_METADATA_ERROR`, `ECONNREFUSED`,
+       `gave no answer within`): use **Re-run failed jobs** on the release run, within 30 days.
+       `publish` succeeded, so it does not run again and nothing republishes; `verify` and then
+       `Record <package>` run at the run's commit. Then check both records, which must both print, the
+       tag at the run's commit and the release not a draft:
+
+       ```bash
+       TAG='@alejoamiras/<name>@<version>'
+       gh run view <run-id> --repo alejoamiras/presto --json headSha --jq .headSha
+       git ls-remote --tags https://github.com/alejoamiras/presto.git "refs/tags/$TAG"
+       gh release view "$TAG" --repo alejoamiras/presto --json tagName,isDraft,url --jq '[.tagName, .isDraft, .url] | @tsv'
+       ```
+
+       GitHub may not re-run a job that a failed job inside a called workflow skipped. If `Record
+       <package>` stayed skipped, or the 30 days have passed, repair the records by hand as below.
+    2. **It refused the publication** (a `PolicyError` naming a certificate field, or a statement that
+       differs from its certificate): never record it. Deprecate the version (`npm deprecate
+       <name>@<version> "<reason>"`), point `testnet` back at the previous version (`npm dist-tag add
+       <name>@<previous> testnet`), find why the signing identity changed, and fix forward with a new
+       version.
 - **Promotion command printed the successful `+latest` mutation but read-back failed:** do not immediately reverse it. Inspect the uncached registry state first; registry reads can lag writes.
 - **Unexpected third version/tag:** stop all mutation and investigate.
 
@@ -560,23 +571,35 @@ bun scripts/sdk-release-verification.ts --package <key> <VERSION>
 bun scripts/verify-sdk-package-signatures.ts --package <key> <VERSION>
 ```
 
-Then confirm the exact tag and release are absent, fetch the printed commit from `origin`, and inspect it before creating anything. Only when the package digest, source dependency, workflow, branch, and commit all match may you repair the append-only records:
+Then fetch the printed commit from `origin` and inspect it before creating anything. Only when the package digest, source dependency, workflow, branch, and commit all match may you repair the append-only records. Read what already exists first:
 
 ```bash
 TAG="@alejoamiras/<name>@<VERSION>"
 COMMIT="<PROVENANCE_COMMIT>"
 git fetch origin main
 git show --stat "$COMMIT"
-git ls-remote --exit-code origin "refs/tags/$TAG" && exit 1 || true
-gh release view "$TAG" && exit 1 || true
+git ls-remote origin "refs/tags/$TAG" "refs/tags/$TAG^{}"
+gh release view "$TAG" --json isDraft --jq .isDraft
+```
+
+An existing tag must resolve to `$COMMIT` (the `^{}` line when there is one, else the only line); if it resolves anywhere else, stop. Keep it, and create it only when `ls-remote` printed nothing:
+
+```bash
 git tag "$TAG" "$COMMIT"
 git push origin "refs/tags/$TAG"
+```
+
+`gh release view` prints `false` for a published release, which needs nothing. For `release not found`, create it:
+
+```bash
 gh release create "$TAG" --title "$TAG" --notes "Recovered the release record for the provenance-verified npm package." --latest=false packages/sdk/MIGRATION.md
 ```
 
+For `true`, an interrupted attempt left a draft: finish it with `gh release upload "$TAG" packages/sdk/MIGRATION.md --clobber`, then `gh release edit "$TAG" --draft=false --latest=false`.
+
 Attach `packages/sdk/MIGRATION.md` only to an `@alejoamiras/presto` release.
 
-Those last three commands mutate public state. Run them only as a deliberate repair after the read-only checks; never use them to replace an existing tag or release.
+The tag push and the release commands mutate public state. Run them only as a deliberate repair after the read-only checks; never use them to replace an existing tag or release.
 
 ## User diagnostics
 
