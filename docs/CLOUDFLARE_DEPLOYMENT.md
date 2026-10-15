@@ -33,7 +33,7 @@ branch decision lives in `scripts/workers-build.ts`.
 | Build command | `bun scripts/workers-build.ts landing` | `bun scripts/workers-build.ts playground` |
 | Deploy command | `bunx wrangler deploy --config packages/landing/wrangler.jsonc` | `bunx wrangler deploy --config packages/playground/wrangler.jsonc` |
 | Preview command | `bunx wrangler preview --config packages/landing/wrangler.jsonc` | `bunx wrangler preview --config packages/playground/wrangler.jsonc` |
-| Build variables | `BUN_VERSION=1.4.0`, `SKIP_DEPENDENCY_INSTALL=1` | same, plus `NODE_VERSION=24.20.0` |
+| Build variables | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1` | same, plus `NODE_VERSION=24.20.0` |
 | Build watch paths (include) | `packages/landing/*`, `scripts/*`, `package.json`, `bun.lock`, `bunfig.toml`, `.bun-version` | `packages/playground/*`, `packages/sdk/*`, `packages/sdk-core/*`, `packages/sdk-noir/*`, `packages/banners/*`, `fixtures/noir/*`, `scripts/*`, `.github/scripts/*`, `package.json`, `bun.lock`, `bunfig.toml`, `.bun-version`, `tsconfig.json` |
 | API token | the custom build token below | same |
 
@@ -43,6 +43,18 @@ runs next to the token), refuses a Bun other than `.bun-version`, and for the pl
 every branch, so a preview proves the image can run the production path. Keep `BUN_VERSION` equal to
 `.bun-version`: a Bun bump that forgets the dashboard fails the build instead of building on the
 wrong Bun. An empty commit bypasses watch paths and always builds.
+
+**Moving the Bun version.** Each Worker has two build triggers, production (`main`) and preview
+(every other branch), and each keeps its own build variables. The dashboard's Build variables edit
+the production trigger, and saving branch or build settings there has been seen to recreate the
+preview trigger with no variables
+([workers-sdk#15349](https://github.com/cloudflare/workers-sdk/issues/15349)), so read both back
+through the API after any change: `GET /accounts/<account>/builds/workers/<worker>/triggers` lists
+them, and `GET` or `PATCH /accounts/<account>/builds/triggers/<trigger>/environment_variables` reads
+or sets one (`{"BUN_VERSION":{"value":"<version>","is_secret":false}}`). Set the preview trigger
+first, so the bump's own PR previews build; set production immediately before merging the bump, so
+no `main` build runs on the old pin with the new Bun. A failed production build deploys nothing, and
+the previous deployment keeps serving.
 
 **Production playground.** A playground build of `main` installs the SDK publications named in
 `packages/playground/published-sdk.json`, verified against their signed provenance
