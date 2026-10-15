@@ -15,6 +15,7 @@
     "allow-get-config",
     "allow-get-autostart-enabled",
     "allow-get-system-info",
+    "allow-get-verified-info",
     "allow-set-autostart",
     "allow-repair-autostart",
     "allow-set-auto-update",

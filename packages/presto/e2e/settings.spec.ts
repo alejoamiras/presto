@@ -75,6 +75,52 @@ test("approved origins render with the popup's anti-spoof treatment", async ({ p
   expect(style.select).toBe("text");
 });
 
+test("a verified site leads with its name and tick over a muted origin; others stay bare", async ({
+  page,
+}) => {
+  const verified = "https://playground.presto.build";
+  const failing = "https://lookup-fails.example";
+  await page.addInitScript(
+    ([v, f]) => {
+      const mock = (window as any).__TAURI_MOCK__;
+      mock.setHandler("get_config", () => ({
+        config_version: 1,
+        https_enabled: false,
+        approved_origins: [v, "https://example.com", f],
+        speed: "full",
+        theme: "system",
+        onboarding_version: 1,
+      }));
+      mock.setHandler("get_verified_info", ({ origin }: { origin: string }) => {
+        if (origin === f) throw new Error("ipc down");
+        return origin === v ? { display_name: "Presto Playground" } : null;
+      });
+    },
+    [verified, failing],
+  );
+  await page.goto("/settings.html");
+
+  const rows = page.locator("#origins .origin-item");
+  await expect(rows).toHaveCount(3);
+  const first = rows.nth(0);
+  await expect(first.locator(".site-name")).toHaveText("Presto Playground");
+  await expect(first.getByRole("img", { name: "Verified by Presto maintainers" })).toBeVisible();
+  // The origin is still the whole, selectable, bidi-isolated text Remove acts on, only quieter.
+  const origin = first.locator(".origin-text");
+  await expect(origin).toHaveText(verified);
+  await expect(origin).toHaveClass(/\bquiet\b/);
+  await expect(origin).toHaveAttribute("dir", "ltr");
+  expect(await origin.evaluate((el) => getComputedStyle(el).unicodeBidi)).toBe("isolate");
+
+  // An unlisted origin, and one whose lookup failed, render exactly as before.
+  for (const i of [1, 2]) {
+    await expect(rows.nth(i).locator(".site-name")).toHaveCount(0);
+    await expect(rows.nth(i).locator(".origin-text")).not.toHaveClass(/\bquiet\b/);
+  }
+  const asked = (await callsFor(page, "get_verified_info")).map((c: any) => c.args.origin);
+  expect(asked.sort()).toEqual([verified, "https://example.com", failing].sort());
+});
+
 test("shows empty state when no origins", async ({ page }) => {
   await page.addInitScript(() => {
     (window as any).__TAURI_MOCK__.setHandler("get_config", () => ({
@@ -122,6 +168,70 @@ test("remove origin calls invoke and re-renders", async ({ page }) => {
   expect(removeCalls[0].args).toEqual({ origin: "https://example.com" });
 
   // After re-render, empty state should show
+  await expect(page.getByText("No approved sites yet")).toBeVisible();
+});
+
+test("a reload that stalls after reading the config cannot repaint a removed site", async ({
+  page,
+}) => {
+  // Remove A, and hold that reload after its config read (it saw [B]); remove B, whose reload
+  // paints the empty list; then release the first. It must not bring B back.
+  await page.addInitScript(() => {
+    const w = window as any;
+    const approved = ["https://a.example", "https://b.example"];
+    w.__hold = false;
+    w.__release = null;
+    w.__TAURI_MOCK__.setHandler("get_config", () => ({
+      config_version: 1,
+      https_enabled: false,
+      approved_origins: [...approved],
+      speed: "full",
+    }));
+    w.__TAURI_MOCK__.setHandler("remove_approved_origin", ({ origin }: { origin: string }) => {
+      approved.splice(approved.indexOf(origin), 1);
+      return null;
+    });
+    const healthy = {
+      intentEnabled: false,
+      healthy: true,
+      unreadable: false,
+      pointsElsewhere: false,
+      canRepairNow: true,
+      storedPath: null,
+    };
+    w.__TAURI_MOCK__.setHandler("get_autostart_enabled", () => {
+      if (!w.__hold) return healthy;
+      w.__hold = false;
+      return new Promise((resolve) => {
+        w.__release = () => resolve(healthy);
+      });
+    });
+  });
+  await page.goto("/settings.html");
+  const rows = page.locator("#origins .origin-item");
+  await expect(rows).toHaveCount(2);
+  const remove = (origin: string) =>
+    rows.filter({ hasText: origin }).getByRole("button", { name: "Remove" }).click();
+
+  await page.evaluate(() => {
+    (window as any).__hold = true;
+  });
+  await remove("https://a.example");
+  await page.waitForFunction(() => typeof (window as any).__release === "function");
+  await remove("https://b.example");
+  await expect(page.getByText("No approved sites yet")).toBeVisible();
+
+  const lookups = (await callsFor(page, "get_verified_info")).length;
+  await page.evaluate(() => (window as any).__release());
+  // The released reload looks B up before it may paint; wait for that, then for its paint turn.
+  await page.waitForFunction(
+    (n) =>
+      (window as any).__TAURI_MOCK__.calls.filter((c: any) => c.cmd === "get_verified_info")
+        .length > n,
+    lookups,
+  );
+  await page.evaluate(() => new Promise((r) => setTimeout(r, 0)));
+  await expect(rows).toHaveCount(0);
   await expect(page.getByText("No approved sites yet")).toBeVisible();
 });
 
@@ -564,27 +674,37 @@ test("at the real window size the speed control is reachable with the certificat
   await expectReachable(page, "#speed-desc");
 });
 
-test("at the real window size the default Settings view fits with no scrolling at all", async ({
-  page,
-}) => {
-  // Stricter than `expectReachable` on purpose. The collapsed view is the DEFAULT state, and "the
-  // proving speed gets cut, like the setting has a fixed height" is exactly what happened when it
-  // didn't fit — `body.scrollable` makes that merely scrollable, not correct. A reachability-only
-  // assertion passes on the old 520px height, so it would not have caught the bug it exists for.
-  // (Scrolling IS the accepted answer once the certificate disclosure is open — see the test above.)
-  await page.setViewportSize(VIEWPORT_SIZES.settings);
-  await page.goto("/settings.html");
+for (const verified of [false, true]) {
+  test(`at the real window size the default Settings view fits with no scrolling at all${verified ? " (a verified site approved)" : ""}`, async ({
+    page,
+  }) => {
+    // The verified row is a line taller, and an approved playground is the common first state.
+    if (verified) {
+      await page.addInitScript(() => {
+        (window as any).__TAURI_MOCK__.setHandler("get_verified_info", () => ({
+          display_name: "Presto Playground",
+        }));
+      });
+    }
+    // Stricter than `expectReachable` on purpose. The collapsed view is the DEFAULT state, and "the
+    // proving speed gets cut, like the setting has a fixed height" is exactly what happened when it
+    // didn't fit — `body.scrollable` makes that merely scrollable, not correct. A reachability-only
+    // assertion passes on the old 520px height, so it would not have caught the bug it exists for.
+    // (Scrolling IS the accepted answer once the certificate disclosure is open — see the test above.)
+    await page.setViewportSize(VIEWPORT_SIZES.settings);
+    await page.goto("/settings.html");
 
-  const fit = await page.evaluate(() => ({
-    content: document.documentElement.scrollHeight,
-    window: document.documentElement.clientHeight,
-  }));
-  expect(
-    fit.content,
-    `the default Settings view is ${fit.content}px in a ${fit.window}px window — raise the height in windows.rs or drop a row`,
-  ).toBeLessThanOrEqual(fit.window);
-  await expect(page.locator(".speed-section")).toBeInViewport({ ratio: 1 });
-});
+    const fit = await page.evaluate(() => ({
+      content: document.documentElement.scrollHeight,
+      window: document.documentElement.clientHeight,
+    }));
+    expect(
+      fit.content,
+      `the default Settings view is ${fit.content}px in a ${fit.window}px window — raise the height in windows.rs or drop a row`,
+    ).toBeLessThanOrEqual(fit.window);
+    await expect(page.locator(".speed-section")).toBeInViewport({ ratio: 1 });
+  });
+}
 
 test("appearance reflects the stored theme and saves the picked one", async ({ page }) => {
   await page.addInitScript(() => {

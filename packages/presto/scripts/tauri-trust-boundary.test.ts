@@ -167,6 +167,7 @@ const WINDOW_MATRIX = {
     "get_config",
     "get_autostart_enabled",
     "get_system_info",
+    "get_verified_info",
     "set_autostart",
     "repair_autostart",
     "set_auto_update",
@@ -233,7 +234,9 @@ describe("F-012 P3 — per-window capability ACL", () => {
   test("the authorization popup canNOT reach any settings mutator (least-privilege drift guard)", async () => {
     const files = await capFiles();
     const authorize = Object.values(files).find((c) => c.identifier === "authorize");
-    for (const settingsCmd of WINDOW_MATRIX.settings) {
+    // The one command both windows hold: a read of the public verified list for the badge.
+    const shared = ["get_verified_info"];
+    for (const settingsCmd of WINDOW_MATRIX.settings.filter((c) => !shared.includes(c))) {
       expect(authorize.permissions, `auth must not grant ${settingsCmd}`).not.toContain(
         snakeToPerm(settingsCmd),
       );

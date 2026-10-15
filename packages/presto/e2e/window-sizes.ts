@@ -3,7 +3,7 @@
  * BUILT with, which is not what the page gets — see `WEBVIEW_CHROME_HEIGHT`.
  *
  * Playwright sets no viewport by default, so the desktop-ui specs ran at 1280x720 while these windows
- * are 500x664 and 520x592. Anything that overflows the real window fits comfortably in a 720px-tall
+ * are 500x680 and 520x592. Anything that overflows the real window fits comfortably in a 720px-tall
  * browser viewport, which is structurally why two clipping bugs (the cut-off speed slider, the
  * onboarding height) reached the owner instead of CI. Specs that care about layout must size the page
  * to these values.
@@ -14,7 +14,7 @@
  * webview gets less height than the window is built with.
  */
 export const WINDOW_SIZES = {
-  settings: { width: 500, height: 664 },
+  settings: { width: 500, height: 680 },
   onboarding: { width: 520, height: 592 },
   renewal: { width: 420, height: 320 },
   "update-prompt": { width: 420, height: 280 },
