@@ -601,6 +601,18 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     expect(signer).not.toContain("assert-no-test-hooks");
   });
 
+  test("post-build smokes retry stapler validate through the checked-out retry script", () => {
+    const jobs = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs;
+    for (const name of ["smoke", "smoke-intel"]) {
+      const steps = jobs[name]?.steps ?? [];
+      expect(steps[0]?.uses, name).toStartWith("actions/checkout@");
+      expect(steps[0]?.with?.["sparse-checkout"], name).toBe(".github/scripts");
+      const runs = steps.map((s) => s.run ?? "").join("\n");
+      expect(runs, name).not.toMatch(/(^|[^/])xcrun stapler validate/m);
+      expect(runs, name).toContain("bash .github/scripts/xcrun-staple-retry.sh stapler validate");
+    }
+  });
+
   test("macOS ships a DMG only once its app validates as stapled, before the updater pass re-notarizes", () => {
     const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs.build?.steps ?? [];
     const run = steps.find((s) => s.name === "Build Tauri bundle")?.run ?? "";

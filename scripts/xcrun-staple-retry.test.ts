@@ -89,6 +89,22 @@ describe("xcrun staple retry shim", () => {
     expect(r.log.at(-1)).toBe("stapled Presto.app on attempt 3");
   });
 
+  test("retries a lone validate that fails, without stapling", () => {
+    const r = shim(["stapler", "validate", "Presto.app"], { validateFails: 2 });
+    expect(r.code).toBe(0);
+    expect(r.calls).toEqual(Array(3).fill("bundle: stapler validate Presto.app"));
+    expect(r.log).toEqual([
+      "validate attempt 1/6 failed for Presto.app",
+      "validate attempt 2/6 failed for Presto.app",
+    ]);
+  });
+
+  test("fails a lone validate after the attempt budget", () => {
+    const r = shim(["stapler", "validate", "Presto.app"], { validateFails: 99, attempts: 2 });
+    expect(r.code).toBe(1);
+    expect(r.calls).toEqual(Array(2).fill("bundle: stapler validate Presto.app"));
+  });
+
   test("gives up with a failure after the attempt budget", () => {
     const r = shim(["stapler", "staple", "-v", "Presto.app"], { stapleOkFrom: 99, attempts: 3 });
     expect(r.code).toBe(1);
