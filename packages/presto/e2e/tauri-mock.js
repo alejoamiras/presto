@@ -30,6 +30,7 @@ const defaults = {
     theme: "system",
     onboarding_version: 1,
     // auto_update intentionally omitted — matches Rust None serialization
+    developer: { enabled: false, update_channel: "stable" },
   }),
   // Structured status (plan D3): the switch shows intentEnabled; healthy/pointsElsewhere drive the
   // health row; canRepairNow gates the Fix button. Matches the Rust camelCase serialization.
@@ -46,6 +47,7 @@ const defaults = {
   get_verified_info: () => null,
   set_speed: () => null,
   set_theme: () => null,
+  set_developer_mode: () => null,
   set_autostart: () => null,
   // Default: a repair succeeds and the entry is healthy afterwards.
   repair_autostart: () => ({

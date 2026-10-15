@@ -21,6 +21,7 @@
     "allow-set-auto-update",
     "allow-set-speed",
     "allow-set-theme",
+    "allow-set-developer-mode",
     "allow-enable-https",
     "allow-disable-https",
     "allow-remove-https-trust",

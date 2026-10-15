@@ -42,6 +42,8 @@ function mentions(source: string, needle: string): { line: string; above: string
   });
 }
 
+const LAST_WEBDRIVER_SPECS = ["tray-update.spec.ts", "developer.spec.ts", "autostart.spec.ts"];
+
 describe("WebDriver-only tray hooks", () => {
   test("K1: the hook module compiles only with the webdriver feature", async () => {
     const main = await text(path.join(SRC, "main.rs"));
@@ -100,14 +102,14 @@ describe("WebDriver-only tray hooks", () => {
   });
 
   // wdio runs only the specs it lists, so an unlisted spec would pass by never running.
-  test("L3: wdio lists every WebDriver spec, the tray spec before autostart", async () => {
+  test("L3: wdio lists every WebDriver spec, then the tray, developer and autostart specs last", async () => {
     const conf = await text(path.join(PRESTO, "wdio.conf.ts"));
     const listed = [...conf.matchAll(/"\.\/e2e-webdriver\/([\w-]+\.spec\.ts)"/g)].map((m) => m[1]);
     const files = readdirSync(path.join(PRESTO, "e2e-webdriver")).filter((f) =>
       f.endsWith(".spec.ts"),
     );
     expect([...listed].sort()).toEqual(files.sort());
-    expect(listed.indexOf("tray-update.spec.ts")).toBe(listed.indexOf("autostart.spec.ts") - 1);
+    expect(listed.slice(-3)).toEqual(LAST_WEBDRIVER_SPECS);
   });
 
   test("K5: every smoke build is scanned for the hooks, and the WebDriver build proves the scan can fire", async () => {

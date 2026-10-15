@@ -184,6 +184,13 @@ describe("Trust boundary (F-012)", () => {
       // Strong canary: had the call executed, speed would now be attackSpeed. It must be unchanged.
       expect(readConfig().speed).toBe(speedBefore);
 
+      // Developer mode gets the same denial; developer.spec proves the command real from Settings.
+      const developerBefore = readConfig().developer;
+      const deniedDeveloper = await invokeHere("set_developer_mode", { enabled: true });
+      expect(deniedDeveloper.resolved).toBe(false);
+      expect(deniedDeveloper.error ?? "").toContain("not allowed");
+      expect(readConfig().developer).toEqual(developerBefore);
+
       // Deny the popup (best-effort) so the pending /prove resolves. A JS click works on all engines here.
       await browser
         .execute(() => (document.getElementById("deny") as HTMLElement | null)?.click())

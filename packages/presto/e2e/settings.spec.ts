@@ -675,7 +675,7 @@ test("at the real window size the speed control is reachable with the certificat
 });
 
 for (const verified of [false, true]) {
-  test(`at the real window size the default Settings view fits with no scrolling at all${verified ? " (a verified site approved)" : ""}`, async ({
+  test(`at the real window size the default Settings view fits all but the folded Advanced row${verified ? " (a verified site approved)" : ""}`, async ({
     page,
   }) => {
     // The verified row is a line taller, and an approved playground is the common first state.
@@ -691,20 +691,91 @@ for (const verified of [false, true]) {
     // didn't fit — `body.scrollable` makes that merely scrollable, not correct. A reachability-only
     // assertion passes on the old 520px height, so it would not have caught the bug it exists for.
     // (Scrolling IS the accepted answer once the certificate disclosure is open — see the test above.)
+    // The folded Advanced row is the one exception: growing the window for it would worsen #116, and
+    // developer settings are not an everyday control.
     await page.setViewportSize(VIEWPORT_SIZES.settings);
     await page.goto("/settings.html");
 
-    const fit = await page.evaluate(() => ({
-      content: document.documentElement.scrollHeight,
-      window: document.documentElement.clientHeight,
-    }));
+    const fit = await page.evaluate(() => {
+      const advanced = document.getElementById("advanced")?.parentElement as HTMLElement;
+      advanced.hidden = true;
+      const content = document.documentElement.scrollHeight;
+      advanced.hidden = false;
+      return { content, window: document.documentElement.clientHeight };
+    });
     expect(
       fit.content,
-      `the default Settings view is ${fit.content}px in a ${fit.window}px window — raise the height in windows.rs or drop a row`,
+      `the default Settings view above Advanced is ${fit.content}px in a ${fit.window}px window — raise the height in windows.rs or drop a row`,
     ).toBeLessThanOrEqual(fit.window);
     await expect(page.locator(".speed-section")).toBeInViewport({ ratio: 1 });
+    await expectReachable(page, "#advanced > summary");
   });
 }
+
+// ── Developer mode ──
+
+const NEWER_CONFIG =
+  "This config was written by a newer version of the app; changes can't be saved. Update the app to change settings.";
+
+test("developer mode sits folded under Advanced, off, and saves each change", async ({ page }) => {
+  await page.goto("/settings.html");
+  const developer = page.getByRole("switch", { name: "Developer mode" });
+  const section = page.locator("#developer-section");
+  await expect(developer).toBeHidden();
+  await expect(section).toBeHidden();
+
+  await page.locator("#advanced > summary").click();
+  await expect(developer).toBeEnabled();
+  await expect(developer).not.toBeChecked();
+
+  await page.locator("#advanced .toggle").click();
+  await expect(section).toBeVisible();
+  await expect(developer).toBeEnabled();
+  await page.locator("#advanced .toggle").click();
+  await expect(section).toBeHidden();
+  expect((await callsFor(page, "set_developer_mode")).map((c: any) => c.args)).toEqual([
+    { enabled: true },
+    { enabled: false },
+  ]);
+});
+
+test("a refused developer-mode save reverts the switch and says why", async ({ page }) => {
+  await page.addInitScript((message) => {
+    (window as any).__TAURI_MOCK__.setHandler("set_developer_mode", () => {
+      throw message;
+    });
+  }, NEWER_CONFIG);
+  await page.goto("/settings.html");
+  await page.locator("#advanced > summary").click();
+  await page.locator("#advanced .toggle").click();
+
+  const developer = page.getByRole("switch", { name: "Developer mode" });
+  await expect(page.locator("#advanced .error-hint")).toHaveText(NEWER_CONFIG);
+  await expect(developer).not.toBeChecked();
+  await expect(developer).toBeEnabled();
+  await expect(page.locator("#developer-section")).toBeHidden();
+});
+
+test("a stored developer mode opens Advanced with the Developer section showing", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    (window as any).__TAURI_MOCK__.setHandler("get_config", () => ({
+      config_version: 2,
+      https_enabled: false,
+      approved_origins: [],
+      speed: "full",
+      theme: "system",
+      onboarding_version: 1,
+      developer: { enabled: true, update_channel: "stable" },
+    }));
+  });
+  await page.goto("/settings.html");
+
+  await expect(page.locator("#advanced")).toHaveAttribute("open", "");
+  await expect(page.getByRole("switch", { name: "Developer mode" })).toBeChecked();
+  await expect(page.locator("#developer-section")).toBeVisible();
+});
 
 test("appearance reflects the stored theme and saves the picked one", async ({ page }) => {
   await page.addInitScript(() => {

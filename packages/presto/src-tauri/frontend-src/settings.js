@@ -40,6 +40,13 @@ function updateSpeedUI(index) {
   document.getElementById("speed").dataset.fill = String(index);
 }
 
+const developerEl = document.getElementById("developer");
+
+function renderDeveloper(enabled) {
+  developerEl.checked = enabled;
+  document.getElementById("developer-section").hidden = !enabled;
+}
+
 // Each load is numbered as it starts, and only the newest may paint the approved list: an older one
 // can still be holding a config read from before a removal (a Remove, a failed set_theme).
 let loadGeneration = 0;
@@ -50,6 +57,7 @@ async function loadSettings() {
   // failed set_theme, and by then the fieldset is enabled — leaving the awaits below open to the
   // same click-then-overwrite race the initial disabled state exists to close.
   document.getElementById("theme").disabled = true;
+  developerEl.disabled = true;
 
   const [config, sysInfo] = await Promise.all([invoke("get_config"), invoke("get_system_info")]);
 
@@ -62,6 +70,12 @@ async function loadSettings() {
   const themeInput = document.querySelector(`#theme input[value="${theme}"]`);
   if (themeInput) themeInput.checked = true;
   document.getElementById("theme").disabled = false;
+
+  const developer = config.developer?.enabled === true;
+  renderDeveloper(developer);
+  // Unfolded while on, so the switch that explains the Developer section sits right above it.
+  if (developer) document.getElementById("advanced").open = true;
+  developerEl.disabled = false;
 
   // codex r2 #6 / r3 #6: the autostart switch ships DISABLED (settings.html) and stays disabled until
   // its true state is CONFIRMED — so an unknown state is never presented as an actionable "off", and a
@@ -326,6 +340,22 @@ themeGroup.addEventListener("change", (e) => {
     showErrorHint(themeGroup, "Failed to save");
     loadSettings();
   });
+});
+
+// Not wireToggle: the Developer section follows the saved state, so it changes only on success.
+developerEl.addEventListener("change", async () => {
+  const wanted = developerEl.checked;
+  developerEl.disabled = true;
+  try {
+    await invoke("set_developer_mode", { enabled: wanted });
+    renderDeveloper(wanted);
+  } catch (err) {
+    developerEl.checked = !wanted;
+    console.error("Failed to set developer mode:", err);
+    showErrorHint(developerEl, typeof err === "string" ? err : "Failed to save");
+  } finally {
+    developerEl.disabled = false;
+  }
 });
 
 loadSettings().catch((err) => console.error("Failed to load settings:", err));

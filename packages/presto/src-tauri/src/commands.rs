@@ -473,6 +473,19 @@ pub fn set_theme(
     Ok(())
 }
 
+/// Turning developer mode off resets every developer setting in the same save.
+#[tauri::command]
+pub fn set_developer_mode(
+    window: tauri::WebviewWindow,
+    config: tauri::State<'_, ConfigState>,
+    enabled: bool,
+) -> Result<(), String> {
+    require_label(window.label(), SETTINGS_LABEL)?;
+    mutate_config(&config, |cfg| {
+        cfg.set_developer_mode(enabled);
+    })
+}
+
 #[tauri::command]
 pub fn remove_approved_origin(
     window: tauri::WebviewWindow,

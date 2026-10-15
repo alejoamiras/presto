@@ -1158,6 +1158,7 @@ fn main() {
             commands::repair_autostart,
             commands::set_speed,
             commands::set_theme,
+            commands::set_developer_mode,
             commands::remove_approved_origin,
             commands::get_system_info,
             commands::get_verified_info,
