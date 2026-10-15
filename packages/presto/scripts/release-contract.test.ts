@@ -606,7 +606,8 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     for (const name of ["smoke", "smoke-intel"]) {
       const steps = jobs[name]?.steps ?? [];
       expect(steps[0]?.uses, name).toStartWith("actions/checkout@");
-      expect(steps[0]?.with?.["sparse-checkout"], name).toBe(".github/scripts");
+      const checkout = steps[0]?.with as Record<string, unknown> | undefined;
+      expect(checkout?.["sparse-checkout"], name).toBe(".github/scripts");
       const runs = steps.map((s) => s.run ?? "").join("\n");
       expect(runs, name).not.toMatch(/(^|[^/])xcrun stapler validate/m);
       expect(runs, name).toContain("bash .github/scripts/xcrun-staple-retry.sh stapler validate");
