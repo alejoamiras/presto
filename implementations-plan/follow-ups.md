@@ -74,6 +74,9 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 
 ## From bun-1-4-2 (2026-10-15)
 
+- **Drop the `JEST_WORKER_ID` preloads** in `packages/playground/src/happydom.ts` and
+  `packages/sdk/src/test-setup.ts`: their comments wait for a Bun carrying oven-sh/bun#40271, and
+  Bun 1.4.2 does. Unverified that both suites pass without them.
 - **Fold `packages/sdk-noir`'s `bun.lock` version into the next presto-noir release commit.** The
   lock still says `2.0.0-rc.1` for the workspace whose manifest is `2.0.0-rc.2`, and so does the
   `@alejoamiras/presto-noir@2.0.0-rc.2` tag commit. Bun 1.4.2's plain `bun install` corrects it,
