@@ -383,11 +383,23 @@ jobs:
           RELEASE_ASSET: ${{ inputs.release_asset }}
         run: |
           tag="${PACKAGE_NAME}@${VERSION}"
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag "$tag"
-          # A remote tag at this commit is a no-op; one at any other commit is refused.
-          git push origin "refs/tags/$tag"
+          # A tag already at this commit is kept whether it is lightweight or annotated (a hand
+          # repair makes a signed one, which a lightweight push of the same name cannot update);
+          # one at any other commit stops the job.
+          remote_refs="$(git ls-remote "https://github.com/$GITHUB_REPOSITORY.git" "refs/tags/$tag" "refs/tags/$tag^{}")"
+          remote_sha="$(printf '%s\n' "$remote_refs" | awk '/\^\{\}$/ {print $1; exit}')"
+          [ -z "$remote_sha" ] && remote_sha="$(printf '%s\n' "$remote_refs" | awk 'NR==1 {print $1}')"
+          if [ -z "$remote_sha" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git tag "$tag"
+            git push origin "refs/tags/$tag"
+          elif [ "$remote_sha" = "$GITHUB_SHA" ]; then
+            echo "tag $tag is already at $GITHUB_SHA"
+          else
+            echo "::error::tag $tag resolves to $remote_sha, expected $GITHUB_SHA"
+            exit 1
+          fi
 
           if [ "$VERSION_MODE" = "aztec-derived" ]; then
             aztec_version="$(bun scripts/aztec-manifest.ts "$PACKAGE_DIR/package.json")"
