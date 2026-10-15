@@ -23,7 +23,9 @@ use crate::authorization::CanonicalOrigin;
 use crate::bb::{self, UltraHonkJob, UltraHonkWorkspace, VerifierTarget};
 
 use super::auth::Approval;
-use super::prove::{acquire_prover, admit, on_task, set_duration_header, Held};
+use super::prove::{
+    acquire_prover, admit, bb_failure, custom_proved, on_task, set_duration_header, Held,
+};
 use super::{AppState, ProveError, MAX_INFLIGHT_PROVE};
 
 /// Half the global inflight cap: a multi-tab dApp still queues on the prove permit like chonk, while
@@ -326,6 +328,7 @@ pub(crate) async fn prove_ultra_honk(
 
     let origin = admitted.approval.origin.as_ref().map(|o| o.as_str());
     let prover = acquire_prover(&state, &admitted.requested_version, origin).await?;
+    let custom = prover.is_custom();
     ensure_not_revoked(&state, &admitted.approval)?;
     let held = Held { admitted, prover };
     let target = parsed.target;
@@ -351,7 +354,7 @@ pub(crate) async fn prove_ultra_honk(
             let run = bb::run_ultra_honk(
                 &workspace,
                 target,
-                held.prover.version.as_ref(),
+                held.prover.binary(),
                 held.prover.threads,
                 cancel,
             )
@@ -361,14 +364,19 @@ pub(crate) async fn prove_ultra_honk(
         .await?;
     let elapsed = start.elapsed();
     log_outcome(&held.admitted.approval, target, run.is_ok(), elapsed);
-    run.map_err(prove_failed)?;
+    run.map_err(|e| bb_failure(&state, custom, e.as_ref()))?;
 
+    let reading = state.clone();
     let (_held, out) = on_worker(held, move |_| {
-        bb::read_ultra_honk_outputs(&workspace).map_err(prove_failed)
+        bb::read_ultra_honk_outputs(&workspace)
+            .map_err(|e| bb_failure(&reading, custom, e.as_ref()))
     })
     .await?;
     let mut response = axum::Json(render(&out)).into_response();
     set_duration_header(&mut response, elapsed);
+    if custom {
+        custom_proved(&state, &mut response);
+    }
     Ok(response)
 }
 

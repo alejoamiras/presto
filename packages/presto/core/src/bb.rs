@@ -13,6 +13,38 @@ pub(crate) use ultra_honk::{
 
 type BbError = Box<dyn std::error::Error + Send + Sync>;
 
+/// Which bb a proof runs.
+#[derive(Clone)]
+pub enum BbBinary<'a> {
+    /// Through [`find_bb`]: the bundled chain for `None`, the verified version cache otherwise.
+    Find(Option<&'a versions::AztecVersion>),
+    /// One exact file that [`find_bb`] never resolves, admitted by its gate right before the spawn.
+    Exact(std::sync::Arc<dyn SpawnGate>),
+}
+
+impl BbBinary<'_> {
+    fn describe(&self) -> &str {
+        match self {
+            Self::Find(version) => version.map_or("bundled", |v| v.as_str()),
+            Self::Exact(_) => "custom",
+        }
+    }
+}
+
+/// Admission for a [`BbBinary::Exact`] file.
+pub trait SpawnGate: Send + Sync {
+    fn path(&self) -> &Path;
+    /// Blocking: the file is still the one admitted. Runs off the runtime, before
+    /// [`SpawnGate::admit`].
+    fn verify(&self) -> Result<(), crate::custom_bb::Unavailable>;
+    /// Held across the synchronous spawn: while the guard lives, the route cannot be withdrawn.
+    fn admit(&self) -> Result<Box<dyn AdmitGuard + '_>, crate::custom_bb::Unavailable>;
+}
+
+/// Whatever keeps a [`SpawnGate`]'s answer true until the spawn has happened (a lock guard).
+pub trait AdmitGuard {}
+impl<T> AdmitGuard for T {}
+
 /// Maximum time to wait for bb prove to complete before killing the process.
 const PROVE_TIMEOUT: Duration = Duration::from_secs(300); // 5 minutes
 
@@ -299,18 +331,25 @@ pub async fn prove(
     version: Option<&versions::AztecVersion>,
     threads: Option<usize>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    prove_with_timeout(ivc_inputs, version, threads, PROVE_TIMEOUT, None).await
+    prove_with_timeout(
+        ivc_inputs,
+        BbBinary::Find(version),
+        threads,
+        PROVE_TIMEOUT,
+        None,
+    )
+    .await
 }
 
 /// [`prove`] that a caller can cancel: notifying `cancel` kills the bb tree, and the call returns only
 /// once the child is reaped (as does a timeout), so what the caller holds across it outlives bb.
 pub async fn prove_cancellable(
     ivc_inputs: &[u8],
-    version: Option<&versions::AztecVersion>,
+    binary: BbBinary<'_>,
     threads: Option<usize>,
     cancel: Cancel,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    prove_with_timeout(ivc_inputs, version, threads, PROVE_TIMEOUT, Some(cancel)).await
+    prove_with_timeout(ivc_inputs, binary, threads, PROVE_TIMEOUT, Some(cancel)).await
 }
 
 /// A cancellation signal for one bb run: `notify_one()` kills the tree. A `Notify` keeps the
@@ -321,31 +360,20 @@ pub type Cancel = std::sync::Arc<tokio::sync::Notify>;
 /// 5-minute wait (the same externalized-`Duration` shape as `bind_with_retry_inner`).
 async fn prove_with_timeout(
     ivc_inputs: &[u8],
-    version: Option<&versions::AztecVersion>,
+    binary: BbBinary<'_>,
     threads: Option<usize>,
     timeout: Duration,
     cancel: Option<Cancel>,
 ) -> Result<Vec<u8>, Box<dyn std::error::Error + Send + Sync>> {
-    // Take the lease BEFORE resolving the path, and hold it for this whole function — the window
-    // being closed is between "cleanup decided this version was evictable" and "we executed it".
     // `_lease` is bound (not `_`) so it lives to the end of the scope rather than dropping instantly.
-    // The server leases before it waits for the prove permit; this second lease covers direct callers
-    // of `prove` and costs nothing (the registry is refcounted, so nesting is fine). `None` means a
-    // cleanup is deleting this version right now — fail rather than execute a binary being unlinked.
-    let _lease = acquire_version_lease(version)?;
-    let bb_path =
-        find_bb(version).map_err(|e| -> Box<dyn std::error::Error + Send + Sync> { e.into() })?;
+    let (bb_path, _lease) = locate(&binary)?;
     let workspace = ProveWorkspace::create(ivc_inputs)?;
 
-    tracing::info!(
-        version = version.map_or("bundled", |v| v.as_str()),
-        ?threads,
-        "Starting bb prove"
-    );
+    tracing::info!(bb = binary.describe(), ?threads, "Starting bb prove");
 
     let mut cmd = build_prove_command(&bb_path, &workspace, threads)?;
-    run_bb(&mut cmd, timeout, cancel).await?;
-    if let Some(v) = version {
+    run_bb(&mut cmd, &binary, timeout, cancel).await?;
+    if let BbBinary::Find(Some(v)) = binary {
         versions::mark_cached_bb_active(v);
     }
 
@@ -371,13 +399,44 @@ async fn prove_with_timeout(
 /// (A panic or a runtime shutdown still drops the guard without the wait.)
 async fn run_bb(
     cmd: &mut tokio::process::Command,
+    binary: &BbBinary<'_>,
     timeout: Duration,
     cancel: Option<Cancel>,
 ) -> Result<(), BbError> {
-    // Spawn and register atomically so quiescing never observes an untracked bb process tree.
-    let spawned = containment::spawn_and_register(cmd)?;
+    let spawned = spawn_admitted(cmd, binary).await?;
     let (status, _) = supervise(spawned, timeout, cancel, None).await?;
     require_success(status)
+}
+
+/// The file to run, plus the version lease when it comes from the cache. The lease is taken BEFORE
+/// the path resolves and held for the whole run: the window it closes is between "cleanup decided
+/// this version was evictable" and "we executed it". The server leases before it waits for the
+/// prove permit; this second lease covers direct callers and costs nothing (the registry is
+/// refcounted). A failed lease means a cleanup is deleting this version right now.
+fn locate(binary: &BbBinary<'_>) -> Result<(PathBuf, Option<versions::Lease>), BbError> {
+    match binary {
+        BbBinary::Find(version) => {
+            let lease = acquire_version_lease(*version)?;
+            let path = find_bb(*version).map_err(|e| -> BbError { e.into() })?;
+            Ok((path, lease))
+        }
+        BbBinary::Exact(gate) => Ok((gate.path().to_path_buf(), None)),
+    }
+}
+
+/// Spawn and register atomically so quiescing never observes an untracked bb process tree. An exact
+/// file is verified off the runtime first, then spawned while its gate's guard is held.
+async fn spawn_admitted(
+    cmd: &mut tokio::process::Command,
+    binary: &BbBinary<'_>,
+) -> Result<(tokio::process::Child, containment::Guard), BbError> {
+    let BbBinary::Exact(gate) = binary else {
+        return Ok(containment::spawn_and_register(cmd)?);
+    };
+    let verifying = gate.clone();
+    tokio::task::spawn_blocking(move || verifying.verify()).await??;
+    let _admitted = gate.admit()?;
+    Ok(containment::spawn_and_register(cmd)?)
 }
 
 /// What a `bb --version` run printed. The caller judges the exit status.
@@ -1664,9 +1723,15 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         // A bb that sleeps far past the injected timeout and never writes a proof.
         let _guard = install_fake_bb(dir.path(), "sleep 30");
-        let err = prove_with_timeout(b"witness", None, None, Duration::from_millis(150), None)
-            .await
-            .expect_err("a hung bb must time out");
+        let err = prove_with_timeout(
+            b"witness",
+            BbBinary::Find(None),
+            None,
+            Duration::from_millis(150),
+            None,
+        )
+        .await
+        .expect_err("a hung bb must time out");
         assert!(err.to_string().contains("timed out"), "got: {err}");
     }
 
@@ -1705,7 +1770,14 @@ mod tests {
         // The timeout clock starts inside `prove_with_timeout`, so the fake bb has these seconds to write
         // its pid; a machine slow enough to miss them fails `wait_for_pid` loudly rather than passing.
         let run = tokio::spawn(async {
-            prove_with_timeout(b"witness", None, None, Duration::from_secs(3), None).await
+            prove_with_timeout(
+                b"witness",
+                BbBinary::Find(None),
+                None,
+                Duration::from_secs(3),
+                None,
+            )
+            .await
         });
         let pid = wait_for_pid(&pidfile).await;
         let err = run.await.unwrap().expect_err("a hung bb must time out");
@@ -1737,10 +1809,10 @@ mod tests {
         finish_command(&mut cmd, None);
         let cancel: Cancel = std::sync::Arc::new(tokio::sync::Notify::new());
         let signal = cancel.clone();
-        let run =
-            tokio::spawn(
-                async move { run_bb(&mut cmd, Duration::from_secs(60), Some(cancel)).await },
-            );
+        let run = tokio::spawn(async move {
+            let binary = BbBinary::Find(None);
+            run_bb(&mut cmd, &binary, Duration::from_secs(60), Some(cancel)).await
+        });
         for _ in 0..250 {
             if ready.exists() {
                 break;
@@ -1784,8 +1856,9 @@ mod tests {
         );
         let cancel: Cancel = std::sync::Arc::new(tokio::sync::Notify::new());
         let signal = cancel.clone();
-        let run =
-            tokio::spawn(async move { prove_cancellable(b"witness", None, None, cancel).await });
+        let run = tokio::spawn(async move {
+            prove_cancellable(b"witness", BbBinary::Find(None), None, cancel).await
+        });
         let pid = wait_for_pid(&pidfile).await;
         signal.notify_one();
         // Far shorter than the fake bb's own lifetime, so only the kill can end the run.

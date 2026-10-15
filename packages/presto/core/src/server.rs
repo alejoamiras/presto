@@ -107,6 +107,8 @@ impl ServerStatus {
 
 pub type StatusCallback = Arc<dyn Fn(ServerStatus) + Send + Sync>;
 pub type VersionsChangedCallback = Arc<dyn Fn() + Send + Sync>;
+/// The custom bb's state changed as seen from a request (a refusal), so the tray line may be stale.
+pub type CustomBbChangedCallback = Arc<dyn Fn() + Send + Sync>;
 
 /// Callback to show the authorization popup window. Takes the origin + the opaque `request_id`
 /// (SEC-06) the popup must echo back to `respond_auth` so decisions resolve by id, not origin.
@@ -171,6 +173,7 @@ pub struct HeadlessState {
     pub(crate) ultra_honk_slots: ultra_honk::OriginSlots,
     /// Rate limit on uncached bb downloads, keyed by origin and globally (`versions::DownloadBudget`).
     pub(crate) download_budget: Arc<versions::DownloadBudget>,
+    pub custom_bb_activity: Arc<parking_lot::Mutex<crate::custom_bb::CustomBbActivity>>,
 }
 
 /// Full app state: the headless `core` plus the optional GUI callbacks. `Deref`s to `core`, so the
@@ -182,6 +185,7 @@ pub struct AppState {
     pub on_status: Option<StatusCallback>,
     pub on_versions_changed: Option<VersionsChangedCallback>,
     pub show_auth_popup: Option<ShowAuthPopupCallback>,
+    pub on_custom_bb_changed: Option<CustomBbChangedCallback>,
 }
 
 impl std::ops::Deref for AppState {
@@ -208,6 +212,7 @@ impl Default for HeadlessState {
             prove_waiters: Arc::new(Semaphore::new(MAX_INFLIGHT_PROVE)),
             ultra_honk_slots: ultra_honk::OriginSlots::default(),
             download_budget: Arc::new(versions::DownloadBudget::default()),
+            custom_bb_activity: Arc::default(),
         }
     }
 }
@@ -242,6 +247,7 @@ impl HeadlessState {
             prove_waiters: Arc::new(Semaphore::new(MAX_INFLIGHT_PROVE)),
             ultra_honk_slots: ultra_honk::OriginSlots::default(),
             download_budget: Arc::new(versions::DownloadBudget::default()),
+            custom_bb_activity: Arc::default(),
         }
     }
 }
@@ -254,6 +260,7 @@ impl AppState {
             on_status: None,
             on_versions_changed: None,
             show_auth_popup: None,
+            on_custom_bb_changed: None,
         }
     }
 
@@ -270,6 +277,7 @@ impl AppState {
             on_status: Some(on_status),
             on_versions_changed: Some(on_versions_changed),
             show_auth_popup: Some(show_auth_popup),
+            on_custom_bb_changed: None,
         }
     }
 }
@@ -394,7 +402,10 @@ pub fn router_for_port(state: AppState, expected_port: u16) -> Router {
             http::header::CONTENT_TYPE,
             http::header::HeaderName::from_static("x-aztec-version"),
         ])
-        .expose_headers([http::header::HeaderName::from_static("x-prove-duration-ms")])
+        .expose_headers([
+            http::header::HeaderName::from_static("x-prove-duration-ms"),
+            http::header::HeaderName::from_static(prove::CUSTOM_BB_HEADER),
+        ])
         // `/health` tiers its body by Origin (SEC-05); tower-http 0.7 emits no `Vary` for a
         // static CORS config, so a shared cache could serve the detailed body cross-origin.
         .vary([http::header::ORIGIN]);
@@ -534,6 +545,9 @@ pub(crate) enum ProveError {
     /// a shutdown — the SDK degrades to WASM on either — but a truthful body, because "shutting down"
     /// would send someone debugging this to entirely the wrong place.
     VersionEvicting,
+    /// The request named the custom bb's label, and that file may not run now (changed, missing,
+    /// withdrawn, overridden). A 503, which every published SDK degrades on; Settings has the detail.
+    CustomBbUnavailable,
     DownloadFailed {
         version: String,
         detail: String,
@@ -675,6 +689,11 @@ impl ProveError {
                 StatusCode::SERVICE_UNAVAILABLE,
                 "version_evicting",
                 "The cached bb for this version is being evicted; retry".to_string(),
+            ),
+            ProveError::CustomBbUnavailable => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "custom_bb_unavailable",
+                "The custom bb for this version is unavailable".to_string(),
             ),
             ProveError::DownloadFailed { version, detail } => (
                 StatusCode::INTERNAL_SERVER_ERROR,

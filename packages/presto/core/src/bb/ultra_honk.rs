@@ -14,8 +14,8 @@ use std::time::Duration;
 use serde::de::{self, DeserializeSeed};
 
 use super::{
-    acquire_version_lease, create_prove_tempdir, find_bb, finish_command, read_capped, run_bb,
-    validate_proof_len, write_witness, BbError, MAX_PROOF_BYTES, PROVE_TIMEOUT,
+    create_prove_tempdir, finish_command, locate, read_capped, run_bb, validate_proof_len,
+    write_witness, BbBinary, BbError, MAX_PROOF_BYTES, PROVE_TIMEOUT,
 };
 use crate::versions;
 
@@ -142,7 +142,15 @@ pub(super) async fn prove_ultra_honk_with_timeout(
 ) -> Result<UltraHonkOutput, BbError> {
     let target = job.target;
     let workspace = blocking(move || UltraHonkWorkspace::create(&job)).await?;
-    run_ultra_honk_with_timeout(&workspace, target, version, threads, timeout, None).await?;
+    run_ultra_honk_with_timeout(
+        &workspace,
+        target,
+        BbBinary::Find(version),
+        threads,
+        timeout,
+        None,
+    )
+    .await?;
     blocking(move || read_outputs(&workspace)).await
 }
 
@@ -151,14 +159,14 @@ pub(super) async fn prove_ultra_honk_with_timeout(
 pub(crate) async fn run_ultra_honk(
     workspace: &UltraHonkWorkspace,
     target: VerifierTarget,
-    version: Option<&versions::AztecVersion>,
+    binary: BbBinary<'_>,
     threads: Option<usize>,
     cancel: super::Cancel,
 ) -> Result<(), BbError> {
     run_ultra_honk_with_timeout(
         workspace,
         target,
-        version,
+        binary,
         threads,
         PROVE_TIMEOUT,
         Some(cancel),
@@ -169,25 +177,22 @@ pub(crate) async fn run_ultra_honk(
 async fn run_ultra_honk_with_timeout(
     workspace: &UltraHonkWorkspace,
     target: VerifierTarget,
-    version: Option<&versions::AztecVersion>,
+    binary: BbBinary<'_>,
     threads: Option<usize>,
     timeout: Duration,
     cancel: Option<super::Cancel>,
 ) -> Result<(), BbError> {
-    // Same lease discipline as the chonk path: held across the whole run so an eviction cannot
-    // unlink the binary between resolution and execution.
-    let _lease = acquire_version_lease(version)?;
-    let bb_path = find_bb(version).map_err(|e| -> BbError { e.into() })?;
+    let (bb_path, _lease) = locate(&binary)?;
     tracing::info!(
-        version = version.map_or("bundled", |v| v.as_str()),
+        bb = binary.describe(),
         ?threads,
         %target,
         client_vk = workspace.vk_path.is_some(),
         "Starting bb prove (ultra_honk)"
     );
     let mut cmd = build_ultra_honk_command(&bb_path, workspace, target, threads)?;
-    run_bb(&mut cmd, timeout, cancel).await?;
-    if let Some(v) = version {
+    run_bb(&mut cmd, &binary, timeout, cancel).await?;
+    if let BbBinary::Find(Some(v)) = binary {
         versions::mark_cached_bb_active(v);
     }
     Ok(())

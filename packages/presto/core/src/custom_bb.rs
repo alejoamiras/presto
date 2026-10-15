@@ -9,6 +9,8 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 
+use crate::bb::{AdmitGuard, SpawnGate};
+use crate::config::ConfigStore;
 use crate::versions::{self, AztecVersion, VersionRejection};
 
 mod binary_format;
@@ -295,6 +297,8 @@ pub enum Unavailable {
     Changed,
     /// Another account could now change it.
     Unsafe(Refusal),
+    /// Stopped, re-pinned, overridden, or developer mode turned off before it started.
+    Withdrawn,
 }
 
 impl std::fmt::Display for Unavailable {
@@ -303,9 +307,14 @@ impl std::fmt::Display for Unavailable {
             Self::Missing => f.write_str("the pinned file is missing or unreadable"),
             Self::Changed => f.write_str("the pinned file changed since it was trusted"),
             Self::Unsafe(refusal) => f.write_str(&refusal.message),
+            Self::Withdrawn => {
+                f.write_str("the custom bb was stopped or replaced before it started")
+            }
         }
     }
 }
+
+impl std::error::Error for Unavailable {}
 
 /// The check right before every spawn: same canonical regular file, the path policy, and the
 /// pinned hash. Blocking. The same-user swap between this hash and the exec is a known limit.
@@ -335,6 +344,67 @@ fn missing(path: &Path, e: &std::io::Error) -> Unavailable {
         tracing::warn!(path = %path.display(), error = %e, "Custom bb unreadable");
     }
     Unavailable::Missing
+}
+
+/// A request naming the label runs the pinned file, admitted only while that pin is still the
+/// custom bb in effect.
+pub(crate) struct CustomRoute {
+    pin: CustomBbPin,
+    config: Arc<ConfigStore>,
+}
+
+impl CustomRoute {
+    pub(crate) fn new(pin: CustomBbPin, config: Arc<ConfigStore>) -> Self {
+        Self { pin, config }
+    }
+}
+
+impl SpawnGate for CustomRoute {
+    fn path(&self) -> &Path {
+        &self.pin.path
+    }
+
+    fn verify(&self) -> Result<(), Unavailable> {
+        verify_for_spawn(&self.pin).map(drop)
+    }
+
+    fn admit(&self) -> Result<Box<dyn AdmitGuard + '_>, Unavailable> {
+        if env_override_active() {
+            return Err(Unavailable::Withdrawn);
+        }
+        let held = self
+            .config
+            .hold_custom_bb(&self.pin)
+            .ok_or(Unavailable::Withdrawn)?;
+        Ok(Box::new(held))
+    }
+}
+
+/// What Settings shows about recent use. Memory only.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+pub struct CustomBbActivity {
+    /// Unix seconds of the last proof the custom bb produced.
+    pub last_proof_at: Option<i64>,
+    pub last_failure: Option<CustomBbFailure>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct CustomBbFailure {
+    pub at: i64,
+    /// Local detail (may name paths); never sent to a site.
+    pub detail: String,
+}
+
+impl CustomBbActivity {
+    pub(crate) fn record(&mut self, outcome: Result<(), String>) {
+        let at = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |d| d.as_secs() as i64);
+        match outcome {
+            Ok(()) => self.last_proof_at = Some(at),
+            Err(detail) => self.last_failure = Some(CustomBbFailure { at, detail }),
+        }
+    }
 }
 
 /// The result of one `bb --version`: a label suggestion only when its output passes

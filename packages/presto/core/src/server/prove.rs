@@ -16,6 +16,7 @@ use axum::response::IntoResponse;
 use serde_json::json;
 use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore};
 
+use crate::custom_bb::{self, CustomBbPin, CustomRoute, Unavailable};
 use crate::{bb, versions};
 
 use super::auth::{authorize_origin, Approval};
@@ -50,46 +51,87 @@ pub(crate) struct ResolvedVersion {
     pub(crate) needs_download: bool,
 }
 
+/// Which bb serves a request.
+#[derive(Debug)]
+pub(crate) enum BbSource {
+    Official(ResolvedVersion),
+    /// The request named the developer-mode label.
+    Custom(CustomBbPin),
+}
+
 pub(crate) fn resolve_version(
     state: &AppState,
     requested: &Option<String>,
-) -> Result<ResolvedVersion, ProveError> {
-    let Some(requested) = requested else {
-        return Ok(ResolvedVersion {
-            version: None,
-            needs_download: false,
-        });
-    };
-    let version = parse_selectable_version(requested)?;
-    tracing::info!(version = %version, "Requested Aztec version");
-
+) -> Result<BbSource, ProveError> {
+    let version = requested
+        .as_deref()
+        .map(parse_selectable_version)
+        .transpose()?;
+    if let Some(version) = &version {
+        tracing::info!(version = %version, "Requested Aztec version");
+    }
     let bundled = state
         .bundled_version
         .as_deref()
         .unwrap_or(super::DEFAULT_BB_VERSION);
+    let custom = state
+        .config
+        .as_ref()
+        .and_then(|config| config.effective_custom_bb());
+    let source = route(version, bundled, custom, |version| {
+        // Re-download when the cache entry is absent OR present-but-marker-invalid (tampered/legacy),
+        // not merely when the path is missing — `verify_cached_bb` rehashes against its marker (F-007).
+        versions::verify_cached_bb(version).is_ok()
+    });
+    match &source {
+        BbSource::Custom(_) if custom_bb::env_override_active() => {
+            tracing::warn!(
+                "BB_BINARY_PATH overrides every bb, so the custom bb's label is refused"
+            );
+            custom_refused(state, "BB_BINARY_PATH overrides the custom bb".to_string());
+            Err(ProveError::CustomBbUnavailable)
+        }
+        BbSource::Official(ResolvedVersion {
+            version: Some(version),
+            needs_download: true,
+        }) => {
+            tracing::info!(version = %version, "Version not cached (or unverified), will download");
+            Ok(source)
+        }
+        _ => Ok(source),
+    }
+}
 
+/// The routing decision. It runs after the revocation check and BEFORE the bundled shortcut and the
+/// download decision: deciding later would send a bundled or cached label to the official binary
+/// while Settings says custom. `cached` is asked only about a non-bundled release.
+fn route(
+    requested: Option<versions::AztecVersion>,
+    bundled: &str,
+    custom: Option<CustomBbPin>,
+    cached: impl FnOnce(&versions::AztecVersion) -> bool,
+) -> BbSource {
+    let official = |version, needs_download| {
+        BbSource::Official(ResolvedVersion {
+            version,
+            needs_download,
+        })
+    };
+    let Some(version) = requested else {
+        return official(None, false);
+    };
+    if let Some(pin) = custom.filter(|pin| pin.label == version) {
+        return BbSource::Custom(pin);
+    }
     // F-007: normalize an explicit bundled request to `None` — the bundled bb ships as the sidecar, never
     // the version cache, so it resolves via `find_bb(None)`. This also makes any `Some(v)` downstream an
     // unambiguously NON-bundled request, so `find_bb` can hard-error on a bad cache entry without a
     // wrong-version fallback (a bundled `Some(v)` would otherwise be indistinguishable).
-    if requested == bundled {
-        return Ok(ResolvedVersion {
-            version: None,
-            needs_download: false,
-        });
+    if version.as_str() == bundled {
+        return official(None, false);
     }
-
-    // Re-download when the cache entry is absent OR present-but-marker-invalid (tampered/legacy), not
-    // merely when the path is missing — `verify_cached_bb` rehashes the binary against its marker (F-007).
-    let needs_download = versions::verify_cached_bb(&version).is_err();
-    if needs_download {
-        tracing::info!(version = %version, "Version not cached (or unverified), will download");
-    }
-
-    Ok(ResolvedVersion {
-        version: Some(version),
-        needs_download,
-    })
+    let needs_download = !cached(&version);
+    official(Some(version), needs_download)
 }
 
 fn parse_selectable_version(requested: &str) -> Result<versions::AztecVersion, ProveError> {
@@ -284,13 +326,14 @@ pub(crate) async fn prove(
     let admitted = admit(&state, request, None).await?;
     let origin = admitted.approval.origin.as_ref().map(|o| o.as_str());
     let prover = acquire_prover(&state, &admitted.requested_version, origin).await?;
+    let custom = prover.is_custom();
     let held = Held { admitted, prover };
 
     let start = std::time::Instant::now();
     let (_held, result) = on_task(held, |held, cancel| async move {
         let result = bb::prove_cancellable(
             &held.admitted.body,
-            held.prover.version.as_ref(),
+            held.prover.binary(),
             held.prover.threads,
             cancel,
         )
@@ -301,11 +344,53 @@ pub(crate) async fn prove(
     let elapsed = start.elapsed();
     log_prove_outcome(result.as_ref().map(Vec::len), elapsed);
 
-    let proof = result.map_err(|e| ProveError::ProveFailed(e.to_string()))?;
+    let proof = result.map_err(|e| bb_failure(&state, custom, e.as_ref()))?;
     let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &proof);
     let mut response = axum::Json(json!({ "proof": encoded })).into_response();
     set_duration_header(&mut response, elapsed);
+    if custom {
+        custom_proved(&state, &mut response);
+    }
     Ok(response)
+}
+
+/// Response header naming a proof the custom bb made. Never a path, hash or bb output.
+pub(crate) const CUSTOM_BB_HEADER: &str = "x-presto-bb";
+
+/// What a site learns from a bb failure. On the custom route the detail can name local paths, so the
+/// site gets a fixed message and Settings gets the detail; a file that may not run is a 503, on which
+/// every published SDK degrades.
+pub(super) fn bb_failure(
+    state: &AppState,
+    custom: bool,
+    error: &(dyn std::error::Error + Send + Sync + 'static),
+) -> ProveError {
+    if !custom {
+        return ProveError::ProveFailed(error.to_string());
+    }
+    if error.downcast_ref::<Unavailable>().is_some() {
+        custom_refused(state, error.to_string());
+        return ProveError::CustomBbUnavailable;
+    }
+    state
+        .custom_bb_activity
+        .lock()
+        .record(Err(error.to_string()));
+    ProveError::ProveFailed("bb prove failed".to_string())
+}
+
+fn custom_refused(state: &AppState, detail: String) {
+    state.custom_bb_activity.lock().record(Err(detail));
+    if let Some(changed) = state.on_custom_bb_changed.as_ref() {
+        changed();
+    }
+}
+
+pub(super) fn custom_proved(state: &AppState, response: &mut axum::response::Response) {
+    state.custom_bb_activity.lock().record(Ok(()));
+    response
+        .headers_mut()
+        .insert(CUSTOM_BB_HEADER, HeaderValue::from_static("custom"));
 }
 
 /// Everything a request holds while bb runs, moved INTO the task that runs it (see [`on_task`]): a
@@ -413,8 +498,22 @@ pub(super) async fn admit(
 pub(super) struct Prover {
     pub(super) version: Option<versions::AztecVersion>,
     pub(super) threads: Option<usize>,
+    custom: Option<Arc<CustomRoute>>,
     _permit: OwnedSemaphorePermit,
     _version_lease: Option<versions::Lease>,
+}
+
+impl Prover {
+    pub(super) fn binary(&self) -> bb::BbBinary<'_> {
+        match &self.custom {
+            Some(route) => bb::BbBinary::Exact(route.clone()),
+            None => bb::BbBinary::Find(self.version.as_ref()),
+        }
+    }
+
+    pub(super) fn is_custom(&self) -> bool {
+        self.custom.is_some()
+    }
 }
 
 /// Stage 2 of every prove: resolve → download (owning the Downloading→Proving status transition) →
@@ -426,7 +525,10 @@ pub(super) async fn acquire_prover(
 ) -> Result<Prover, ProveError> {
     // Version resolution itself remains side-effect free; download_if_needed owns the temporary
     // Downloading→Proving transition.
-    let resolved = resolve_version(state, requested_version)?;
+    let resolved = match resolve_version(state, requested_version)? {
+        BbSource::Official(resolved) => resolved,
+        BbSource::Custom(pin) => return custom_prover(state, pin).await,
+    };
     download_if_needed(state, &resolved, origin).await?;
     let threads = compute_threads(state);
 
@@ -446,22 +548,41 @@ pub(super) async fn acquire_prover(
         }
     }
 
-    // A1: acquire the single prove permit ONLY now — around the CPU-bound proof — not across the body
-    // read + version download above (which ran concurrently under the inflight cap). bb saturates all
-    // cores, so proofs still run strictly one at a time; only the serialized *proving* is gated, not I/O.
-    // Held (RAII) until the handler returns.
-    let permit = state
+    Ok(Prover {
+        version: resolved.version,
+        threads,
+        custom: None,
+        _permit: prove_permit(state).await?,
+        _version_lease: version_lease,
+    })
+}
+
+/// The custom bb never touches `versions/`: no download, no budget, no lease, no cache check.
+async fn custom_prover(state: &AppState, pin: CustomBbPin) -> Result<Prover, ProveError> {
+    let config = state
+        .config
+        .clone()
+        .ok_or(ProveError::CustomBbUnavailable)?;
+    Ok(Prover {
+        version: None,
+        threads: compute_threads(state),
+        custom: Some(Arc::new(CustomRoute::new(pin, config))),
+        _permit: prove_permit(state).await?,
+        _version_lease: None,
+    })
+}
+
+/// A1: acquire the single prove permit ONLY now — around the CPU-bound proof — not across the body
+/// read + version download (which ran concurrently under the inflight cap). bb saturates all cores, so
+/// proofs still run strictly one at a time; only the serialized *proving* is gated, not I/O. Held
+/// (RAII) until the handler returns.
+async fn prove_permit(state: &AppState) -> Result<OwnedSemaphorePermit, ProveError> {
+    state
         .prove_semaphore
         .clone()
         .acquire_owned()
         .await
-        .map_err(|_| ProveError::ServiceUnavailable)?;
-    Ok(Prover {
-        version: resolved.version,
-        threads,
-        _permit: permit,
-        _version_lease: version_lease,
-    })
+        .map_err(|_| ProveError::ServiceUnavailable)
 }
 
 fn log_prove_outcome<E: std::fmt::Display>(result: Result<usize, &E>, elapsed: Duration) {
@@ -496,7 +617,7 @@ pub(super) fn set_duration_header(response: &mut axum::response::Response, elaps
     );
 }
 
-fn requested_version(headers: &axum::http::HeaderMap) -> Option<String> {
+pub(super) fn requested_version(headers: &axum::http::HeaderMap) -> Option<String> {
     headers
         .get("x-aztec-version")
         .and_then(|value| value.to_str().ok())
@@ -679,5 +800,66 @@ mod tests {
             Body::from_stream(futures_util::stream::pending::<Result<Bytes, std::io::Error>>());
         let res = read_body(body, 1024, Duration::from_secs(30)).await;
         assert!(matches!(res, Err(ProveError::BodyReadTimeout)));
+    }
+}
+
+#[cfg(test)]
+mod route_tests {
+    use super::*;
+
+    const BUNDLED: &str = "6.0.0-rc.6";
+    const CACHED: &str = "5.2.0";
+
+    fn v(raw: &str) -> versions::AztecVersion {
+        versions::AztecVersion::parse(raw).unwrap()
+    }
+
+    /// "custom", "bundled", "cached <v>" or "download <v>".
+    fn decide(label: &str, request: Option<&str>, developer_mode: bool) -> String {
+        let custom = developer_mode.then(|| CustomBbPin {
+            path: std::env::temp_dir().join("bb"),
+            sha256: "ab".repeat(32),
+            label: v(label),
+            pinned_at: 0,
+        });
+        match route(request.map(v), BUNDLED, custom, |version| {
+            version.as_str() == CACHED
+        }) {
+            BbSource::Custom(_) => "custom".to_string(),
+            BbSource::Official(ResolvedVersion { version: None, .. }) => "bundled".to_string(),
+            BbSource::Official(ResolvedVersion {
+                version: Some(version),
+                needs_download,
+            }) => format!(
+                "{} {version}",
+                if needs_download { "download" } else { "cached" }
+            ),
+        }
+    }
+
+    #[test]
+    fn only_an_exact_label_match_routes_custom_ahead_of_the_bundled_shortcut_and_the_cache() {
+        let unrouted = [
+            ("6.0.0-rc.6", "bundled"),
+            ("5.2.0", "cached 5.2.0"),
+            ("5.1.0", "download 5.1.0"),
+            ("6.0.0-dev.1", "download 6.0.0-dev.1"),
+        ];
+        for (label, official) in unrouted {
+            assert_eq!(decide(label, Some(label), true), "custom", "{label}");
+            assert_eq!(decide(label, Some(label), false), official, "{label}");
+            for other in [BUNDLED, CACHED, "5.0.0"]
+                .into_iter()
+                .filter(|o| *o != label)
+            {
+                assert_eq!(
+                    decide(label, Some(other), true),
+                    decide(label, Some(other), false),
+                    "{label} must not touch {other}"
+                );
+            }
+            assert_eq!(decide(label, None, true), "bundled", "{label}");
+            assert_eq!(decide(label, None, false), "bundled", "{label}");
+        }
     }
 }

@@ -324,8 +324,8 @@ with the output or run ID in the transcript.
 
 ### Phase 1: core pin, label gate, inspection, test run
 
-**Status:** steps 1, 2 and 4 are green (`lessons/phase-1.md`). Step 3 and the off-clears half of T6
-wait for `DeveloperSettings` on `main`.
+**Status:** ✓ (`lessons/phase-1.md`). Step 3 and T6 run on a local stand-in of the RC-channel
+contract, dropped before any push.
 
 1. `custom_bb.rs`: `CustomBbPin`, `de_custom_bb`, `check_label`, `inspect` (with D7),
    `verify_for_spawn`, `test_run` (takes a permit), `env_override_active`.
@@ -353,6 +353,8 @@ T2, T4, T6, T7 pass; each refusal test and the permit test fail against an accep
 unit.
 
 ### Phase 2: core route, spawn gate, wire, popup label
+
+**Status:** ✓ (`lessons/phase-2.md`), on the same stand-in.
 
 1. `BbSource` in `resolve_version`; `Custom` skips the download, the lease and the cache-path check.
 2. `BbBinary::Exact` with `SpawnGate` in both runners: prepare the workspace and `verify_for_spawn`
