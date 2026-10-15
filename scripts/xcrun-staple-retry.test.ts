@@ -97,8 +97,8 @@ describe("xcrun staple retry shim", () => {
     expect(r.code).toBe(0);
     expect(r.calls).toEqual(Array(3).fill("bundle: stapler validate Presto.app"));
     expect(r.log).toEqual([
-      "validate attempt 1/6 could not reach the ticket service for Presto.app",
-      "validate attempt 2/6 could not reach the ticket service for Presto.app",
+      "validate attempt 1/6 failed (exit 68) for Presto.app",
+      "validate attempt 2/6 failed (exit 68) for Presto.app",
     ]);
   });
 

@@ -24,7 +24,7 @@ if [ "$2" = validate ]; then
     if ((status == 0 || status == 65)); then
       exit "$status"
     fi
-    echo "validate attempt $attempt/$attempts could not reach the ticket service for ${!#}" >>"$log"
+    echo "validate attempt $attempt/$attempts failed (exit $status) for ${!#}" >>"$log"
     if ((attempt >= attempts)); then
       exit "$status"
     fi
