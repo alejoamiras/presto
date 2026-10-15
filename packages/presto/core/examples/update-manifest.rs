@@ -22,7 +22,7 @@
 use std::process::ExitCode;
 
 use base64::Engine as _;
-use presto_core::update_manifest::{build_signed_envelope, verify_manifest};
+use presto_core::update_manifest::{build_signed_envelope, verify_manifest, ManifestKind};
 
 fn die(msg: String) -> ! {
     eprintln!("update-manifest: {msg}");
@@ -49,7 +49,7 @@ fn flag(args: &[String], name: &str) -> String {
 
 fn envelope(args: &[String]) -> ExitCode {
     let feed = read_json(&flag(args, "--feed"));
-    match build_signed_envelope(&feed) {
+    match build_signed_envelope(&feed, ManifestKind::Stable) {
         Ok(bytes) => {
             use std::io::Write as _;
             if let Err(error) = std::io::stdout().write_all(&bytes) {

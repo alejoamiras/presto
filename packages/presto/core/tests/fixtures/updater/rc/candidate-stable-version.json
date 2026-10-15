@@ -1,0 +1,14 @@
+{
+  "version": "1.0.9",
+  "notes": "test fixture",
+  "pub_date": "2026-10-15T00:00:00Z",
+  "platforms": {
+    "linux-x86_64": {
+      "url": "https://example.test/app.AppImage",
+      "size": 12345,
+      "signature": "ARTIFACT_SIG_PLACEHOLDER"
+    }
+  },
+  "manifest": "eyJzY2hlbWEiOiJwcmVzdG8tdXBkYXRlLW1hbmlmZXN0LXJjLXYxIiwidmVyc2lvbiI6IjEuMC45IiwicHViX2RhdGUiOiIyMDI2LTEwLTE1VDAwOjAwOjAwWiIsInBsYXRmb3JtcyI6eyJsaW51eC14ODZfNjQiOnsidXJsIjoiaHR0cHM6Ly9leGFtcGxlLnRlc3QvYXBwLkFwcEltYWdlIiwic2l6ZSI6MTIzNDUsInNpZ25hdHVyZSI6IkFSVElGQUNUX1NJR19QTEFDRUhPTERFUiJ9fX0=",
+  "manifest_sig": "dW50cnVzdGVkIGNvbW1lbnQ6IHNpZ25hdHVyZSBmcm9tIHRhdXJpIHNlY3JldCBrZXkKUlVRc29BbXlOUUNQd0dCQTlKUy8rMGxLTldvbUNMei9GdUZ4bFgxQVJ5bWZFd1JBNm9rejRQMjRPSVcvdzNqdUVPZGdqdG4raGltTlZDa3czQ2xtemlqTTJhYlBiVmdPRXdnPQp0cnVzdGVkIGNvbW1lbnQ6IHRpbWVzdGFtcDoxNzkyMDk4OTM1CWZpbGU6Y2FuZGlkYXRlLXN0YWJsZS12ZXJzaW9uLmpzb24uZW52ZWxvcGUKUFZIQlhybHBtRlFWRkRQdDFSTEI2TTdwdGJVbXBDejlINVBxWWc1bUlKaTh1T1lINy9ab0hUMmhqa1g1VmFicUlvZHh1eVpYTWJGTVNDTXNTd2w4REE9PQo="
+}

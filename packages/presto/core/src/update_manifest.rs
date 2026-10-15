@@ -48,14 +48,44 @@ struct PlatformEntry {
     signature: String,
 }
 
-/// Fixed schema string the signer must use; a different value fails closed.
+/// Schema of a stable release's envelope; any schema other than these two fails closed.
 pub const ENVELOPE_SCHEMA: &str = "presto-update-manifest-v1";
+/// Schema of a release candidate's envelope. Builds that predate the update channel know only
+/// [`ENVELOPE_SCHEMA`], so they reject every candidate manifest at the schema check.
+pub const CANDIDATE_ENVELOPE_SCHEMA: &str = "presto-update-manifest-rc-v1";
 
-/// Successful verification result: the SemVer-parsed version and the signed artifact size.
+/// Which envelope schema signed a manifest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManifestKind {
+    /// [`ENVELOPE_SCHEMA`]: every stable release, plus prerelease feeds signed before the channel
+    /// existed and the release smokes' feeds for older clients.
+    Stable,
+    /// [`CANDIDATE_ENVELOPE_SCHEMA`]: a release candidate, always a prerelease version.
+    Candidate,
+}
+
+impl ManifestKind {
+    pub fn schema(self) -> &'static str {
+        match self {
+            Self::Stable => ENVELOPE_SCHEMA,
+            Self::Candidate => CANDIDATE_ENVELOPE_SCHEMA,
+        }
+    }
+
+    fn from_schema(schema: &str) -> Option<Self> {
+        [Self::Stable, Self::Candidate]
+            .into_iter()
+            .find(|kind| kind.schema() == schema)
+    }
+}
+
+/// Successful verification result: the SemVer-parsed version, the signed artifact size and the
+/// envelope's kind.
 #[derive(Debug, Clone)]
 pub struct VerifiedManifest {
     pub version: semver::Version,
     pub size: u64,
+    pub kind: ManifestKind,
 }
 
 /// Every failure is a distinct variant so the caller can log a `SECURITY:`-prefixed reason. All
@@ -72,6 +102,8 @@ pub enum ManifestError {
     SignatureInvalid,
     EnvelopeParse,
     BadSchema,
+    /// A candidate envelope for a version with no prerelease part.
+    CandidateNotPrerelease,
     /// Envelope `version` is not canonical SemVer (e.g. leading `v`, or non-canonical form).
     NonCanonicalVersion,
     /// Outer feed `version`/`pub_date`/`platforms` disagrees with the signed envelope.
@@ -164,9 +196,7 @@ pub fn verify_manifest(
     // 4. Parse the now-trusted envelope (strict).
     let env: SignedEnvelope =
         serde_json::from_slice(&manifest_bytes).map_err(|_| ManifestError::EnvelopeParse)?;
-    if env.schema != ENVELOPE_SCHEMA {
-        return Err(ManifestError::BadSchema);
-    }
+    let kind = ManifestKind::from_schema(&env.schema).ok_or(ManifestError::BadSchema)?;
 
     // 5. Envelope version must be canonical SemVer (reject leading `v` / non-canonical forms even
     //    though the plugin would accept them) and round-trip to the exact same string.
@@ -174,6 +204,9 @@ pub fn verify_manifest(
         semver::Version::parse(&env.version).map_err(|_| ManifestError::NonCanonicalVersion)?;
     if env_version.to_string() != env.version {
         return Err(ManifestError::NonCanonicalVersion);
+    }
+    if kind == ManifestKind::Candidate && env_version.pre.is_empty() {
+        return Err(ManifestError::CandidateNotPrerelease);
     }
 
     // 6. Bind the OUTER feed to the signed envelope (B3): version, pub_date, and the full platforms
@@ -220,17 +253,21 @@ pub fn verify_manifest(
     Ok(VerifiedManifest {
         version: env_version,
         size: selected.size,
+        kind,
     })
 }
 
 /// Assemble the canonical signed-envelope bytes from an (unsigned) feed value — the EXACT bytes the
 /// release pipeline signs. Extracts `version`/`pub_date`/`platforms` from the feed the plugin will
-/// serve, stamps the fixed [`ENVELOPE_SCHEMA`], and serializes. These bytes are what gets signed and
+/// serve, stamps `kind`'s schema, and serializes. These bytes are what gets signed and
 /// base64-embedded as `manifest`, so there is no canonicalization contract beyond "they round-trip
 /// through [`verify_manifest`]" — which holds by construction, because they are built from the very
 /// fields verify compares back to the outer feed. Mirrors verify's canonical-SemVer rule so the
 /// pipeline never signs a version that verify would reject. Used by the `update-manifest` example tool.
-pub fn build_signed_envelope(feed: &serde_json::Value) -> Result<Vec<u8>, ManifestError> {
+pub fn build_signed_envelope(
+    feed: &serde_json::Value,
+    kind: ManifestKind,
+) -> Result<Vec<u8>, ManifestError> {
     let version = feed
         .get("version")
         .and_then(serde_json::Value::as_str)
@@ -238,6 +275,9 @@ pub fn build_signed_envelope(feed: &serde_json::Value) -> Result<Vec<u8>, Manife
     let parsed = semver::Version::parse(version).map_err(|_| ManifestError::NonCanonicalVersion)?;
     if parsed.to_string() != version {
         return Err(ManifestError::NonCanonicalVersion);
+    }
+    if kind == ManifestKind::Candidate && parsed.pre.is_empty() {
+        return Err(ManifestError::CandidateNotPrerelease);
     }
     let pub_date = feed
         .get("pub_date")
@@ -254,7 +294,7 @@ pub fn build_signed_envelope(feed: &serde_json::Value) -> Result<Vec<u8>, Manife
         return Err(ManifestError::MissingField("platforms"));
     }
     let env = SignedEnvelope {
-        schema: ENVELOPE_SCHEMA.to_string(),
+        schema: kind.schema().to_string(),
         version: version.to_string(),
         pub_date: pub_date.to_string(),
         platforms,
@@ -273,7 +313,7 @@ mod tests {
         // pub_date, and platforms EXACTLY — that equality is what makes verify's outer==envelope
         // binding pass once the bytes are signed.
         let feed = feed();
-        let bytes = build_signed_envelope(&feed).unwrap();
+        let bytes = build_signed_envelope(&feed, ManifestKind::Stable).unwrap();
         let env: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(env["schema"], ENVELOPE_SCHEMA);
         assert_eq!(env["version"], feed["version"]);
@@ -290,9 +330,22 @@ mod tests {
         let mut feed = feed();
         feed["version"] = json!("v1.0.8");
         assert!(matches!(
-            build_signed_envelope(&feed),
+            build_signed_envelope(&feed, ManifestKind::Stable),
             Err(ManifestError::NonCanonicalVersion)
         ));
+    }
+
+    #[test]
+    fn build_signed_envelope_stamps_the_kind_and_refuses_a_stable_candidate() {
+        let mut feed = feed();
+        assert!(matches!(
+            build_signed_envelope(&feed, ManifestKind::Candidate),
+            Err(ManifestError::CandidateNotPrerelease)
+        ));
+        feed["version"] = json!("1.0.9-rc.1");
+        let bytes = build_signed_envelope(&feed, ManifestKind::Candidate).unwrap();
+        let env: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(env["schema"], CANDIDATE_ENVELOPE_SCHEMA);
     }
 
     // Fixture signed with a THROWAWAY test key (private key never committed). See
@@ -314,6 +367,7 @@ mod tests {
         let v = verify_manifest(&feed(), pk(), "1.0.8", URL, ART_SIG).expect("valid manifest");
         assert_eq!(v.version, semver::Version::parse("1.0.8").unwrap());
         assert_eq!(v.size, 12345);
+        assert_eq!(v.kind, ManifestKind::Stable);
     }
 
     #[test]
@@ -441,5 +495,50 @@ mod tests {
             verify_manifest(&feed(), other, "1.0.8", URL, ART_SIG),
             Err(ManifestError::SignatureInvalid)
         ));
+    }
+
+    // Signed with a second throwaway key the same way (`tauri signer generate`, then `tauri signer
+    // sign` over each envelope); its private key was never committed either.
+    const RC_PUBKEY_B64: &str = include_str!("../tests/fixtures/updater/rc/pubkey.b64");
+    const RC_CANDIDATE: &str = include_str!("../tests/fixtures/updater/rc/candidate.json");
+    const RC_LEGACY_PRERELEASE: &str =
+        include_str!("../tests/fixtures/updater/rc/legacy-prerelease.json");
+    const RC_CANDIDATE_STABLE_VERSION: &str =
+        include_str!("../tests/fixtures/updater/rc/candidate-stable-version.json");
+
+    fn verify_rc(fixture: &str, version: &str) -> Result<VerifiedManifest, ManifestError> {
+        let feed: serde_json::Value = serde_json::from_str(fixture).unwrap();
+        verify_manifest(&feed, RC_PUBKEY_B64.trim(), version, URL, ART_SIG)
+    }
+
+    #[test]
+    fn each_schema_verifies_as_its_kind() {
+        let candidate = verify_rc(RC_CANDIDATE, "1.0.9-rc.1").expect("candidate manifest");
+        assert_eq!(candidate.kind, ManifestKind::Candidate);
+        let legacy = verify_rc(RC_LEGACY_PRERELEASE, "1.0.9-rc.1").expect("v1 prerelease manifest");
+        assert_eq!(legacy.kind, ManifestKind::Stable);
+        assert!(!legacy.version.pre.is_empty());
+    }
+
+    #[test]
+    fn signed_candidate_for_a_stable_version_rejected() {
+        assert!(matches!(
+            verify_rc(RC_CANDIDATE_STABLE_VERSION, "1.0.9"),
+            Err(ManifestError::CandidateNotPrerelease)
+        ));
+    }
+
+    #[test]
+    fn only_the_two_schemas_have_a_kind() {
+        assert_eq!(
+            ManifestKind::from_schema(ENVELOPE_SCHEMA),
+            Some(ManifestKind::Stable)
+        );
+        assert_eq!(
+            ManifestKind::from_schema(CANDIDATE_ENVELOPE_SCHEMA),
+            Some(ManifestKind::Candidate)
+        );
+        assert_eq!(ManifestKind::from_schema("presto-update-manifest-v2"), None);
+        assert_eq!(ManifestKind::from_schema(""), None);
     }
 }
