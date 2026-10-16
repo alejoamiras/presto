@@ -301,7 +301,7 @@ To leave, choose **Stable** or turn Developer mode off; on a release candidate, 
 
 To prove with a `bb` you built yourself, open Settings → **Advanced**, turn on **Developer mode**, and under **Developer → Custom bb** click **Choose file…**:
 
-1. Presto hashes the file and checks it **without running it**. It refuses a file that is not executable, not built for this computer, or that another account could change (a group- or world-writable file or folder, or one outside your user profile on Windows). On macOS it also refuses a quarantined file, and on Apple Silicon an unsigned one. A refusal comes with a command to copy; Presto never changes the file itself.
+1. Presto hashes the file and checks it **without running it**. It refuses a file that is not executable, not built for this computer, or that another account could change (a group- or world-writable file or folder, or one outside your user profile on Windows). On macOS it also refuses a quarantined file, and on Apple Silicon one with no code signature (whether the signature lets it start is what the test run shows). A refusal comes with a command to copy; Presto never changes the file itself.
 2. Tick **I built this file myself, or I fully trust the person who did**, then **Test run**. Presto runs the file once with `--version`, with no proof data, and fills in the version it printed.
 3. Choose the version it answers, and click **Use this bb**. Pick a version no release has, such as `6.0.0-dev.1`, so no ordinary dApp reaches it by accident; any approved site that sends that `x-aztec-version`, on purpose or not, gets your build.
 

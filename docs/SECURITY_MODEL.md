@@ -303,8 +303,11 @@ What bounds it:
     default) can hide a second member; the rehash before every spawn catches a change made
     before it, and such an account can still race the hash and the spawn (#155).
   - **Windows:** the file must sit under `%USERPROFILE%`.
-  - **macOS:** a quarantined file is refused, and so is an unsigned one on Apple Silicon. Settings
-    gives a command to copy; Presto never changes quarantine, signatures or the exec bit itself.
+  - **macOS:** a quarantined file is refused, and so is one with no code signature on Apple
+    Silicon. Presto checks that a signature is present, not that it is valid: the `--version` test
+    run shows whether it lets the file start, and since the kernel checks pages as they are first
+    used, a proof can still be killed on a page the test run never touched. Settings gives a
+    command to copy; Presto never changes quarantine, signatures or the exec bit itself.
 - **The user sees it.**
   - Before saving, the file runs once (`--version`), only after the user ticks that they built it
     or fully trust whoever did, and the run must pass.

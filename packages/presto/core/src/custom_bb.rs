@@ -165,8 +165,9 @@ pub struct Inspection {
 }
 
 /// Check a picked file without executing it: canonical path, regular file, Presto's own format and
-/// architecture, executable, the path policy, and on macOS quarantine and (arm64) a valid
-/// signature. Blocking: it hashes the whole file.
+/// architecture, executable, the path policy, and on macOS quarantine and (arm64) an embedded
+/// code signature, present rather than valid: the test run shows whether it lets the file start.
+/// Blocking: it hashes the whole file.
 pub fn inspect(picked: &Path) -> Result<Inspection, Refusal> {
     let path = std::fs::canonicalize(picked).map_err(|e| Refusal::unreadable(picked, &e))?;
     if path.to_str().is_none() {
@@ -252,7 +253,7 @@ fn os_gates(path: &Path) -> Result<(), Refusal> {
         if !signed {
             return Err(Refusal::new(
                 RefusalCode::Unsigned,
-                "This file has no valid signature, so Apple silicon will refuse to run it."
+                "This file has no code signature, so Apple silicon will refuse to run it."
                     .to_string(),
                 Some(format!("codesign --force --sign - {}", shell_quote(path))),
             ));

@@ -189,22 +189,23 @@ pub(super) fn has_code_signature(path: &Path) -> std::io::Result<bool> {
     let mut file = std::fs::File::open(path)?;
     let mut head = Vec::new();
     (&mut file).take(HEAD_BYTES).read_to_end(&mut head)?;
-    let Some(offset) = host_slice_offset(&head, wanted) else {
+    let Some((offset, size)) = host_slice(&head, wanted) else {
         return Ok(false);
     };
     file.seek(SeekFrom::Start(offset))?;
     let mut image = Vec::new();
-    file.take(32 + MAX_LOAD_COMMAND_BYTES)
+    file.take(size.min(32 + MAX_LOAD_COMMAND_BYTES))
         .read_to_end(&mut image)?;
     Ok(signature_command(&image).is_some_and(|datasize| datasize > 0))
 }
 
-/// Where the `wanted` architecture's image starts: 0 for a thin image, its slice's offset in a fat one.
+/// Where the `wanted` architecture's image lies, as (offset, size): the whole file for a thin
+/// image, its slice for a fat one.
 #[cfg(any(target_os = "macos", test))]
-fn host_slice_offset(head: &[u8], wanted: u32) -> Option<u64> {
+fn host_slice(head: &[u8], wanted: u32) -> Option<(u64, u64)> {
     let magic = *head.get(0..4)?.first_chunk::<4>()?;
     if matches!(u32::from_le_bytes(magic), 0xFEED_FACF | 0xFEED_FACE) {
-        return Some(0);
+        return Some((0, u64::MAX));
     }
     let stride = match u32::from_be_bytes(magic) {
         0xCAFE_BABE => 20,
@@ -215,22 +216,31 @@ fn host_slice_offset(head: &[u8], wanted: u32) -> Option<u64> {
     if slices == 0 || slices > MAX_FAT_SLICES {
         return None;
     }
+    let be32 = |at: usize| {
+        Some(u64::from(u32::from_be_bytes(
+            *head.get(at..at + 4)?.first_chunk::<4>()?,
+        )))
+    };
+    let be64 = |at: usize| {
+        Some(u64::from_be_bytes(
+            *head.get(at..at + 8)?.first_chunk::<8>()?,
+        ))
+    };
     (0..slices).map(|i| 8 + i * stride).find_map(|at| {
-        let cpu = u32::from_be_bytes(*head.get(at..at + 4)?.first_chunk::<4>()?);
-        if cpu != wanted {
+        if be32(at)? != u64::from(wanted) {
             return None;
         }
         Some(if stride == 20 {
-            u64::from(u32::from_be_bytes(
-                *head.get(at + 8..at + 12)?.first_chunk::<4>()?,
-            ))
+            (be32(at + 8)?, be32(at + 12)?)
         } else {
-            u64::from_be_bytes(*head.get(at + 8..at + 16)?.first_chunk::<8>()?)
+            (be64(at + 8)?, be64(at + 16)?)
         })
     })
 }
 
-/// The `datasize` of a 64-bit image's `LC_CODE_SIGNATURE` command, if it has one.
+/// The `datasize` of a 64-bit image's `LC_CODE_SIGNATURE` command, if it has one. A command is
+/// read only once its declared size fits the declared command region, so a header that lies
+/// about its sizes names no signature.
 #[cfg(any(target_os = "macos", test))]
 fn signature_command(image: &[u8]) -> Option<u32> {
     let word = |at: usize| {
@@ -246,13 +256,13 @@ fn signature_command(image: &[u8]) -> Option<u32> {
     let mut at = 32usize;
     for _ in 0..ncmds {
         let (cmd, size) = (word(at)?, word(at + 4)? as usize);
+        let next = at
+            .checked_add(size)
+            .filter(|&next| size >= 8 && next <= end)?;
         if cmd == LC_CODE_SIGNATURE {
-            return word(at + 12);
+            return if size >= 16 { word(at + 12) } else { None };
         }
-        if size < 8 {
-            return None;
-        }
-        at = at.checked_add(size).filter(|&next| next <= end)?;
+        at = next;
     }
     None
 }
@@ -356,22 +366,28 @@ mod tests {
         let signed: &[u8] = &[4, 0, 0, 0, 16, 0, 0, 0];
         let empty: &[u8] = &[4, 0, 0, 0, 0, 0, 0, 0];
         let segment: &[u8] = &[0u8; 64];
-        assert_eq!(
-            signature_command(&thin_image(&[(0x19, segment), (LC_CODE_SIGNATURE, signed)])),
-            Some(16)
-        );
+        let signed_image = thin_image(&[(0x19, segment), (LC_CODE_SIGNATURE, signed)]);
+        assert_eq!(signature_command(&signed_image), Some(16));
         assert_eq!(
             signature_command(&thin_image(&[(LC_CODE_SIGNATURE, empty)])),
             Some(0)
         );
         assert_eq!(signature_command(&thin_image(&[(0x19, segment)])), None);
         assert_eq!(signature_command(&thin_image(&[])), None);
-        // Truncated commands, a zero-sized command, and a 32-bit header end the walk without a hit.
-        let image = thin_image(&[(0x19, segment), (LC_CODE_SIGNATURE, signed)]);
-        assert_eq!(signature_command(&image[..40]), None);
-        let mut looped = thin_image(&[(0x19, segment), (LC_CODE_SIGNATURE, signed)]);
+        // Truncated commands, a zero-sized command, a short signature command, a command region
+        // that lies about its size, and a 32-bit header end the walk without a hit.
+        assert_eq!(signature_command(&signed_image[..40]), None);
+        let mut looped = signed_image.clone();
         looped[36..40].copy_from_slice(&0u32.to_le_bytes());
         assert_eq!(signature_command(&looped), None);
+        assert_eq!(
+            signature_command(&thin_image(&[(LC_CODE_SIGNATURE, &[])])),
+            None
+        );
+        let mut hollow = thin_image(&[(LC_CODE_SIGNATURE, signed)]);
+        hollow[20..24].copy_from_slice(&0u32.to_le_bytes());
+        hollow[36..40].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(signature_command(&hollow), None);
         let mut narrow = thin_image(&[(LC_CODE_SIGNATURE, signed)]);
         narrow[..4].copy_from_slice(&0xFEED_FACEu32.to_le_bytes());
         assert_eq!(signature_command(&narrow), None);
@@ -379,15 +395,17 @@ mod tests {
 
     #[test]
     fn the_host_slice_is_the_thin_image_or_the_matching_fat_slice() {
-        assert_eq!(host_slice_offset(&thin_image(&[]), CPU_ARM64), Some(0));
+        assert_eq!(host_slice(&thin_image(&[]), CPU_ARM64), Some((0, u64::MAX)));
         let mut fat = fat(&[CPU_X86_64, CPU_ARM64]);
         fat[16..20].copy_from_slice(&4096u32.to_be_bytes());
+        fat[20..24].copy_from_slice(&12288u32.to_be_bytes());
         fat[36..40].copy_from_slice(&16384u32.to_be_bytes());
-        assert_eq!(host_slice_offset(&fat, CPU_ARM64), Some(16384));
-        assert_eq!(host_slice_offset(&fat, CPU_X86_64), Some(4096));
-        assert_eq!(host_slice_offset(&fat, 0x0100_0012), None);
-        assert_eq!(host_slice_offset(&fat[..30], CPU_ARM64), None);
-        assert_eq!(host_slice_offset(b"plain text", CPU_ARM64), None);
+        fat[40..44].copy_from_slice(&23_000_000u32.to_be_bytes());
+        assert_eq!(host_slice(&fat, CPU_ARM64), Some((16384, 23_000_000)));
+        assert_eq!(host_slice(&fat, CPU_X86_64), Some((4096, 12288)));
+        assert_eq!(host_slice(&fat, 0x0100_0012), None);
+        assert_eq!(host_slice(&fat[..30], CPU_ARM64), None);
+        assert_eq!(host_slice(b"plain text", CPU_ARM64), None);
     }
 
     #[cfg(target_os = "macos")]

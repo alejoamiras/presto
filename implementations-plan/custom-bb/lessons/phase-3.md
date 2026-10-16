@@ -168,5 +168,9 @@ accept what the kernel runs. The gate now asks the Mach-O itself whether the hos
 an `LC_CODE_SIGNATURE` with data (`binary_format::has_code_signature`, parser unit-tested on
 every OS) and leaves validity to the test run, where the kernel is the judge; the macOS
 `custom_bb` unit test in the Cert Trust lane keeps the unsigned refusal, since
-`--remove-signature` drops the load command. T13 now fails at once with the refusal's text
+`--remove-signature` drops the load command. Codex's round on it: validate a command's declared
+size before reading its payload (a header lying about its sizes named a signature), bound a
+fat read to its slice, and say "present" rather than "valid" in `inspect`'s doc, the refusal
+text, decision 8 and the README, since the kernel checks pages lazily and a proof can still
+die on a page the test run never touched. T13 now fails at once with the refusal's text
 instead of a 20 s timeout.
