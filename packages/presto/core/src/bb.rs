@@ -1798,13 +1798,14 @@ mod tests {
     async fn a_successful_run_leaves_nothing_in_the_job() {
         // A bb that exits 0 while a descendant keeps running: the run must not end with the
         // descendant still in the job, or it would outlive the permit that serializes bb. A batch
-        // file, since `goto` needs labels; it exits only once the test has seen both in the job.
+        // file, since `goto` needs labels. It spins rather than sleeps, so the job's only other
+        // member is the descendant, and it exits once the test has seen both.
         let dir = tempfile::tempdir().unwrap();
         let (ready, go) = (dir.path().join("ready"), dir.path().join("go"));
         std::fs::write(
             dir.path().join("run.bat"),
-            "start /B ping -n 30 127.0.0.1\r\necho ok > ready\r\n:wait\r\n\
-             if not exist go (\r\n  ping -n 2 127.0.0.1 >nul\r\n  goto wait\r\n)\r\nexit 0\r\n",
+            "start /B ping -n 30 127.0.0.1\r\necho ok > ready\r\n\
+             :wait\r\nif not exist go goto wait\r\nexit 0\r\n",
         )
         .unwrap();
         let mut cmd = tokio::process::Command::new("cmd.exe");

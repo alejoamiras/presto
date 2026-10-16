@@ -324,8 +324,8 @@ with the output or run ID in the transcript.
 
 ### Phase 1: core pin, label gate, inspection, test run
 
-**Status:** ✓ (`lessons/phase-1.md`). Step 3 and T6 run on a local stand-in of the RC-channel
-contract, dropped before any push.
+**Status:** ✓ (`lessons/phase-1.md`). Built on a local stand-in of the RC-channel contract, then
+rebased onto main once that contract landed (#134, #135).
 
 1. `custom_bb.rs`: `CustomBbPin`, `de_custom_bb`, `check_label`, `inspect` (with D7),
    `verify_for_spawn`, `test_run` (takes a permit), `env_override_active`.
@@ -354,7 +354,7 @@ unit.
 
 ### Phase 2: core route, spawn gate, wire, popup label
 
-**Status:** ✓ (`lessons/phase-2.md`), on the same stand-in.
+**Status:** ✓ (`lessons/phase-2.md`).
 
 1. `BbSource` in `resolve_version`; `Custom` skips the download, the lease and the cache-path check.
 2. `BbBinary::Exact` with `SpawnGate` in both runners: prepare the workspace and `verify_for_spawn`
@@ -466,6 +466,10 @@ share the command shapes.
 - **Approved 2026-10-15:** A5 by the owner; the remainder by the orchestrator under owner
   delegation (A4, A6, A7 as recommended; scope desktop-only, tier `mid`, delivery arc 1 + arc 2 +
   close-out; hardening decided later; `code_review` off).
+- **Arc 1 review** (Codex `gpt-6.1-sol`, high, session `01a14169-ee8f-7dc0-9836-f9256232afe2`):
+  round 1 reject (private-group exclusivity, the Windows job left running after a successful run,
+  a workspace path on the wire), round 2 and round 3 conditional approve on test determinism. Every
+  condition is met; the loop stopped at three rounds. Triage in `lessons/phase-2.md`.
 
 ### Audit verdicts (round 1, 2026-10-15)
 

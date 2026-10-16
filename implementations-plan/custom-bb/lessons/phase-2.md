@@ -97,3 +97,10 @@ Rebased onto origin/main `45b492a`, dropping the stand-in. Main's developer cont
 stand-in, apart from `UpdateChannel`'s new `Display` and a comment. Main's
 `update-wiring.test.ts` forbids `set_developer_mode(` anywhere under `core/src/server`, tests
 included, so the server fixture now gets its config from `custom_bb::developer_config` (test-only).
+
+**Round 3** (same session, after the rebase): **conditional approve**. The re-exec filter, the
+skipped-child guard, the permit test and the wiring tests check out, and the rebase introduced no
+regression. One low finding: the Windows wait loop's own `ping` could stand in as the second job
+member if the background `ping` never started, and then the old `finish` would still pass. Fixed:
+the loop spins (`if not exist go goto wait`) and creates no process. Compile-checked only; it runs in
+CI. The loop stops here at its three-round limit.
