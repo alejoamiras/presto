@@ -30,8 +30,8 @@ let revision = 0;
 let saving = 0;
 // Numbers each change: only the newest may write the result line, so a superseded join's is dropped.
 let change = 0;
-// A failed save restores the view it replaced, which an overlapping failed save may never have
-// stored, so the view is read back once the last save settles.
+// Overlapping saves reach the disk in either order, and a failed save restores a view an overlapping
+// save may never have stored, so after either the view is read back once the last save settles.
 let unsure = false;
 
 function isPrerelease(version) {
@@ -107,6 +107,7 @@ async function save(command, args, next, anchor) {
   resultEl.textContent = joins ? "Checking…" : "";
   revision++;
   saving++;
+  if (saving > 1) unsure = true;
   try {
     const result = await invoke(command, args);
     if (mine === change) resultEl.textContent = RESULT_TEXT[result] ?? "";

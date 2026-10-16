@@ -21,4 +21,21 @@ surface or the smoke.
    - Test: `a save confirmed during a reload leaves the controls usable`. Without the hand-back it
      is red.
 
-Playwright now has 108 tests.
+Playwright had 108 tests after round 1.
+
+## Round 2: fix (1)
+
+Codex confirmed both round 1 fixes.
+
+1. **Medium: overlapping successful saves can land out of order.** Plausible, not reproduced on a
+   real app. Tauri runs each async command as its own task, so two saves sent close together take
+   the config lock in either order. If the older RC save lands last, the disk holds rc while the
+   view shows the newer Stable choice. Neither save failed, so nothing read back. The window is the
+   gap between IPC dispatch and taking the lock, much shorter than a human double click, but the
+   fix is one line.
+   - Fix: a save that starts while another is in flight marks the view unsure, so the read-back runs
+     once the last one settles.
+   - Test: `overlapping saves that reach the disk out of order show what is saved`. Without the
+     line it is red.
+
+Playwright now has 109 tests.

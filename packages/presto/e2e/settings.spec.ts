@@ -1116,6 +1116,36 @@ test("a superseded join result is dropped", async ({ page }) => {
   await expect(page.locator("#channel-status")).toHaveText("Stable releases only.");
 });
 
+test("overlapping saves that reach the disk out of order show what is saved", async ({ page }) => {
+  await hold(page, "set_update_channel");
+  await openChannel(page);
+  await pick(page, "Release candidates");
+  await pick(page, "Stable");
+  // Both succeed, but the older save lands last, so rc is what the disk holds.
+  await page.evaluate(() => {
+    const mock = (window as any).__TAURI_MOCK__;
+    mock.setHandler("get_config", () => ({
+      config_version: 2,
+      https_enabled: false,
+      approved_origins: [],
+      speed: "full",
+      theme: "system",
+      onboarding_version: 1,
+      developer: { enabled: true, update_channel: "rc" },
+    }));
+    mock.setHandler("get_system_info", () => ({
+      platform: "macos",
+      cpu_count: 10,
+      app_version: "1.2.0",
+      effective_channel: "rc",
+    }));
+  });
+  await answer(page, null, "newest");
+  await answer(page, "up-to-date");
+  await expect(channelRadio(page, "rc")).toBeChecked();
+  await expect(channelRadio(page, "rc")).toBeEnabled();
+});
+
 test("leaving on a release candidate asks first", async ({ page }) => {
   await openChannel(page, { channel: "rc", version: "1.3.0-rc.2" });
   await expect(page.locator("#channel-status")).toHaveText("You run 1.3.0-rc.2.");
