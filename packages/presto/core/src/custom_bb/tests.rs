@@ -340,7 +340,10 @@ mod unix {
 
         #[cfg(target_arch = "aarch64")]
         {
-            let (_dir, bb) = copied_system_binary();
+            // Named after codesign's verdict, so only the whole line can pass the file.
+            let (_dir, copy) = copied_system_binary();
+            let bb = copy.with_file_name("valid on disk");
+            std::fs::rename(&copy, &bb).unwrap();
             let status = std::process::Command::new("/usr/bin/codesign")
                 .arg("--remove-signature")
                 .arg(&bb)

@@ -300,8 +300,8 @@ What bounds it:
     world-writable. Group write is allowed only through the user's private group or a sticky
     directory, and an ACL entry that lets anyone else write is refused. The private-group test
     reads the account database through NSS, so a source that does not enumerate (sssd's
-    default) can hide a second member; the rehash before every spawn turns that account's swap
-    into a refusal, not a run (#155).
+    default) can hide a second member; the rehash before every spawn catches a change made
+    before it, and such an account can still race the hash and the spawn (#155).
   - **Windows:** the file must sit under `%USERPROFILE%`.
   - **macOS:** a quarantined file is refused, and so is an unsigned one on Apple Silicon. Settings
     gives a command to copy; Presto never changes quarantine, signatures or the exec bit itself.
