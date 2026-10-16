@@ -24,3 +24,9 @@ Worker and pipeline grammar copies have a drift test), or plan coverage.
 
 Findings 2 and 3 touch code files, which the docs-only close-out does not; the director took both
 as one comment-only commit in the close-out PR, with no behaviour or test change.
+
+## Round 2: clean
+
+Codex confirmed all three fixes and found no new material finding in the Outcome, the promoted
+lessons or the archive index. It asked for one qualifier on fix 3: clients that predate the channel
+accept only the v1 smoke twin, since they refuse the rc-v1 schema. The comment now says so.
