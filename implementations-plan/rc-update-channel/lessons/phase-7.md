@@ -16,8 +16,8 @@
 - An RC promote verifies four `Candidate` platforms, reads and verifies the live stable, and refuses
   unless the candidate stands above it. A stable promote settles `latest-rc.json`: a candidate above
   the new stable stays, anything else (at or below it, unreadable) is deleted.
-- `withdraw-rc` refuses while KV holds a different readable candidate and is a no-op when the key is
-  absent; an unreadable key is withdrawn with a warning.
+- `withdraw-rc` refuses while KV holds a different candidate and is a no-op when the key is absent;
+  anything else in the key (a stable, a bad grammar, no string version) is withdrawn with a warning.
 - wrangler 4.135.0: `kv key list --prefix` prints JSON only; `kv key get --remote` errors on a missing
   key, so list first; `kv key delete` has no prompt.
 - The read-back moved into `.github/scripts/verify-live-feed.sh` so the three modes share one poll and

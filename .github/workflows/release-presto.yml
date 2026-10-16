@@ -1569,6 +1569,8 @@ jobs:
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
         with:
           bun-version-file: .bun-version
+      # Without the locked install, `bunx` would fetch whatever wrangler npm serves and hand it the token.
+      - run: bun install --frozen-lockfile
 
       - name: Pre-flight — KV latest-rc.json holds this candidate, or nothing readable
         env:
@@ -1583,8 +1585,9 @@ jobs:
           fi
           bunx wrangler kv key get latest-rc.json --remote --namespace-id "$NAMESPACE_ID" > candidate.json
           HELD=$(jq -r '.version // empty' candidate.json 2>/dev/null || true)
-          if [ -z "$HELD" ]; then
-            echo "::warning::KV latest-rc.json carries no version; withdrawing it"
+          HELD_KEY=$(bun packages/presto/scripts/release-feed-keys.ts key "$HELD" 2>/dev/null || true)
+          if [ "$HELD_KEY" != latest-rc.json ]; then
+            echo "::warning::KV latest-rc.json holds no candidate the Worker would serve; withdrawing it"
           elif [ "$HELD" != "$VERSION" ]; then
             echo "::error::KV latest-rc.json holds $HELD, not $VERSION: dispatch withdraw-rc for $HELD"
             exit 1
@@ -1626,7 +1629,7 @@ jobs:
   verify-live-feed:
     name: Verify live updater feed
     needs: [validate, promote, withdraw-rc]
-    # blocker-1 (codex High): run this after ANY attempted write via its OWN status function — NOT the
+    # Run this after ANY attempted write via its OWN status function — NOT the
     # implicit success() on the writing job — so live verification can't be skipped by a write whose CLI
     # errored/timed-out AFTER KV committed (feed live but the job RED). The live feed is the source of truth:
     # if the write truly didn't land, this polls ~600s and fails RED; if it DID land despite a RED job, this

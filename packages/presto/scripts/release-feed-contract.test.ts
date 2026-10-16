@@ -235,16 +235,47 @@ describe("release candidate feed: withdraw-rc", () => {
     expect(WF_TEXT.match(/wrangler kv key put/g)).toHaveLength(1);
   });
 
+  test("every job holding the feed token installs the locked wrangler before its first use", () => {
+    const tokenJobs = Object.entries(WF.jobs).filter(([, job]) =>
+      JSON.stringify(job).includes("CLOUDFLARE_RELEASE_FEED_API_TOKEN"),
+    );
+    expect(tokenJobs.map(([name]) => name).sort()).toEqual([
+      "promote",
+      "release-auth-preflight",
+      "withdraw-rc",
+    ]);
+    for (const [name, job] of tokenJobs) {
+      const steps = job.steps as (Step & { uses?: string; with?: Record<string, string> })[];
+      const installs = steps.findIndex(
+        (s) =>
+          s.run === "bun install --frozen-lockfile" ||
+          (s.uses === "./.github/actions/setup-presto" && s.with?.["install-js-deps"] !== "false"),
+      );
+      const firstToken = steps.findIndex((s) =>
+        JSON.stringify(s).includes("CLOUDFLARE_RELEASE_FEED_API_TOKEN"),
+      );
+      expect([name, installs >= 0 && installs < firstToken]).toEqual([name, true]);
+    }
+  });
+
   test("it refuses while KV holds another candidate, and withdraws this one, an unreadable one or none", () => {
     const run = (kv: KV) => runStep(preflight, { VERSION: "1.3.0-rc.2", NAMESPACE_ID: "ns" }, kv);
     const other = run({ list: ["latest-rc.json"], candidate: feed("1.3.0-rc.3") });
     expect(other.code).toBe(1);
     expect(other.log).toContain("holds 1.3.0-rc.3, not 1.3.0-rc.2");
-    for (const kv of [
+    const withdrawn = [
       { list: ["latest-rc.json"], candidate: feed("1.3.0-rc.2") },
       {},
-      { list: ["latest-rc.json"], candidate: "{}" },
-    ]) {
+      ...[
+        "{}",
+        "not json",
+        '{"version":7}',
+        feed("1.3.0"),
+        feed("1.3.0-beta.1"),
+        feed("1.3.0-rc.01"),
+      ].map((candidate) => ({ list: ["latest-rc.json"], candidate })),
+    ];
+    for (const kv of withdrawn) {
       const result = run(kv);
       expect([kv, result.code], result.log).toEqual([kv, 0]);
     }

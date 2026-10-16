@@ -264,8 +264,8 @@ gh workflow run release-presto.yml --ref main \
 ```
 
 `withdraw-rc` deletes KV `latest-rc.json` and nothing else. It refuses while the key holds a
-different readable candidate, does nothing when the key is absent, and deletes an unreadable key with
-a warning. The read-back waits until both routes serve the same bytes.
+different candidate, does nothing when the key is absent, and with a warning deletes a key holding
+anything the Worker would not serve as a candidate. The read-back waits until both routes serve the same bytes.
 
 **A broken candidate:** withdraw it first. Installs that took it stay on it, since nothing serves a
 lower version as an update: tell testers to choose **Stable** before they reinstall the stable by
