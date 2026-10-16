@@ -63,3 +63,16 @@ The method is the one in `archive/verified-sites-feed/lessons/phase-9.md`:
 - `bun run test`: exit 0.
 - `bun run lint:actions`: exit 0.
 - The macOS and Windows runs of T13 are left to the PR's WebDriver lanes.
+
+## Gate after the Codex round (2026-10-16, Linux x86_64)
+
+- `run-webdriver-local.sh`: 11 of 11 specs, 32 tests, in 1:16 on the second run; T13 11.9 s.
+  - The first run failed `verified-sites.spec.ts` in its `before all`: the consent popup's first
+    `findElement("#origin")` took 7.5 s to answer "no such element" (the new WebKitGTK window was
+    still loading under load), so the 8 s budget of `waitForActivePopup` ran out one poll before
+    the origin rendered. The app log shows no tray rebuild and no proof in that window; the suite
+    passed unchanged on the rerun. Pre-existing timing on this host, not a regression.
+- `bun run test`, `bun run lint:clippy`, `bun run lint:actions`, every `cargo test --locked`
+  (core 434, src-tauri 169 lib + 13 bin + the integration suites) and the Windows cross-check: exit 0.
+- Playwright `settings.spec.ts`: 58 passed, the new stale-review test among them; it fails without
+  the ticket bump.

@@ -210,10 +210,18 @@ impl TrayMenu {
         self.app.run_on_main_thread(move || menu.publish_menu())
     }
 
-    /// Posts a new custom bb summary; an unchanged one rebuilds nothing.
-    pub fn set_custom(&self, custom: TraySummary) -> tauri::Result<()> {
+    /// Posts a new custom bb summary; one that `fresh` no longer vouches for when it runs, or an
+    /// unchanged one, rebuilds nothing.
+    pub fn set_custom(
+        &self,
+        custom: TraySummary,
+        fresh: impl FnOnce() -> bool + Send + 'static,
+    ) -> tauri::Result<()> {
         let menu = self.clone();
         self.app.run_on_main_thread(move || {
+            if !fresh() {
+                return;
+            }
             let tooltip = {
                 let mut text = menu.text.lock();
                 if text.custom == custom {

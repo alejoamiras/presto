@@ -152,9 +152,6 @@ fn the_popup_label_follows_the_first_version_and_the_effective_pin() {
     );
 }
 
-/// A pin reaches the config only while the slot still holds its tested candidate: developer mode
-/// going off and on, or a new review, between the rehash and the write refuses it. A stop needs
-/// nothing. Either write clears the slot.
 #[test]
 fn a_save_commits_only_the_candidate_still_under_review() {
     let dir = tempfile::tempdir().unwrap();
@@ -187,6 +184,19 @@ fn a_save_commits_only_the_candidate_still_under_review() {
     assert_eq!(store.effective_custom_bb(), None, "nothing was written");
 
     *slot.lock() = Some(candidate(true));
+    // The save creates missing parents, so a file in the parent's place is what makes it fail.
+    let blocker = dir.path().join("blocker");
+    std::fs::write(&blocker, "").unwrap();
+    let unwritable = blocker.join("config.json");
+    assert!(
+        commit(&store, Some(&unwritable), &slot, Some(pinned.clone())).is_err(),
+        "the save failed"
+    );
+    assert_eq!(store.effective_custom_bb(), None);
+    assert!(
+        slot.lock().is_some(),
+        "a failed save keeps the review for a retry"
+    );
     commit(&store, Some(&path), &slot, Some(pinned.clone())).unwrap();
     assert_eq!(store.effective_custom_bb(), Some(pinned));
     assert!(slot.lock().is_none(), "the write consumed the candidate");

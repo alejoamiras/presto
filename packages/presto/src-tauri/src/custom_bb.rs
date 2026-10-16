@@ -345,10 +345,11 @@ pub async fn custom_bb_review(
         .await
         .map_err(|e| e.to_string())?;
     // Developer mode may have gone off while the picker was open: the candidate it cleared stays
-    // cleared. Read before taking the slot; a save holds the config lock while it takes the slot.
-    let developer_on = config.read().developer.enabled;
+    // cleared. The config is read for as long as the slot is held (config before slot, as a save
+    // takes them), so no save lands between the check and the write.
+    let settings = config.read();
     let mut slot = candidate.lock();
-    if !developer_on {
+    if !settings.developer.enabled {
         *slot = None;
         return Err(DEVELOPER_MODE_OFF.to_string());
     }
@@ -396,14 +397,15 @@ pub async fn custom_bb_test_run(
         .map(|c| c.inspection.path.clone())
         .ok_or(NOT_REVIEWED)?;
     let permit = core_bb::take_test_permit(&shared.prove_semaphore).map_err(|e| e.to_string())?;
-    // Asked after the rehash, right before the spawn: developer mode off or a replaced candidate
-    // in the meantime leaves the file unrun.
+    // Asked after the rehash; both guards are held across the spawn (config before slot, as a save
+    // takes them), so developer mode off or a replaced candidate in the meantime leaves the file
+    // unrun.
     let admit = || {
-        config.read().developer.enabled
-            && candidate
-                .lock()
-                .as_ref()
-                .is_some_and(|c| c.inspection.sha256 == sha256)
+        let settings = config.read();
+        let slot = candidate.lock();
+        let still = settings.developer.enabled
+            && slot.as_ref().is_some_and(|c| c.inspection.sha256 == sha256);
+        still.then_some((settings, slot))
     };
     let run = match core_bb::test_run(&path, &sha256, permit, admit).await {
         Ok(run) => run,
@@ -468,7 +470,7 @@ pub async fn custom_bb_save(
 /// Writes the pin, or `None` to stop. The candidate is checked again under the config lock, since
 /// developer mode can go off and on, or a new review replace it, while the rehash runs; a pin
 /// reaches the config only while the slot still holds its tested candidate. The slot is cleared
-/// with the write.
+/// once the write has been persisted, so a failed save keeps the review for a retry.
 pub(crate) fn commit(
     config: &ConfigStore,
     path: Option<&std::path::Path>,
@@ -476,19 +478,19 @@ pub(crate) fn commit(
     pin: Option<CustomBbPin>,
 ) -> Result<(), String> {
     try_mutate_config_at(config, path, |cfg| {
-        let mut slot = candidate.lock();
         if let Some(pin) = &pin {
-            let reviewed = slot
+            let reviewed = candidate
+                .lock()
                 .as_ref()
                 .is_some_and(|c| c.tested && c.inspection.sha256 == pin.sha256);
             if !reviewed {
                 return Err(REVIEW_RESET.to_string());
             }
         }
-        cfg.set_custom_bb(pin).map_err(|e| e.to_string())?;
-        *slot = None;
-        Ok(())
-    })
+        cfg.set_custom_bb(pin).map_err(|e| e.to_string())
+    })?;
+    *candidate.lock() = None;
+    Ok(())
 }
 
 /// Off, in use, or why it is not used, with the activity. Rehashes the file.

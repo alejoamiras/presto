@@ -353,7 +353,7 @@ mod unix {
 
     async fn run(f: &Fixture, timeout: Duration) -> Result<TestRun, TestRunError> {
         let permit = take_test_permit(&Arc::new(Semaphore::new(1))).unwrap();
-        test_run_within(&f.bb, &f.pin.sha256, permit, || true, timeout).await
+        test_run_within(&f.bb, &f.pin.sha256, permit, || Some(()), timeout).await
     }
 
     #[tokio::test]
@@ -421,7 +421,8 @@ mod unix {
         let f = fixture(&format!("touch '{}'", marker.display()));
         let reviewed = f.pin.sha256.clone();
         let permit = take_test_permit(&Arc::new(Semaphore::new(1))).unwrap();
-        let withdrawn = test_run_within(&f.bb, &reviewed, permit, || false, TEST_RUN_TIMEOUT).await;
+        let withdrawn =
+            test_run_within(&f.bb, &reviewed, permit, || None::<()>, TEST_RUN_TIMEOUT).await;
         assert!(
             matches!(
                 withdrawn,
@@ -440,7 +441,8 @@ mod unix {
         )
         .unwrap();
         let permit = take_test_permit(&Arc::new(Semaphore::new(1))).unwrap();
-        let changed = test_run_within(&f.bb, &reviewed, permit, || true, TEST_RUN_TIMEOUT).await;
+        let changed =
+            test_run_within(&f.bb, &reviewed, permit, || Some(()), TEST_RUN_TIMEOUT).await;
         assert!(
             matches!(
                 changed,
@@ -469,7 +471,7 @@ mod unix {
         let prove = Arc::new(Semaphore::new(1));
         let permit = take_test_permit(&prove).unwrap();
         let (bb, sha256) = (f.bb.clone(), f.pin.sha256.clone());
-        let run = tokio::spawn(async move { test_run(&bb, &sha256, permit, || true).await });
+        let run = tokio::spawn(async move { test_run(&bb, &sha256, permit, || Some(())).await });
         tokio::time::timeout(Duration::from_secs(5), async {
             while !started.exists() {
                 tokio::time::sleep(Duration::from_millis(10)).await;

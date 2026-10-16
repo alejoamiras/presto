@@ -455,14 +455,21 @@ pub(crate) enum ProbeError {
     DidNotFinish(BbError),
 }
 
-/// Run `bb --version` once from a fresh private directory, with no witness, stdin closed and stdout
-/// captured up to `stdout_cap` bytes. The caller must hold the prove permit: containment tracks one
-/// bb at a time, so a second concurrent spawn would orphan a proof's registration.
-pub(crate) async fn run_version_probe(
-    bb_path: &Path,
-    timeout: Duration,
+/// A `bb --version` process that has started, with the private directory it runs in.
+pub(crate) struct StartedProbe {
+    spawned: (tokio::process::Child, containment::Guard),
+    _workspace: tempfile::TempDir,
     stdout_cap: usize,
-) -> Result<VersionProbe, ProbeError> {
+}
+
+/// Start `bb --version` once from a fresh private directory, with no witness, stdin closed and
+/// stdout piped for up to `stdout_cap` bytes. Synchronous, so a caller can hold an admission guard
+/// across the spawn and drop it before waiting. The caller must hold the prove permit: containment
+/// tracks one bb at a time, so a second concurrent spawn would orphan a proof's registration.
+pub(crate) fn start_version_probe(
+    bb_path: &Path,
+    stdout_cap: usize,
+) -> Result<StartedProbe, ProbeError> {
     let workspace = create_prove_tempdir().map_err(ProbeError::Workspace)?;
     let mut cmd = tokio::process::Command::new(bb_path);
     cmd.arg("--version")
@@ -471,7 +478,19 @@ pub(crate) async fn run_version_probe(
         .stdout(std::process::Stdio::piped());
     finish_command(&mut cmd, None);
     let spawned = containment::spawn_and_register(&mut cmd).map_err(ProbeError::Spawn)?;
-    let (status, stdout) = supervise(spawned, timeout, None, Some(stdout_cap))
+    Ok(StartedProbe {
+        spawned,
+        _workspace: workspace,
+        stdout_cap,
+    })
+}
+
+/// Wait for a started probe, killing its tree at `timeout`.
+pub(crate) async fn finish_version_probe(
+    probe: StartedProbe,
+    timeout: Duration,
+) -> Result<VersionProbe, ProbeError> {
+    let (status, stdout) = supervise(probe.spawned, timeout, None, Some(probe.stdout_cap))
         .await
         .map_err(ProbeError::DidNotFinish)?;
     Ok(VersionProbe { status, stdout })

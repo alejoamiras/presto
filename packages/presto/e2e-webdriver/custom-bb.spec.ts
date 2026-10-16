@@ -118,9 +118,8 @@ describe("Custom bb", () => {
       (text) => text.startsWith("✓ Test run passed"),
       "the test run never passed",
     );
-    // The staged file is the sidecar, so the suggested label is the bundled version: the custom
-    // route then outranks the bundled shortcut, and after the stop the same request is an official
-    // proof of the same bytes, which is what the last assertion needs.
+    // The suggestion is the bundled version (the file is the sidecar): the custom route must beat
+    // the bundled shortcut while pinned, and the stop must hand the same request back to it.
     const label: string = await browser.execute(
       () => (document.getElementById("custom-bb-label") as HTMLInputElement).value,
     );

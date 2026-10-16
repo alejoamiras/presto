@@ -795,7 +795,8 @@ fn versions_changed_callback(menu: tray::TrayMenu) -> presto::server::VersionsCh
 }
 
 /// Rehashes off the async workers, then applies only the newest result: two changes in quick
-/// succession can finish out of order.
+/// succession can finish, and post, out of order, so the ticket is checked where the summary is
+/// applied.
 fn custom_bb_changed_callback(
     menu: tray::TrayMenu,
     config: ConfigState,
@@ -812,10 +813,8 @@ fn custom_bb_changed_callback(
             let Ok(summary) = summary else {
                 return;
             };
-            if latest.load(Ordering::Acquire) != ticket {
-                return;
-            }
-            if let Err(error) = menu.set_custom(summary) {
+            let fresh = move || latest.load(Ordering::Acquire) == ticket;
+            if let Err(error) = menu.set_custom(summary, fresh) {
                 tracing::warn!("Failed to show the custom bb in the tray: {error}");
             }
         });

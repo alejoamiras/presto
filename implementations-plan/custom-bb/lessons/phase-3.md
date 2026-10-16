@@ -39,6 +39,20 @@ findings 1–2 blocking. Each was traced against the code; all five are accepted
 
 Codex also confirmed, read-only: the ACL grants, the popup size pins and the contrast pairs.
 
+**Round 2** (same session): **reject**, one blocking. It confirmed the round-1 fixes close their
+findings, that no caller nests the slot before the config lock, that the headless server never calls
+`test_run`, and that the locked Tauri runtime runs a main-thread task inline from the main thread
+and queues it from any other, during `setup` included. Each remaining item is a hole the fixes
+left; all five are accepted and fixed.
+
+| # | Severity | Claim | Disposition |
+|---|---|---|---|
+| 1 | blocking | `admit` returns a bool and releases its locks before the probe creates its workspace and spawns, so developer mode can go off in that gap and the file still starts. | Fixed: `admit` returns a guard (`Option<G>`) the core holds across the spawn and drops before the wait; `run_version_probe` split into the synchronous `start_version_probe` and the async `finish_version_probe`. The desktop's guard is the config read guard plus the slot guard (config before slot). |
+| 2 | should-fix | The review's config read guard drops at its semicolon, so a developer-mode-off save can land between the read and the slot write. | Fixed: the read guard lives for as long as the slot is held. |
+| 3 | should-fix | `commit` clears the slot inside the mutation closure, before persistence; a failed save loses the candidate while the UI still shows its review, and a retry fails with "Review the file again". | Fixed: the closure only checks; the slot is cleared after `try_mutate_config_at` returns Ok. The test adds a failed save (a path under a missing directory) that keeps the review and then succeeds on a retry. |
+| 4 | should-fix | The ticket check runs before posting: an older task can pass it, get descheduled, and post after a newer one, so the main thread applies the stale summary last. | Fixed: `set_custom` takes a `fresh` closure evaluated on the main thread right before applying. |
+| 5 | nit | A test doc comment restating its name and assertions; a three-line T13 comment. | Deleted; shortened to two lines. |
+
 ## Supply chain: `tauri-plugin-dialog` (2026-10-16)
 
 **Pinned `=2.7.3`, not the newest 2.x.** 2.8.0 and later require `tauri ^2.12`. Taking any of

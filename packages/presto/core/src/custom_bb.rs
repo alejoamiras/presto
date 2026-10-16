@@ -458,22 +458,23 @@ pub fn take_test_permit(prove: &Arc<Semaphore>) -> Result<OwnedSemaphorePermit, 
 
 /// Rehash the file, then run `bb --version` once under proof containment with no witness, a 5 s
 /// limit and 4 KiB of output. This executes the file as the user: containment is not a sandbox.
-/// `admit` is asked right before the spawn, after the rehash: a `false` leaves the file unrun, for
-/// a candidate withdrawn while the hash was computed.
-pub async fn test_run(
+/// `admit` is asked after the rehash; the guard it returns is held across the spawn and dropped
+/// before the wait, so what it checked still holds when the file starts. `None` leaves the file
+/// unrun, for a candidate withdrawn while the hash was computed.
+pub async fn test_run<G>(
     path: &Path,
     sha256: &str,
     permit: OwnedSemaphorePermit,
-    admit: impl FnOnce() -> bool,
+    admit: impl FnOnce() -> Option<G>,
 ) -> Result<TestRun, TestRunError> {
     test_run_within(path, sha256, permit, admit, TEST_RUN_TIMEOUT).await
 }
 
-async fn test_run_within(
+async fn test_run_within<G>(
     path: &Path,
     sha256: &str,
     _permit: OwnedSemaphorePermit,
-    admit: impl FnOnce() -> bool,
+    admit: impl FnOnce() -> Option<G>,
     timeout: Duration,
 ) -> Result<TestRun, TestRunError> {
     let (owned_path, owned_sha) = (path.to_path_buf(), sha256.to_string());
@@ -481,19 +482,21 @@ async fn test_run_within(
         .await
         .map_err(|e| TestRunError::Internal(e.to_string()))?
         .map_err(TestRunError::Unavailable)?;
-    if !admit() {
-        return Err(TestRunError::Unavailable(Unavailable::Withdrawn));
-    }
-    let probe = crate::bb::run_version_probe(path, timeout, TEST_RUN_OUTPUT_CAP)
+    let probe_error = |e| match e {
+        crate::bb::ProbeError::Workspace(e) => TestRunError::Internal(e.to_string()),
+        crate::bb::ProbeError::Spawn(e) => TestRunError::WontStart(wont_start(&e)),
+        crate::bb::ProbeError::DidNotFinish(e) => {
+            tracing::warn!(error = %e, "Custom bb test run did not finish");
+            TestRunError::TimedOut
+        }
+    };
+    let started = {
+        let _admitted = admit().ok_or(TestRunError::Unavailable(Unavailable::Withdrawn))?;
+        crate::bb::start_version_probe(path, TEST_RUN_OUTPUT_CAP).map_err(probe_error)?
+    };
+    let probe = crate::bb::finish_version_probe(started, timeout)
         .await
-        .map_err(|e| match e {
-            crate::bb::ProbeError::Workspace(e) => TestRunError::Internal(e.to_string()),
-            crate::bb::ProbeError::Spawn(e) => TestRunError::WontStart(wont_start(&e)),
-            crate::bb::ProbeError::DidNotFinish(e) => {
-                tracing::warn!(error = %e, "Custom bb test run did not finish");
-                TestRunError::TimedOut
-            }
-        })?;
+        .map_err(probe_error)?;
     if !probe.status.success() {
         return Err(TestRunError::Failed(probe.status.to_string()));
     }
