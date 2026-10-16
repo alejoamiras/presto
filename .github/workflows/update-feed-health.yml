@@ -63,10 +63,18 @@ jobs:
             exit 1
           fi
 
-          # 4. NOT STALE. A feed frozen at an old version still returns a perfectly healthy 200
+          # 4. NOT A PRERELEASE. Only opted-in clients may receive a release candidate, through latest-rc.json.
+          feed_ver=$(jq -r .version feed.json)
+          case "$feed_ver" in
+            *-*)
+              echo "::error::the stable feed serves the prerelease $feed_ver"
+              exit 1
+              ;;
+          esac
+
+          # 5. NOT STALE. A feed frozen at an old version still returns a perfectly healthy 200
           #    while silently stranding every installed app, so compare against the real latest
           #    stable release. This is the failure mode a naive uptime check cannot see.
-          feed_ver=$(jq -r .version feed.json)
           latest_tag=$(gh release list --exclude-pre-releases --limit 20 --json tagName \
             --jq '[.[].tagName | select(startswith("presto-v"))][0]')
           latest_ver="${latest_tag#presto-v}"
@@ -79,7 +87,7 @@ jobs:
             exit 1
           fi
 
-          # 5. Every platform present AND its artifact actually downloadable. A partial upload
+          # 6. Every platform present AND its artifact actually downloadable. A partial upload
           #    leaves one OS silently unable to update while the other three look fine.
           for p in darwin-aarch64 darwin-x86_64 linux-x86_64 windows-x86_64; do
             url=$(jq -r --arg p "$p" '.platforms[$p].url // empty' feed.json)
@@ -104,4 +112,49 @@ jobs:
             echo "- version: \`$feed_ver\` (matches latest stable \`$latest_tag\`)"
             echo "- platforms: 4/4 present and downloadable"
             echo "- \`manifest_sig\`: present"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The route opted-in clients check first. A well-formed body with a bad signature would shadow the
+  # stable for them until withdrawn, so its exact bytes must be the claimed release's own signed feed
+  # asset: latest-rc.json for a release candidate, latest.json for the stable it falls back to.
+  probe-rc:
+    name: Probe latest-rc.json
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fetch the release-candidate route and bind it to its release
+        env:
+          FEED: https://presto.build/releases/latest-rc.json
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          code=$(curl -sS --max-time 30 -o feed.json -w '%{http_code}' "$FEED")
+          if [ "$code" != "200" ]; then
+            echo "::error::release-candidate feed returned HTTP $code (expected 200) — $FEED"
+            exit 1
+          fi
+          version=$(jq -er '.version | strings' feed.json 2>/dev/null) || {
+            echo "::error::release-candidate feed carries no version"
+            exit 1
+          }
+          case "$version" in
+            *-*) asset=latest-rc.json ;;
+            *) asset=latest.json ;;
+          esac
+          # Drafts are absent from releases/tags, so only a published release can match.
+          want=$(gh api "repos/$GH_REPO/releases/tags/presto-v$version" \
+            --jq ".assets[] | select(.name == \"$asset\") | .digest // empty") || {
+            echo "::error::no published release presto-v$version"
+            exit 1
+          }
+          have="sha256:$(sha256sum feed.json | cut -d' ' -f1)"
+          if [ "$have" != "$want" ]; then
+            echo "::error::latest-rc.json serves $version, but not the bytes of presto-v$version's own $asset (${want:-no digest})"
+            exit 1
+          fi
+          {
+            echo "### ✅ Release-candidate feed healthy"
+            echo ""
+            echo "- version: \`$version\`, byte for byte presto-v$version's \`$asset\`"
           } >> "$GITHUB_STEP_SUMMARY"

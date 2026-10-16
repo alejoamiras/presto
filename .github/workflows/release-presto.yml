@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release (e.g. 1.2.0)"
+        description: "Version to release, X.Y.Z or X.Y.Z-rc.N (e.g. 1.2.0 or 1.3.0-rc.1)"
         required: true
         type: string
       auth_probe:
@@ -17,24 +17,28 @@ on:
       #                  --latest=false until promotion; the signed latest.json ships as a stable release
       #                  ASSET. Does NOT touch the KV feed. (The stable DRAFT-gate — draft → packaged-E2E-on-draft →
       #                  finalize — lands in B4, which is a hard prerequisite of any 2.0.0 stable publish.)
-      #   promote-only = no build; pre-flight an ALREADY-PUBLISHED version, then flip the KV `latest.json`
-      #                  feed. An organic GA (`bump_source=true`) is marked GitHub Latest only after the live
-      #                  feed verifies. This is also the rollback lever (`promote-only` an older version).
+      #   promote-only = no build; pre-flight an ALREADY-PUBLISHED version, then write its feed to KV:
+      #                  `latest.json` for a stable, `latest-rc.json` for a release candidate. An organic GA
+      #                  (`bump_source=true`) is marked GitHub Latest only after the live feed verifies. This
+      #                  is also the rollback lever (`promote-only` an older stable).
+      #   withdraw-rc  = delete KV `latest-rc.json`, naming the candidate it holds; opted-in clients fall
+      #                  back to the stable.
       mode:
-        description: "publish (build+gate+publish, no feed flip) | promote-only (flip the KV feed for an already-published version — also the rollback lever)"
+        description: "publish (build+gate+publish, no feed flip) | promote-only (write the KV feed for an already-published version — also the rollback lever) | withdraw-rc (take the named release candidate off latest-rc.json)"
         required: false
         type: choice
         options:
           - publish
           - promote-only
+          - withdraw-rc
         default: publish
       bump_source:
-        description: "promote-only + organic GA only: mark the verified release GitHub Latest and open the post-release source version-bump PR. Leave false for a rollback promote."
+        description: "promote-only + organic stable GA only: mark the verified release GitHub Latest and open the post-release source version-bump PR. Leave false for a rollback or a release candidate."
         required: false
         type: boolean
         default: false
       dry_run:
-        description: "promote-only: run the promote pre-flight (and rehearsal checks) WITHOUT writing the feed. Proves the rollback machinery with no prod effect."
+        description: "promote-only / withdraw-rc: run the pre-flight (and rehearsal checks) WITHOUT changing the feed. Proves the rollback machinery with no prod effect."
         required: false
         type: boolean
         default: false
@@ -57,6 +61,7 @@ jobs:
       tag: ${{ steps.version.outputs.tag }}
       version: ${{ steps.version.outputs.version }}
       is_prerelease: ${{ steps.version.outputs.is_prerelease }}
+      feed_key: ${{ steps.version.outputs.feed_key }}
     steps:
       # Reject any dispatch not on refs/heads/main before build, signing, tag, release, or cloud access.
       # Every other job depends on `validate` directly or transitively, so this gates the whole run.
@@ -78,22 +83,34 @@ jobs:
         id: version
         env:
           INPUT_VERSION: ${{ inputs.version }}
+          MODE: ${{ inputs.mode }}
+          BUMP_SOURCE: ${{ inputs.bump_source }}
         run: |
-          if ! echo "$INPUT_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9.]+)?$'; then
-            echo "::error::Invalid version format: '$INPUT_VERSION'. Expected semver (e.g. 1.0.0 or 1.0.0-rc.1)"
+          # The feed Worker's grammar: a version outside it could be published but never served.
+          if ! FEED_KEY=$(bun packages/presto/scripts/release-feed-keys.ts key "$INPUT_VERSION"); then
+            echo "::error::Invalid version format: '$INPUT_VERSION'. Expected X.Y.Z or X.Y.Z-rc.N (e.g. 1.0.0 or 1.0.0-rc.1)"
             exit 1
           fi
-          if [[ "$INPUT_VERSION" =~ - ]]; then
+          if [ "$FEED_KEY" = latest-rc.json ]; then
             IS_PRERELEASE=true
           else
             IS_PRERELEASE=false
+          fi
+          if [ "$IS_PRERELEASE" = true ] && [ "$BUMP_SOURCE" = true ]; then
+            echo "::error::bump_source is for an organic stable GA; $INPUT_VERSION is a release candidate"
+            exit 1
+          fi
+          if [ "$MODE" = withdraw-rc ] && [ "$IS_PRERELEASE" != true ]; then
+            echo "::error::withdraw-rc names the release candidate it withdraws; $INPUT_VERSION is a stable"
+            exit 1
           fi
           {
             echo "tag=presto-v${INPUT_VERSION}"
             echo "version=$INPUT_VERSION"
             echo "is_prerelease=$IS_PRERELEASE"
+            echo "feed_key=$FEED_KEY"
           } >> "$GITHUB_OUTPUT"
-          echo "Resolved: version=$INPUT_VERSION  is_prerelease=$IS_PRERELEASE"
+          echo "Resolved: version=$INPUT_VERSION  is_prerelease=$IS_PRERELEASE  feed_key=$FEED_KEY"
 
   dependency-audit:
     needs: validate
@@ -923,7 +940,7 @@ jobs:
   # PUBLISHED). The packaged-E2E gate then runs against the DRAFT's OWN uploaded assets; `tag` (moved after
   # the gate) pushes the reviewed tag; `finalize` flips the draft to published. So a failed packaged gate
   # NEVER burns the version tag against a bad SHA. The isolated signer always runs before
-  # updater smokes, and produces latest.json for a stable release only.
+  # updater smokes, and produces latest.json for a stable release, latest-rc.json for a prerelease.
   release:
     name: Create draft release
     needs: [validate, dependency-audit, resolve-updater-baseline, build, build-headless, sign-updater-artifacts, smoke, smoke-intel, update-smoke, update-smoke-linux, update-smoke-windows, update-smoke-windows-negative, e2e-webdriver]
@@ -1021,23 +1038,23 @@ jobs:
           done
           echo "All ${#EXPECTED[@]} expected artifacts present"
 
-      # F-004: latest.json is assembled, signed, and verified by the isolated sign-updater-artifacts job
+      # F-004: the feed is assembled, signed, and verified by the isolated sign-updater-artifacts job
       # (release-signing environment + contents: read). This job only stages that verified feed alongside the
-      # release artifacts — no signing key here, no re-generation. Gated on stable exactly like the old
-      # inline step; prereleases still ship no feed.
+      # release artifacts — no signing key here, no re-generation: latest.json for a stable, the rc-v1
+      # latest-rc.json for a prerelease. Neither reaches KV before a promote-only dispatch.
       - name: Download signed update feed
-        if: needs.validate.outputs.is_prerelease == 'false'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: signed-update-feed
           path: signed-feed
 
-      - name: Stage signed latest.json
-        if: needs.validate.outputs.is_prerelease == 'false'
+      - name: Stage the signed feed
+        env:
+          FEED_KEY: ${{ needs.validate.outputs.feed_key }}
         run: |
-          cp signed-feed/latest.json release-files/latest.json
-          echo "Staged signed latest.json:"
-          cat release-files/latest.json
+          cp "signed-feed/$FEED_KEY" "release-files/$FEED_KEY"
+          echo "Staged signed $FEED_KEY:"
+          cat "release-files/$FEED_KEY"
 
       - name: Create release
         env:
@@ -1048,7 +1065,7 @@ jobs:
           IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
         run: |
           # Collect all bundle files into a null-delimited list
-          mapfile -d '' FILES < <(find release-files -type f \( -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.app.tar.gz' -o -name '*-setup.exe' -o -name '*-setup.nsis.zip' -o -name 'presto-server-*.tar.gz' -o -name 'presto-server-*.tar.gz.sha256' -o -name 'latest.json' \) -print0)
+          mapfile -d '' FILES < <(find release-files -type f \( -name '*.dmg' -o -name '*.deb' -o -name '*.AppImage' -o -name '*.app.tar.gz' -o -name '*-setup.exe' -o -name '*-setup.nsis.zip' -o -name 'presto-server-*.tar.gz' -o -name 'presto-server-*.tar.gz.sha256' -o -name 'latest.json' -o -name 'latest-rc.json' \) -print0)
 
           if [ ${#FILES[@]} -eq 0 ]; then
             echo "No artifacts found!"
@@ -1323,16 +1340,16 @@ jobs:
           echo "Published $TAG (draft finalized)"
 
   # B6: PROMOTE is a SEPARATE operational event from PUBLISH — its own `mode: promote-only` dispatch. It
-  # flips the KV-backed `latest.json` feed for an ALREADY-PUBLISHED version, and doubles as the ROLLBACK lever
-  # (dispatch an older version to move the feed back). It re-derives trust from scratch rather than trusting
-  # the publish run: it downloads the release's OWN `latest.json` asset, runs the production verifier, and
-  # asserts the release is a published, non-draft, non-prerelease stable whose version + full asset set
-  # match — THEN uploads those exact verified bytes. `dry_run` runs the whole pre-flight WITHOUT writing the
-  # feed (proves the machinery, incl. a rollback-to-prev pre-flight, with zero prod effect). Least-privilege:
-  # this is the only job that WRITES the feed (using a feed-only Cloudflare token); publishing has no
-  # Cloudflare credentials and the preflight only reads KV.
+  # writes an ALREADY-PUBLISHED version's own signed feed to KV, and doubles as the ROLLBACK lever (dispatch an
+  # older stable to move the feed back). The KV key follows from the version, never from an input: a stable
+  # goes to `latest.json`, a release candidate to `latest-rc.json`, which only opted-in clients read. It
+  # re-derives trust from scratch rather than trusting the publish run: it downloads the release's OWN feed
+  # asset, runs the production verifier, and asserts the release's draft and prerelease flags, version and
+  # full asset set — THEN uploads those exact verified bytes. `dry_run` runs the whole pre-flight WITHOUT
+  # writing the feed. Least-privilege: this job and `withdraw-rc` are the only ones that WRITE the feed
+  # (using a feed-only Cloudflare token); publishing has no Cloudflare credentials.
   promote:
-    name: Promote (flip KV feed)
+    name: Promote (write the KV feed)
     needs: [validate]
     if: ${{ !inputs.auth_probe && inputs.mode == 'promote-only' }}
     environment: release-feed
@@ -1346,8 +1363,13 @@ jobs:
       RELEASE_TAG: ${{ needs.validate.outputs.tag }}
       VERSION: ${{ needs.validate.outputs.version }}
       IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
+      FEED_KEY: ${{ needs.validate.outputs.feed_key }}
+      CHANNEL: ${{ needs.validate.outputs.is_prerelease == 'true' && 'rc' || 'stable' }}
+      NAMESPACE_ID: 41a6adef830f4a91bf63476a323cec98
     outputs:
       write_attempted: ${{ steps.write.outputs.attempted }}
+      live_stable: ${{ steps.preflight.outputs.live_stable }}
+      rc_route: ${{ steps.candidate.outputs.rc_route || steps.preflight.outputs.rc_route }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-presto
@@ -1359,22 +1381,21 @@ jobs:
           install-tauri-system-deps: "false"
           run-prebuild: "false"
 
-      - name: Pre-flight — published stable + signature-valid feed + complete assets
+      - name: Pre-flight — published release + signature-valid feed on its channel + complete assets
+        id: preflight
         run: |
           set -euo pipefail
-          # 1. Refuse a prerelease/nightly promote — the feed serves stable only.
-          if [ "$IS_PRERELEASE" != "false" ]; then
-            echo "::error::promote-only refuses a prerelease version ($VERSION) — the feed serves stable only"; exit 1
-          fi
-          # 2. The release must EXIST, be PUBLISHED (not a draft), and not be flagged prerelease on GitHub.
+          # 1. The release must EXIST, be PUBLISHED (not a draft), and carry the prerelease flag its version
+          #    implies: a candidate is a GitHub prerelease, a stable is not.
           META=$(gh release view "$RELEASE_TAG" --json isDraft,isPrerelease,assets 2>/dev/null) \
             || { echo "::error::no release $RELEASE_TAG to promote"; exit 1; }
-          echo "$META" | jq -e '.isDraft == false'      >/dev/null || { echo "::error::$RELEASE_TAG is a DRAFT — not promotable"; exit 1; }
-          echo "$META" | jq -e '.isPrerelease == false' >/dev/null || { echo "::error::$RELEASE_TAG is flagged prerelease — not promotable"; exit 1; }
-          # 3. EXACT asset set — never promote a half-uploaded or tampered release. Compare the SORTED asset
+          echo "$META" | jq -e '.isDraft == false' >/dev/null || { echo "::error::$RELEASE_TAG is a DRAFT — not promotable"; exit 1; }
+          echo "$META" | jq -e --argjson pre "$IS_PRERELEASE" '.isPrerelease == $pre' >/dev/null \
+            || { echo "::error::$RELEASE_TAG's GitHub prerelease flag does not match its version — not promotable"; exit 1; }
+          # 2. EXACT asset set — never promote a half-uploaded or tampered release. Compare the SORTED asset
           #    names to the complete version-expanded 17-name set: the SAME 16 build names the flatten step
-          #    asserts on publish (keep in sync — release-contract.test.ts guards the two lists match) +
-          #    latest.json. (codex: count+category could be satisfied by one headless tarball + padding while
+          #    asserts on publish (keep in sync — release-contract.test.ts guards the two lists match) + the
+          #    signed feed. (codex: count+category could be satisfied by one headless tarball + padding while
           #    other platform tarballs/checksums are absent.)
           GOT=$(echo "$META" | jq -r '.assets[].name' | LC_ALL=C sort)
           EXPECTED=$(printf '%s\n' \
@@ -1394,29 +1415,34 @@ jobs:
             "presto-server-${VERSION}-linux-x86_64.tar.gz.sha256" \
             "presto-server-${VERSION}-linux-arm64.tar.gz" \
             "presto-server-${VERSION}-linux-arm64.tar.gz.sha256" \
-            "latest.json" | LC_ALL=C sort)
+            "$FEED_KEY" | LC_ALL=C sort)
           if [ "$GOT" != "$EXPECTED" ]; then
             echo "::error::$RELEASE_TAG asset set != the expected 17 for $VERSION"
             diff <(printf '%s\n' "$EXPECTED") <(printf '%s\n' "$GOT") || true
             exit 1
           fi
-          # 4. Download the release's OWN latest.json, assert feed version == dispatched, run the PRODUCTION
-          #    verifier. These are the exact bytes the flip uploads.
-          gh release download "$RELEASE_TAG" -p latest.json --dir feed
-          FEED_VERSION=$(jq -r '.version // empty' feed/latest.json)
-          [ "$FEED_VERSION" = "$VERSION" ] || { echo "::error::release latest.json version ($FEED_VERSION) != dispatched ($VERSION)"; exit 1; }
+          # 3. Download the release's OWN feed, assert feed version == dispatched, run the PRODUCTION verifier
+          #    as its channel's client. These are the exact bytes the write uploads.
+          gh release download "$RELEASE_TAG" -p "$FEED_KEY" --dir feed
+          FEED_VERSION=$(jq -r '.version // empty' "feed/$FEED_KEY")
+          [ "$FEED_VERSION" = "$VERSION" ] || { echo "::error::release $FEED_KEY version ($FEED_VERSION) != dispatched ($VERSION)"; exit 1; }
           bun -e "console.log(JSON.parse(await Bun.file('packages/presto/src-tauri/tauri.conf.json').text()).plugins.updater.pubkey)" > pubkey.b64
-          cargo run --quiet --manifest-path packages/presto/core/Cargo.toml --example update-manifest -- \
-            verify --feed feed/latest.json --pubkey pubkey.b64 --channel stable
-          # 5. The verifier accepts ANY non-empty signed platform map, so bind the feed to THIS release:
+          cargo build --quiet --manifest-path packages/presto/core/Cargo.toml --example update-manifest
+          TOOL=packages/presto/core/target/debug/examples/update-manifest
+          "$TOOL" verify --feed "feed/$FEED_KEY" --pubkey pubkey.b64 --channel "$CHANNEL" | tee verify.out
+          # The rc channel also admits a stable feed, so a candidate must verify as one on every platform.
+          if [ "$IS_PRERELEASE" = true ] && [ "$(grep -c ', Candidate)$' verify.out)" != 4 ]; then
+            echo "::error::$FEED_KEY does not verify as a release candidate on all four platforms"; exit 1
+          fi
+          # 4. The verifier accepts ANY non-empty signed platform map, so bind the feed to THIS release:
           #    EXACTLY the 4 supported platform keys, each mapped to its EXACT expected artifact URL for this
           #    tag (codex: prefix + HTTP 200 don't stop darwin-aarch64 pointing at the Intel tarball), then
           #    confirm each resolves 200. Filenames mirror the isolated signer's hardcoded URLs.
-          jq -e '(.platforms | keys | sort) == ["darwin-aarch64","darwin-x86_64","linux-x86_64","windows-x86_64"]' feed/latest.json >/dev/null \
+          jq -e '(.platforms | keys | sort) == ["darwin-aarch64","darwin-x86_64","linux-x86_64","windows-x86_64"]' "feed/$FEED_KEY" >/dev/null \
             || { echo "::error::feed platform keys are not exactly the 4 supported platforms"; exit 1; }
           BASE="https://github.com/${GH_REPO}/releases/download/${RELEASE_TAG}"
           assert_url() {  # <platform-key> <exact-filename>
-            got=$(jq -r --arg k "$1" '.platforms[$k].url // empty' feed/latest.json)
+            got=$(jq -r --arg k "$1" '.platforms[$k].url // empty' "feed/$FEED_KEY")
             [ "$got" = "${BASE}/$2" ] || { echo "::error::feed $1 url is '$got', expected '${BASE}/$2'"; exit 1; }
           }
           assert_url darwin-aarch64 "Presto-${VERSION}-macOS-Apple-Silicon.app.tar.gz"
@@ -1426,17 +1452,31 @@ jobs:
           while read -r u; do
             code=$(curl -fsIL --max-time 30 -o /dev/null -w '%{http_code}' "$u" 2>/dev/null || echo ERR)
             [ "$code" = "200" ] || { echo "::error::feed payload URL not reachable ($code): $u"; exit 1; }
-          done < <(jq -r '.platforms[].url' feed/latest.json)
+          done < <(jq -r '.platforms[].url' "feed/$FEED_KEY")
           # Residual (codex, accepted for B6): the 4 payloads are NOT re-downloaded for a byte-compare. The
           # SIGNED feed binds each payload's size and clients minisign-verify before applying, so a
           # corrupted/wrong same-size payload fails CLOSED on the client; the only residual is availability,
           # bounded by the 200 checks above. B4's packaged-E2E-on-draft exercises the real installers.
-          echo "✅ pre-flight OK: $RELEASE_TAG is a published stable $VERSION — exact 17-asset set, exact per-platform URLs, feed signature valid"
+          # 5. A candidate is served only above the live stable (the Worker's rule), so promoting one at or
+          #    below it would change nothing for any client. The stable is read and verified from the public
+          #    route; verify-live-feed later requires that route to be unchanged.
+          if [ "$IS_PRERELEASE" = true ]; then
+            curl -fsS --retry 3 --max-time 15 -o live-stable.json https://presto.build/releases/latest.json
+            "$TOOL" verify --feed live-stable.json --pubkey pubkey.b64 --channel stable
+            LIVE_STABLE=$(jq -r '.version' live-stable.json)
+            STANDING=$(bun packages/presto/scripts/release-feed-keys.ts standing "$LIVE_STABLE" "feed/$FEED_KEY")
+            if [ "$STANDING" != above ]; then
+              echo "::error::$VERSION is not above the live stable $LIVE_STABLE, so latest-rc.json would never serve it"; exit 1
+            fi
+            echo "live_stable=$LIVE_STABLE" >> "$GITHUB_OUTPUT"
+            echo "rc_route=$VERSION" >> "$GITHUB_OUTPUT"
+          fi
+          echo "✅ pre-flight OK: $RELEASE_TAG is a published $CHANNEL release $VERSION for $FEED_KEY — exact 17-asset set, exact per-platform URLs, feed signature valid"
 
       - name: DRY RUN — pre-flight only, feed NOT written
         if: ${{ inputs.dry_run }}
         run: |
-          echo "dry_run OK: promote pre-flight for $VERSION passed; the KV feed was NOT flipped (no prod effect)"
+          echo "dry_run OK: promote pre-flight for $VERSION passed; KV $FEED_KEY was NOT written (no prod effect)"
 
       # The KV write is the authoritative promote act. It uploads the exact bytes verified above and is
       # retried because a client-side timeout can make the outcome ambiguous. The independent public-feed
@@ -1449,42 +1489,151 @@ jobs:
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
+          # Last guard before the write: a stable only to latest.json, a candidate only to latest-rc.json.
+          bun packages/presto/scripts/release-feed-keys.ts check-put "$FEED_KEY" "feed/$FEED_KEY"
           echo "attempted=true" >> "$GITHUB_OUTPUT"
           # Upload the EXACT verified bytes downloaded in pre-flight — never a re-synthesized feed.
           for attempt in 1 2 3 4 5; do
-            if bunx wrangler kv key put latest.json --path feed/latest.json --remote \
-                 --namespace-id 41a6adef830f4a91bf63476a323cec98; then
-              echo "✅ KV feed flipped to $VERSION (attempt $attempt)"
+            if bunx wrangler kv key put "$FEED_KEY" --path "feed/$FEED_KEY" --remote \
+                 --namespace-id "$NAMESPACE_ID"; then
+              echo "✅ KV $FEED_KEY set to $VERSION (attempt $attempt)"
               break
             fi
             if [ "$attempt" = 5 ]; then
-              echo "::error::KV write of latest.json failed after 5 attempts; public verification determines the live state"
+              echo "::error::KV write of $FEED_KEY failed after 5 attempts; public verification determines the live state"
               exit 1
             fi
             echo "KV write attempt $attempt failed; retrying in $((attempt * 3))s"
             sleep $((attempt * 3))
           done
-          echo "promote: KV feed set to $VERSION; verify-live-feed confirms edge propagation."
+          echo "promote: KV $FEED_KEY set to $VERSION; verify-live-feed confirms edge propagation."
 
-  # Enforce the live-feed check that was previously done by hand: after `promote`
-  # writes latest.json to KV, confirm the PUBLIC prod feed
-  # actually serves this version and every asset URL resolves. Separate job (own
-  # 15m timeout) so KV edge propagation can't trip the short `promote`/`bump-source` jobs.
-  # `bump-source` gates on this — don't bump source until users would really get
-  # the release.
+      # A candidate this stable has passed would otherwise outlive it in KV: hidden while this stable is
+      # live, served again to opted-in clients after a rollback to an older stable.
+      - name: Delete a staged release candidate this stable leaves below it
+        id: candidate
+        if: ${{ !inputs.dry_run && needs.validate.outputs.is_prerelease == 'false' }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_RELEASE_FEED_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          KEYS=$(bunx wrangler kv key list --prefix latest-rc.json --remote --namespace-id "$NAMESPACE_ID")
+          if jq -e 'any(.[]; .name == "latest-rc.json")' <<<"$KEYS" >/dev/null; then
+            bunx wrangler kv key get latest-rc.json --remote --namespace-id "$NAMESPACE_ID" > candidate.json
+            STANDING=$(bun packages/presto/scripts/release-feed-keys.ts standing "$VERSION" candidate.json)
+          else
+            STANDING=absent
+          fi
+          case "$STANDING" in
+            above)
+              RC_ROUTE=$(jq -r '.version' candidate.json)
+              echo "keeping KV latest-rc.json: $RC_ROUTE is above $VERSION"
+              ;;
+            absent) RC_ROUTE="$VERSION" ;;
+            *)
+              echo "deleting KV latest-rc.json ($STANDING against $VERSION)"
+              for attempt in 1 2 3 4 5; do
+                if bunx wrangler kv key delete latest-rc.json --remote --namespace-id "$NAMESPACE_ID"; then break; fi
+                if [ "$attempt" = 5 ]; then
+                  echo "::error::KV delete of latest-rc.json failed after 5 attempts: dispatch withdraw-rc"
+                  exit 1
+                fi
+                sleep $((attempt * 3))
+              done
+              RC_ROUTE="$VERSION"
+              ;;
+          esac
+          echo "rc_route=$RC_ROUTE" >> "$GITHUB_OUTPUT"
+
+  # Takes the release candidate off latest-rc.json, so opted-in clients fall back to the stable at their
+  # next check. It names the candidate it withdraws and refuses while KV holds another one, so a stale
+  # dispatch cannot withdraw a newer candidate; an unreadable key is deleted. Withdrawal revokes nothing a
+  # client already holds.
+  withdraw-rc:
+    name: Withdraw the release candidate (delete KV latest-rc.json)
+    needs: [validate]
+    if: ${{ !inputs.auth_probe && inputs.mode == 'withdraw-rc' }}
+    environment: release-feed
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    env:
+      VERSION: ${{ needs.validate.outputs.version }}
+      NAMESPACE_ID: 41a6adef830f4a91bf63476a323cec98
+    outputs:
+      write_attempted: ${{ steps.delete.outputs.attempted }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version-file: .bun-version
+
+      - name: Pre-flight — KV latest-rc.json holds this candidate, or nothing readable
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_RELEASE_FEED_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          KEYS=$(bunx wrangler kv key list --prefix latest-rc.json --remote --namespace-id "$NAMESPACE_ID")
+          if ! jq -e 'any(.[]; .name == "latest-rc.json")' <<<"$KEYS" >/dev/null; then
+            echo "KV holds no latest-rc.json; the delete is a no-op and the read-back still runs"
+            exit 0
+          fi
+          bunx wrangler kv key get latest-rc.json --remote --namespace-id "$NAMESPACE_ID" > candidate.json
+          HELD=$(jq -r '.version // empty' candidate.json 2>/dev/null || true)
+          if [ -z "$HELD" ]; then
+            echo "::warning::KV latest-rc.json carries no version; withdrawing it"
+          elif [ "$HELD" != "$VERSION" ]; then
+            echo "::error::KV latest-rc.json holds $HELD, not $VERSION: dispatch withdraw-rc for $HELD"
+            exit 1
+          fi
+
+      - name: DRY RUN — pre-flight only, KV NOT changed
+        if: ${{ inputs.dry_run }}
+        run: |
+          echo "dry_run OK: withdraw-rc pre-flight for $VERSION passed; KV latest-rc.json was NOT deleted"
+
+      - name: Delete KV latest-rc.json (authoritative write)
+        id: delete
+        if: ${{ !inputs.dry_run }}
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_RELEASE_FEED_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          echo "attempted=true" >> "$GITHUB_OUTPUT"
+          for attempt in 1 2 3 4 5; do
+            if bunx wrangler kv key delete latest-rc.json --remote --namespace-id "$NAMESPACE_ID"; then
+              echo "✅ KV latest-rc.json deleted (attempt $attempt)"
+              break
+            fi
+            if [ "$attempt" = 5 ]; then
+              echo "::error::KV delete of latest-rc.json failed after 5 attempts; public verification determines the live state"
+              exit 1
+            fi
+            sleep $((attempt * 3))
+          done
+
+  # Enforce the live-feed check that was previously done by hand: after a promote or a withdrawal changes
+  # KV, confirm the PUBLIC routes serve what it intended, each verified as its clients would. Separate job
+  # (own 15m timeout) so KV edge propagation can't trip the short `promote`/`bump-source` jobs.
+  # `bump-source` gates on this — don't bump source until users would really get the release.
+  #   stable promote: latest.json serves it; latest-rc.json serves it too, or the candidate kept above it
+  #   rc promote:     latest-rc.json serves it; latest.json still serves the stable pre-flight read
+  #   withdraw-rc:    latest-rc.json serves the same bytes as latest.json
   verify-live-feed:
     name: Verify live updater feed
-    needs: [validate, promote]
-    # B6: verify only in a REAL promote (promote-only, not dry_run).
-    # blocker-1 (codex High): run this after ANY attempted promote via its OWN status function — NOT the
-    # implicit success() on `promote` — so live verification can't be skipped by a non-fatal invalidation
-    # NOR by a write whose CLI errored/timed-out AFTER KV committed (feed live but `promote` RED). The live
-    # feed is the source of truth: if the PUT truly didn't land, this polls ~600s and fails RED; if it DID
-    # land despite a RED `promote`, this confirms GREEN. Gated to validate-green + promote-only + !dry_run
-    # so it never runs in publish mode.
-    if: ${{ always() && !cancelled() && needs.validate.result == 'success' && needs.promote.outputs.write_attempted == 'true' && inputs.mode == 'promote-only' && !inputs.dry_run }}
+    needs: [validate, promote, withdraw-rc]
+    # blocker-1 (codex High): run this after ANY attempted write via its OWN status function — NOT the
+    # implicit success() on the writing job — so live verification can't be skipped by a write whose CLI
+    # errored/timed-out AFTER KV committed (feed live but the job RED). The live feed is the source of truth:
+    # if the write truly didn't land, this polls ~600s and fails RED; if it DID land despite a RED job, this
+    # confirms GREEN. It never runs in publish mode or a dry run.
+    if: ${{ always() && !cancelled() && needs.validate.result == 'success' && (needs.promote.outputs.write_attempted == 'true' || needs.withdraw-rc.outputs.write_attempted == 'true') && inputs.mode != 'publish' && !inputs.dry_run }}
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
     permissions:
       contents: read
     steps:
@@ -1497,53 +1646,42 @@ jobs:
           rust-components: ""
           install-tauri-system-deps: "false"
           run-prebuild: "false"
-      - name: Poll the prod feed + assert it serves this release
+      - name: Poll the public routes + assert each serves what the dispatch intended
         env:
-          EXPECTED: ${{ needs.validate.outputs.version }}
-          FEED_URL: https://presto.build/releases/latest.json
+          MODE: ${{ inputs.mode }}
+          IS_PRERELEASE: ${{ needs.validate.outputs.is_prerelease }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          LIVE_STABLE: ${{ needs.promote.outputs.live_stable }}
+          RC_ROUTE: ${{ needs.promote.outputs.rc_route }}
+          FEEDS: https://presto.build/releases
         run: |
           set -euo pipefail
-          # Poll the public CDN until it serves this version (covers invalidation
-          # propagation + the 300s max-age), then assert the platform map + that
-          # every asset URL is reachable. The updater gate used a synthesized
-          # feed; this is the only check on the REAL prod latest.json + assets.
-          FEED=""
-          GOT=""
-          for _ in $(seq 1 60); do
-            FEED=$(curl -fsS --max-time 15 "$FEED_URL" 2>/dev/null || true)
-            GOT=$(printf '%s' "$FEED" | jq -r '.version // empty' 2>/dev/null || true)
-            [ "$GOT" = "$EXPECTED" ] && break
-            sleep 10
-          done
-          if [ "$GOT" != "$EXPECTED" ]; then
-            echo "::error::live feed at $FEED_URL still not $EXPECTED after ~10min (got '${GOT:-<none>}')"
-            exit 1
-          fi
-          echo "✅ feed serves $EXPECTED"
-          printf '%s' "$FEED" | jq -e '.platforms | has("darwin-aarch64") and has("darwin-x86_64") and has("linux-x86_64") and has("windows-x86_64")' >/dev/null \
-            || { echo "::error::latest.json missing a platform key"; exit 1; }
-          # `while read` over process substitution (not a pipe) so `exit 1` exits
-          # the script, not a subshell. Retry each URL (brief edge/GitHub lag).
-          while read -r u; do
-            ok=""
-            for _ in $(seq 1 5); do
-              code=$(curl -fsIL --max-time 30 -o /dev/null -w '%{http_code}' "$u" 2>/dev/null || echo ERR)
-              if [ "$code" = "200" ]; then ok=1; break; fi
-              sleep 5
-            done
-            [ -n "$ok" ] || { echo "::error::asset URL not reachable (last=$code): $u"; exit 1; }
-            echo "✅ 200 $u"
-          done < <(printf '%s' "$FEED" | jq -r '.platforms[].url')
-
-          # F-004 (audit M7): run the PRODUCTION verifier over the live feed body. Version + reachable
-          # URLs alone don't prove the signed manifest survived the upload/CDN — a corrupted or dropped
-          # manifest_sig leaves those intact while EVERY C4 client rejects the update. This is the only
-          # cryptographic check on the real published feed.
-          printf '%s' "$FEED" > live-latest.json
           bun -e "console.log(JSON.parse(await Bun.file('packages/presto/src-tauri/tauri.conf.json').text()).plugins.updater.pubkey)" > pubkey.b64
-          cargo run --quiet --manifest-path packages/presto/core/Cargo.toml --example update-manifest -- \
-            verify --feed live-latest.json --pubkey pubkey.b64 --channel stable
-          echo "✅ live updater feed verified == $EXPECTED, all assets reachable, manifest signature valid"
+          cargo build --quiet --manifest-path packages/presto/core/Cargo.toml --example update-manifest
+          check() {  # <route> <expected version> <channel>
+            bash .github/scripts/verify-live-feed.sh "$FEEDS/$1" "$2" "$3" \
+              packages/presto/core/target/debug/examples/update-manifest pubkey.b64 "live-$1"
+          }
+          case "$MODE/$IS_PRERELEASE" in
+            promote-only/false)
+              check latest.json "$VERSION" stable
+              [ -n "$RC_ROUTE" ] || { echo "::error::promote never settled KV latest-rc.json against $VERSION"; exit 1; }
+              check latest-rc.json "$RC_ROUTE" rc
+              ;;
+            promote-only/true)
+              check latest-rc.json "$VERSION" rc
+              [ -n "$LIVE_STABLE" ] || { echo "::error::promote recorded no live stable"; exit 1; }
+              check latest.json "$LIVE_STABLE" stable
+              ;;
+            withdraw-rc/true)
+              STABLE=$(curl -fsS --retry 3 --max-time 15 "$FEEDS/latest.json" | jq -er '.version')
+              check latest.json "$STABLE" stable
+              check latest-rc.json "$STABLE" rc
+              cmp -s live-latest.json live-latest-rc.json \
+                || { echo "::error::latest-rc.json serves $STABLE but not latest.json's bytes"; exit 1; }
+              ;;
+            *) echo "::error::nothing to verify for $MODE with is_prerelease=$IS_PRERELEASE"; exit 1 ;;
+          esac
 
   # GitHub's Latest badge is human-facing and does not control the updater. Keep it aligned with a forward
   # GA only after the signed production feed is independently verified. Rollbacks deliberately leave the

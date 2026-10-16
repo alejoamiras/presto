@@ -261,9 +261,13 @@ for (const [file, { modes, foreign, scripts }] of Object.entries(MANUAL_SMOKE_MO
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("release-presto.yml — B6 publish/promote contract", () => {
-  test("least privilege: `promote` is the only leg that writes the feed", () => {
+  test("least privilege: `promote` and `withdraw-rc` are the only legs that write the feed", () => {
     expect(WF.match(/wrangler kv key put/g)).toHaveLength(1);
-    expect(WF).toContain("wrangler kv key put latest.json --path feed/latest.json --remote");
+    expect(WF).toContain('wrangler kv key put "$FEED_KEY" --path "feed/$FEED_KEY" --remote');
+    const feedTokenJobs = Object.entries((Bun.YAML.parse(WF) as SmokeWorkflow).jobs)
+      .filter(([, job]) => JSON.stringify(job).includes("CLOUDFLARE_RELEASE_FEED_API_TOKEN"))
+      .map(([name]) => name);
+    expect(feedTokenJobs).toEqual(["release-auth-preflight", "promote", "withdraw-rc"]);
     expect(WF).toContain("contents: write     # gh release create --draft");
     // Publishing receives no Cloudflare credential; the explicit auth probe is isolated from it.
     expect(WF).toContain("if: $" + "{{ inputs.auth_probe }}");
@@ -494,12 +498,12 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     expect(PACKAGED.match(/packages\/playground\/test-results/g)?.length).toBe(2);
   });
 
-  test("promote pre-flight verifies a published, non-draft, non-prerelease stable with a signed feed", () => {
+  test("promote pre-flight verifies a published release, flagged as its version implies, with a signed feed", () => {
     // [mut: delete any pre-flight check → a half-built / draft / wrong-version / wrong-URL / wrong-platform
     //  feed could be promoted → fails]
     expect(WF).toContain(".isDraft == false");
-    expect(WF).toContain(".isPrerelease == false");
-    expect(WF).toContain("verify --feed feed/latest.json"); // production Ed25519 verifier over the feed
+    expect(WF).toContain("'.isPrerelease == $pre'");
+    expect(WF).toContain('verify --feed "feed/$FEED_KEY"'); // production Ed25519 verifier over the feed
     expect(WF).toContain("!= dispatched"); // feed version == dispatched version guard
     // EXACT 17-name asset set (not count+category — which padding could game).
     expect(WF).toContain("asset set != the expected 17");
@@ -704,7 +708,7 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
       WF.split("Flip the KV feed to this version (authoritative write)")[1]?.split(
         "# Enforce the live-feed check",
       )[0] ?? "";
-    expect(writeStep).toContain("wrangler kv key put latest.json --path feed/latest.json --remote");
+    expect(writeStep).toContain('wrangler kv key put "$FEED_KEY" --path "feed/$FEED_KEY" --remote');
     expect(writeStep).toContain("for attempt in 1 2 3 4 5; do");
     expect(writeStep).toContain("exit 1");
     expect(WF).not.toContain("aws s3 cp");
@@ -713,14 +717,14 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     // committed cannot skip public verification —
     // the live feed is the source of truth. [mut: revert to the implicit success() on `promote` → fails]
     expect(WF, "verify-live-feed runs on its own always() status function").toMatch(
-      /Verify live updater feed[\s\S]{0,1000}?if: \$\{\{ always\(\) && !cancelled\(\) && needs\.validate\.result == 'success' && needs\.promote\.outputs\.write_attempted == 'true'/,
+      /Verify live updater feed[\s\S]{0,1000}?if: \$\{\{ always\(\) && !cancelled\(\) && needs\.validate\.result == 'success' && \(needs\.promote\.outputs\.write_attempted == 'true' \|\| needs\.withdraw-rc\.outputs\.write_attempted == 'true'\)/,
     );
   });
 
   test("downstream wiring: verified feed → GitHub Latest → organic-GA source bump", () => {
     // [mut: point verify-live-feed back at `release`, move Latest before verification, or let rollback move
     // the badge/source version → fails]
-    expect(WF).toContain("needs: [validate, promote]");
+    expect(WF).toContain("needs: [validate, promote, withdraw-rc]");
     expect(WF).toContain("needs: [validate, verify-live-feed]");
     expect(WF).toContain("needs: [validate, mark-github-latest]");
     expect(WF).toContain("inputs.bump_source && !inputs.dry_run");
@@ -1168,9 +1172,17 @@ describe("update-manifest verify modes", () => {
     const ci = fs.readFileSync(path.join(REPO, ".github/workflows/presto.yml"), "utf8");
     expect(ci).toContain("bash packages/presto/scripts/release-signer-roundtrip.sh");
 
-    const releaseVerifies = WF.match(/^\s*verify --feed .*$/gm) ?? [];
-    expect(releaseVerifies).toHaveLength(2);
-    for (const call of releaseVerifies) expect(call).toMatch(/ --channel stable$/);
+    const liveFeed = fs.readFileSync(
+      path.join(REPO, ".github/scripts/verify-live-feed.sh"),
+      "utf8",
+    );
+    const releaseVerifies = [WF, liveFeed].flatMap(
+      (text) => text.match(/verify --feed .*$/gm) ?? [],
+    );
+    expect(releaseVerifies).toHaveLength(3);
+    for (const call of releaseVerifies) {
+      expect(call).toMatch(/ --channel (stable|"\$CHANNEL"|"\$channel")( \| tee verify\.out)?$/);
+    }
   });
 
   test("the smoke feed signer derives the schema from the version", () => {
