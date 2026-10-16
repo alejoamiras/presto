@@ -1850,7 +1850,7 @@ mod custom_bb {
     use super::*;
     use crate::bb::test_support::FIND_OUTDIR;
     use crate::bb::{AdmitGuard, BbBinary, SpawnGate};
-    use crate::config::{ConfigStore, PrestoConfig};
+    use crate::config::ConfigStore;
     use crate::custom_bb::{CustomBbPin, CustomRoute, Unavailable};
     use std::path::{Path, PathBuf};
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
@@ -1887,12 +1887,10 @@ mod custom_bb {
             label: crate::custom_bb::check_label(LABEL).unwrap(),
             pinned_at: 0,
         };
-        let mut config = PrestoConfig::default();
+        let mut config = crate::custom_bb::developer_config(pin.clone());
         config
             .approved_origins
             .push(crate::authorization::CanonicalOrigin::parse(DAPP).unwrap());
-        config.set_developer_mode(true);
-        config.set_custom_bb(Some(pin.clone())).unwrap();
         let refusals = Arc::new(AtomicUsize::new(0));
         let counter = refusals.clone();
         let state = AppState {
@@ -2111,25 +2109,44 @@ mod custom_bb {
         );
     }
 
+    /// `TMPDIR` is process-wide, so the test re-runs itself alone in a child process.
     #[tokio::test]
     #[serial]
     async fn a_custom_route_workspace_failure_keeps_its_path_off_the_wire() {
+        const CHILD: &str = "PRESTO_TEST_WORKSPACE_FAILURE_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let name = concat!(
+                module_path!(),
+                "::a_custom_route_workspace_failure_keeps_its_path_off_the_wire"
+            );
+            let name = name.split_once("::").unwrap().1;
+            let child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", name, "--test-threads=1"])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            let stdout = String::from_utf8_lossy(&child.stdout);
+            assert!(
+                child.status.success() && stdout.contains("1 passed"),
+                "{stdout}{}",
+                String::from_utf8_lossy(&child.stderr)
+            );
+            return;
+        }
+
         let _home = crate::ScopedPrestoHome::new();
         let f = pinned("");
         let data = PathBuf::from(std::env::var_os("PRESTO_HOME").unwrap()).join("data");
         std::fs::create_dir_all(&data).unwrap();
         std::fs::write(data.join("prove-tmp"), "").unwrap();
-        let tmpdir = std::env::var_os("TMPDIR");
         std::env::set_var("TMPDIR", f.pin.path.with_file_name("no-tmp"));
-        let response = router(f.state.clone())
-            .oneshot(ultra_honk_labelled())
-            .await
-            .unwrap();
-        match tmpdir {
-            Some(previous) => std::env::set_var("TMPDIR", previous),
-            None => std::env::remove_var("TMPDIR"),
-        }
-        let (status, code, body) = outcome(response).await;
+        let (status, code, body) = outcome(
+            router(f.state.clone())
+                .oneshot(ultra_honk_labelled())
+                .await
+                .unwrap(),
+        )
+        .await;
         assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
         assert_eq!(code, "prove_failed");
         assert!(!body.contains("no-tmp"), "{body}");

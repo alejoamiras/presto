@@ -445,8 +445,12 @@ mod unix {
     #[serial]
     async fn a_test_run_holds_the_prove_permit_until_bb_has_finished() {
         let _home = crate::ScopedPrestoHome::new();
-        let f = fixture("touch \"$0.started\"\nsleep 1\necho 6.0.0-dev.1");
-        let started = f.root.join("bb.started");
+        let f = fixture(
+            "touch \"$0.started\"\ni=0\n\
+             while [ ! -e \"$0.release\" ] && [ $i -lt 60 ]; do sleep 0.05; i=$((i+1)); done\n\
+             echo 6.0.0-dev.1",
+        );
+        let (started, release) = (f.root.join("bb.started"), f.root.join("bb.release"));
         let prove = Arc::new(Semaphore::new(1));
         let permit = take_test_permit(&prove).unwrap();
         let (bb, sha256) = (f.bb.clone(), f.pin.sha256.clone());
@@ -459,6 +463,7 @@ mod unix {
         .await
         .expect("bb started");
         assert!(matches!(take_test_permit(&prove), Err(TestRunError::Busy)));
+        std::fs::write(&release, "").unwrap();
         run.await.unwrap().unwrap();
         assert_eq!(prove.available_permits(), 1, "the permit comes back");
     }

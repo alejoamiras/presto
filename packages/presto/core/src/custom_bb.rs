@@ -556,5 +556,15 @@ fn shell_quote(path: &Path) -> String {
     format!("'{}'", path.display().to_string().replace('\'', r"'\''"))
 }
 
+/// Developer mode on with `pin` saved. Lives here because server code, tests included, must
+/// never write developer settings.
+#[cfg(test)]
+pub(crate) fn developer_config(pin: CustomBbPin) -> crate::config::PrestoConfig {
+    let mut config = crate::config::PrestoConfig::default();
+    config.set_developer_mode(true);
+    config.set_custom_bb(Some(pin)).unwrap();
+    config
+}
+
 #[cfg(test)]
 mod tests;

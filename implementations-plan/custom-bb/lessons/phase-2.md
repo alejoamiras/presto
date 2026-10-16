@@ -83,3 +83,17 @@ Observed, out of scope: `verified_sites::store::tests::a_save_waits_for_the_lock
 failed once in five full runs at `assert!(held.is_some())`, and never when run alone. It looks
 pre-existing: a concurrent test's fork can inherit the lock fd (`O_CLOEXEC` releases it only at
 exec) just as the save drops it.
+
+**Round 2** (same session): **conditional approve**. The production fixes close their findings.
+All three remaining items concern tests and are fixed:
+
+| # | Severity | Claim | Disposition |
+|---|---|---|---|
+| 1 | medium | Setting `TMPDIR` in the test leaks to concurrent unserialized tests that call `tempfile::tempdir()`. | The test re-runs itself alone (`--exact`, one thread) in a child process. The child sets `TMPDIR` only after its fixtures exist. The parent requires `1 passed`, so a filter that matches nothing cannot pass. |
+| 2 | low | The Windows success test has no positive control: an empty job passes with the old `finish`. | A batch file keeps bb alive until the test has seen at least two job members, then exits 0 on a release marker. |
+| 3 | low | The permit test depends on the fake's one-second sleep outlasting the busy check. | The fake waits for a release marker (bounded at 3 s), and the test writes it after the check. |
+
+Rebased onto origin/main `45b492a`, dropping the stand-in. Main's developer contract matches the
+stand-in, apart from `UpdateChannel`'s new `Display` and a comment. Main's
+`update-wiring.test.ts` forbids `set_developer_mode(` anywhere under `core/src/server`, tests
+included, so the server fixture now gets its config from `custom_bb::developer_config` (test-only).

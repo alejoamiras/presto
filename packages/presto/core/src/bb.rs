@@ -1797,16 +1797,41 @@ mod tests {
     #[serial]
     async fn a_successful_run_leaves_nothing_in_the_job() {
         // A bb that exits 0 while a descendant keeps running: the run must not end with the
-        // descendant still in the job, or it would outlive the permit that serializes bb.
+        // descendant still in the job, or it would outlive the permit that serializes bb. A batch
+        // file, since `goto` needs labels; it exits only once the test has seen both in the job.
         let dir = tempfile::tempdir().unwrap();
+        let (ready, go) = (dir.path().join("ready"), dir.path().join("go"));
+        std::fs::write(
+            dir.path().join("run.bat"),
+            "start /B ping -n 30 127.0.0.1\r\necho ok > ready\r\n:wait\r\n\
+             if not exist go (\r\n  ping -n 2 127.0.0.1 >nul\r\n  goto wait\r\n)\r\nexit 0\r\n",
+        )
+        .unwrap();
         let mut cmd = tokio::process::Command::new("cmd.exe");
         cmd.current_dir(dir.path());
-        cmd.args(["/C", "start /B ping -n 30 127.0.0.1 & exit 0"]);
+        cmd.args(["/C", "run.bat"]);
         cmd.stdout(std::process::Stdio::null());
         finish_command(&mut cmd, None);
-        let binary = BbBinary::Find(None);
-        run_bb(&mut cmd, &binary, Duration::from_secs(60), None)
+        let run = tokio::spawn(async move {
+            let binary = BbBinary::Find(None);
+            run_bb(&mut cmd, &binary, Duration::from_secs(60), None).await
+        });
+        for _ in 0..250 {
+            if ready.exists() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        assert!(ready.exists(), "the descendant never started");
+        assert!(
+            super::containment::active_processes_for_test().unwrap_or(0) >= 2,
+            "bb and its descendant must both be in the job before bb exits"
+        );
+        std::fs::write(&go, "").unwrap();
+        tokio::time::timeout(Duration::from_secs(20), run)
             .await
+            .expect("bb exits once released")
+            .unwrap()
             .expect("cmd.exe exits 0");
         let mut active = None;
         for _ in 0..100 {
