@@ -55,6 +55,24 @@
 - CLAUDE.md's release chain named a `sign-update-feed` job that does not exist; the real chain is
   `build → sign-updater-artifacts → smoke → draft release → packaged E2E → tag → finalize`.
 
+## Real-binary runs (branch at `0f42f1b`, all green)
+
+| Run | Workflow | Mode, `n-version` | Job minutes |
+|---|---|---|---|
+| 38910097844 | unix | positive 9.9.9 | Linux 12, macOS 14 |
+| 38910102663 | unix | positive 9.9.9-rc.1 | Linux 13, macOS 16 |
+| 38910106173 | unix | negative 9.9.9-rc.1 | Linux 13, macOS 15 |
+| 38910109332 | unix | rc-lifecycle 9.9.9 | Linux 18, macOS 22 |
+| 38910112572 | windows | positive 9.9.9 | 13 |
+| 38910116017 | windows | positive 9.9.9-rc.1 | 18 |
+| 38910119353 | windows | negative 9.9.9-rc.1 | 23 |
+| 38910124007 | windows | rc-lifecycle 9.9.9 | 23 |
+| 38910128843 | presto.yml | `updater-feed-e2e` round trip, 9.9.9-rc.1 and 9.9.9 | 2 |
+
+The refusal leg took 67 s on Linux and macOS (the 60 s hold plus launch). The ephemeral N-1 has the
+channel, so these runs prove the `CandidateOffChannel` branch. The pre-channel branch is proven by
+the contract harness until the next real candidate publish.
+
 ## Mutations (all red)
 
 | Mutation | Result |
