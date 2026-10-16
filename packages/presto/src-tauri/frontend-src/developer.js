@@ -13,13 +13,19 @@ const resultEl = document.getElementById("channel-result");
 const offCheck = document.getElementById("developer-off-check");
 const leaveCheck = document.getElementById("leave-check");
 
-/** The join check's result, as the tray words it; a prompt that opened needs no line. */
+/** The join check's result in the tray's words; a prompt that opened needs no line. */
 const RESULT_TEXT = {
-  "up-to-date": "Up to date",
-  failed: "Couldn't check — try again",
+  "up-to-date": "✓ Up to date",
+  failed: "⚠ Couldn't check — try again",
   installing: "Installing an update…",
   presented: "",
 };
+
+function showResult(outcome) {
+  resultEl.textContent = outcome === "checking" ? "Checking…" : (RESULT_TEXT[outcome] ?? "");
+  resultEl.classList.toggle("ok", outcome === "up-to-date");
+  resultEl.classList.toggle("failed", outcome === "failed");
+}
 
 // What the last load or save established. `stored` is the saved choice, which outlives developer
 // mode only in a hand-edited config; `effective` is the channel updates come from.
@@ -105,13 +111,13 @@ async function save(command, args, next, anchor) {
   render();
   hideChecks();
   const joins = next.effective === "rc" && before.effective !== "rc";
-  resultEl.textContent = joins ? "Checking…" : "";
+  showResult(joins ? "checking" : "");
   revision++;
   saving++;
   if (saving > 1) unsure = true;
   try {
     const result = await invoke(command, args);
-    if (mine === change) resultEl.textContent = RESULT_TEXT[result] ?? "";
+    if (mine === change) showResult(result);
     if (command === "set_developer_mode") customBbFollows(args.enabled);
   } catch (err) {
     console.error(`Failed to invoke ${command}:`, err);
@@ -119,7 +125,7 @@ async function save(command, args, next, anchor) {
     if (mine === change) {
       state = before;
       render();
-      resultEl.textContent = "";
+      showResult("");
       showErrorHint(anchor, typeof err === "string" ? err : "Failed to save");
     }
   } finally {

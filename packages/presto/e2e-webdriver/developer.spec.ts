@@ -65,7 +65,7 @@ describe("Developer mode", () => {
     await browser.waitUntil(
       async () =>
         (await browser.execute(() => document.getElementById("channel-result")?.textContent)) ===
-          "Up to date" && developerOnDisk()?.update_channel === "rc",
+          "✓ Up to date" && developerOnDisk()?.update_channel === "rc",
       { timeout: 10000, timeoutMsg: "the join never showed the check's result with rc on disk" },
     );
     expect(developerOnDisk()).toEqual({ enabled: true, update_channel: "rc" });

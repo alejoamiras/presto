@@ -1070,7 +1070,8 @@ test("joining shows checking, then the result", async ({ page }) => {
     "The newer of the next release candidate and the next stable release. You run 1.2.0.",
   );
   await answer(page, "up-to-date");
-  await expect(page.locator("#channel-result")).toHaveText("Up to date");
+  await expect(page.locator(".row-text > #channel-result")).toHaveText("✓ Up to date");
+  await expect(page.locator("#channel-result")).toHaveClass(/\bok\b/);
   await expect(channelRadio(page, "rc")).toBeChecked();
   expect((await callsFor(page, "set_update_channel")).map((c: any) => c.args)).toEqual([
     { channel: "rc" },
@@ -1098,7 +1099,8 @@ test("a join that opens the prompt adds no line, and one that fails keeps the ch
   await answer(page, null);
   await pick(page, "Release candidates");
   await answer(page, "failed");
-  await expect(page.locator("#channel-result")).toHaveText("Couldn't check — try again");
+  await expect(page.locator("#channel-result")).toHaveText("⚠ Couldn't check — try again");
+  await expect(page.locator("#channel-result")).toHaveClass(/\bfailed\b/);
   await expect(channelRadio(page, "rc")).toBeChecked();
 });
 
@@ -1212,7 +1214,7 @@ test("turning developer mode on over a stored candidate choice joins and keeps t
 
   await expect(page.locator("#channel-result")).toHaveText("Checking…");
   await answer(page, "failed");
-  await expect(page.locator("#channel-result")).toHaveText("Couldn't check — try again");
+  await expect(page.locator("#channel-result")).toHaveText("⚠ Couldn't check — try again");
   await expect(page.getByRole("switch", { name: "Developer mode" })).toBeChecked();
   await expect(channelRadio(page, "rc")).toBeChecked();
 });
