@@ -67,3 +67,7 @@ with `rg --no-ignore` / `git grep`.
   channel refuses at every admission point, a `latest-rc.json` feed route served only above the
   stable, candidate promote and `withdraw-rc`, and release smokes that prove the refusal and the
   install (PRs #130, #134, #135, #137).
+- [updater-smoke-stable](updater-smoke-stable/plan.md) — closed 2026-10-16 — every publish run
+  smokes the update from the live stable as well as from the greatest lower release; the stable is
+  the release the signed feed serves, bound to its asset digest, and a different key or an outage
+  fails closed. 14 green legs on the 1.2.0 publish (PR #123).
