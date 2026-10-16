@@ -469,27 +469,33 @@ pub async fn custom_bb_save(
 
 /// Writes the pin, or `None` to stop. The candidate is checked again under the config lock, since
 /// developer mode can go off and on, or a new review replace it, while the rehash runs; a pin
-/// reaches the config only while the slot still holds its tested candidate. The slot is cleared
-/// once the write has been persisted, so a failed save keeps the review for a retry.
+/// reaches the config only while the slot still holds its tested candidate. The slot stays locked
+/// from that check until the write has been persisted and is cleared only then, so a failed save
+/// keeps the review for a retry and a review that lands afterwards is never erased.
 pub(crate) fn commit(
     config: &ConfigStore,
     path: Option<&std::path::Path>,
     candidate: &CandidateState,
     pin: Option<CustomBbPin>,
 ) -> Result<(), String> {
+    let mut held = None;
     try_mutate_config_at(config, path, |cfg| {
+        let slot = candidate.lock();
         if let Some(pin) = &pin {
-            let reviewed = candidate
-                .lock()
+            let reviewed = slot
                 .as_ref()
                 .is_some_and(|c| c.tested && c.inspection.sha256 == pin.sha256);
             if !reviewed {
                 return Err(REVIEW_RESET.to_string());
             }
         }
-        cfg.set_custom_bb(pin).map_err(|e| e.to_string())
+        cfg.set_custom_bb(pin).map_err(|e| e.to_string())?;
+        held = Some(slot);
+        Ok(())
     })?;
-    *candidate.lock() = None;
+    if let Some(mut slot) = held {
+        *slot = None;
+    }
     Ok(())
 }
 

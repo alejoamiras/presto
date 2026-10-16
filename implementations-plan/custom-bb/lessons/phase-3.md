@@ -53,6 +53,13 @@ left; all five are accepted and fixed.
 | 4 | should-fix | The ticket check runs before posting: an older task can pass it, get descheduled, and post after a newer one, so the main thread applies the stale summary last. | Fixed: `set_custom` takes a `fresh` closure evaluated on the main thread right before applying. |
 | 5 | nit | A test doc comment restating its name and assertions; a three-line T13 comment. | Deleted; shortened to two lines. |
 
+**Round 3** (same session): **conditional**. The round-2 fixes close their findings: the admission
+guards end at the synchronous block, before the wait; spawn setup never re-enters the config; the
+failed-save test fails in `save_to`, not in validation. One should-fix, applied: `commit` released
+the config lock before clearing the slot, so a review landing in between could be erased by the
+older save; the slot guard taken inside the mutation closure now lives until the clear after
+persistence. The loop ends here at its three-round limit, with nothing material open.
+
 ## Supply chain: `tauri-plugin-dialog` (2026-10-16)
 
 **Pinned `=2.7.3`, not the newest 2.x.** 2.8.0 and later require `tauri ^2.12`. Taking any of
