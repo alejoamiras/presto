@@ -12,6 +12,7 @@ pub mod certs;
 pub mod channel_change;
 pub mod commands;
 pub mod crash_recovery;
+pub mod custom_bb;
 pub mod server;
 pub mod trust;
 pub mod uninstall;

@@ -291,7 +291,7 @@ pub fn show_auth_popup_window(
             url,
             title: "Authorize Site",
             width: 400.0,
-            height: 300.0,
+            height: 360.0,
             always_on_top: false,
             focus_if_open: false,
             focus_on_create: false,

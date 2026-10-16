@@ -41,6 +41,11 @@ not say which Aztec versions Presto proves.
   ([security model](docs/SECURITY_MODEL.md#1-depend-on-upstream-bb-publisher-security)). The headless
   server bundles none. `BB_BINARY_PATH` makes it run one `bb` for every version, but an uncached version
   is still downloaded first.
+- **A developer can answer one version with their own build.** With developer mode on, the desktop
+  app can pin a `bb` file you built to one version label. Requests naming that version get that file,
+  and its proofs carry `x-presto-bb: custom`; every other version is unaffected
+  ([app README](packages/presto/README.md#developer-mode-custom-bb),
+  [security model](docs/SECURITY_MODEL.md#8-a-developers-own-bb-for-exactly-one-label)).
 - **Nobody configures this.** `@alejoamiras/presto` sends the `bb` release it proves with, its exact
   `@aztec-foundation/bb.js` pin, with every request (`x-aztec-version`). Since Aztec 6.0.0-rc.3 that
   number differs from the `@aztec-labs/*` one. `@alejoamiras/presto-noir` sends its `bbVersion` option, which defaults to its

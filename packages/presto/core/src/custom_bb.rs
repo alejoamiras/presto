@@ -165,8 +165,9 @@ pub struct Inspection {
 }
 
 /// Check a picked file without executing it: canonical path, regular file, Presto's own format and
-/// architecture, executable, the path policy, and on macOS quarantine and (arm64) a valid
-/// signature. Blocking: it hashes the whole file.
+/// architecture, executable, the path policy, and on macOS quarantine and (arm64) an embedded
+/// code signature, present rather than valid: the test run shows whether it lets the file start.
+/// Blocking: it hashes the whole file.
 pub fn inspect(picked: &Path) -> Result<Inspection, Refusal> {
     let path = std::fs::canonicalize(picked).map_err(|e| Refusal::unreadable(picked, &e))?;
     if path.to_str().is_none() {
@@ -242,21 +243,17 @@ fn os_gates(path: &Path) -> Result<(), Refusal> {
             )),
         ));
     }
-    // Intel Macs run unsigned code; Apple silicon kills an unsigned binary at exec.
+    // Intel Macs run unsigned code; Apple silicon kills an unsigned binary at exec. Presence is the
+    // question, not `codesign --verify`'s verdict: the kernel accepts signatures Security.framework
+    // calls unsigned (see `binary_format::has_code_signature`), and the test run lets it judge.
     #[cfg(target_arch = "aarch64")]
     {
-        let signed = std::process::Command::new("/usr/bin/codesign")
-            .arg("--verify")
-            .arg(path)
-            .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success());
+        let signed =
+            binary_format::has_code_signature(path).map_err(|e| Refusal::unreadable(path, &e))?;
         if !signed {
             return Err(Refusal::new(
                 RefusalCode::Unsigned,
-                "This file has no valid signature, so Apple silicon will refuse to run it."
+                "This file has no code signature, so Apple silicon will refuse to run it."
                     .to_string(),
                 Some(format!("codesign --force --sign - {}", shell_quote(path))),
             ));
@@ -458,18 +455,23 @@ pub fn take_test_permit(prove: &Arc<Semaphore>) -> Result<OwnedSemaphorePermit, 
 
 /// Rehash the file, then run `bb --version` once under proof containment with no witness, a 5 s
 /// limit and 4 KiB of output. This executes the file as the user: containment is not a sandbox.
-pub async fn test_run(
+/// `admit` is asked after the rehash; the guard it returns is held across the spawn and dropped
+/// before the wait, so what it checked still holds when the file starts. `None` leaves the file
+/// unrun, for a candidate withdrawn while the hash was computed.
+pub async fn test_run<G>(
     path: &Path,
     sha256: &str,
     permit: OwnedSemaphorePermit,
+    admit: impl FnOnce() -> Option<G>,
 ) -> Result<TestRun, TestRunError> {
-    test_run_within(path, sha256, permit, TEST_RUN_TIMEOUT).await
+    test_run_within(path, sha256, permit, admit, TEST_RUN_TIMEOUT).await
 }
 
-async fn test_run_within(
+async fn test_run_within<G>(
     path: &Path,
     sha256: &str,
     _permit: OwnedSemaphorePermit,
+    admit: impl FnOnce() -> Option<G>,
     timeout: Duration,
 ) -> Result<TestRun, TestRunError> {
     let (owned_path, owned_sha) = (path.to_path_buf(), sha256.to_string());
@@ -477,16 +479,21 @@ async fn test_run_within(
         .await
         .map_err(|e| TestRunError::Internal(e.to_string()))?
         .map_err(TestRunError::Unavailable)?;
-    let probe = crate::bb::run_version_probe(path, timeout, TEST_RUN_OUTPUT_CAP)
+    let probe_error = |e| match e {
+        crate::bb::ProbeError::Workspace(e) => TestRunError::Internal(e.to_string()),
+        crate::bb::ProbeError::Spawn(e) => TestRunError::WontStart(wont_start(&e)),
+        crate::bb::ProbeError::DidNotFinish(e) => {
+            tracing::warn!(error = %e, "Custom bb test run did not finish");
+            TestRunError::TimedOut
+        }
+    };
+    let started = {
+        let _admitted = admit().ok_or(TestRunError::Unavailable(Unavailable::Withdrawn))?;
+        crate::bb::start_version_probe(path, TEST_RUN_OUTPUT_CAP).map_err(probe_error)?
+    };
+    let probe = crate::bb::finish_version_probe(started, timeout)
         .await
-        .map_err(|e| match e {
-            crate::bb::ProbeError::Workspace(e) => TestRunError::Internal(e.to_string()),
-            crate::bb::ProbeError::Spawn(e) => TestRunError::WontStart(wont_start(&e)),
-            crate::bb::ProbeError::DidNotFinish(e) => {
-                tracing::warn!(error = %e, "Custom bb test run did not finish");
-                TestRunError::TimedOut
-            }
-        })?;
+        .map_err(probe_error)?;
     if !probe.status.success() {
         return Err(TestRunError::Failed(probe.status.to_string()));
     }
@@ -542,7 +549,7 @@ pub fn env_override_active() -> bool {
 }
 
 /// For messages: drops Windows' verbatim `\\?\` prefix that `canonicalize` adds.
-fn display_path(path: &Path) -> String {
+pub fn display_path(path: &Path) -> String {
     let shown = path.display().to_string();
     match shown.strip_prefix(r"\\?\") {
         Some(rest) if cfg!(windows) => rest.to_string(),

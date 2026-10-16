@@ -557,6 +557,9 @@ pub async fn set_developer_mode(
 ) -> Result<Option<ManualCheckResult>, String> {
     require_label(window.label(), SETTINGS_LABEL)?;
     let saved = save_developer_mode(&config, None, enabled);
+    if saved.is_ok() {
+        crate::custom_bb::developer_mode_saved(&app, enabled);
+    }
     crate::channel_change::apply(saved, &AppChannelEffects(&app)).await
 }
 
@@ -699,12 +702,15 @@ pub fn respond_auth(
 pub struct PendingAuthDto {
     pub origin: String,
     pub active: bool,
+    /// The custom bb's label, while the request's first `x-aztec-version` is the one it answers.
+    pub custom_label: Option<String>,
 }
 
 #[tauri::command]
 pub fn get_pending_auth(
     window: tauri::WebviewWindow,
     auth: tauri::State<'_, AuthState>,
+    config: tauri::State<'_, ConfigState>,
     request_id: String,
 ) -> Result<Option<PendingAuthDto>, String> {
     // C9 (D8/D19): bind the caller to ITS OWN request via the SAME exact-label guard respond_auth uses, so
@@ -713,9 +719,14 @@ pub fn get_pending_auth(
     require_label(window.label(), &label)?;
     Ok(auth
         .peek(&request_id)
-        .map(|(origin, active, _)| PendingAuthDto {
+        .map(|(origin, active, version)| PendingAuthDto {
             origin: origin.to_string(),
             active,
+            custom_label: crate::custom_bb::popup_label(
+                version.as_ref(),
+                config.effective_custom_bb().as_ref(),
+                presto_core::custom_bb::env_override_active(),
+            ),
         }))
 }
 
@@ -1213,7 +1224,7 @@ pub fn record_renewal_prompt(
     Ok(())
 }
 
-fn now_unix_secs() -> i64 {
+pub(crate) fn now_unix_secs() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)

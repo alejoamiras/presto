@@ -69,7 +69,7 @@ const defaults = {
   respond_auth: () => null,
   // C9 (D8/D15): the popup now sources its origin + actionable-state from the server, not the URL param.
   // Default = an active popup for example.com; per-test overrides set specific origins / queued state.
-  get_pending_auth: () => ({ origin: "https://example.com", active: true }),
+  get_pending_auth: () => ({ origin: "https://example.com", active: true, custom_label: null }),
   respond_update_prompt: () => null,
   enable_https: () => null,
   disable_https: () => null,
@@ -89,6 +89,20 @@ const defaults = {
     completed: true,
   }),
   renew_cert: () => null,
+  // Developer mode off, or on with no custom bb: both read as off.
+  custom_bb_status: () => ({
+    state: "off",
+    label: null,
+    path: null,
+    sha256: null,
+    current_sha256: null,
+    pinned_at: null,
+    refusal: null,
+    activity: { last_proof_at: null, last_failure: null },
+  }),
+  custom_bb_review: () => ({ outcome: "cancelled" }),
+  custom_bb_test_run: () => ({ version_suggestion: null, excerpt: "" }),
+  custom_bb_save: () => null,
   record_renewal_prompt: () => null,
 };
 

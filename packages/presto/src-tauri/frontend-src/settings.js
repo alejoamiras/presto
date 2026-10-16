@@ -1,4 +1,5 @@
 import { invoke, showErrorHint, wireToggle } from "./bridge.js";
+import { loadCustomBb } from "./custom-bb.js";
 import { beginDeveloperLoad, hydrateDeveloper } from "./developer.js";
 
 // CPU count comes from the Rust backend (std::thread::available_parallelism),
@@ -333,3 +334,4 @@ themeGroup.addEventListener("change", (e) => {
 });
 
 loadSettings().catch((err) => console.error("Failed to load settings:", err));
+loadCustomBb();

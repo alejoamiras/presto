@@ -353,7 +353,7 @@ mod unix {
 
     async fn run(f: &Fixture, timeout: Duration) -> Result<TestRun, TestRunError> {
         let permit = take_test_permit(&Arc::new(Semaphore::new(1))).unwrap();
-        test_run_within(&f.bb, &f.pin.sha256, permit, timeout).await
+        test_run_within(&f.bb, &f.pin.sha256, permit, || Some(()), timeout).await
     }
 
     #[tokio::test]
@@ -413,19 +413,36 @@ mod unix {
 
     #[tokio::test]
     #[serial]
-    async fn a_test_run_refuses_changed_bytes_and_a_busy_prover_without_running_anything() {
+    async fn a_test_run_refuses_changed_bytes_a_withdrawn_candidate_and_a_busy_prover_without_running_anything(
+    ) {
         let _home = crate::ScopedPrestoHome::new();
         let marker = tempfile::tempdir().unwrap();
         let marker = marker.path().join("ran");
         let f = fixture(&format!("touch '{}'", marker.display()));
         let reviewed = f.pin.sha256.clone();
+        let permit = take_test_permit(&Arc::new(Semaphore::new(1))).unwrap();
+        let withdrawn =
+            test_run_within(&f.bb, &reviewed, permit, || None::<()>, TEST_RUN_TIMEOUT).await;
+        assert!(
+            matches!(
+                withdrawn,
+                Err(TestRunError::Unavailable(Unavailable::Withdrawn))
+            ),
+            "{withdrawn:?}"
+        );
+        assert!(
+            !marker.exists(),
+            "an intact file not admitted after the rehash never ran"
+        );
+
         std::fs::write(
             &f.bb,
             format!("#!/bin/sh\ntouch '{}'\n# rebuilt\n", marker.display()),
         )
         .unwrap();
         let permit = take_test_permit(&Arc::new(Semaphore::new(1))).unwrap();
-        let changed = test_run_within(&f.bb, &reviewed, permit, TEST_RUN_TIMEOUT).await;
+        let changed =
+            test_run_within(&f.bb, &reviewed, permit, || Some(()), TEST_RUN_TIMEOUT).await;
         assert!(
             matches!(
                 changed,
@@ -454,7 +471,7 @@ mod unix {
         let prove = Arc::new(Semaphore::new(1));
         let permit = take_test_permit(&prove).unwrap();
         let (bb, sha256) = (f.bb.clone(), f.pin.sha256.clone());
-        let run = tokio::spawn(async move { test_run(&bb, &sha256, permit).await });
+        let run = tokio::spawn(async move { test_run(&bb, &sha256, permit, || Some(())).await });
         tokio::time::timeout(Duration::from_secs(5), async {
             while !started.exists() {
                 tokio::time::sleep(Duration::from_millis(10)).await;

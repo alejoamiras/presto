@@ -19,7 +19,8 @@ export const WINDOW_SIZES = {
   renewal: { width: 420, height: 320 },
   "update-prompt": { width: 420, height: 280 },
   // The auth popup's label is per-request (`auth-<id>`), so the drift guard keys it by its url.
-  authorize: { width: 400, height: 300 },
+  // Tall enough for a verified site plus the custom bb line.
+  authorize: { width: 400, height: 360 },
 } as const;
 
 /**

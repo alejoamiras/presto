@@ -1,4 +1,5 @@
 import { invoke, showErrorHint } from "./bridge.js";
+import { closeCustomBbPanels, loadCustomBb } from "./custom-bb.js";
 
 // Developer mode and the update channel. Either save can make the candidate channel effective, which
 // runs one update check, so both report through `save` and its result line.
@@ -111,6 +112,7 @@ async function save(command, args, next, anchor) {
   try {
     const result = await invoke(command, args);
     if (mine === change) resultEl.textContent = RESULT_TEXT[result] ?? "";
+    if (command === "set_developer_mode") customBbFollows(args.enabled);
   } catch (err) {
     console.error(`Failed to invoke ${command}:`, err);
     unsure = true;
@@ -125,6 +127,12 @@ async function save(command, args, next, anchor) {
     revision++;
     if (saving === 0) settle();
   }
+}
+
+// Developer mode gates the custom bb, and turning it off clears it.
+function customBbFollows(enabled) {
+  if (!enabled) closeCustomBbPanels();
+  loadCustomBb();
 }
 
 // A load that began before the last save returns without painting, so the save hands the controls

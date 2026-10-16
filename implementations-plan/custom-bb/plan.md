@@ -324,8 +324,9 @@ with the output or run ID in the transcript.
 
 ### Phase 1: core pin, label gate, inspection, test run
 
-**Status:** ✓ (`lessons/phase-1.md`). Built on a local stand-in of the RC-channel contract, then
-rebased onto main once that contract landed (#134, #135).
+**Status:** ✓, landed with P2 as #143 (squash `eb4b751`) (`lessons/phase-1.md`). Built on a
+local stand-in of the RC-channel contract, then rebased onto main once that contract landed (#134,
+#135).
 
 1. `custom_bb.rs`: `CustomBbPin`, `de_custom_bb`, `check_label`, `inspect` (with D7),
    `verify_for_spawn`, `test_run` (takes a permit), `env_override_active`.
@@ -354,7 +355,7 @@ unit.
 
 ### Phase 2: core route, spawn gate, wire, popup label
 
-**Status:** ✓ (`lessons/phase-2.md`).
+**Status:** ✓, landed with P1 as #143 (squash `eb4b751`) (`lessons/phase-2.md`).
 
 1. `BbSource` in `resolve_version`; `Custom` skips the download, the lease and the cache-path check.
 2. `BbBinary::Exact` with `SpawnGate` in both runners: prepare the workspace and `verify_for_spawn`
@@ -381,6 +382,8 @@ before the hash (recorded in lessons). **Layers:** lint, typecheck, unit, integr
 
 ### Phase 3: desktop backend (picker, commands, tray, popup DTO)
 
+**Status:** ✓ (`lessons/phase-3.md`).
+
 1. Add `tauri-plugin-dialog` after the supply-chain review; register it with no permission.
 2. Exactly the four approved commands, `async`, hashing on `spawn_blocking`. The save preconditions
    are a pure function (**T8**).
@@ -403,6 +406,8 @@ before the hash (recorded in lessons). **Layers:** lint, typecheck, unit, integr
 
 ### Phase 4: Settings and popup UI
 
+**Status:** ✓ (`lessons/phase-4.md`). The auth popup grew to 400×360.
+
 1. D5 in `custom-bb.js`, `settings.html`, `authorize.html`/`.js` and `style.css`: existing tokens
    only, in all three theme blocks; every string via `textContent`; controls disabled until their
    state is known; the popup line above the permanence line, with conditional copy: "This site asks
@@ -422,12 +427,16 @@ pass. **Layers:** lint, typecheck, unit, UI e2e (mocked).
 
 ### Phase 5: end to end, and docs
 
+**Status:** ✓ on Linux (`lessons/phase-5.md`): T13 took 11.7 s. macOS and Windows are left to the
+PR's WebDriver lanes.
+
 1. **T13** (`e2e-webdriver/custom-bb.spec.ts`, with its `wdio.conf.ts` entry and hook export): one
    scenario on three OSes. Turn developer mode on and "pick" the shipped sidecar through the hook;
-   test-run and save it as `6.0.0-dev.1`; from an unapproved origin, POST the committed Noir fixture
-   to `/prove/ultra-honk` with that version; assert the popup line, then allow; assert 200,
-   `x-presto-bb: custom` and proof bytes equal to the fixture; stop, and check a repeat request has
-   no header. **Only it proves** real IPC, config, popup, route and exact-path spawn on each OS,
+   test-run and save it under the label the run suggests (the bundled version, since the file is
+   the sidecar); from an unapproved origin, POST the committed Noir fixture to `/prove/ultra-honk`
+   with that version; assert the popup line, then allow; assert 200, `x-presto-bb: custom` and
+   proof bytes equal to the fixture; stop, and check a repeat request is a 200 official proof of the
+   same bytes with no header. **Only it proves** real IPC, config, popup, route and exact-path spawn on each OS,
    Windows `bb.exe` quirks included. **Runtime:** estimated 25 s per OS; measure it.
 2. Docs: `docs/SECURITY_MODEL.md` adds decision 8 (one user-chosen, hash-pinned file for exactly one
    label; D7; local callers without `Origin`) and amends decision 1's "nothing else" and "Not
@@ -444,7 +453,7 @@ PR body states the WebDriver wall-clock before and after. **Layers:** lint, type
 | Arc | Branch | Phases | Stacks on | `/code-review` |
 |---|---|---|---|---|
 | 1 core | `worktree-custom-bb` | P1–P2 | `main`, after the RC-channel contract (A4) | off |
-| 2 desktop | `custom-bb-desktop` | P3–P5 | arc 1 | off |
+| 2 desktop | `custom-bb-desktop` | P3–P5 | `main`, once arc 1 landed (#143) | off |
 | close-out | `custom-bb-close-out` | docs only | arc 2 | off |
 
 Arc 1 is inert without a record, and nothing writes one yet; it touches `src-tauri` only to compile

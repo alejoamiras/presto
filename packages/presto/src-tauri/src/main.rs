@@ -642,6 +642,7 @@ fn build_tray(
         bundled_version,
         status,
         check_updates,
+        None,
     )?;
     let icon = tray::build_tray_icon(app, &menu, |app, event| {
         on_tray_menu(app, event.id().as_ref());
@@ -738,10 +739,10 @@ fn check_updates_item(
     Some(item)
 }
 
-/// Wire the desktop `AppState`: the versions-changed tray rebuild, the auth popup, and the
-/// status-text/tooltip/animation callback. **Consumes `status`** (it moves into the versions-changed
-/// callback) — anything the caller needs afterwards must be cloned BEFORE this call, which turns the
-/// old "clone before the move" comment into a compiler-enforced property.
+/// Wire the desktop `AppState`: the tray rebuilds (versions changed, custom bb changed), the auth
+/// popup, and the status-text/tooltip/animation callback. **Consumes `status`** (it moves into the
+/// shared tray menu) — anything the caller needs afterwards must be cloned BEFORE this call, which
+/// turns the old "clone before the move" comment into a compiler-enforced property.
 #[allow(clippy::too_many_arguments)]
 fn build_desktop_state(
     app: &tauri::App,
@@ -754,16 +755,22 @@ fn build_desktop_state(
     config_state: &ConfigState,
     auth_manager: &AuthState,
 ) -> AppState {
-    let on_versions_changed = versions_changed_callback(
-        app.handle().clone(),
+    let menu = tray::TrayMenu {
+        app: app.handle().clone(),
         dev_mode,
-        bundled_version.clone(),
-        status.clone(),
+        bundled_version: bundled_version.clone(),
+        status,
         check_updates,
-        tray.clone(),
-    );
+        tray: tray.clone(),
+        text: Arc::new(parking_lot::Mutex::new(tray::TrayText {
+            status: ServerStatus::Idle.display_text(),
+            custom: Default::default(),
+        })),
+    };
+    let on_versions_changed = versions_changed_callback(menu.clone());
+    let on_custom_bb_changed = custom_bb_changed_callback(menu.clone(), config_state.clone());
     let show_auth_popup = auth_popup_callback(app.handle().clone(), auth_manager.clone());
-    let on_status = status_callback(status, tray.clone(), is_animating.clone());
+    let on_status = status_callback(menu, is_animating.clone());
 
     let core = HeadlessState::headless(
         env!("CARGO_PKG_VERSION"),
@@ -771,34 +778,46 @@ fn build_desktop_state(
         Some(config_state.clone()),
         Some(auth_manager.clone()),
     );
-    AppState::desktop(core, on_status, on_versions_changed, show_auth_popup)
+    let mut state = AppState::desktop(core, on_status, on_versions_changed, show_auth_popup);
+    state.on_custom_bb_changed = Some(on_custom_bb_changed);
+    state
 }
 
-fn versions_changed_callback(
-    app: tauri::AppHandle,
-    dev_mode: bool,
-    bundled_version: String,
-    status: tauri::menu::MenuItem<tauri::Wry>,
-    check_updates: Option<tauri::menu::MenuItem<tauri::Wry>>,
-    tray_icon: tauri::tray::TrayIcon,
-) -> presto::server::VersionsChangedCallback {
+fn versions_changed_callback(menu: tray::TrayMenu) -> presto::server::VersionsChangedCallback {
     Arc::new(move || {
-        if !dev_mode {
+        if !menu.dev_mode {
             return;
         }
-        match tray::build_tray_menu(
-            &app,
-            dev_mode,
-            &bundled_version,
-            &status,
-            check_updates.as_ref(),
-        ) {
-            Ok(menu) => {
-                let _ = tray_icon.set_menu(Some(menu));
-                tracing::info!("Tray menu rebuilt (versions changed)");
-            }
-            Err(error) => tracing::warn!("Failed to rebuild tray menu: {error}"),
+        if let Err(error) = menu.rebuild() {
+            tracing::warn!("Failed to post the tray rebuild (versions changed): {error}");
         }
+    })
+}
+
+/// Rehashes off the async workers, then applies only the newest result: two changes in quick
+/// succession can finish, and post, out of order, so the ticket is checked where the summary is
+/// applied.
+fn custom_bb_changed_callback(
+    menu: tray::TrayMenu,
+    config: ConfigState,
+) -> presto::server::CustomBbChangedCallback {
+    let latest = Arc::new(std::sync::atomic::AtomicU64::new(0));
+    Arc::new(move || {
+        let ticket = latest.fetch_add(1, Ordering::AcqRel) + 1;
+        let (menu, config, latest) = (menu.clone(), config.clone(), latest.clone());
+        tauri::async_runtime::spawn(async move {
+            let summary = tauri::async_runtime::spawn_blocking(move || {
+                presto::custom_bb::current_tray_summary(&config)
+            })
+            .await;
+            let Ok(summary) = summary else {
+                return;
+            };
+            let fresh = move || latest.load(Ordering::Acquire) == ticket;
+            if let Err(error) = menu.set_custom(summary, fresh) {
+                tracing::warn!("Failed to show the custom bb in the tray: {error}");
+            }
+        });
     })
 }
 
@@ -812,18 +831,14 @@ fn auth_popup_callback(
 }
 
 fn status_callback(
-    status_item: tauri::menu::MenuItem<tauri::Wry>,
-    tray_icon: tauri::tray::TrayIcon,
+    menu: tray::TrayMenu,
     is_animating: Arc<AtomicBool>,
 ) -> presto::server::StatusCallback {
     Arc::new(move |status: ServerStatus| {
         let text = status.display_text();
         tracing::info!(text, "on_status callback fired");
-        if let Err(error) = status_item.set_text(text) {
-            tracing::error!("set_text failed: {error}");
-        }
-        if let Err(error) = tray_icon.set_tooltip(Some(text)) {
-            tracing::error!("set_tooltip failed: {error}");
+        if let Err(error) = menu.set_status(text) {
+            tracing::error!("Failed to post the tray status: {error}");
         }
         is_animating.store(status.is_busy(), Ordering::Release);
     })
@@ -1100,6 +1115,9 @@ fn setup_desktop(
     spawn_launch_https(&state);
     // Commands and WebDriver windows must not run before the shared state is managed.
     app.manage::<SharedAppState>(Arc::new(state.clone()));
+    if config_state.effective_custom_bb().is_some() {
+        presto::custom_bb::notify_changed(app.handle());
+    }
     report_missing_bb(&diagnostic_status, &diagnostic_tray);
     show_startup_windows(app.handle(), config_state);
     spawn_http_server(
@@ -1146,7 +1164,8 @@ fn main() {
     #[allow(unused_mut)]
     let mut builder = tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_process::init());
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init());
 
     #[cfg(feature = "webdriver")]
     {
@@ -1164,6 +1183,7 @@ fn main() {
         .manage::<Arc<ScheduleStore>>(Arc::new(schedule_store()))
         .manage::<Arc<InstallGate>>(Arc::default())
         .manage::<ManualCheckSender>(manual_check_tx)
+        .manage::<presto::custom_bb::CandidateState>(Default::default())
         .invoke_handler(tauri::generate_handler![
             commands::get_config,
             commands::get_autostart_enabled,
@@ -1173,6 +1193,10 @@ fn main() {
             commands::set_theme,
             commands::set_developer_mode,
             commands::set_update_channel,
+            presto::custom_bb::custom_bb_review,
+            presto::custom_bb::custom_bb_test_run,
+            presto::custom_bb::custom_bb_save,
+            presto::custom_bb::custom_bb_status,
             commands::remove_approved_origin,
             commands::get_system_info,
             commands::get_verified_info,

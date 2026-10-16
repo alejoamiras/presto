@@ -9,6 +9,19 @@
   <script type="module" src="assets/settings.js"></script>
 </head>
 <body class="scrollable">
+  <!-- Shown while a custom bb is set, so it is the first thing Settings says; Stop using is always
+       one click away. -->
+  <div id="custom-bb-banner" class="custom-bb-banner" role="status" hidden>
+    <span class="custom-bb-banner-text">
+      <span id="custom-bb-banner-title" class="custom-bb-banner-title"></span>
+      <span id="custom-bb-banner-body"></span>
+    </span>
+    <span class="custom-bb-banner-actions">
+      <button type="button" id="custom-bb-banner-review" class="btn btn-secondary btn-small" disabled hidden>Review…</button>
+      <button type="button" id="custom-bb-banner-stop" class="btn btn-secondary btn-small" disabled>Stop using</button>
+    </span>
+  </div>
+
   <div class="section">
     <h2>Approved Sites</h2>
     <!-- The list and its empty state share ONE bordered well, so an empty list reads as an empty
@@ -154,6 +167,64 @@
       </div>
     </div>
     <p id="channel-result" class="row-sub channel-result" role="status"></p>
+    <!-- Buttons ship disabled until custom_bb_status answers. -->
+    <div id="custom-bb" class="custom-bb">
+      <div class="custom-bb-head">
+        <span class="row-text">
+          <span>Custom bb</span>
+          <span id="custom-bb-summary" class="row-sub"></span>
+        </span>
+        <span id="custom-bb-chip" class="custom-bb-chip" hidden></span>
+      </div>
+      <dl id="custom-bb-facts" class="custom-bb-facts" hidden></dl>
+      <div id="custom-bb-fix" class="custom-bb-code" hidden>
+        <code id="custom-bb-fix-command"></code>
+        <button type="button" id="custom-bb-copy" class="btn btn-secondary btn-small">Copy</button>
+      </div>
+      <div class="confirm-actions">
+        <button type="button" id="custom-bb-trust" class="btn btn-primary btn-small" disabled hidden>Trust new build…</button>
+        <button type="button" id="custom-bb-choose" class="btn btn-secondary btn-small" disabled>Choose file…</button>
+        <button type="button" id="custom-bb-stop" class="btn btn-danger" disabled hidden>Stop using</button>
+      </div>
+      <p id="custom-bb-stopped" class="row-sub custom-bb-passed" role="status" hidden>Stopped. Every proof uses the official bb again.</p>
+
+      <div id="custom-bb-review" class="custom-bb-panel" hidden>
+        <span class="row-text">
+          <span class="custom-bb-title">Review this bb before Presto runs it</span>
+          <span class="row-sub">Presto read this file. It has not run it.</span>
+        </span>
+        <dl id="custom-bb-review-facts" class="custom-bb-facts"></dl>
+        <ul id="custom-bb-warnings" class="custom-bb-warnings" hidden></ul>
+        <p class="custom-bb-risk"><b>This program runs with your account's full access.</b> It sees the private inputs of every proof it makes. Presto cannot sandbox it or tell who built it.</p>
+        <label class="custom-bb-consent">
+          <input type="checkbox" id="custom-bb-tick" />
+          <span>I built this file myself, or I fully trust the person who did.</span>
+        </label>
+        <label for="custom-bb-label" class="custom-bb-field-label">Use it when a site asks for bb version</label>
+        <div class="custom-bb-field">
+          <input type="text" id="custom-bb-label" placeholder="for example 6.0.0-dev.1" spellcheck="false" autocomplete="off" autocapitalize="off" maxlength="64" />
+          <button type="button" id="custom-bb-test" class="btn btn-secondary btn-small" disabled>Test run</button>
+        </div>
+        <p id="custom-bb-test-result" class="row-sub" role="status"></p>
+        <p class="row-sub">Test run starts the file once with --version, after you tick the box. No proof data goes to it. Every approved site that asks for this version gets your build. A version no release has, such as 6.0.0-dev.1, keeps ordinary dApps from reaching it by accident; an approved site can still ask for it on purpose.</p>
+        <div class="confirm-actions">
+          <button type="button" id="custom-bb-cancel" class="btn btn-secondary btn-small">Cancel</button>
+          <button type="button" id="custom-bb-use" class="btn btn-primary btn-small" disabled>Use this bb</button>
+        </div>
+      </div>
+
+      <div id="custom-bb-refused" class="custom-bb-panel refused" hidden>
+        <span class="custom-bb-title">Presto can't use this file</span>
+        <p id="custom-bb-refused-message" class="row-sub"></p>
+        <div id="custom-bb-refused-fix" class="custom-bb-code" hidden>
+          <code id="custom-bb-refused-command"></code>
+          <button type="button" id="custom-bb-refused-copy" class="btn btn-secondary btn-small">Copy</button>
+        </div>
+        <div class="confirm-actions">
+          <button type="button" id="custom-bb-choose-again" class="btn btn-secondary btn-small" disabled>Choose another file…</button>
+        </div>
+      </div>
+    </div>
   </div>
 </body>
 </html>

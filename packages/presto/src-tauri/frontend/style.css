@@ -733,7 +733,7 @@ h2 {
 }
 
 /* F-014: the content (incl. the full untruncated origin) scrolls here; the buttons footer stays OUTSIDE it
-   so Allow/Deny are always reachable inside the fixed 400×300 window no matter how long the origin is.
+   so Allow/Deny are always reachable inside the fixed 400×360 window no matter how long the origin is.
    `justify-content: safe center` centers when it fits but falls back to flex-start when the content
    OVERFLOWS — otherwise centering pushes the block-START overflow (the scheme + leading labels) above the
    scrollport where non-negative scrollTop can never reach it, hiding the very identity we must show. */
@@ -980,5 +980,249 @@ h2 {
   margin: 10px 0 0;
   font-size: 12px;
   color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* The custom bb: a banner at the top of Settings while one is set (warning tone while in use, danger
+   tone while Presto refuses it), and its card under Developer. */
+.custom-bb-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 20px;
+  border: 1px solid var(--warning);
+  border-radius: 10px;
+  background: var(--warning-bg);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.custom-bb-banner[hidden] {
+  display: none;
+}
+
+.custom-bb-banner.refused {
+  border-color: var(--danger);
+  background: var(--surface);
+}
+
+.custom-bb-banner-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.custom-bb-banner-title {
+  font-weight: 700;
+  color: var(--warning);
+}
+
+.custom-bb-banner.refused .custom-bb-banner-title {
+  color: var(--danger);
+}
+
+.custom-bb-banner-actions {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.custom-bb {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 12px;
+  margin-top: 6px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.custom-bb.refused {
+  border-color: var(--danger);
+}
+
+.custom-bb-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.custom-bb-chip {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--go-text);
+}
+
+.custom-bb-chip.refused {
+  color: var(--danger);
+}
+
+.custom-bb-facts {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 4px 10px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.custom-bb-facts[hidden] {
+  display: none;
+}
+
+.custom-bb-facts dt {
+  color: var(--text-muted);
+}
+
+.custom-bb-facts dd,
+.custom-bb-code code {
+  margin: 0;
+  font-family: "Fragment Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.custom-bb-code {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.custom-bb-code[hidden] {
+  display: none;
+}
+
+.custom-bb-code code {
+  flex: 1;
+  min-width: 0;
+}
+
+.custom-bb-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.custom-bb-panel[hidden] {
+  display: none;
+}
+
+.custom-bb-title {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.custom-bb-panel.refused .custom-bb-title {
+  color: var(--danger);
+}
+
+.custom-bb-warnings {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--warning);
+}
+
+.custom-bb-risk {
+  padding: 8px 10px;
+  border: 1px solid var(--danger);
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.custom-bb-risk b {
+  color: var(--danger);
+}
+
+.custom-bb-consent {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.custom-bb-consent input {
+  margin-top: 2px;
+  accent-color: var(--accent);
+}
+
+.custom-bb-field-label {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.custom-bb-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.custom-bb-field input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  font-family: "Fragment Mono", ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--text);
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.custom-bb-field input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.custom-bb-field input:disabled {
+  opacity: 0.5;
+}
+
+.custom-bb-passed,
+#custom-bb-test-result.passed {
+  color: var(--go-text);
+}
+
+#custom-bb-test-result.failed {
+  color: var(--danger);
+}
+
+#custom-bb-test-result:empty {
+  display: none;
+}
+
+/* The authorization popup's line while the request's version routes to the custom bb. */
+.popup-warning {
+  margin: 10px 0 0;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 12px;
   line-height: 1.4;
 }

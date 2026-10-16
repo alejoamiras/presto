@@ -7,6 +7,7 @@ const params = new URLSearchParams(window.location.search);
 const requestId = params.get("requestId") || "";
 
 const originEl = document.getElementById("origin");
+const customLine = document.getElementById("custom-bb-line");
 const allowBtn = document.getElementById("allow");
 const denyBtn = document.getElementById("deny");
 
@@ -64,6 +65,12 @@ async function refreshPending() {
   serverOrigin = info.origin;
   originEl.textContent = info.origin;
   renderVerifiedBadge(info.origin);
+  // Re-read on every poll, so the line follows a stop or a new pin in Settings.
+  const label = info.custom_label;
+  customLine.hidden = !label;
+  customLine.textContent = label
+    ? `This site asks for bb ${label}. While your custom bb answers that version, it runs these proofs, not the official one.`
+    : "";
   // B2 (F7): re-arm the click-steal guard on the queued→active EDGE — the instant this popup's controls
   // become actionable — not merely on a native focus event (which may have fired a poll-interval ago, or
   // not at all when set_focus() doesn't dispatch a JS focus event on this platform). Without this, a queued
