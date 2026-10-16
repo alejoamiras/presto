@@ -759,7 +759,7 @@ fn build_desktop_state(
         app: app.handle().clone(),
         dev_mode,
         bundled_version: bundled_version.clone(),
-        status: status.clone(),
+        status,
         check_updates,
         tray: tray.clone(),
         text: Arc::new(parking_lot::Mutex::new(tray::TrayText {
@@ -770,7 +770,7 @@ fn build_desktop_state(
     let on_versions_changed = versions_changed_callback(menu.clone());
     let on_custom_bb_changed = custom_bb_changed_callback(menu.clone(), config_state.clone());
     let show_auth_popup = auth_popup_callback(app.handle().clone(), auth_manager.clone());
-    let on_status = status_callback(status, menu, is_animating.clone());
+    let on_status = status_callback(menu, is_animating.clone());
 
     let core = HeadlessState::headless(
         env!("CARGO_PKG_VERSION"),
@@ -788,9 +788,8 @@ fn versions_changed_callback(menu: tray::TrayMenu) -> presto::server::VersionsCh
         if !menu.dev_mode {
             return;
         }
-        match menu.rebuild() {
-            Ok(()) => tracing::info!("Tray menu rebuilt (versions changed)"),
-            Err(error) => tracing::warn!("Failed to rebuild tray menu: {error}"),
+        if let Err(error) = menu.rebuild() {
+            tracing::warn!("Failed to post the tray rebuild (versions changed): {error}");
         }
     })
 }
@@ -833,23 +832,14 @@ fn auth_popup_callback(
 }
 
 fn status_callback(
-    status_item: tauri::menu::MenuItem<tauri::Wry>,
     menu: tray::TrayMenu,
     is_animating: Arc<AtomicBool>,
 ) -> presto::server::StatusCallback {
     Arc::new(move |status: ServerStatus| {
         let text = status.display_text();
         tracing::info!(text, "on_status callback fired");
-        if let Err(error) = status_item.set_text(text) {
-            tracing::error!("set_text failed: {error}");
-        }
-        let tooltip = {
-            let mut shown = menu.text.lock();
-            shown.status = text;
-            shown.tooltip()
-        };
-        if let Err(error) = menu.tray.set_tooltip(Some(tooltip)) {
-            tracing::error!("set_tooltip failed: {error}");
+        if let Err(error) = menu.set_status(text) {
+            tracing::error!("Failed to post the tray status: {error}");
         }
         is_animating.store(status.is_busy(), Ordering::Release);
     })

@@ -200,34 +200,69 @@ pub struct TrayMenu {
     pub text: Arc<parking_lot::Mutex<TrayText>>,
 }
 
+/// Every read of `text` that ends in a menu or tooltip setter runs on the main thread, so changes
+/// land in the order they were posted and a slower rebuild cannot publish an older line over a
+/// newer one. No lock is held across a setter.
 impl TrayMenu {
-    pub fn rebuild(&self) -> Result<(), Box<dyn std::error::Error>> {
+    /// Posts a rebuild with the lines as they are when it runs.
+    pub fn rebuild(&self) -> tauri::Result<()> {
+        let menu = self.clone();
+        self.app.run_on_main_thread(move || menu.publish_menu())
+    }
+
+    /// Posts a new custom bb summary; an unchanged one rebuilds nothing.
+    pub fn set_custom(&self, custom: TraySummary) -> tauri::Result<()> {
+        let menu = self.clone();
+        self.app.run_on_main_thread(move || {
+            let tooltip = {
+                let mut text = menu.text.lock();
+                if text.custom == custom {
+                    return;
+                }
+                text.custom = custom;
+                text.tooltip()
+            };
+            menu.publish_menu();
+            menu.publish_tooltip(tooltip);
+        })
+    }
+
+    /// Posts the server status line and its tooltip.
+    pub fn set_status(&self, status: &'static str) -> tauri::Result<()> {
+        let menu = self.clone();
+        self.app.run_on_main_thread(move || {
+            if let Err(error) = menu.status.set_text(status) {
+                tracing::error!("set_text failed: {error}");
+            }
+            let tooltip = {
+                let mut text = menu.text.lock();
+                text.status = status;
+                text.tooltip()
+            };
+            menu.publish_tooltip(tooltip);
+        })
+    }
+
+    fn publish_menu(&self) {
         let line = self.text.lock().custom.line.clone();
-        let menu = build_tray_menu(
+        let built = build_tray_menu(
             &self.app,
             self.dev_mode,
             &self.bundled_version,
             &self.status,
             self.check_updates.as_ref(),
             line.as_deref(),
-        )?;
-        self.tray.set_menu(Some(menu))?;
-        Ok(())
+        );
+        match built.and_then(|menu| self.tray.set_menu(Some(menu)).map_err(Into::into)) {
+            Ok(()) => tracing::info!("Tray menu rebuilt"),
+            Err(error) => tracing::warn!("Failed to rebuild tray menu: {error}"),
+        }
     }
 
-    /// Applies a new custom bb summary; an unchanged one rebuilds nothing.
-    pub fn set_custom(&self, custom: TraySummary) -> Result<(), Box<dyn std::error::Error>> {
-        let tooltip = {
-            let mut text = self.text.lock();
-            if text.custom == custom {
-                return Ok(());
-            }
-            text.custom = custom;
-            text.tooltip()
-        };
-        self.rebuild()?;
-        self.tray.set_tooltip(Some(tooltip))?;
-        Ok(())
+    fn publish_tooltip(&self, tooltip: String) {
+        if let Err(error) = self.tray.set_tooltip(Some(tooltip)) {
+            tracing::error!("set_tooltip failed: {error}");
+        }
     }
 }
 

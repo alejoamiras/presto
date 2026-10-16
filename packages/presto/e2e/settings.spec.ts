@@ -1469,6 +1469,43 @@ test("a changed file, an override and a refused pick each say why and offer the 
   await expect(page.locator("#custom-bb-review")).toBeHidden();
 });
 
+test("a review that answers after developer mode went off stays closed", async ({ page }) => {
+  await openCustomBb(page);
+  await page.evaluate(() => {
+    const w = window as any;
+    w.__TAURI_MOCK__.setHandler(
+      "custom_bb_review",
+      () =>
+        new Promise((resolve) => {
+          w.__answerReview = resolve;
+        }),
+    );
+  });
+  await page.getByRole("button", { name: "Choose file…" }).click();
+  await expect(page.locator("#custom-bb-choose")).toBeDisabled();
+
+  await page.locator("#advanced .toggle").click();
+  await expect(page.getByRole("switch", { name: "Developer mode" })).not.toBeChecked();
+  await page.evaluate(
+    ({ path, sha }) =>
+      (window as any).__answerReview({
+        outcome: "inspected",
+        path,
+        sha256: sha,
+        size: 1,
+        warnings: [],
+      }),
+    { path: BB_PATH, sha: BB_SHA },
+  );
+  await expect(page.locator("#custom-bb-choose")).toBeEnabled();
+  await expect(page.locator("#custom-bb-review")).toBeHidden();
+
+  // Back on, the card starts clean: the stale review never shows.
+  await page.locator("#advanced .toggle").click();
+  await expect(page.locator("#developer-section")).toBeVisible();
+  await expect(page.locator("#custom-bb-review")).toBeHidden();
+});
+
 test("stop using clears the banner and says every proof is official again", async ({ page }) => {
   await openCustomBb(page, BB_IN_USE);
   const banner = page.locator("#custom-bb-banner");

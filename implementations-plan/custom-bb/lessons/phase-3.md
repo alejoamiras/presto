@@ -1,11 +1,8 @@
 # Phase 3: desktop backend (picker, commands, tray, popup DTO)
 
-## Checkpoint (2026-10-16, parked for a director handover)
+## Arc 2 (2026-10-16)
 
-- **Branch:** `custom-bb-desktop`, rebased onto `main` `eb4b751` (#143, the arc 1 squash). Not
-  pushed; no PR yet.
-- **Done in arc 2:** P3, P4 and P5 are each committed with their gates green (`plan.md` marks them
-  ✓; the details are in `lessons/phase-3.md` to `phase-5.md`).
+- **Branch:** `custom-bb-desktop`, rebased onto `main` `eb4b751` (#143, the arc 1 squash).
   - `df9fd6b` P3: the four Settings-only commands, the picker, the tray line, the popup DTO.
   - `e3114ce`: `plan.md` marks P1 and P2 landed at `eb4b751`.
   - `d8ecf59` P4: the Settings banner and card, the popup line, the popup at 400×360.
@@ -21,23 +18,26 @@
   - `=2.7.3`, with `tauri-plugin-fs` held at 2.5.2 and `rfd` 0.16.0.
   - Each `.crate` is identical to its upstream tag: 39/39, 94/94 and 54/54 files.
   - The transitive list is below.
-- **Codex sessions** (resume with `resume-codex.sh <id> <followup> <dir> high`):
-  - Arc 1: `01a14169-ee8f-7dc0-9836-f9256232afe2`, three rounds, converged; its directory is not
-    recorded.
-  - Arc 2, round 1: thread `01a1457a-9c96-7853-a9b6-4bed1f2a1bb6`, directory `/tmp/codex-ke1qnKot`
-    (gpt-6.1-sol, high, read-only).
-    - It started 16:10 UTC and was still running when parked.
-    - Its prompt is `prompt.md` in that directory, and its answer lands in `response.md` there.
-    - If there is no `response.md`, the run died with this session. Start round 1 again from that
-      `prompt.md` with `run-codex.sh <prompt> <worktree> high read-only gpt-6.1-sol`.
-- **Exact next step:** read the arc 2 round-1 response and triage it. Fix, gate, and resume the
-  same session, at most 3 rounds.
-  - Then send the director the arc 2 boundary report: head SHA, Codex rounds and verdicts, gates,
-    deviations (none).
-  - On convergence, push `custom-bb-desktop` and open its PR against `main`. The PR body states the
-    WebDriver wall-clock: about 65 s before this arc and 77 s after it locally, with T13 at 11.7 s.
 - **Uncommitted on purpose:** `implementations-plan/custom-bb/ux/`, the local UX mockups, which are
   never committed.
+
+## Arc 2 Codex fix loop
+
+The first round-1 thread (`01a1457a-9c96-7853-a9b6-4bed1f2a1bb6`) died with the session that
+started it, before answering. Round 1 ran again from the same prompt.
+
+**Round 1** (`gpt-6.1-sol`, high, session `01a14584-82c4-7750-8f23-e24f0f328390`): **reject**,
+findings 1–2 blocking. Each was traced against the code; all five are accepted and fixed.
+
+| # | Severity | Claim | Disposition |
+|---|---|---|---|
+| 1 | blocking | `custom_bb_save` snapshots the candidate before the rehash and never looks at the slot again, so developer mode going off and on, or a new review, during the rehash still lets the snapshot's pin through. | Fixed: the pin is written by `commit`, which checks the slot under the config lock (same tested candidate, same bytes) and clears it with the write. A review that answers after developer mode went off stores nothing (read the mode first, then take the slot: a save holds the config lock while it takes the slot, so the reverse order would deadlock). Test: `a_save_commits_only_the_candidate_still_under_review`. |
+| 2 | blocking | A test run started with developer mode on spawns the file after the mode went off during the rehash. | Fixed: core's `test_run` takes an `admit` closure asked after the rehash and right before the spawn; the desktop's checks developer mode and that the slot still holds these bytes. `Withdrawn` otherwise, and the file never runs (core test extended). |
+| 3 | should-fix | `closeCustomBbPanels` hides the review, but a `custom_bb_review` still in flight reopens it when it answers, and developer mode back on shows the stale review. | Fixed: a `reviews` ticket, bumped when the panels close; an older review's answer is dropped. Playwright test added, and it fails without the bump. |
+| 4 | should-fix | A versions rebuild reads the custom line, builds, then publishes after a newer custom summary has, so the tray regresses to the old line; tooltips can publish out of order the same way. | Fixed: `TrayMenu` posts every read-build-publish sequence to the main thread (`rebuild`, `set_custom`, and the status line through the new `set_status`), so they apply in posting order with no lock held across a setter. |
+| 5 | should-fix | T13's last assertion accepts any response without `x-presto-bb`, an error included, and the unreleased label sends the app through a real download attempt. | Fixed: the label is the one the test run suggests, which is the bundled version since the file is the sidecar, so the custom route outranks the bundled shortcut while pinned and, after the stop, the same request must be a 200 official proof of the fixture's bytes with no header. |
+
+Codex also confirmed, read-only: the ACL grants, the popup size pins and the contrast pairs.
 
 ## Supply chain: `tauri-plugin-dialog` (2026-10-16)
 

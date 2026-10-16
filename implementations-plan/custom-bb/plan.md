@@ -432,10 +432,11 @@ PR's WebDriver lanes.
 
 1. **T13** (`e2e-webdriver/custom-bb.spec.ts`, with its `wdio.conf.ts` entry and hook export): one
    scenario on three OSes. Turn developer mode on and "pick" the shipped sidecar through the hook;
-   test-run and save it as `6.0.0-dev.1`; from an unapproved origin, POST the committed Noir fixture
-   to `/prove/ultra-honk` with that version; assert the popup line, then allow; assert 200,
-   `x-presto-bb: custom` and proof bytes equal to the fixture; stop, and check a repeat request has
-   no header. **Only it proves** real IPC, config, popup, route and exact-path spawn on each OS,
+   test-run and save it under the label the run suggests (the bundled version, since the file is
+   the sidecar); from an unapproved origin, POST the committed Noir fixture to `/prove/ultra-honk`
+   with that version; assert the popup line, then allow; assert 200, `x-presto-bb: custom` and
+   proof bytes equal to the fixture; stop, and check a repeat request is a 200 official proof of the
+   same bytes with no header. **Only it proves** real IPC, config, popup, route and exact-path spawn on each OS,
    Windows `bb.exe` quirks included. **Runtime:** estimated 25 s per OS; measure it.
 2. Docs: `docs/SECURITY_MODEL.md` adds decision 8 (one user-chosen, hash-pinned file for exactly one
    label; D7; local callers without `Origin`) and amends decision 1's "nothing else" and "Not

@@ -27,14 +27,13 @@ import {
 } from "./helpers.ts";
 
 const ORIGIN = "https://custom-bb.example.com";
-const LABEL = "6.0.0-dev.1";
 const PROVE_URL = "http://127.0.0.1:59833/prove/ultra-honk";
 const REPO_ROOT = path.join(import.meta.dirname, "..", "..", "..");
 
-function post(job: Record<string, string>): Promise<Response> {
+function post(job: Record<string, string>, label: string): Promise<Response> {
   return fetch(PROVE_URL, {
     method: "POST",
-    headers: { "Content-Type": "application/json", Origin: ORIGIN, "x-aztec-version": LABEL },
+    headers: { "Content-Type": "application/json", Origin: ORIGIN, "x-aztec-version": label },
     body: JSON.stringify(job),
   });
 }
@@ -119,14 +118,16 @@ describe("Custom bb", () => {
       (text) => text.startsWith("✓ Test run passed"),
       "the test run never passed",
     );
-    await browser.execute((label: string) => {
-      const input = document.getElementById("custom-bb-label") as HTMLInputElement;
-      input.value = label;
-      input.dispatchEvent(new Event("input"));
-    }, LABEL);
+    // The staged file is the sidecar, so the suggested label is the bundled version: the custom
+    // route then outranks the bundled shortcut, and after the stop the same request is an official
+    // proof of the same bytes, which is what the last assertion needs.
+    const label: string = await browser.execute(
+      () => (document.getElementById("custom-bb-label") as HTMLInputElement).value,
+    );
+    expect(label).toMatch(/^\d+\.\d+\.\d+/);
     await enabled("custom-bb-use");
     await click("custom-bb-use");
-    await browser.waitUntil(async () => pinOnDisk()?.label === LABEL, {
+    await browser.waitUntil(async () => pinOnDisk()?.label === label, {
       timeout: 10_000,
       timeoutMsg: "the pin never reached config.json",
     });
@@ -138,7 +139,7 @@ describe("Custom bb", () => {
     );
 
     const handlesBefore = await browser.getWindowHandles();
-    const pending = post(buildJob(fixture, true));
+    const pending = post(buildJob(fixture, true), label);
     const popup = await waitForNewWindow(handlesBefore);
     expect(popup).not.toBeNull();
     await browser.switchToWindow(popup!);
@@ -146,7 +147,7 @@ describe("Custom bb", () => {
     expect(
       await browser.execute(() => document.getElementById("custom-bb-line")?.textContent),
     ).toBe(
-      `This site asks for bb ${LABEL}. While your custom bb answers that version, it runs these proofs, not the official one.`,
+      `This site asks for bb ${label}. While your custom bb answers that version, it runs these proofs, not the official one.`,
     );
     await decidePopup(popup!, "#allow");
 
@@ -163,9 +164,11 @@ describe("Custom bb", () => {
       timeoutMsg: "the pin was never removed from config.json",
     });
 
-    // With no pin the label is an ordinary unreleased version again, which the custom bb never sees.
-    const repeat = await post(buildJob(fixture, true));
-    await repeat.text();
+    // With no pin the same request is an official proof: the bundled bb answers, with no header.
+    const repeat = await post(buildJob(fixture, true), label);
+    const repeated = await repeat.text();
+    if (repeat.status !== 200) throw new Error(`prove returned ${repeat.status}: ${repeated}`);
     expect(repeat.headers.get("x-presto-bb")).toBeNull();
+    expect(checkOutputs(JSON.parse(repeated) as ProveResponse, fixture, false)).toEqual([]);
   });
 });

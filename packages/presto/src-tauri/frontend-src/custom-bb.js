@@ -103,6 +103,8 @@ let candidate = null;
 let tested = false;
 let busy = false;
 let loads = 0;
+// Bumped when the panels close, so a review that answers afterwards does not reopen them.
+let reviews = 0;
 let stoppedTimer = null;
 
 function short(sha256) {
@@ -208,6 +210,7 @@ export async function loadCustomBb() {
 
 /** Developer mode went off: Rust dropped the candidate, so the open panels go too. */
 export function closeCustomBbPanels() {
+  reviews++;
   closeReview();
   refusedPanel.hidden = true;
   render();
@@ -277,8 +280,9 @@ async function act(anchor, work) {
 
 function reviewFrom(source, anchor) {
   act(anchor, async () => {
+    const mine = reviews;
     const review = await invoke("custom_bb_review", { source });
-    if (review.outcome !== "cancelled") showReview(review);
+    if (mine === reviews && review.outcome !== "cancelled") showReview(review);
   });
 }
 

@@ -204,6 +204,8 @@ pub fn popup_label(
 }
 
 const NOT_REVIEWED: &str = "Review the file again: this is not the file Presto inspected.";
+const REVIEW_RESET: &str = "The review was reset before the save. Review the file again.";
+const DEVELOPER_MODE_OFF: &str = "Turn developer mode on first.";
 
 /// Everything a save requires: developer mode, no override, the reviewed and tested candidate with
 /// exactly these bytes, a label a request can select, and a fresh rehash that still matches.
@@ -217,7 +219,7 @@ pub(crate) fn check_save(
     now: i64,
 ) -> Result<CustomBbPin, String> {
     if !developer_on {
-        return Err("Turn developer mode on first.".to_string());
+        return Err(DEVELOPER_MODE_OFF.to_string());
     }
     if overridden {
         return Err(
@@ -253,7 +255,7 @@ fn require_developer_mode(config: &ConfigStore) -> Result<(), String> {
     if config.read().developer.enabled {
         Ok(())
     } else {
-        Err("Turn developer mode on first.".to_string())
+        Err(DEVELOPER_MODE_OFF.to_string())
     }
 }
 
@@ -342,7 +344,14 @@ pub async fn custom_bb_review(
     let inspected = tauri::async_runtime::spawn_blocking(move || core_bb::inspect(&path))
         .await
         .map_err(|e| e.to_string())?;
+    // Developer mode may have gone off while the picker was open: the candidate it cleared stays
+    // cleared. Read before taking the slot; a save holds the config lock while it takes the slot.
+    let developer_on = config.read().developer.enabled;
     let mut slot = candidate.lock();
+    if !developer_on {
+        *slot = None;
+        return Err(DEVELOPER_MODE_OFF.to_string());
+    }
     Ok(match inspected {
         Ok(inspection) => {
             let review = Review::Inspected {
@@ -387,7 +396,16 @@ pub async fn custom_bb_test_run(
         .map(|c| c.inspection.path.clone())
         .ok_or(NOT_REVIEWED)?;
     let permit = core_bb::take_test_permit(&shared.prove_semaphore).map_err(|e| e.to_string())?;
-    let run = match core_bb::test_run(&path, &sha256, permit).await {
+    // Asked after the rehash, right before the spawn: developer mode off or a replaced candidate
+    // in the meantime leaves the file unrun.
+    let admit = || {
+        config.read().developer.enabled
+            && candidate
+                .lock()
+                .as_ref()
+                .is_some_and(|c| c.inspection.sha256 == sha256)
+    };
+    let run = match core_bb::test_run(&path, &sha256, permit, admit).await {
         Ok(run) => run,
         Err(e) => {
             tracing::info!(%sha256, error = %e, "Custom bb test run failed");
@@ -441,13 +459,36 @@ pub async fn custom_bb_save(
         }
     };
     let stopping = pin.is_none();
-    try_mutate_config_at(&config, None, |cfg| {
-        cfg.set_custom_bb(pin).map_err(|e| e.to_string())
-    })?;
-    *candidate.lock() = None;
+    commit(&config, None, &candidate, pin)?;
     tracing::info!(stopping, "Custom bb saved");
     notify_changed(&app);
     Ok(())
+}
+
+/// Writes the pin, or `None` to stop. The candidate is checked again under the config lock, since
+/// developer mode can go off and on, or a new review replace it, while the rehash runs; a pin
+/// reaches the config only while the slot still holds its tested candidate. The slot is cleared
+/// with the write.
+pub(crate) fn commit(
+    config: &ConfigStore,
+    path: Option<&std::path::Path>,
+    candidate: &CandidateState,
+    pin: Option<CustomBbPin>,
+) -> Result<(), String> {
+    try_mutate_config_at(config, path, |cfg| {
+        let mut slot = candidate.lock();
+        if let Some(pin) = &pin {
+            let reviewed = slot
+                .as_ref()
+                .is_some_and(|c| c.tested && c.inspection.sha256 == pin.sha256);
+            if !reviewed {
+                return Err(REVIEW_RESET.to_string());
+            }
+        }
+        cfg.set_custom_bb(pin).map_err(|e| e.to_string())?;
+        *slot = None;
+        Ok(())
+    })
 }
 
 /// Off, in use, or why it is not used, with the activity. Rehashes the file.

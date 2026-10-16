@@ -152,6 +152,51 @@ fn the_popup_label_follows_the_first_version_and_the_effective_pin() {
     );
 }
 
+/// A pin reaches the config only while the slot still holds its tested candidate: developer mode
+/// going off and on, or a new review, between the rehash and the write refuses it. A stop needs
+/// nothing. Either write clears the slot.
+#[test]
+fn a_save_commits_only_the_candidate_still_under_review() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.json");
+    let store = ConfigStore::new(load_with_cap_from(&path));
+    save_developer_mode(&store, Some(&path), true).unwrap();
+    let slot: CandidateState = parking_lot::Mutex::new(None);
+    let pinned = pin("6.0.0-dev.1");
+
+    *slot.lock() = None;
+    assert_eq!(
+        commit(&store, Some(&path), &slot, Some(pinned.clone())),
+        Err(REVIEW_RESET.to_string()),
+        "the slot was cleared"
+    );
+    *slot.lock() = Some(candidate(false));
+    assert_eq!(
+        commit(&store, Some(&path), &slot, Some(pinned.clone())),
+        Err(REVIEW_RESET.to_string()),
+        "a new review replaced it"
+    );
+    let mut other = candidate(true);
+    other.inspection.sha256 = "ab".repeat(32);
+    *slot.lock() = Some(other);
+    assert_eq!(
+        commit(&store, Some(&path), &slot, Some(pinned.clone())),
+        Err(REVIEW_RESET.to_string()),
+        "another file is under review"
+    );
+    assert_eq!(store.effective_custom_bb(), None, "nothing was written");
+
+    *slot.lock() = Some(candidate(true));
+    commit(&store, Some(&path), &slot, Some(pinned.clone())).unwrap();
+    assert_eq!(store.effective_custom_bb(), Some(pinned));
+    assert!(slot.lock().is_none(), "the write consumed the candidate");
+
+    *slot.lock() = Some(candidate(false));
+    commit(&store, Some(&path), &slot, None).unwrap();
+    assert_eq!(store.effective_custom_bb(), None, "stopped");
+    assert!(slot.lock().is_none());
+}
+
 #[test]
 fn the_tray_names_the_label_in_use_and_otherwise_says_why_not() {
     assert_eq!(tray_summary(State::Off, None), TraySummary::default());

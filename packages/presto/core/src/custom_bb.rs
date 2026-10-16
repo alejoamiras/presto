@@ -458,18 +458,22 @@ pub fn take_test_permit(prove: &Arc<Semaphore>) -> Result<OwnedSemaphorePermit, 
 
 /// Rehash the file, then run `bb --version` once under proof containment with no witness, a 5 s
 /// limit and 4 KiB of output. This executes the file as the user: containment is not a sandbox.
+/// `admit` is asked right before the spawn, after the rehash: a `false` leaves the file unrun, for
+/// a candidate withdrawn while the hash was computed.
 pub async fn test_run(
     path: &Path,
     sha256: &str,
     permit: OwnedSemaphorePermit,
+    admit: impl FnOnce() -> bool,
 ) -> Result<TestRun, TestRunError> {
-    test_run_within(path, sha256, permit, TEST_RUN_TIMEOUT).await
+    test_run_within(path, sha256, permit, admit, TEST_RUN_TIMEOUT).await
 }
 
 async fn test_run_within(
     path: &Path,
     sha256: &str,
     _permit: OwnedSemaphorePermit,
+    admit: impl FnOnce() -> bool,
     timeout: Duration,
 ) -> Result<TestRun, TestRunError> {
     let (owned_path, owned_sha) = (path.to_path_buf(), sha256.to_string());
@@ -477,6 +481,9 @@ async fn test_run_within(
         .await
         .map_err(|e| TestRunError::Internal(e.to_string()))?
         .map_err(TestRunError::Unavailable)?;
+    if !admit() {
+        return Err(TestRunError::Unavailable(Unavailable::Withdrawn));
+    }
     let probe = crate::bb::run_version_probe(path, timeout, TEST_RUN_OUTPUT_CAP)
         .await
         .map_err(|e| match e {
