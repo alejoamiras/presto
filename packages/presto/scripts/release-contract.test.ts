@@ -115,7 +115,12 @@ test("both ephemeral updater smokes prepare their builds and signed feed through
     'bash packages/presto/scripts/sign-smoke-feed.sh "$feed" "$PWD" ${schema:+--schema "$schema"}',
   );
   expect(write).toContain('verify --feed "$feed" --pubkey "$pubkey" --smoke');
-  expect(shellFunction(script, "feed")).toContain("smoke-latest.json");
+  // The release signer's smoke feeds: v1 for every version, an rc-v1 twin for a prerelease.
+  expect(shellFunction(script, "feed").match(/write_feed .*$/gm)).toEqual([
+    'write_feed "$1" "$2" "$3" smoke-latest.json v1',
+    'write_feed "$1" "$2" "$3" smoke-latest-rc.json ;;',
+  ]);
+  expect(shellFunction(script, "feed")).toContain("    *-*) write_feed");
   // R's own feed in both schemas, a higher candidate, and a version no newer than N-1.
   expect(shellFunction(script, "rc_feeds").match(/(?<=^ {2})write_feed .*$/gm)).toEqual([
     'write_feed "$version" "$platform" "$dir" smoke-latest-rc.json',
@@ -230,7 +235,7 @@ for (const [file, { modes, foreign, scripts }] of Object.entries(MANUAL_SMOKE_MO
     };
     for (const mode of modes) expect(validate(mode, "9.9.9").ok).toBe(true);
     for (const version of ["1.2.3-rc.1", "0.0.2", "0.1.0"]) {
-      expect(validate(modes[0] ?? "", version).ok).toBe(true);
+      expect(validate("positive", version).ok).toBe(true);
     }
     for (const mode of ["", "bogus", `${modes[0]} x`, foreign]) {
       expect(validate(mode, "9.9.9").ok).toBe(false);
@@ -240,11 +245,14 @@ for (const [file, { modes, foreign, scripts }] of Object.entries(MANUAL_SMOKE_MO
     expect(smuggled.output).not.toContain("smuggled");
     const badVersions = ["01.2.3", "1.2.3-rc..1", "1.2.3-01", "1.2.3+build", "1.2", "0.0.0"];
     for (const version of [...badVersions, "0.0.1", "0.0.1-rc.1", '9.9.9"/e']) {
-      expect(validate(modes[0] ?? "", version).ok).toBe(false);
+      expect(validate("positive", version).ok).toBe(false);
     }
-    // R and its newer candidate are <n-version>-rc.1 and -rc.2, so N itself must be stable.
-    expect(validate("rc-lifecycle", "1.2.3-rc.1").ok).toBe(false);
-    expect(validate("rc-lifecycle", "1.2.3").ok).toBe(true);
+    // Only positive and negative serve a prerelease N on the rc channel; rc-lifecycle's R and newer
+    // candidate are <n-version>-rc.1 and -rc.2, so its N must be stable.
+    for (const mode of modes) {
+      const releaseLegs = mode === "positive" || mode === "negative";
+      expect([mode, validate(mode, "1.2.3-rc.1").ok]).toEqual([mode, releaseLegs]);
+    }
   });
 
   test(`${file}: its scripts accept exactly the modes it lets through`, () => {
@@ -261,9 +269,13 @@ for (const [file, { modes, foreign, scripts }] of Object.entries(MANUAL_SMOKE_MO
 
 // biome-ignore lint/complexity/noExcessiveLinesPerFunction: Suite registration is not production control flow.
 describe("release-presto.yml — B6 publish/promote contract", () => {
-  test("least privilege: `promote` is the only leg that writes the feed", () => {
+  test("least privilege: `promote` and `withdraw-rc` are the only legs that write the feed", () => {
     expect(WF.match(/wrangler kv key put/g)).toHaveLength(1);
-    expect(WF).toContain("wrangler kv key put latest.json --path feed/latest.json --remote");
+    expect(WF).toContain('wrangler kv key put "$FEED_KEY" --path "feed/$FEED_KEY" --remote');
+    const feedTokenJobs = Object.entries((Bun.YAML.parse(WF) as SmokeWorkflow).jobs)
+      .filter(([, job]) => JSON.stringify(job).includes("CLOUDFLARE_RELEASE_FEED_API_TOKEN"))
+      .map(([name]) => name);
+    expect(feedTokenJobs).toEqual(["release-auth-preflight", "promote", "withdraw-rc"]);
     expect(WF).toContain("contents: write     # gh release create --draft");
     // Publishing receives no Cloudflare credential; the explicit auth probe is isolated from it.
     expect(WF).toContain("if: $" + "{{ inputs.auth_probe }}");
@@ -494,12 +506,12 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     expect(PACKAGED.match(/packages\/playground\/test-results/g)?.length).toBe(2);
   });
 
-  test("promote pre-flight verifies a published, non-draft, non-prerelease stable with a signed feed", () => {
+  test("promote pre-flight verifies a published release, flagged as its version implies, with a signed feed", () => {
     // [mut: delete any pre-flight check → a half-built / draft / wrong-version / wrong-URL / wrong-platform
     //  feed could be promoted → fails]
     expect(WF).toContain(".isDraft == false");
-    expect(WF).toContain(".isPrerelease == false");
-    expect(WF).toContain("verify --feed feed/latest.json"); // production Ed25519 verifier over the feed
+    expect(WF).toContain("'.isPrerelease == $pre'");
+    expect(WF).toContain('verify --feed "feed/$FEED_KEY"'); // production Ed25519 verifier over the feed
     expect(WF).toContain("!= dispatched"); // feed version == dispatched version guard
     // EXACT 17-name asset set (not count+category — which padding could game).
     expect(WF).toContain("asset set != the expected 17");
@@ -704,7 +716,7 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
       WF.split("Flip the KV feed to this version (authoritative write)")[1]?.split(
         "# Enforce the live-feed check",
       )[0] ?? "";
-    expect(writeStep).toContain("wrangler kv key put latest.json --path feed/latest.json --remote");
+    expect(writeStep).toContain('wrangler kv key put "$FEED_KEY" --path "feed/$FEED_KEY" --remote');
     expect(writeStep).toContain("for attempt in 1 2 3 4 5; do");
     expect(writeStep).toContain("exit 1");
     expect(WF).not.toContain("aws s3 cp");
@@ -713,14 +725,14 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     // committed cannot skip public verification —
     // the live feed is the source of truth. [mut: revert to the implicit success() on `promote` → fails]
     expect(WF, "verify-live-feed runs on its own always() status function").toMatch(
-      /Verify live updater feed[\s\S]{0,1000}?if: \$\{\{ always\(\) && !cancelled\(\) && needs\.validate\.result == 'success' && needs\.promote\.outputs\.write_attempted == 'true'/,
+      /Verify live updater feed[\s\S]{0,1000}?if: \$\{\{ always\(\) && !cancelled\(\) && needs\.validate\.result == 'success' && \(needs\.promote\.outputs\.write_attempted == 'true' \|\| needs\.withdraw-rc\.outputs\.write_attempted == 'true'\)/,
     );
   });
 
   test("downstream wiring: verified feed → GitHub Latest → organic-GA source bump", () => {
     // [mut: point verify-live-feed back at `release`, move Latest before verification, or let rollback move
     // the badge/source version → fails]
-    expect(WF).toContain("needs: [validate, promote]");
+    expect(WF).toContain("needs: [validate, promote, withdraw-rc]");
     expect(WF).toContain("needs: [validate, verify-live-feed]");
     expect(WF).toContain("needs: [validate, mark-github-latest]");
     expect(WF).toContain("inputs.bump_source && !inputs.dry_run");
@@ -964,7 +976,7 @@ case $cmd in
   verify-artifact) echo "verify-artifact $(basename "$artifact") pubkey=$(cat "$pubkey")" >>"${calls}" ;;
   envelope)
     echo "envelope $(basename "$feed") schema=$schema" >>"${calls}"
-    jq '{schema: "presto-update-manifest-v1", version, pub_date, platforms}' "$feed" ;;
+    jq --arg schema "presto-update-manifest-$schema" '{schema: $schema, version, pub_date, platforms}' "$feed" ;;
   splice) jq --rawfile m "$envelope" --rawfile s "$sig" '. + {manifest: $m, manifest_sig: $s}' "$feed" ;;
   verify) echo "verify $(basename "$feed") $mode" >>"${calls}" ;;
 esac
@@ -1004,6 +1016,7 @@ esac
       file,
       feed: JSON.parse(fs.readFileSync(path.join(artifacts, file), "utf8")) as {
         platforms: Record<string, { url: string }>;
+        manifest: string;
       },
     }));
     const config = JSON.parse(fs.readFileSync(conf, "utf8")) as {
@@ -1023,57 +1036,74 @@ esac
 }
 
 describe("release signer: prerelease feeds", () => {
-  test("a prerelease still signs every payload with the production key, but emits no latest.json", () => {
+  const GITHUB_DOWNLOADS = "https://github.com/alejoamiras/presto/releases/download/";
+  const schemaOf = (manifest: string) => (JSON.parse(manifest) as { schema: string }).schema;
+  const urlsOf = (feed: { platforms: Record<string, { url: string }> }) =>
+    Object.values(feed.platforms).map((platform) => platform.url);
+
+  test("a prerelease signs every payload with the production key and an rc-v1 latest-rc.json", () => {
     const run = runReleaseSigner("9.9.9-rc.1");
     expect(run.code, run.stderr).toBe(0);
     for (const payload of run.payloads) {
       expect(run.calls).toContain(`sign ${payload} key=production-key`);
       expect(run.calls).toContain(`verify-artifact ${payload} pubkey=${run.pubkey}`);
     }
-    expect(run.manifests.map((m) => path.basename(m.file))).toEqual(
-      Array(4).fill("smoke-latest.json"),
-    );
-    // A prerelease's only v1 envelopes are its smoke twins, verified as smoke feeds.
-    expect(run.calls.filter((call) => call.startsWith("envelope "))).toEqual(
-      Array(4).fill("envelope smoke-latest.unsigned.json schema=v1"),
-    );
-    expect(run.calls.filter((call) => call.startsWith("verify "))).toEqual(
-      Array(4).fill("verify smoke-latest.json --smoke"),
-    );
-  });
-
-  test("no prerelease manifest names a download host anyone can serve", () => {
-    const urls = runReleaseSigner("9.9.9-rc.1").manifests.flatMap((m) =>
-      Object.values(m.feed.platforms).map((platform) => platform.url),
-    );
+    expect(run.manifests.map((m) => path.basename(m.file)).sort()).toEqual([
+      "latest-rc.json",
+      ...Array(4).fill("smoke-latest-rc.json"),
+      ...Array(4).fill("smoke-latest.json"),
+    ]);
+    expect(run.calls.filter((call) => call.startsWith("envelope "))).toEqual([
+      "envelope latest.unsigned.json schema=rc-v1",
+      ...Array(4)
+        .fill([
+          "envelope smoke-latest.unsigned.json schema=v1",
+          "envelope smoke-latest.unsigned.json schema=rc-v1",
+        ])
+        .flat(),
+    ]);
+    expect(run.calls.filter((call) => call.startsWith("verify "))).toEqual([
+      "verify latest-rc.json --channel rc",
+      ...Array(4)
+        .fill(["verify smoke-latest.json --smoke", "verify smoke-latest-rc.json --smoke"])
+        .flat(),
+    ]);
+    const production = run.manifests.find((m) => m.file === "latest-rc.json");
+    expect(schemaOf(production?.feed.manifest ?? "{}")).toBe("presto-update-manifest-rc-v1");
+    const urls = urlsOf(production?.feed ?? { platforms: {} });
     expect(urls).toHaveLength(4);
-    for (const url of urls) expect(url.startsWith(SMOKE_DOWNLOAD_PREFIX), url).toBe(true);
+    for (const url of urls) {
+      expect(url.startsWith(`${GITHUB_DOWNLOADS}presto-v9.9.9-rc.1/`), url).toBe(true);
+    }
   });
 
-  test("a stable release keeps its GitHub-URL latest.json and moves only its smoke feeds", () => {
-    const run = runReleaseSigner("9.9.9");
-    expect(run.code, run.stderr).toBe(0);
-    expect(run.manifests.map((m) => m.file)).toContain("latest.json");
-    expect(run.calls).toContain("envelope latest.unsigned.json schema=v1");
-    expect(run.calls).toContain("verify latest.json --channel stable");
-    for (const { file, feed } of run.manifests) {
-      const prefix =
-        file === "latest.json"
-          ? "https://github.com/alejoamiras/presto/releases/download/presto-v9.9.9/"
-          : SMOKE_DOWNLOAD_PREFIX;
-      for (const { url } of Object.values(feed.platforms)) {
-        expect(url.startsWith(prefix), url).toBe(true);
+  test("no v1 prerelease manifest names a download host anyone can serve", () => {
+    const v1 = runReleaseSigner("9.9.9-rc.1").manifests.filter(
+      (m) => schemaOf(m.feed.manifest) === "presto-update-manifest-v1",
+    );
+    expect(v1.map((m) => path.basename(m.file))).toEqual(Array(4).fill("smoke-latest.json"));
+    for (const m of v1) {
+      for (const url of urlsOf(m.feed)) {
+        expect(url.startsWith(SMOKE_DOWNLOAD_PREFIX), url).toBe(true);
       }
     }
   });
 
-  test("the production feed is uploaded only for a stable release", () => {
-    const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs["sign-updater-artifacts"]?.steps ?? [];
-    const upload = steps.find((step) => step.name === "Upload signed production update feed");
-    expect(upload?.if).toBe("needs.validate.outputs.is_prerelease == 'false'");
-    const payloadUploads = steps.filter((s) => s.name?.startsWith("Upload signed") && s !== upload);
-    expect(payloadUploads).toHaveLength(4);
-    for (const step of payloadUploads) expect(step.if, step.name).toBeUndefined();
+  test("a stable release keeps its GitHub-URL latest.json and v1 smoke feeds only", () => {
+    const run = runReleaseSigner("9.9.9");
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.manifests.map((m) => path.basename(m.file)).sort()).toEqual([
+      "latest.json",
+      ...Array(4).fill("smoke-latest.json"),
+    ]);
+    expect(run.calls).toContain("envelope latest.unsigned.json schema=v1");
+    expect(run.calls).toContain("verify latest.json --channel stable");
+    for (const { file, feed } of run.manifests) {
+      expect(schemaOf(feed.manifest), file).toBe("presto-update-manifest-v1");
+      const prefix =
+        file === "latest.json" ? `${GITHUB_DOWNLOADS}presto-v9.9.9/` : SMOKE_DOWNLOAD_PREFIX;
+      for (const url of urlsOf(feed)) expect(url.startsWith(prefix), url).toBe(true);
+    }
   });
 
   test("every smoke feed producer and consumer uses the reserved download host", () => {
@@ -1094,6 +1124,23 @@ describe("release signer: prerelease feeds", () => {
     expect(ephemeral.match(/https:\/\/[^/"\s]*\/releases\/download\//g)).toEqual([
       "https://$host/releases/download/",
     ]);
+  });
+});
+
+describe("release workflow: production feed artifact", () => {
+  test("the production feed is uploaded under its channel's name", () => {
+    const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs["sign-updater-artifacts"]?.steps ?? [];
+    const upload = steps.find((step) => step.name === "Upload signed production update feed");
+    const uploaded = upload?.with as { name?: string; path?: string } | undefined;
+    expect(upload?.if).toBeUndefined();
+    expect(uploaded?.name).toBe("signed-update-feed");
+    expect(uploaded?.path).toBe(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression
+      "artifacts/${{ needs.validate.outputs.is_prerelease == 'true' && 'latest-rc.json' || 'latest.json' }}",
+    );
+    const payloadUploads = steps.filter((s) => s.name?.startsWith("Upload signed") && s !== upload);
+    expect(payloadUploads).toHaveLength(4);
+    for (const step of payloadUploads) expect(step.if, step.name).toBeUndefined();
   });
 });
 
@@ -1134,9 +1181,17 @@ describe("update-manifest verify modes", () => {
     const ci = fs.readFileSync(path.join(REPO, ".github/workflows/presto.yml"), "utf8");
     expect(ci).toContain("bash packages/presto/scripts/release-signer-roundtrip.sh");
 
-    const releaseVerifies = WF.match(/^\s*verify --feed .*$/gm) ?? [];
-    expect(releaseVerifies).toHaveLength(2);
-    for (const call of releaseVerifies) expect(call).toMatch(/ --channel stable$/);
+    const liveFeed = fs.readFileSync(
+      path.join(REPO, ".github/scripts/verify-live-feed.sh"),
+      "utf8",
+    );
+    const releaseVerifies = [WF, liveFeed].flatMap(
+      (text) => text.match(/verify --feed .*$/gm) ?? [],
+    );
+    expect(releaseVerifies).toHaveLength(3);
+    for (const call of releaseVerifies) {
+      expect(call).toMatch(/ --channel (stable|"\$CHANNEL"|"\$channel")( \| tee verify\.out)?$/);
+    }
   });
 
   test("the smoke feed signer derives the schema from the version", () => {

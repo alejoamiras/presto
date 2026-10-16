@@ -68,8 +68,12 @@ test("feed promotion uses only the fresh namespace from Wrangler configuration",
   ).text();
   const namespace = /"id":\s*"([a-f0-9]{32})"/.exec(wrangler)?.[1];
   expect(namespace).toBeDefined();
-  const references = [...workflow.matchAll(/--namespace-id ([a-f0-9]{32})/g)].map(
-    (match) => match[1],
-  );
-  expect(references).toEqual([namespace, namespace]);
+  const references = [
+    ...workflow.matchAll(/(?:--namespace-id |NAMESPACE_ID: )([a-f0-9]{32})/g),
+  ].map((match) => match[1]);
+  expect(references).toEqual([namespace, namespace, namespace]);
+  const other = [...workflow.matchAll(/--namespace-id ("\$NAMESPACE_ID"|[^\s;)"]+)/g)]
+    .map((match) => match[1])
+    .filter((id) => id !== namespace && id !== '"$NAMESPACE_ID"');
+  expect(other).toEqual([]);
 });

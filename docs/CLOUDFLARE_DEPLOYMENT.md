@@ -13,7 +13,8 @@ The permanent domain is `presto.build` (Cloudflare Registrar), with native ident
 
 - Landing Custom Domain: `https://presto.build`.
 - Playground Custom Domain: `https://playground.presto.build`.
-- Feed route: `presto.build/releases/*`, serving `https://presto.build/releases/latest.json`.
+- Feed route: `presto.build/releases/*`, serving `https://presto.build/releases/latest.json`,
+  `latest-rc.json` (the release-candidate channel) and `verified-sites.json`.
 
 All three Workers retain `workers_dev: true` and `preview_urls: true` as fallback/preview endpoints.
 Deploy the landing Custom Domain before the feed route so the apex has a proxied DNS record.
@@ -79,8 +80,11 @@ on the custom domains, add Zone `presto.build` › DNS Edit. Install the Cloudfl
 **The real boundary is the account.** Workers Scripts Edit is account-wide, so any code that runs
 in a build (a preview branch included) could in the worst case redeploy any Worker in the account,
 the release-feed Worker among them. Clients verify the feed's Ed25519 signature, so the worst case
-on the updater path is a withheld feed or a replayed signed one, including the prerelease
-manifests that #122 records; on the landing it is altered download links. Builds come from pushes
+on the updater path is a withheld feed or a replayed signed one served on either route. An install
+on the stable channel refuses every candidate manifest, so it can be offered only a signed stable;
+one on the release-candidate channel can also be offered a signed candidate. An install from before
+the channel can also take the prerelease manifests that #122 records. On the landing the worst case
+is altered download links. Builds come from pushes
 to branches of this repository (the owner and the
 release-bot App). Cloudflare's docs say nothing about fork PRs; the cutover's fork check passed on
 2026-09-27 (a fork PR touching `scripts/` got no build, check or comment), so recheck it after any
@@ -126,7 +130,8 @@ would otherwise run a deleted script.
    records. Connect the landing Worker to Workers Builds first (its production build creates the
    apex Custom Domain), then deploy the release-feed route and connect the playground. Verify all
    three public endpoints immediately. Do not seed `latest.json` with test data or a prerelease:
-   promotion waits for a verified signed stable release.
+   promotion waits for a verified signed stable release. Leave `latest-rc.json` absent too; only a
+   candidate promote writes it, and until then that route serves the stable.
 
 The release-feed Worker deploy is manual and uses the protected `release-feed` GitHub environment.
 Feed content promotion remains a separate workflow operation with a KV-only credential.

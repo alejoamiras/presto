@@ -68,7 +68,8 @@ updater key, certificates, native identifier, or installation.
 
 Release sequence: SDK 5.2.0 to `testnet` with provenance; native `1.0.0-rc.1`; native
 `1.0.0` using RC1 as its actual same-key baseline; stable feed promotion; full-stack consent
-verification; then guarded SDK `latest` promotion. RCs must never enter the public feed.
+verification; then guarded SDK `latest` promotion. A release candidate never enters `latest.json`;
+it reaches only installs that opted in, through `latest-rc.json` ([Release candidates](#release-candidates)).
 
 ### Cloudflare deployment credentials
 
@@ -181,7 +182,7 @@ Desktop builds use fresh throwaway updater keys so a new binary can be produced 
 
 The packaged composed-proof legs replace the playground's workspace SDK with the packed tarball, build the production playground, and serve that bundle only on `127.0.0.1:5173`. They deliberately do not use Vite's development dependency optimizer. Playwright is exact-pinned identically in the desktop and playground packages, and every browser install resolves from the consuming workspace instead of allowing a root-context `bunx` to fetch a different release. Each composed-proof step has a 35-minute ceiling; a failure or cancellation retains the presto, node, preview-server, and Playwright trace output in the attempt-specific Actions artifact.
 
-A prerelease is public with `--latest=false` and omits `latest.json`; the signer does not produce one for it. A stable release includes `latest.json`, but publishing still does not write KV, alter what installed clients receive, or mark the release GitHub Latest. After a real forward GA promotion verifies the signed public feed, the workflow marks that release GitHub Latest. A rollback changes only the authoritative updater feed and deliberately leaves GitHub Latest on the newest GA.
+A prerelease is public with `--latest=false` and ships a signed `latest-rc.json` (schema `rc-v1`) in place of `latest.json`; only an install on the release-candidate channel admits it. Its smokes add a refusal leg: N-1 on the stable channel must refuse the candidate's feed before it joins the channel and installs N. A stable release includes `latest.json`, but publishing still does not write KV, alter what installed clients receive, or mark the release GitHub Latest. After a real forward GA promotion verifies the signed public feed, the workflow marks that release GitHub Latest. A rollback changes only the authoritative updater feed and deliberately leaves GitHub Latest on the newest GA.
 
 ### Expected assets
 
@@ -192,17 +193,17 @@ Every release has 16 binary assets:
 - Windows first-install `.exe` and updater `.nsis.zip` files;
 - four headless server `.tar.gz` files, each with a `.sha256` sidecar.
 
-A stable release has a seventeenth asset: signed `latest.json` containing exactly `darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`, and `windows-x86_64`.
+The seventeenth asset is the signed feed, `latest.json` for a stable and `latest-rc.json` for a prerelease, containing exactly `darwin-aarch64`, `darwin-x86_64`, `linux-x86_64`, and `windows-x86_64`. A prerelease published before the release-candidate channel has 16 assets and cannot be promoted.
 
 The Windows installer is deliberately not Authenticode-signed. SmartScreen therefore shows **Unknown publisher** on first install; users select **More info → Run anyway**. This is an accepted distribution limitation, not a release blocker. The updater payload is independently Ed25519-signed and verified before application.
 
 ### 2. Verify the published release
 
 - Confirm the workflow finalized the draft and the Git tag resolves to the dispatched commit.
-- Confirm the exact asset count: 16 for a prerelease, 17 for stable.
+- Confirm the exact asset count: 17.
 - Confirm macOS signature and notarization jobs passed.
-- Confirm macOS, Linux, and Windows updater smokes passed from every resolved baseline (the run summary names them), including negative tamper controls.
-- For a stable, download its `latest.json` asset and confirm its version, four platform entries, non-empty signatures, sizes, and exact release URLs.
+- Confirm macOS, Linux, and Windows updater smokes passed from every resolved baseline (the run summary names them), including negative tamper controls and, for a prerelease, the refusal leg.
+- Download its signed feed asset (`latest.json` or `latest-rc.json`) and confirm its version, four platform entries, non-empty signatures, sizes, and exact release URLs.
 - For Windows trust/certificate/HTTPS changes, complete the manual Windows composed-proof check in the [presto README](../packages/presto/README.md#windows-composed-proof--manual-pre-ga-check).
 
 Do not promote a release that needs unexplained retries or manual asset replacement. Published releases and tags are append-only; fix forward with a new version.
@@ -223,9 +224,69 @@ gh workflow run release-presto.yml --ref main \
   -f version=X.Y.Z -f mode=promote-only -f bump_source=true
 ```
 
-Promotion independently requires a published, non-draft, non-prerelease release with the exact 17 assets. It verifies the release's own signed manifest, exact platform URLs, and reachable payloads before uploading those same manifest bytes. The KV write is authoritative, and a separate job polls the public feed until it serves the requested version and passes cryptographic verification. Only then does an organic-GA promotion (`bump_source=true`) update GitHub's Latest badge. Rollback promotions leave that human-facing badge unchanged.
+Promotion independently requires a published, non-draft release with the exact 17 assets, whose prerelease flag matches its version. It verifies the release's own signed manifest, exact platform URLs, and reachable payloads before uploading those same manifest bytes. The version alone picks the KV key, and the write refuses a feed whose own version does not belong in it. The KV write is authoritative, and a separate job polls the public feed until it serves the requested version and passes cryptographic verification. Only then does an organic-GA promotion (`bump_source=true`) update GitHub's Latest badge. Rollback promotions leave that human-facing badge unchanged.
+
+A stable promote also settles `latest-rc.json`: a candidate above the new stable stays, and one at or below it, or one that does not parse as a candidate, is deleted. The read-back then checks that the release-candidate route serves the candidate it kept, or the new stable.
 
 Merge the source-version bump PR after an organic GA. Never request `bump_source` for a rollback.
+
+### Release candidates
+
+Installs that turned on Settings → Advanced → **Developer mode** and chose **Updates from: Release
+candidates** read `/releases/latest-rc.json`, then `/releases/latest.json` if that fails. Every
+other install reads `latest.json` alone, and refuses an `rc-v1` manifest even if one is served there.
+The feed Worker serves `latest-rc.json` only when its `X.Y.Z` is above the stable's, and the stable
+otherwise; a stable outranks every candidate of its own `X.Y.Z`. Either route answers 503 to a key
+that holds the wrong kind of release, and the app falls back from a 503.
+
+Promote a candidate the same way as a stable. It needs no `bump_source`, which a candidate refuses:
+
+```bash
+gh workflow run release-presto.yml --ref main \
+  -f version=X.Y.Z-rc.N -f mode=promote-only -f dry_run=true
+
+gh workflow run release-presto.yml --ref main \
+  -f version=X.Y.Z-rc.N -f mode=promote-only
+```
+
+The pre-flight also reads and verifies the live stable, and refuses unless the candidate's `X.Y.Z`
+is above it. The read-back requires `latest-rc.json` to serve the candidate and `latest.json` to
+still serve that stable.
+
+Withdraw the candidate, so opted-in installs fall back to the stable:
+
+```bash
+gh workflow run release-presto.yml --ref main \
+  -f version=X.Y.Z-rc.N -f mode=withdraw-rc -f dry_run=true
+
+gh workflow run release-presto.yml --ref main \
+  -f version=X.Y.Z-rc.N -f mode=withdraw-rc
+```
+
+`withdraw-rc` deletes KV `latest-rc.json` and nothing else. It refuses while the key holds a
+different candidate, does nothing when the key is absent, and with a warning deletes a key holding
+anything the Worker would not serve as a candidate. The read-back waits until both routes serve the same bytes.
+
+**A broken candidate:** withdraw it first. Installs that took it stay on it, since nothing serves a
+lower version as an update: tell testers to choose **Stable** before they reinstall the stable by
+hand, because a reinstall keeps the channel setting. Fix forward with the next `rc.N`.
+
+**The first live candidate.** The release after 1.2.0 is the first with the channel, so no installed
+stable can join yet.
+
+1. Publish its `rc.1`. Both release-smoke legs must pass on the pre-channel N-1.
+2. Promote it with `dry_run=true` and read the pre-flight log, then without. The read-back must show
+   `rc.1` on `latest-rc.json` and the stable unchanged on `latest.json`.
+3. On one machine per OS, install `rc.1` by hand, turn on Developer mode and choose Release
+   candidates. Expect "Up to date".
+4. Publish and promote `rc.2`. Expect its prompt, or with Auto-Update on its install at the next
+   automatic check, and Settings showing `rc.2`.
+5. Choose Stable. Confirm the leave text and that no update is offered. Turn Developer mode off and
+   confirm `config.json` holds the default `developer` block.
+6. On a machine that never opted in, use tray → **Check for Updates…**. Expect "Up to date".
+7. Drill `withdraw-rc`, `dry_run` first. The read-back must show the stable on both routes.
+8. After the GA's promote, confirm `latest-rc.json` serves the GA.
+9. When that GA ships, repeat steps 3–5 from it at the next release's `rc.1`.
 
 ### Presto rollback
 
@@ -240,6 +301,10 @@ gh workflow run release-presto.yml --ref main \
 ```
 
 This stops new updater uptake and moves landing-page downloads back. It does not downgrade clients that already updated. Fix forward under the next version.
+
+A rollback settles `latest-rc.json` as any stable promote does. A candidate for the version being
+rolled back was already deleted when that version was promoted, so opted-in installs fall back to the
+restored stable; a candidate above the release being withdrawn stays.
 
 The first stable release has no previous stable Presto release to restore. Do not use the RC or
 another product's feed as a rollback target. Likewise, the SDK bootstrap is not a functional
@@ -628,4 +693,4 @@ Configuration is stored in `~/.presto/config.json` on macOS/Linux and the equiva
 - **Port 59833 in use:** another presto instance or local process owns the HTTP listener. Inspect it before terminating anything.
 - **bb unavailable:** inspect the health payload and logs; versioned proof requests should trigger a verified on-demand download.
 - **bb verification failed:** preserve the logs. Runtime downloads fail closed when the upstream digest is missing or mismatched.
-- **Updater failure:** inspect the published release's `latest.json`, exact platform URL, payload size/signature, and application logs. Never work around it by hand-editing the live feed.
+- **Updater failure:** inspect the published release's `latest.json` (or `latest-rc.json` on the release-candidate channel), exact platform URL, payload size/signature, and application logs. Never work around it by hand-editing the live feed.

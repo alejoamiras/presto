@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Runs the production updater signer end to end with a throwaway key: the pinned Tauri CLI and the
 # built update-manifest tool, against a temporary repo root whose tauri.conf.json trusts that key.
-# A prerelease must yield signed payloads and smoke feeds but no latest.json; a stable one, all three.
-# Every feed it signs, and the committed candidate fixtures, then go through each `verify` mode.
+# A prerelease must yield signed payloads, an rc-v1 latest-rc.json and both smoke twins but no
+# latest.json; a stable one, its latest.json and v1 smoke feeds only. Every feed it signs, and the
+# committed candidate fixtures, then go through each `verify` mode.
 set -euo pipefail
 
 tool_arg="${1:?usage: release-signer-roundtrip.sh <update-manifest-tool>}"
@@ -78,6 +79,12 @@ for version in 9.9.9-rc.1 9.9.9; do
 
   [ "$(find "$art" -name '*.sig' | wc -l)" -eq 4 ] || fail "$version: expected four signed payloads"
   [ "$(find "$art" -name smoke-latest.json | wc -l)" -eq 4 ] || fail "$version: expected four smoke feeds"
+  case "$version" in
+    *-*) twins=4 ;;
+    *) twins=0 ;;
+  esac
+  [ "$(find "$art" -name smoke-latest-rc.json | wc -l)" -eq "$twins" ] \
+    || fail "$version: expected $twins rc-v1 smoke feeds"
   while IFS= read -r -d '' feed; do
     jq -e --arg prefix "$SMOKE_URL_PREFIX" '[.platforms[].url | startswith($prefix)] | all' "$feed" \
       >/dev/null || fail "$version: $feed downloads from a host other than updater-smoke.test"
@@ -89,9 +96,23 @@ for version in 9.9.9-rc.1 9.9.9; do
         ;;
     esac
   done < <(find "$art" -name smoke-latest.json -print0)
+  while IFS= read -r -d '' feed; do
+    jq -e --arg prefix "$SMOKE_URL_PREFIX" '[.platforms[].url | startswith($prefix)] | all' "$feed" \
+      >/dev/null || fail "$version: $feed downloads from a host other than updater-smoke.test"
+    expect_verify ok "$feed" "$work/key.pub" --smoke
+    expect_verify ok "$feed" "$work/key.pub" --channel rc
+    expect_verify CandidateOffChannel "$feed" "$work/key.pub" --channel stable
+  done < <(find "$art" -name smoke-latest-rc.json -print0)
   case "$version" in
-    *-*) [ ! -e "$art/latest.json" ] || fail "$version: a prerelease must not produce latest.json" ;;
+    *-*)
+      [ ! -e "$art/latest.json" ] || fail "$version: a prerelease must not produce latest.json"
+      [ -s "$art/latest-rc.json" ] || fail "$version: a prerelease must produce latest-rc.json"
+      expect_verify ok "$art/latest-rc.json" "$work/key.pub" --channel rc
+      expect_verify CandidateOffChannel "$art/latest-rc.json" "$work/key.pub" --channel stable
+      expect_verify "$OFF_SMOKE_HOST" "$art/latest-rc.json" "$work/key.pub" --smoke
+      ;;
     *)
+      [ ! -e "$art/latest-rc.json" ] || fail "$version: a stable release must not produce latest-rc.json"
       [ -s "$art/latest.json" ] || fail "$version: a stable release must produce latest.json"
       expect_verify ok "$art/latest.json" "$work/key.pub" --channel stable
       expect_verify ok "$art/latest.json" "$work/key.pub" --channel rc
