@@ -542,7 +542,7 @@ pub fn env_override_active() -> bool {
 }
 
 /// For messages: drops Windows' verbatim `\\?\` prefix that `canonicalize` adds.
-fn display_path(path: &Path) -> String {
+pub fn display_path(path: &Path) -> String {
     let shown = path.display().to_string();
     match shown.strip_prefix(r"\\?\") {
         Some(rest) if cfg!(windows) => rest.to_string(),

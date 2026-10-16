@@ -1,5 +1,6 @@
 //! Tray icon management: menu building, icon animation, and tray construction.
 
+use presto::custom_bb::TraySummary;
 use presto::versions;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -75,14 +76,17 @@ pub enum Entry {
     Settings,
     Separator,
     VersionInfo,
+    CustomBb,
     CheckUpdates,
     GitHub,
     Quit,
 }
 
 /// In production the status item exists unlisted, since `on_status` also sets the tooltip. "Show
-/// Logs" is in every build, as the only in-app path to a user's own logs.
-pub fn menu_layout(dev_mode: bool, has_check: bool) -> Vec<Entry> {
+/// Logs" is in every build, as the only in-app path to a user's own logs. The custom bb line sits
+/// under the version line it qualifies; Linux app indicators show no tooltip, so it is the only
+/// tray sign there.
+pub fn menu_layout(dev_mode: bool, has_check: bool, has_custom: bool) -> Vec<Entry> {
     let mut entries = Vec::new();
     if dev_mode {
         entries.extend([Entry::Status, Entry::Versions]);
@@ -93,6 +97,9 @@ pub fn menu_layout(dev_mode: bool, has_check: bool) -> Vec<Entry> {
         Entry::Separator,
         Entry::VersionInfo,
     ]);
+    if has_custom {
+        entries.push(Entry::CustomBb);
+    }
     if has_check {
         entries.push(Entry::CheckUpdates);
     }
@@ -100,14 +107,15 @@ pub fn menu_layout(dev_mode: bool, has_check: bool) -> Vec<Entry> {
     entries
 }
 
-/// Build the tray menu, at setup and on every dev-mode rebuild. `status` and `check_updates` are
-/// passed in because their text is updated after the build.
+/// Build the tray menu, at setup and on every rebuild. `status` and `check_updates` are passed in
+/// because their text is updated after the build.
 pub fn build_tray_menu(
     app: &AppHandle,
     dev_mode: bool,
     bundled_version: &str,
     status: &MenuItem<tauri::Wry>,
     check_updates: Option<&MenuItem<tauri::Wry>>,
+    custom_line: Option<&str>,
 ) -> Result<tauri::menu::Menu<tauri::Wry>, Box<dyn std::error::Error>> {
     let settings = MenuItemBuilder::with_id("settings", "Settings").build(app)?;
     let app_version = env!("CARGO_PKG_VERSION");
@@ -127,9 +135,16 @@ pub fn build_tray_menu(
     } else {
         None
     };
+    let custom = custom_line
+        .map(|line| {
+            MenuItemBuilder::with_id("custom_bb", line)
+                .enabled(false)
+                .build(app)
+        })
+        .transpose()?;
 
     let mut menu = MenuBuilder::new(app);
-    for entry in menu_layout(dev_mode, check_updates.is_some()) {
+    for entry in menu_layout(dev_mode, check_updates.is_some(), custom.is_some()) {
         menu = match entry {
             Entry::Status => menu.item(status),
             Entry::Versions => match &versions {
@@ -140,6 +155,10 @@ pub fn build_tray_menu(
             Entry::Settings => menu.item(&settings),
             Entry::Separator => menu.item(&separator),
             Entry::VersionInfo => menu.item(&version_text),
+            Entry::CustomBb => match &custom {
+                Some(item) => menu.item(item),
+                None => menu,
+            },
             Entry::CheckUpdates => match check_updates {
                 Some(item) => menu.item(item),
                 None => menu,
@@ -149,6 +168,67 @@ pub fn build_tray_menu(
         };
     }
     Ok(menu.build()?)
+}
+
+/// The tooltip's parts: the server status and the custom bb's suffix.
+#[derive(Debug, Clone)]
+pub struct TrayText {
+    pub status: &'static str,
+    pub custom: TraySummary,
+}
+
+impl TrayText {
+    pub fn tooltip(&self) -> String {
+        format!(
+            "{}{}",
+            self.status,
+            self.custom.tooltip_suffix.unwrap_or("")
+        )
+    }
+}
+
+/// What a menu rebuild needs, shared by the versions and custom bb rebuilds so each keeps the other's
+/// lines.
+#[derive(Clone)]
+pub struct TrayMenu {
+    pub app: AppHandle,
+    pub dev_mode: bool,
+    pub bundled_version: String,
+    pub status: MenuItem<tauri::Wry>,
+    pub check_updates: Option<MenuItem<tauri::Wry>>,
+    pub tray: TrayIcon,
+    pub text: Arc<parking_lot::Mutex<TrayText>>,
+}
+
+impl TrayMenu {
+    pub fn rebuild(&self) -> Result<(), Box<dyn std::error::Error>> {
+        let line = self.text.lock().custom.line.clone();
+        let menu = build_tray_menu(
+            &self.app,
+            self.dev_mode,
+            &self.bundled_version,
+            &self.status,
+            self.check_updates.as_ref(),
+            line.as_deref(),
+        )?;
+        self.tray.set_menu(Some(menu))?;
+        Ok(())
+    }
+
+    /// Applies a new custom bb summary; an unchanged one rebuilds nothing.
+    pub fn set_custom(&self, custom: TraySummary) -> Result<(), Box<dyn std::error::Error>> {
+        let tooltip = {
+            let mut text = self.text.lock();
+            if text.custom == custom {
+                return Ok(());
+            }
+            text.custom = custom;
+            text.tooltip()
+        };
+        self.rebuild()?;
+        self.tray.set_tooltip(Some(tooltip))?;
+        Ok(())
+    }
 }
 
 /// Build the tray icon with the idle icon and initial menu.
@@ -229,10 +309,10 @@ mod tests {
             GitHub,
             Quit,
         ];
-        assert_eq!(menu_layout(false, false), production);
-        assert_eq!(menu_layout(true, false), dev);
+        assert_eq!(menu_layout(false, false, false), production);
+        assert_eq!(menu_layout(true, false, false), dev);
         for dev_mode in [false, true] {
-            let layout = menu_layout(dev_mode, true);
+            let layout = menu_layout(dev_mode, true, false);
             let version = layout.iter().position(|e| *e == VersionInfo).unwrap();
             assert_eq!(
                 layout.get(version + 1),
@@ -241,7 +321,25 @@ mod tests {
             );
             let mut without = layout.clone();
             without.retain(|e| *e != CheckUpdates);
-            assert_eq!(without, menu_layout(dev_mode, false));
+            assert_eq!(without, menu_layout(dev_mode, false, false));
+        }
+    }
+
+    /// The custom bb line sits right below the version line, above the update item, and adding it
+    /// moves nothing else.
+    #[test]
+    fn the_custom_bb_line_sits_below_the_version_line() {
+        use Entry::*;
+        for (dev_mode, has_check) in [(false, false), (false, true), (true, false), (true, true)] {
+            let layout = menu_layout(dev_mode, has_check, true);
+            let version = layout.iter().position(|e| *e == VersionInfo).unwrap();
+            assert_eq!(layout.get(version + 1), Some(&CustomBb), "dev={dev_mode}");
+            if has_check {
+                assert_eq!(layout.get(version + 2), Some(&CheckUpdates));
+            }
+            let mut without = layout.clone();
+            without.retain(|e| *e != CustomBb);
+            assert_eq!(without, menu_layout(dev_mode, has_check, false));
         }
     }
 }

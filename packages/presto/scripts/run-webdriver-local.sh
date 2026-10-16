@@ -95,6 +95,11 @@ PRESTO_E2E_VERIFIED_SITES_PUBKEY="$(field pubkey)"$'\n'
 export PRESTO_E2E_VERIFIED_SITES_URL PRESTO_E2E_VERIFIED_SITES_PUBKEY
 # The app's WebDriver-only tray driver writes here, and tray-update.spec.ts reads it.
 export PRESTO_E2E_TRAY_REPORT="$RUN_DIR/tray-report.json"
+# The custom bb picker's answer: a copy of the sidecar in this run's private (0700) directory, since
+# Presto refuses a file another account could change.
+TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+install -m 755 "src-tauri/binaries/bb-$TRIPLE" "$RUN_DIR/bb"
+export PRESTO_E2E_CUSTOM_BB_PATH="$RUN_DIR/bb"
 
 # ── Launch the app in its own process group, logs captured ──
 APP_LOG="$PKG_DIR/../../$LOG_DIR/webdriver-app.log"

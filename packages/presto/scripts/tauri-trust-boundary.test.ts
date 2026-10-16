@@ -175,6 +175,10 @@ const WINDOW_MATRIX = {
     "set_theme",
     "set_developer_mode",
     "set_update_channel",
+    "custom_bb_review",
+    "custom_bb_test_run",
+    "custom_bb_save",
+    "custom_bb_status",
     "enable_https",
     "disable_https",
     "remove_https_trust",
@@ -233,6 +237,16 @@ describe("F-012 P3 — per-window capability ACL", () => {
     }
   });
 
+  // The dialog plugin is driven from Rust only: a `dialog:` grant would hand any page its picker.
+  test("no capability grants a dialog plugin permission", async () => {
+    for (const [name, cap] of Object.entries(await capFiles())) {
+      expect(
+        cap.permissions.filter((p: string) => p.startsWith("dialog:")),
+        name,
+      ).toEqual([]);
+    }
+  });
+
   test("the authorization popup canNOT reach any settings mutator (least-privilege drift guard)", async () => {
     const files = await capFiles();
     const authorize = Object.values(files).find((c) => c.identifier === "authorize");
@@ -275,7 +289,7 @@ describe("F-012 P3 — per-window capability ACL", () => {
 
     expect(buildCommands).toEqual(handlers); // declared surface == registered surface
     expect(grantedSorted).toEqual(handlers); // every registered command is granted to exactly some window
-    expect(handlers.length).toBe(22); // +set_developer_mode, set_update_channel (Settings only)
+    expect(handlers.length).toBe(26); // +the four custom_bb_* commands (Settings only)
   });
 
   test("tauri.conf.json pins the capability allowlist to exactly the 5", async () => {

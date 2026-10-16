@@ -111,6 +111,20 @@ jobs:
           export PRESTO_E2E_VERIFIED_SITES_URL PRESTO_E2E_VERIFIED_SITES_PUBKEY
           EXE=""
           [ "$RUNNER_OS" = "Windows" ] && EXE=".exe"
+          # The custom bb picker's answer: a copy of the sidecar where only this user can write, which
+          # Presto requires. Windows runners check out outside the user's profile, so it goes there.
+          TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            STAGE="$(cygpath -u "$USERPROFILE")/presto-e2e-custom-bb"
+            mkdir -p "$STAGE"
+          else
+            STAGE=$(mktemp -d)
+          fi
+          install -m 755 "src-tauri/binaries/bb-$TRIPLE$EXE" "$STAGE/bb$EXE"
+          PRESTO_E2E_CUSTOM_BB_PATH="$STAGE/bb$EXE"
+          [ "$RUNNER_OS" = "Windows" ] && PRESTO_E2E_CUSTOM_BB_PATH=$(cygpath -w "$PRESTO_E2E_CUSTOM_BB_PATH")
+          export PRESTO_E2E_CUSTOM_BB_PATH
+          echo "PRESTO_E2E_CUSTOM_BB_PATH=$PRESTO_E2E_CUSTOM_BB_PATH" >> "$GITHUB_ENV"
           case "${{ inputs.mode }}" in
             release)     APP_CMD="./src-tauri/target/release/Presto$EXE" ;;
             built-debug) APP_CMD="./src-tauri/target/debug/Presto$EXE" ;;
@@ -160,7 +174,7 @@ jobs:
           PROFILE=debug
           [ "$MODE" = "release" ] && PROFILE=release
           BIN="src-tauri/target/$PROFILE/Presto$EXE"
-          for name in PRESTO_E2E_TRAY_REPORT PRESTO_E2E_VERIFIED_SITES_URL PRESTO_E2E_VERIFIED_SITES_PUBKEY; do
+          for name in PRESTO_E2E_TRAY_REPORT PRESTO_E2E_VERIFIED_SITES_URL PRESTO_E2E_VERIFIED_SITES_PUBKEY PRESTO_E2E_CUSTOM_BB_PATH; do
             if ! grep -qa "$name" "$BIN"; then
               echo "::error::$BIN does not contain $name, so the shipped-binary scans prove nothing"
               exit 1

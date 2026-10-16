@@ -63,6 +63,9 @@ http = "1"
 plist = "1"
 tauri-plugin-updater = "2.11"
 tauri-plugin-process = "2"
+# The native picker, registered from Rust with no `dialog:*` grant, so its JS commands stay
+# unreachable. Exact pin: Cargo has no release-age gate.
+tauri-plugin-dialog = "=2.7.3"
 reqwest = { version = "0.13", features = ["stream", "json"] }
 flate2 = "1"
 tar = "0.4"

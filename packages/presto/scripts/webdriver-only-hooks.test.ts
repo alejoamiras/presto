@@ -17,6 +17,7 @@ const HOOK_NAMES = [
   "PRESTO_E2E_TRAY_REPORT",
   "PRESTO_E2E_VERIFIED_SITES_URL",
   "PRESTO_E2E_VERIFIED_SITES_PUBKEY",
+  "PRESTO_E2E_CUSTOM_BB_PATH",
 ];
 
 function rustFiles(dir: string): string[] {

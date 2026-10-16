@@ -1,6 +1,7 @@
 //! WebDriver builds only: the update task with a stub feed check, a driver that clicks "Check for
-//! Updates…" through the production dispatch and reports what the native item showed, and the
-//! production verified-sites check pointed at a loopback test feed.
+//! Updates…" through the production dispatch and reports what the native item showed, the
+//! production verified-sites check pointed at a loopback test feed, and a fixed answer for the
+//! custom bb picker, which WebDriver cannot drive.
 //!
 //! Every test hook lives here, behind the one `cfg` on `mod e2e_tray`, so no shipped binary carries
 //! them or their variables' names.
@@ -18,7 +19,7 @@ use presto_core::update_schedule::CheckReason;
 use presto_core::verified_sites::fetch::Feed;
 use presto_core::verified_sites::verify::ListKey;
 use tauri::menu::{Menu, MenuItem};
-use tauri::{AppHandle, Wry};
+use tauri::{AppHandle, Manager, Wry};
 use tokio::sync::{mpsc, oneshot};
 
 const REPORT_ENV: &str = "PRESTO_E2E_TRAY_REPORT";
@@ -26,6 +27,8 @@ const REPORT_ENV: &str = "PRESTO_E2E_TRAY_REPORT";
 const LIST_URL_ENV: &str = "PRESTO_E2E_VERIFIED_SITES_URL";
 /// The test feed's minisign public-key document, both lines with their newlines.
 const LIST_KEY_ENV: &str = "PRESTO_E2E_VERIFIED_SITES_PUBKEY";
+/// The file the custom bb picker returns instead of opening.
+const CUSTOM_BB_PATH_ENV: &str = "PRESTO_E2E_CUSTOM_BB_PATH";
 /// The spec gives each list change 5 s to show.
 const LIST_PUMP: Duration = Duration::from_secs(1);
 
@@ -87,6 +90,9 @@ pub fn start(app: &AppHandle, manual: ManualCheckReceiver, menu: Menu<Wry>) {
         tauri::async_runtime::spawn(drive(app.clone(), stub, menu, PathBuf::from(report)));
     }
     start_list_feed(app);
+    if let Some(path) = std::env::var_os(CUSTOM_BB_PATH_ENV) {
+        app.manage(presto::custom_bb::TestPick(PathBuf::from(path)));
+    }
 }
 
 /// The production list check against the test feed, asked every second. Without both variables, or
