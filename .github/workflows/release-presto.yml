@@ -1408,7 +1408,7 @@ jobs:
           [ "$FEED_VERSION" = "$VERSION" ] || { echo "::error::release latest.json version ($FEED_VERSION) != dispatched ($VERSION)"; exit 1; }
           bun -e "console.log(JSON.parse(await Bun.file('packages/presto/src-tauri/tauri.conf.json').text()).plugins.updater.pubkey)" > pubkey.b64
           cargo run --quiet --manifest-path packages/presto/core/Cargo.toml --example update-manifest -- \
-            verify --feed feed/latest.json --pubkey pubkey.b64
+            verify --feed feed/latest.json --pubkey pubkey.b64 --channel stable
           # 5. The verifier accepts ANY non-empty signed platform map, so bind the feed to THIS release:
           #    EXACTLY the 4 supported platform keys, each mapped to its EXACT expected artifact URL for this
           #    tag (codex: prefix + HTTP 200 don't stop darwin-aarch64 pointing at the Intel tarball), then
@@ -1543,7 +1543,7 @@ jobs:
           printf '%s' "$FEED" > live-latest.json
           bun -e "console.log(JSON.parse(await Bun.file('packages/presto/src-tauri/tauri.conf.json').text()).plugins.updater.pubkey)" > pubkey.b64
           cargo run --quiet --manifest-path packages/presto/core/Cargo.toml --example update-manifest -- \
-            verify --feed live-latest.json --pubkey pubkey.b64
+            verify --feed live-latest.json --pubkey pubkey.b64 --channel stable
           echo "✅ live updater feed verified == $EXPECTED, all assets reachable, manifest signature valid"
 
   # GitHub's Latest badge is human-facing and does not control the updater. Keep it aligned with a forward

@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Sourced by updater-smoke.sh (macOS) and updater-smoke-linux.sh: how the app under test is
 # launched and stopped, and the modes whose checks are identical on both. The caller defines
-# APP_BIN, HEALTH, WORK, CONFIG_DIR, N_VERSION, REPO_ROOT and log(). Written for macOS's bash 3.2.
+# APP_BIN, HEALTH, WORK, SERVE_DIR, CONFIG_DIR, N_VERSION, REPO_ROOT and log(). Written for macOS's
+# bash 3.2.
 
 # The feed's artifact prefix before it goes silent: well below any real payload.
 # shellcheck disable=SC2034  # read by the sourcing script
@@ -175,4 +176,203 @@ run_stall_mode() {
     return 1
   fi
   log "SUCCESS (stall) — download abandoned ${elapsed}s after the last byte; N-1 $n1 still serving from PID $pid_before, nothing pending"
+}
+
+# rc-lifecycle staging, before the feed server starts: R's payload beside N's, and the directory the
+# server's --feed-dir reads per request. $1 is the payload's name pattern. Reads R_VERSION and
+# R_ARTIFACTS_DIR (R's payload and the feeds `ephemeral-updater.sh rc-feeds` signed over it).
+stage_rc_lifecycle() {
+  local payload name
+  : "${R_VERSION:?rc-lifecycle needs R_VERSION}" "${R_ARTIFACTS_DIR:?rc-lifecycle needs R_ARTIFACTS_DIR}"
+  payload="$(find "$R_ARTIFACTS_DIR" -name "$1" | head -1)"
+  [ -n "$payload" ] || { echo "::error::no $1 among R's artifacts"; return 1; }
+  cp "$payload" "$SERVE_DIR/"
+  for name in smoke-latest-rc smoke-latest-rc-v1 smoke-latest-rc2 smoke-latest-old; do
+    [ -f "$R_ARTIFACTS_DIR/$name.json" ] || { echo "::error::no $name.json among R's artifacts"; return 1; }
+  done
+  mkdir -p "$WORK/feeds"
+  # The readiness probe reads latest.json before the first leg stages its own.
+  cp "$WORK/latest.json" "$WORK/feeds/latest.json"
+}
+
+# serve_feed <latest.json|latest-rc.json> <feed file | HTTP status>
+serve_feed() {
+  rm -f "$WORK/feeds/$1" "$WORK/feeds/$1.status"
+  case "$2" in
+    [1-5][0-9][0-9]) echo "$2" > "$WORK/feeds/$1.status" ;;
+    *) cp "$2" "$WORK/feeds/$1" ;;
+  esac
+}
+
+# rc-lifecycle's configs. Auto-update stays on, so a feed the app admits installs unasked.
+seed_pre_channel() {
+  echo '{"config_version":1,"safari_support":false,"approved_origins":[],"speed":"full","auto_update":true,"onboarding_version":1}' > "$CONFIG_DIR/config.json"
+}
+# seed_developer <true|false> <stable|rc>
+seed_developer() {
+  printf '{"config_version":2,"https_enabled":false,"approved_origins":[],"speed":"full","auto_update":true,"onboarding_version":1,"developer":{"enabled":%s,"update_channel":"%s"}}\n' \
+    "$1" "$2" > "$CONFIG_DIR/config.json"
+}
+
+# The feed log's length: a launch reads only the requests after its mark.
+feed_mark() {
+  wc -l < "$WORK/feed.log" | tr -d ' '
+}
+
+# The paths requested since <mark>, in order.
+feed_paths_since() {
+  tail -n +"$(($1 + 1))" "$WORK/feed.log" | sed -nE 's/^feed-server: GET ([^ ]+) -> .*/\1/p'
+}
+
+# The feed requests since <mark>, in order, each followed by a space.
+feeds_since() {
+  feed_paths_since "$1" | grep -E '^/releases/latest(-rc)?\.json$' | tr '\n' ' '
+}
+
+# wait_for_feed <mark> <path> <seconds>
+wait_for_feed() {
+  local end
+  end=$(($(date +%s) + $3))
+  while [ "$(date +%s)" -lt "$end" ]; do
+    feed_paths_since "$1" | grep -qxF "$2" && return 0
+    sleep 1
+  done
+  echo "::error::the app never requested $2 within $3s"
+  return 1
+}
+
+# wait_for_version <version> <seconds>
+wait_for_version() {
+  local end
+  end=$(($(date +%s) + $2))
+  while [ "$(date +%s)" -lt "$end" ]; do
+    [ "$(health_version)" = "$1" ] && return 0
+    sleep 2
+  done
+  echo "::error::/health never reported $1 within $2s (last: '$(health_version)')"
+  return 1
+}
+
+# assert_refused <leg> <mark> <app log> <running version> <refusal>: the app fetched the stable feed
+# alone, downloaded nothing and still serves <running version> 60 s on. The refusal line is read
+# last, so a build that admits the feed fails on its download, not on a missing log line.
+assert_refused() {
+  local leg=$1 mark=$2 out=$3 running=$4 refusal=$5 end got
+  wait_for_feed "$mark" /releases/latest.json 60 || return 1
+  end=$(($(date +%s) + 60))
+  while [ "$(date +%s)" -lt "$end" ]; do
+    if feed_paths_since "$mark" | grep -q '^/releases/download/'; then
+      echo "::error::$leg: the app downloaded an update it must refuse"
+      return 1
+    fi
+    got="$(health_version)"
+    if [ -n "$got" ] && [ "$got" != "$running" ]; then
+      echo "::error::$leg: /health reports $got, not $running"
+      return 1
+    fi
+    sleep 2
+  done
+  if [ "$(health_version)" != "$running" ]; then
+    echo "::error::$leg: the app no longer serves /health as $running"
+    return 1
+  fi
+  if feed_paths_since "$mark" | grep -qxF /releases/latest-rc.json; then
+    echo "::error::$leg: the app requested latest-rc.json on the stable channel"
+    return 1
+  fi
+  if ! grep -qE "update refused on channel stable: $refusal" "$out"; then
+    echo "::error::$leg: no '$refusal' refusal in $(basename "$out")"
+    return 1
+  fi
+}
+
+# assert_installed <leg> <mark> <feed order>: this launch's feed requests began in that order, and
+# an artifact was downloaded.
+assert_installed() {
+  local feeds
+  feeds="$(feeds_since "$2")"
+  case "$feeds" in
+    "$3"*) ;;
+    *) echo "::error::$1: feed requests were '$feeds', expected them to begin '$3'"; return 1 ;;
+  esac
+  if ! feed_paths_since "$2" | grep -q '^/releases/download/'; then
+    echo "::error::$1: /health changed version without a download from this feed"
+    return 1
+  fi
+}
+
+assert_developer_rc() {
+  if ! jq -e '.developer == {"enabled": true, "update_channel": "rc"}' "$CONFIG_DIR/config.json" >/dev/null; then
+    echo "::error::$1: config.json no longer holds developer {enabled, rc}: $(cat "$CONFIG_DIR/config.json")"
+    return 1
+  fi
+}
+
+# rc-lifecycle: one installed app, N-1 → R → N, through the candidate channel's transitions. A1 and
+# A2 refuse R on the stable channel; B opts in and installs R through latest-rc.json, whose 0.0.1
+# alternative on latest.json would end a reversed check with nothing; C1 leaves and refuses a newer
+# candidate; C2 opts in again and takes N from latest.json while latest-rc.json answers 503.
+run_rc_lifecycle_mode() {
+  local feeds="$R_ARTIFACTS_DIR" n1 mark
+
+  log "A1: the stable channel refuses R's rc-v1 feed"
+  seed_pre_channel
+  serve_feed latest.json "$feeds/smoke-latest-rc.json"
+  serve_feed latest-rc.json "$feeds/smoke-latest-rc.json"
+  mark="$(feed_mark)"
+  launch_app "$WORK/app-a1.log" || return 1
+  n1="$(wait_for_n1)" || return 1
+  [ "$n1" != "$R_VERSION" ] || { echo "::error::N-1 already runs R ($R_VERSION)"; return 1; }
+  assert_refused A1 "$mark" "$WORK/app-a1.log" "$n1" CandidateOffChannel || return 1
+  stop_app || return 1
+
+  log "A2: the stable channel refuses R's v1 feed, a prerelease"
+  seed_pre_channel
+  serve_feed latest.json "$feeds/smoke-latest-rc-v1.json"
+  serve_feed latest-rc.json "$feeds/smoke-latest-rc-v1.json"
+  mark="$(feed_mark)"
+  launch_app "$WORK/app-a2.log" || return 1
+  wait_for_version "$n1" 60 || return 1
+  assert_refused A2 "$mark" "$WORK/app-a2.log" "$n1" PrereleaseNotCandidate || return 1
+  stop_app || return 1
+
+  log "B: opted in, the launch check installs R from latest-rc.json"
+  seed_developer true rc
+  serve_feed latest-rc.json "$feeds/smoke-latest-rc.json"
+  serve_feed latest.json "$feeds/smoke-latest-old.json"
+  mark="$(feed_mark)"
+  launch_app "$WORK/app-b.log" || return 1
+  wait_for_version "$R_VERSION" 300 || return 1
+  assert_installed B "$mark" "/releases/latest-rc.json " || return 1
+  if feed_paths_since "$mark" | grep -qxF /releases/latest.json; then
+    echo "::error::B: the app fell back to latest.json although latest-rc.json answered"
+    return 1
+  fi
+  assert_developer_rc B || return 1
+  stop_app || return 1
+
+  log "C1: developer mode off, R refuses a newer candidate"
+  seed_developer false stable
+  serve_feed latest.json "$feeds/smoke-latest-rc2.json"
+  serve_feed latest-rc.json "$feeds/smoke-latest-rc2.json"
+  mark="$(feed_mark)"
+  launch_app "$WORK/app-c1.log" || return 1
+  wait_for_version "$R_VERSION" 60 || return 1
+  assert_refused C1 "$mark" "$WORK/app-c1.log" "$R_VERSION" CandidateOffChannel || return 1
+  stop_app || return 1
+
+  log "C2: on the channel again, R takes $N_VERSION from latest.json while latest-rc.json answers 503"
+  seed_developer true rc
+  serve_feed latest-rc.json 503
+  serve_feed latest.json "$WORK/latest.json"
+  mark="$(feed_mark)"
+  launch_app "$WORK/app-c2.log" || return 1
+  wait_for_version "$N_VERSION" 300 || return 1
+  assert_installed C2 "$mark" "/releases/latest-rc.json /releases/latest.json " || return 1
+  assert_developer_rc C2 || return 1
+  if grep -l "running read-only" "$WORK"/app-*.log; then
+    echo "::error::a launch ran with a read-only config"
+    return 1
+  fi
+  log "SUCCESS (rc-lifecycle) — refused R twice on stable, installed R on rc, refused a newer candidate after leaving, took $N_VERSION through the fallback"
 }

@@ -47,10 +47,12 @@ REPO_ROOT="$5"
 # negative: serve a TAMPERED AppImage and assert the update is REJECTED.
 # prompt:   auto-update off; the prompt is presented, then held back by a snooze (ephemeral lane).
 # stall:    the feed goes silent mid-artifact; the download watchdog abandons it (ephemeral lane).
+# rc-lifecycle: N-1 → R → N through the release-candidate channel (ephemeral lane): reads R_VERSION
+#           and R_ARTIFACTS_DIR, R's payload with the feeds `ephemeral-updater.sh rc-feeds` signed.
 # Set via UPDATER_SMOKE_MODE.
 MODE="${UPDATER_SMOKE_MODE:-positive}"
 case "$MODE" in
-  positive|negative|prompt|stall) ;;
+  positive|negative|prompt|stall|rc-lifecycle) ;;
   *) echo "::error::UPDATER_SMOKE_MODE is not a supported mode"; exit 1 ;;
 esac
 
@@ -174,6 +176,13 @@ jq -e --arg v "$N_VERSION" --arg key "$PLATFORM_KEY" --arg sig "$N_SIG" \
 cp "$SIGNED_FEED" "$WORK/latest.json"
 log "latest.json:"; cat "$WORK/latest.json"
 
+# rc-lifecycle serves each feed path from its own file, which every leg replaces.
+FEED_SOURCE=(--latest-json "$WORK/latest.json")
+if [ "$MODE" = "rc-lifecycle" ]; then
+  stage_rc_lifecycle '*.AppImage' || exit 1
+  FEED_SOURCE=(--feed-dir "$WORK/feeds")
+fi
+
 # ── Start the local HTTPS feed on :443 ──
 log "starting feed server on :443"
 FEED_STALL=()
@@ -183,7 +192,7 @@ FEED_STALL=()
 # shellcheck disable=SC2024
 sudo "$(command -v bun)" "$REPO_ROOT/packages/presto/scripts/updater-feed-server.ts" \
   --cert "$WORK/leaf.pem" --key "$WORK/leaf.key" \
-  --latest-json "$WORK/latest.json" --serve-dir "$SERVE_DIR" \
+  "${FEED_SOURCE[@]}" --serve-dir "$SERVE_DIR" \
   ${FEED_STALL[@]+"${FEED_STALL[@]}"} > "$WORK/feed.log" 2>&1 &
 FEED_PID=$!
 for _ in $(seq 1 20); do
@@ -222,6 +231,11 @@ dump_logs() {
 }
 
 mkdir -p "$CONFIG_DIR"
+if [ "$MODE" = "rc-lifecycle" ]; then
+  run_rc_lifecycle_mode || { dump_logs; exit 1; }
+  dump_logs
+  exit 0
+fi
 if [ "$MODE" = "prompt" ]; then
   # ── Auto-update off and onboarding done, so the prompt is the only window N-1 opens ──
   echo '{"config_version":1,"safari_support":false,"approved_origins":[],"speed":"full","auto_update":false,"onboarding_version":1}' > "$CONFIG_DIR/config.json"

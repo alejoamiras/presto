@@ -34,17 +34,22 @@ Every positive run then requires N's own update check on disk: `assert-update-sc
 
 ## Ephemeral smokes (manual dispatch)
 
-`smoke-updater-unix.yml` (macOS and Linux) and `smoke-updater-windows.yml` build both ends from the dispatched ref: a synthetic N-1 at 0.0.1 and N at `n-version`, signed with a run-local throwaway key. Both prepare that chain with `scripts/ephemeral-updater.sh` (`keygen`, `build n-1`, `build n`, `feed`); only the Windows barrier sentinel is injected by its workflow, between the two builds. They are the only lanes where unreleased updater code runs as the old side of an update, so dispatch them before merging a change to the updater, its schedule, or these scripts:
+`smoke-updater-unix.yml` (macOS and Linux) and `smoke-updater-windows.yml` build both ends from the dispatched ref: a synthetic N-1 at 0.0.1 and N at `n-version`, signed with a run-local throwaway key. Both prepare that chain with `scripts/ephemeral-updater.sh` (`keygen`, `build n-1`, `build n`, `feed`, and for `rc-lifecycle` also `build r` and `rc-feeds`); only the Windows barrier sentinel is injected by its workflow, just before N's build. They are the only lanes where unreleased updater code runs as the old side of an update, so dispatch them before merging a change to the updater, its schedule, or these scripts:
 
 ```bash
-gh workflow run smoke-updater-unix.yml --ref <branch> -f mode=<positive|negative|prompt|stall>
-gh workflow run smoke-updater-windows.yml --ref <branch> -f mode=<positive|negative|prompt|barrier|copy-initiator>
+gh workflow run smoke-updater-unix.yml --ref <branch> -f mode=<positive|negative|prompt|stall|rc-lifecycle>
+gh workflow run smoke-updater-windows.yml --ref <branch> -f mode=<positive|negative|prompt|barrier|copy-initiator|rc-lifecycle>
 ```
 
 - `positive`, `negative`: as in the release lanes.
 - `prompt`: auto-update off. N-1 must log `Update prompt presented version=N`. After a restart with a schedule file snoozing N, it must log `Update snoozed; prompt suppressed` and show nothing for 30 s. On Linux, the smoke then clicks the tray's **Check for Updates…** through the menu libappindicator exports on the session bus (`scripts/tray-menu.ts`, via `busctl`). The same menu event a desktop tray host sends, in the hook-free release binary. N must then be presented despite the snooze, and the item must return to its idle label. macOS and Windows expose no scriptable tray menu, so they skip that step. With the snooze moved to another version, it must present again. Each launch is judged only on its own lines: its stdout on macOS and Linux, the Windows log read from an offset recorded before the launch. A daily log rotation during a launch fails the run.
 - `stall` (macOS and Linux): `updater-feed-server.ts --stall-after 65536` sends a genuine prefix of N and holds the connection open. N-1 must log `Update download stalled; aborting` 60–120 s after the last byte, keep serving `/health` from the same PID, and record no pending install in `updater-state.json`.
 - `barrier`, `copy-initiator` (Windows): the update-window marker lifecycle; the workflow's header describes both.
+- `rc-lifecycle`: a third build, R = `<n-version>-rc.1` (so `n-version` must be stable), and four more feeds signed over R's payload: R's rc-v1 feed, its v1 twin, an rc-v1 `rc.2`, and a v1 `0.0.1`. The feed server's `--feed-dir` answers `latest.json` and `latest-rc.json` each from its own file or status code, read per request. One install then runs five legs, each judged on the feed requests and log lines after its own launch:
+  - A1, A2: a config without a developer block refuses R's rc-v1 feed (`CandidateOffChannel`) and its v1 twin (`PrereleaseNotCandidate`). The app requests only `latest.json`, downloads nothing, and still serves N-1 60 s on. The refusal line is read last, so a build that admits the feed fails on its download.
+  - B: with developer mode on and the `rc` channel, the launch check installs R from `latest-rc.json`. `latest.json` serves `0.0.1`, so a check that read the endpoints in reverse would install nothing. The developer block survives the update.
+  - C1: with developer mode off, R refuses the `rc.2` feed as A1 refused R.
+  - C2: back on `rc`, `latest-rc.json` answers 503 and R takes N from `latest.json`. No launch may log `running read-only`. On Windows, B and C2 also require the update transaction files gone.
 
 The macOS and Linux scripts share `updater-smoke-modes.sh`, which launches the app as its own process group so a relaunch stops exactly that app. Every script refuses a mode its workflow does not allow, and `release-contract.test.ts` pins each list to its workflow's. `ephemeral-updater.sh build` fails a build of N-1 or N that contains any `PRESTO_E2E_` name (`assert-no-test-hooks.sh`), so the WebDriver-only hooks never reach a binary built like a release; `release-presto.yml`'s `build` job runs the same scan over the bundles it uploads (the `.app.tar.gz`, the AppImage and `.deb`, and `Presto.exe`).
 

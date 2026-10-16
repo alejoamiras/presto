@@ -9,6 +9,7 @@ pub use presto_core::{authorization, bb, config, log_dir, versions};
 
 pub mod autostart;
 pub mod certs;
+pub mod channel_change;
 pub mod commands;
 pub mod crash_recovery;
 pub mod server;

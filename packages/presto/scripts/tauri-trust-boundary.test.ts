@@ -174,6 +174,7 @@ const WINDOW_MATRIX = {
     "set_speed",
     "set_theme",
     "set_developer_mode",
+    "set_update_channel",
     "enable_https",
     "disable_https",
     "remove_https_trust",
@@ -274,7 +275,7 @@ describe("F-012 P3 — per-window capability ACL", () => {
 
     expect(buildCommands).toEqual(handlers); // declared surface == registered surface
     expect(grantedSorted).toEqual(handlers); // every registered command is granted to exactly some window
-    expect(handlers.length).toBe(21); // +set_developer_mode (Settings, Advanced)
+    expect(handlers.length).toBe(22); // +set_developer_mode, set_update_channel (Settings only)
   });
 
   test("tauri.conf.json pins the capability allowlist to exactly the 5", async () => {

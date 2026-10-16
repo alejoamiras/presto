@@ -4,6 +4,12 @@ const params = new URLSearchParams(window.location.search);
 const currentVersion = params.get("current") || "unknown";
 const newVersion = params.get("version") || "unknown";
 document.getElementById("version").textContent = `v${currentVersion}  →  v${newVersion}`;
+// Only a client on the candidate channel is offered a prerelease.
+if (newVersion.split("+")[0].includes("-")) {
+  document.getElementById("title").textContent = "A release candidate is ready";
+  document.getElementById("note").textContent =
+    "A test build of the next version. It can have bugs.";
+}
 
 wireButton("update", {
   disableAlso: "later",

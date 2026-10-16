@@ -5,10 +5,21 @@
 import { describe, expect, test } from "bun:test";
 import path from "node:path";
 
-const SRC = path.resolve(import.meta.dir, "..", "src-tauri", "src");
+const PRESTO = path.resolve(import.meta.dir, "..");
+const SRC = path.join(PRESTO, "src-tauri", "src");
 
 async function source(file: string): Promise<string> {
   return stripComments(await Bun.file(path.join(SRC, file)).text());
+}
+
+/** Every Rust file under `dir`, comments stripped, keyed by its path relative to `packages/presto`. */
+async function rustTree(dir: string): Promise<Map<string, string>> {
+  const files = new Map<string, string>();
+  for await (const file of new Bun.Glob("**/*.rs").scan(path.join(PRESTO, dir))) {
+    const rel = path.join(dir, file);
+    files.set(rel, stripComments(await Bun.file(path.join(PRESTO, rel)).text()));
+  }
+  return files;
 }
 
 function stripComments(rust: string): string {
@@ -27,6 +38,16 @@ function fnBody(rust: string, name: string): string {
 
 function count(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
+}
+
+/** Each call's first occurrence in `body` comes after the previous call's. */
+function expectInOrder(body: string, calls: string[]): void {
+  let previous = -1;
+  for (const call of calls) {
+    const at = body.indexOf(call);
+    expect(at, call).toBeGreaterThan(previous);
+    previous = at;
+  }
 }
 
 describe("update wiring", () => {
@@ -127,5 +148,79 @@ describe("update wiring", () => {
     expect(acted).toBeGreaterThanOrEqual(0);
     expect(busy).toBeGreaterThan(acted);
     expect(act).toMatch(/reply\.send\(presto::updater::manual_reply\(result, busy\)\)/);
+  });
+});
+
+describe("update channel wiring", () => {
+  // The channel can change between a check and each later step, so every step re-runs admission on
+  // the channel it reads then; the Rust tests cover each decision, these pin where it is called.
+  test("channel admission runs at check, act, present and install time", async () => {
+    const updater = await source("updater.rs");
+    expectInOrder(fnBody(updater, "gate"), ["verify_manifest(", "admits(", "layer_b_gate_at("]);
+    expect(fnBody(updater, "verify_and_gate")).toContain("gate(");
+
+    const main = await source("main.rs");
+    expectInOrder(fnBody(main, "act_on"), [".admission(", "after_admission(", "decide("]);
+    const present = main.slice(
+      main.search(/^#\[cfg\(not\(feature = "webdriver"\)\)\]\nfn present\(/m),
+    );
+    expectInOrder(fnBody(present, "present"), [
+      ".admission(",
+      "skip_presenting(",
+      "show_update_prompt_window(",
+    ]);
+
+    expectInOrder(fnBody(updater, "perform_update"), [
+      "acquire_updater_lock()",
+      "download_guarded(",
+      "channel_on_disk(",
+      "admits(",
+      "record_pending(",
+    ]);
+    expect(fnBody(updater, "channel_on_disk")).toContain("load_with_cap_from(");
+  });
+
+  test("the candidate feed is derived, never listed where a stable client would try it", async () => {
+    const conf = await Bun.file(path.join(PRESTO, "src-tauri", "tauri.conf.json")).text();
+    expect(conf).not.toContain("latest-rc");
+    const endpoints = fnBody(await source("updater.rs"), "feed_endpoints");
+    expect(endpoints).toContain('stable.join("latest-rc.json")');
+  });
+
+  // Only Settings chooses the channel: no environment variable, and no HTTP server, may move it.
+  test("the channel has one reader and one writer path", async () => {
+    const trees = new Map([
+      ...(await rustTree("core/src")),
+      ...(await rustTree("src-tauri/src")),
+      ...(await rustTree("server/src")),
+    ]);
+    const readers = [...trees].filter(([, rust]) => /\.update_channel\b(?!\s*\()/.test(rust));
+    expect(readers.map(([file]) => file)).toEqual(["core/src/config.rs"]);
+
+    const updater = await source("updater.rs");
+    const channelCode = [
+      trees.get("core/src/update_channel.rs") ?? "",
+      trees.get("src-tauri/src/channel_change.rs") ?? "",
+      ...["current_channel", "channel_on_disk", "feed_endpoints", "stable_endpoint"].map((name) =>
+        fnBody(updater, name),
+      ),
+    ];
+    for (const code of channelCode) {
+      expect(code).not.toMatch(/env::var|var_os\(/);
+    }
+
+    const servers = [...trees].filter(
+      ([file]) =>
+        file.startsWith("server/src/") ||
+        file.startsWith("core/src/server") ||
+        file === "src-tauri/src/server.rs" ||
+        file.startsWith("src-tauri/src/server/"),
+    );
+    expect(servers.length).toBeGreaterThan(2);
+    for (const [file, rust] of servers) {
+      expect(rust, file).not.toMatch(
+        /set_developer_mode\(|set_update_channel\(|\.developer\s*=[^=]/,
+      );
+    }
   });
 });

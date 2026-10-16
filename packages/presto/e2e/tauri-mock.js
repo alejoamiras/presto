@@ -42,12 +42,18 @@ const defaults = {
     canRepairNow: true,
     storedPath: null,
   }),
-  get_system_info: () => ({ platform: "macos", cpu_count: 10 }),
+  get_system_info: () => ({
+    platform: "macos",
+    cpu_count: 10,
+    app_version: "1.2.0",
+    effective_channel: "stable",
+  }),
   // Option<VerifiedSiteDto>: None serializes as null, so an unlisted origin answers null.
   get_verified_info: () => null,
   set_speed: () => null,
   set_theme: () => null,
   set_developer_mode: () => null,
+  set_update_channel: () => null,
   set_autostart: () => null,
   // Default: a repair succeeds and the entry is healthy afterwards.
   repair_autostart: () => ({

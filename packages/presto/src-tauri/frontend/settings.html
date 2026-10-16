@@ -122,11 +122,38 @@
           <span class="slider"></span>
         </label>
       </div>
+      <div id="developer-off-check" class="confirm" hidden>
+        <p><b>Turn off developer mode?</b> Release candidates stop, and every developer setting resets. <span class="stays"></span></p>
+        <div class="confirm-actions">
+          <button type="button" id="developer-off-cancel" class="btn btn-secondary btn-small">Cancel</button>
+          <button type="button" id="developer-off-confirm" class="btn btn-primary btn-small">Turn Off</button>
+        </div>
+      </div>
     </details>
   </div>
 
   <div id="developer-section" class="section" hidden>
     <h2>Developer</h2>
+    <div class="row">
+      <span class="row-text">
+        <span id="channel-label">Updates from</span>
+        <span id="channel-status" class="row-sub"></span>
+      </span>
+      <!-- Ships disabled like Appearance: enabled once the stored channel is known. -->
+      <fieldset class="seg" id="channel" disabled>
+        <legend class="visually-hidden">Updates from</legend>
+        <label><input type="radio" name="channel" value="stable" checked /><span>Stable</span></label>
+        <label><input type="radio" name="channel" value="rc" /><span>Release candidates</span></label>
+      </fieldset>
+    </div>
+    <div id="leave-check" class="confirm" hidden>
+      <p><b>Stop release candidates?</b> <span class="stays"></span></p>
+      <div class="confirm-actions">
+        <button type="button" id="leave-cancel" class="btn btn-secondary btn-small">Keep Release Candidates</button>
+        <button type="button" id="leave-confirm" class="btn btn-primary btn-small">Switch to Stable</button>
+      </div>
+    </div>
+    <p id="channel-result" class="row-sub channel-result" role="status"></p>
   </div>
 </body>
 </html>

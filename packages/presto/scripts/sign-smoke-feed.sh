@@ -8,18 +8,31 @@
 #   - manifest     = base64(envelope.json bytes)
 #   - manifest_sig = the .sig file content VERBATIM (tauri writes it as base64(minisign doc))
 #
-# Usage: sign-smoke-feed.sh <feed.json> <repo-root>
+# Usage: sign-smoke-feed.sh <feed.json> <repo-root> [--schema v1|rc-v1]
+# The schema defaults to the version's: rc-v1 for a prerelease, v1 otherwise. `--schema v1` signs a
+# prerelease's v1 twin, which both channels refuse.
 set -euo pipefail
 
+usage() {
+  echo "usage: sign-smoke-feed.sh <feed.json> <repo-root> [--schema v1|rc-v1]" >&2
+  exit 2
+}
+[ "$#" -eq 2 ] || { [ "$#" -eq 4 ] && [ "$3" = --schema ]; } || usage
 FEED="$1"
 REPO_ROOT="$2"
+SCHEMA="${4:-$(jq -r 'if (.version | split("+")[0] | contains("-")) then "rc-v1" else "v1" end' "$FEED")}"
+case "$SCHEMA" in
+  v1) SCHEMA_ID="presto-update-manifest-v1" ;;
+  rc-v1) SCHEMA_ID="presto-update-manifest-rc-v1" ;;
+  *) usage ;;
+esac
 : "${TAURI_SIGNING_PRIVATE_KEY:?TAURI_SIGNING_PRIVATE_KEY is required to sign the smoke feed}"
 
 ENVELOPE="$(dirname "$FEED")/envelope.json"
 # Envelope shape MUST match presto_core::update_manifest::SignedEnvelope (deny_unknown_fields):
 # exactly {schema, version, pub_date, platforms:{key:{url,size,signature}}}. The feed's platform
 # entries already carry exactly {signature,url,size}, so projecting them is field-name-exact.
-jq '{schema: "presto-update-manifest-v1", version, pub_date, platforms}' "$FEED" > "$ENVELOPE"
+jq --arg schema "$SCHEMA_ID" '{schema: $schema, version, pub_date, platforms}' "$FEED" > "$ENVELOPE"
 
 # Sign the exact envelope bytes with the updater key (bunx resolves @tauri-apps/cli from the package).
 ( cd "$REPO_ROOT/packages/presto" && bunx tauri signer sign "$ENVELOPE" )

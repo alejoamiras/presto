@@ -29,6 +29,19 @@ test("shows version transition", async ({ page }) => {
   await expect(page.locator("#version")).toContainText("v1.1.0");
 });
 
+test("update prompt shows release-candidate copy for a prerelease", async ({ page }) => {
+  await page.goto("/update-prompt.html?current=1.2.0&version=1.3.0-rc.1");
+  await expect(page.getByRole("heading")).toHaveText("A release candidate is ready");
+  await expect(page.locator("#note")).toHaveText(
+    "A test build of the next version. It can have bugs.",
+  );
+
+  // Build metadata is not a prerelease; the app percent-encodes the `+`.
+  await page.goto("/update-prompt.html?current=1.2.0&version=1.3.0%2Bbuild.1-x");
+  await expect(page.getByRole("heading")).toHaveText("A newer Presto is ready");
+  await expect(page.locator("#note")).toContainText('Installs as "Presto"');
+});
+
 test("update now calls respond_update_prompt", async ({ page }) => {
   await page.goto("/update-prompt.html?current=1.0.0&version=1.1.0");
 

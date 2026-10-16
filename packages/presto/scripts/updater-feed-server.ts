@@ -11,41 +11,45 @@
  * artifact URL from the feed and verifies its `.sig` against the embedded
  * prod pubkey. We serve the real signed artifacts, so NO signing key is needed.
  *
+ * `--feed-dir <dir>` replaces `--latest-json`: `/releases/latest.json` and `/releases/latest-rc.json`
+ * answer from `<dir>/<name>`, or with the status code in `<dir>/<name>.status`, or 404. Both are read
+ * on every request, so a smoke can change what each path serves between launches.
+ *
  * `--stall-after <bytes>` sends only that many bytes of an artifact, then holds the connection
  * open without closing it, which is what the app's download watchdog must abort.
  *
  * Usage:
  *   bun updater-feed-server.ts \
  *     --cert <leaf.pem> --key <leaf.key> \
- *     --latest-json <latest.json> --serve-dir <artifacts-dir> [--port 443] [--stall-after <bytes>]
+ *     (--latest-json <latest.json> | --feed-dir <dir>) --serve-dir <artifacts-dir> \
+ *     [--port 443] [--stall-after <bytes>]
  */
 import type { Server } from "bun";
 
-export interface FeedOptions {
-  latestJsonPath: string;
+export type FeedSource = { latestJsonPath: string } | { feedDir: string };
+
+export type FeedOptions = FeedSource & {
   serveDir: string;
   stallAfter?: number;
   log?: (line: string) => void;
-}
+};
 
-export function feedHandler({
-  latestJsonPath,
-  serveDir,
-  stallAfter,
-  log = console.log,
-}: FeedOptions): (req: Request, server: Server<unknown>) => Promise<Response> {
+const FEED_PATHS = new Set(["/releases/latest.json", "/releases/latest-rc.json"]);
+
+export function feedHandler(
+  options: FeedOptions,
+): (req: Request, server: Server<unknown>) => Promise<Response> {
+  const { serveDir, stallAfter, log = console.log } = options;
   return async (req, server) => {
     const url = new URL(req.url);
     const path = url.pathname;
 
-    if (path === "/releases/latest.json") {
-      const body = await Bun.file(latestJsonPath).text();
-      // Logged so the smoke test can assert the feed was actually hit (guards
-      // against a no-op "pass" where the updater never reached our feed).
-      log(`feed-server: ${req.method} ${path} -> 200`);
-      return new Response(body, {
-        headers: { "content-type": "application/json" },
-      });
+    const response = await feedResponse(options, path);
+    if (response) {
+      // Every feed request is logged with its path and status, so a smoke can assert which feeds
+      // the app fetched, in what order, and that it reached this server at all.
+      log(`feed-server: ${req.method} ${path} -> ${response.status}`);
+      return response;
     }
 
     // Any other path → serve the basename from the artifacts dir.
@@ -69,6 +73,31 @@ export function feedHandler({
     console.error(`feed-server: ${req.method} ${path} -> 404`);
     return new Response("not found", { status: 404 });
   };
+}
+
+/** The answer for a feed path, or `null` when `path` is not one this source serves. */
+async function feedResponse(source: FeedSource, path: string): Promise<Response | null> {
+  if ("feedDir" in source) {
+    return FEED_PATHS.has(path) ? feedDirResponse(source.feedDir, path) : null;
+  }
+  return path === "/releases/latest.json" ? jsonResponse(Bun.file(source.latestJsonPath)) : null;
+}
+
+async function jsonResponse(file: Bun.BunFile): Promise<Response> {
+  return new Response(await file.text(), { headers: { "content-type": "application/json" } });
+}
+
+async function feedDirResponse(feedDir: string, path: string): Promise<Response> {
+  const name = path.slice("/releases/".length);
+  const status = Bun.file(`${feedDir}/${name}.status`);
+  if (await status.exists()) {
+    const code = (await status.text()).trim();
+    if (!/^[1-5][0-9][0-9]$/.test(code)) throw new Error(`${name}.status is not an HTTP status`);
+    return new Response("feed unavailable", { status: Number(code) });
+  }
+  const feed = Bun.file(`${feedDir}/${name}`);
+  if (await feed.exists()) return jsonResponse(feed);
+  return new Response("not found", { status: 404 });
 }
 
 async function stalledResponse(
@@ -103,6 +132,14 @@ function arg(name: string, fallback?: string): string {
   throw new Error(`missing required --${name}`);
 }
 
+function feedSource(): FeedSource {
+  const dir = process.argv.includes("--feed-dir");
+  if (dir === process.argv.includes("--latest-json")) {
+    throw new Error("pass exactly one of --latest-json and --feed-dir");
+  }
+  return dir ? { feedDir: arg("feed-dir") } : { latestJsonPath: arg("latest-json") };
+}
+
 if (import.meta.main) {
   const stall = process.argv.includes("--stall-after") ? arg("stall-after") : undefined;
   if (stall !== undefined && !/^[1-9][0-9]*$/.test(stall)) {
@@ -115,7 +152,7 @@ if (import.meta.main) {
       key: Bun.file(arg("key")),
     },
     fetch: feedHandler({
-      latestJsonPath: arg("latest-json"),
+      ...feedSource(),
       serveDir: arg("serve-dir"),
       stallAfter: stall === undefined ? undefined : Number(stall),
     }),

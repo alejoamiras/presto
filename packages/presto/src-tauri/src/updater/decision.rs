@@ -10,6 +10,7 @@
 
 use std::thread::ThreadId;
 
+use presto_core::update_channel::Refusal;
 use presto_core::update_schedule::CheckReason;
 
 /// A check's result without its payload.
@@ -91,10 +92,33 @@ pub fn decide(
     }
 }
 
-/// Re-checked just before the window call, because "Update Now" or "Later" may have landed since
-/// [`decide`]. A manual check ignores the snooze, as in [`decide`].
-pub fn should_present(mode: CheckMode, snoozed_now: bool, busy: bool) -> bool {
-    !busy && (matches!(mode, CheckMode::Manual { .. }) || !snoozed_now)
+/// A found update that the channel in effect now refuses (developer mode was left during the check)
+/// is handled like one refused at check time: the slot clears and nothing is presented or installed.
+pub fn after_admission(kind: OutcomeKind, admission: Result<(), Refusal>) -> OutcomeKind {
+    match (kind, admission) {
+        (OutcomeKind::Available, Err(_)) => OutcomeKind::Rejected,
+        (kind, _) => kind,
+    }
+}
+
+/// Why the prompt must not open, re-checked just before the window call: "Update Now", "Later" or
+/// a channel change may have landed since [`decide`]. A manual check ignores the snooze, as in
+/// [`decide`]. `None` means present.
+pub fn skip_presenting(
+    mode: CheckMode,
+    snoozed_now: bool,
+    busy: bool,
+    admission: Result<(), Refusal>,
+) -> Option<Presentation> {
+    if admission.is_err() {
+        Some(Presentation::SkippedOffChannel)
+    } else if busy {
+        Some(Presentation::SkippedBusy)
+    } else if snoozed_now && !matches!(mode, CheckMode::Manual { .. }) {
+        Some(Presentation::SkippedSnoozed)
+    } else {
+        None
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -122,8 +146,9 @@ pub fn presenter_allowed(current: ThreadId, main: Option<ThreadId>) -> bool {
     main != Some(current)
 }
 
-/// The update task's answer to a tray request.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+/// The update task's answer to a tray request or a join check.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum ManualCheckResult {
     UpToDate,
     Presented,
@@ -139,6 +164,8 @@ pub enum Presentation {
     SkippedBusy,
     /// "Later" snoozed the version meanwhile (never for a manual check).
     SkippedSnoozed,
+    /// The channel changed meanwhile and no longer admits the update.
+    SkippedOffChannel,
     Failed,
 }
 
@@ -147,7 +174,7 @@ impl Presentation {
         match self {
             Self::Shown | Self::SkippedSnoozed => ManualCheckResult::Presented,
             Self::SkippedBusy => ManualCheckResult::Installing,
-            Self::Failed => ManualCheckResult::Failed,
+            Self::SkippedOffChannel | Self::Failed => ManualCheckResult::Failed,
         }
     }
 }
@@ -273,23 +300,78 @@ mod tests {
 
     #[test]
     fn g1_g3_presenting_rechecks_the_gate_and_the_snooze() {
+        use Presentation::{SkippedBusy, SkippedSnoozed};
         let manual = CheckMode::Manual { live: true };
-        assert!(!should_present(manual, false, true), "busy");
-        assert!(!should_present(CheckMode::Scheduled, false, true), "busy");
-        assert!(
-            !should_present(CheckMode::Scheduled, true, false),
-            "snoozed"
+        let skip = |mode, snoozed, busy| skip_presenting(mode, snoozed, busy, Ok(()));
+        assert_eq!(skip(manual, false, true), Some(SkippedBusy));
+        assert_eq!(skip(CheckMode::Scheduled, false, true), Some(SkippedBusy));
+        assert_eq!(
+            skip(CheckMode::Scheduled, true, false),
+            Some(SkippedSnoozed)
         );
-        assert!(!should_present(CheckMode::Launch, true, false), "snoozed");
-        assert!(
-            should_present(manual, true, false),
+        assert_eq!(skip(CheckMode::Launch, true, false), Some(SkippedSnoozed));
+        assert_eq!(skip(manual, true, false), None, "manual ignores the snooze");
+        assert_eq!(
+            skip(CheckMode::Manual { live: false }, true, false),
+            None,
             "manual ignores the snooze"
         );
-        assert!(
-            should_present(CheckMode::Manual { live: false }, true, false),
-            "manual ignores the snooze"
+        assert_eq!(skip(CheckMode::Scheduled, false, false), None);
+    }
+
+    fn rc_refused() -> Result<(), Refusal> {
+        Err(Refusal::CandidateOffChannel)
+    }
+
+    /// Leaving the channel while a check runs: the candidate it found is cleared, never kept,
+    /// presented or installed, whatever the mode, preference, snooze or gate.
+    #[test]
+    fn act_time_admission_drops_candidate_after_leave() {
+        for (kind, pref, mode, snoozed, busy) in every_input() {
+            let got = decide(
+                after_admission(kind, rc_refused()),
+                pref,
+                mode,
+                snoozed,
+                busy,
+            );
+            let ctx = format!("{kind:?} {pref:?} {mode:?} snoozed={snoozed} busy={busy}");
+            if kind == OutcomeKind::Available {
+                assert_eq!(got, Decision::Clear, "{ctx}");
+            } else {
+                assert_eq!(got, decide(kind, pref, mode, snoozed, busy), "{ctx}");
+            }
+            assert_eq!(after_admission(kind, Ok(())), kind, "{ctx}");
+        }
+    }
+
+    #[test]
+    fn present_time_admission_opens_no_rc_prompt() {
+        for (_, _, mode, snoozed, busy) in every_input() {
+            assert_eq!(
+                skip_presenting(mode, snoozed, busy, rc_refused()),
+                Some(Presentation::SkippedOffChannel),
+                "{mode:?} snoozed={snoozed} busy={busy}"
+            );
+        }
+        assert_eq!(
+            Presentation::SkippedOffChannel.manual_result(),
+            ManualCheckResult::Failed
         );
-        assert!(should_present(CheckMode::Scheduled, false, false));
+    }
+
+    /// Settings reads these strings.
+    #[test]
+    fn manual_results_serialize_in_kebab_case() {
+        use ManualCheckResult::*;
+        let names: Vec<_> = [UpToDate, Presented, Failed, Installing]
+            .iter()
+            .map(|r| serde_json::to_value(r).unwrap())
+            .collect();
+        assert_eq!(
+            names,
+            ["up-to-date", "presented", "failed", "installing"].map(serde_json::Value::from)
+        );
     }
 
     #[test]

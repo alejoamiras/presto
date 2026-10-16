@@ -12,6 +12,7 @@ pub mod bb;
 pub mod config;
 pub(crate) mod file_lock;
 pub mod server;
+pub mod update_channel;
 pub mod update_manifest;
 pub mod update_schedule;
 pub mod updater_state;

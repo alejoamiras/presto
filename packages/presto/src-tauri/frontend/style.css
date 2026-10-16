@@ -917,6 +917,42 @@ h2 {
   flex-shrink: 0;
 }
 
+/* An inline check before a change the user cannot take back from here (leaving release candidates
+   keeps the installed one until a newer stable exists). */
+.confirm {
+  border: 1px solid var(--border);
+  background: var(--warning-bg);
+  border-radius: 10px;
+  padding: 10px 12px;
+  margin-top: 6px;
+}
+
+.confirm p {
+  margin: 0 0 8px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.btn-small {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+.channel-result {
+  margin: 6px 12px 0;
+}
+
+.channel-result:empty {
+  display: none;
+}
+
 /* Error hints — brief inline feedback on command failure */
 .error-hint {
   color: var(--danger);

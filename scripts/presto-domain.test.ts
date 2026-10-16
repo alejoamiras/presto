@@ -15,6 +15,14 @@ test("the permanent domain and native identity agree before the first RC", () =>
   expect(native.plugins.updater.endpoints).toEqual(["https://presto.build/releases/latest.json"]);
 });
 
+test("the release-candidate feed sits beside the stable one, under the feed Worker's route", () => {
+  const native = json("packages/presto/src-tauri/tauri.conf.json");
+  const rc = new URL("latest-rc.json", native.plugins.updater.endpoints[0]);
+  expect(rc.href).toBe("https://presto.build/releases/latest-rc.json");
+  const [route] = json("packages/release-feed/wrangler.jsonc").routes;
+  expect(`${rc.host}${rc.pathname}`.startsWith(route.pattern.replace(/\*$/, ""))).toBe(true);
+});
+
 test("production routes keep all three workers.dev fallback endpoints enabled", () => {
   for (const [site, routes] of [
     ["landing", [{ pattern: "presto.build", custom_domain: true }]],

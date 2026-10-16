@@ -214,6 +214,7 @@ fn main() {
         "set_speed",
         "set_theme",
         "set_developer_mode",
+        "set_update_channel",
         "remove_approved_origin",
         "get_system_info",
         "get_verified_info",

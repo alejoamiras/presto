@@ -1,7 +1,9 @@
 use crate::authorization::{AuthDecision, AuthorizationManager, ResolveOutcome};
-use crate::config::{self, PrestoConfig};
+use crate::config::{self, ChannelTransition, PrestoConfig, UpdateChannel};
+use crate::updater::{ManualCheckResult, ManualCheckSender};
 use crate::verified_sites::VerifiedSites;
 use presto_core::update_schedule::{install_opts, InstallCaller, InstallGate, ScheduleStore};
+use std::path::Path;
 use std::sync::Arc;
 use tauri::Manager;
 
@@ -20,13 +22,39 @@ const NEWER_CONFIG_MSG: &str =
 /// Lock the config, apply `f`, then persist IFF this build may overwrite the on-disk schema (B4) — the
 /// single source of truth for the lock-mutate-save pattern. Propagates the save error.
 fn mutate_config(config: &ConfigState, f: impl FnOnce(&mut PrestoConfig)) -> Result<(), String> {
+    try_mutate_config(config, |cfg| {
+        f(cfg);
+        Ok(())
+    })
+}
+
+/// As [`mutate_config`], but `f` may refuse, and then nothing is saved.
+fn try_mutate_config<T>(
+    config: &ConfigStore,
+    f: impl FnOnce(&mut PrestoConfig) -> Result<T, String>,
+) -> Result<T, String> {
+    try_mutate_config_at(config, None, f)
+}
+
+/// As [`try_mutate_config`], writing to `path` when given instead of the user's config.
+pub(crate) fn try_mutate_config_at<T>(
+    config: &ConfigStore,
+    path: Option<&Path>,
+    f: impl FnOnce(&mut PrestoConfig) -> Result<T, String>,
+) -> Result<T, String> {
     match config.cap.as_ref() {
         // q7e3-F-13: delegate to core's shared lock_mutate_save; keep the always-save + propagate policy.
-        Some(cap) => config::lock_mutate_save(&config.lock, cap, |cfg| {
-            f(cfg);
-            true
-        })
-        .map_err(|e| e.to_string()),
+        Some(cap) => {
+            let mut outcome = None;
+            config::lock_mutate_save_to(&config.lock, path, cap, |cfg| {
+                let result = f(cfg);
+                let save = result.is_ok();
+                outcome = Some(result);
+                save
+            })
+            .map_err(|e| e.to_string())?;
+            outcome.unwrap_or_else(|| Err("The config was not changed".to_string()))
+        }
         // B4 (codex): a NEWER build wrote this config. REFUSE the change and report it — do NOT apply it
         // in-memory (that would silently diverge from disk, revert next launch, and be undone by the
         // fresh-disk-read on the HTTPS-launch path, so the command would falsely "succeed"). Surface a clear
@@ -473,17 +501,78 @@ pub fn set_theme(
     Ok(())
 }
 
-/// Turning developer mode off resets every developer setting in the same save.
+/// The managed state a channel change touches.
+struct AppChannelEffects<'a>(&'a tauri::AppHandle);
+
+impl crate::channel_change::ChannelEffects for AppChannelEffects<'_> {
+    fn clear_pending(&self) {
+        if let Some(slot) = self.0.try_state::<PendingUpdate>() {
+            slot.clear();
+        }
+    }
+
+    fn close_prompt(&self) {
+        close_update_prompt(self.0);
+    }
+
+    fn manual_checks(&self) -> Option<ManualCheckSender> {
+        self.0
+            .try_state::<ManualCheckSender>()
+            .map(|checks| checks.inner().clone())
+    }
+}
+
+/// The save [`set_developer_mode`] makes; `path` stands in for `config.json` in tests.
+pub(crate) fn save_developer_mode(
+    config: &ConfigStore,
+    path: Option<&Path>,
+    enabled: bool,
+) -> Result<ChannelTransition, String> {
+    try_mutate_config_at(config, path, |cfg| Ok(cfg.set_developer_mode(enabled)))
+}
+
+/// The save [`set_update_channel`] makes; `path` stands in for `config.json` in tests.
+pub(crate) fn save_update_channel(
+    config: &ConfigStore,
+    path: Option<&Path>,
+    channel: UpdateChannel,
+) -> Result<ChannelTransition, String> {
+    try_mutate_config_at(config, path, |cfg| {
+        cfg.set_update_channel(channel).map_err(|e| e.to_string())
+    })
+}
+
+/// Turning developer mode off resets every developer setting in the same save. Turning it on over a
+/// stored candidate choice joins that channel, as [`set_update_channel`] does.
+///
+/// Returns the join check's result when this save made the candidate channel effective, and `None`
+/// when it did not, in which case no check ran. `Err` means nothing was saved: a check that fails
+/// or times out is `Some(Failed)`, and the save stands.
 #[tauri::command]
-pub fn set_developer_mode(
+pub async fn set_developer_mode(
     window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
     config: tauri::State<'_, ConfigState>,
     enabled: bool,
-) -> Result<(), String> {
+) -> Result<Option<ManualCheckResult>, String> {
     require_label(window.label(), SETTINGS_LABEL)?;
-    mutate_config(&config, |cfg| {
-        cfg.set_developer_mode(enabled);
-    })
+    let saved = save_developer_mode(&config, None, enabled);
+    crate::channel_change::apply(saved, &AppChannelEffects(&app)).await
+}
+
+/// Refused while developer mode is off. Returns as [`set_developer_mode`] does: the join check's
+/// result when the candidate channel became effective, `None` when no check ran, `Err` only when
+/// nothing was saved.
+#[tauri::command]
+pub async fn set_update_channel(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    config: tauri::State<'_, ConfigState>,
+    channel: UpdateChannel,
+) -> Result<Option<ManualCheckResult>, String> {
+    require_label(window.label(), SETTINGS_LABEL)?;
+    let saved = save_update_channel(&config, None, channel);
+    crate::channel_change::apply(saved, &AppChannelEffects(&app)).await
 }
 
 #[tauri::command]
@@ -512,16 +601,24 @@ pub fn remove_approved_origin(
 pub struct SystemInfo {
     pub platform: String,
     pub cpu_count: usize,
+    pub app_version: &'static str,
+    /// The channel the updater follows, which is Stable while the config is read-only.
+    pub effective_channel: UpdateChannel,
 }
 
 #[tauri::command]
-pub fn get_system_info(window: tauri::WebviewWindow) -> Result<SystemInfo, String> {
+pub fn get_system_info(
+    window: tauri::WebviewWindow,
+    config: tauri::State<'_, ConfigState>,
+) -> Result<SystemInfo, String> {
     require_label(window.label(), SETTINGS_LABEL)?;
     Ok(SystemInfo {
         platform: std::env::consts::OS.to_string(),
         cpu_count: std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(1),
+        app_version: env!("CARGO_PKG_VERSION"),
+        effective_channel: config.effective_channel(),
     })
 }
 

@@ -106,21 +106,24 @@ jq -n \
     }
   }' > "$UNSIGNED_FEED"
 
+# sign_feed <unsigned> <signed> <schema> <verify mode...>
 sign_feed() {
-  local unsigned="$1" signed="$2"
+  local unsigned="$1" signed="$2" schema="$3"
+  shift 3
   local envelope="${unsigned%.json}.envelope.json"
-  "$MANIFEST_TOOL" envelope --feed "$unsigned" > "$envelope"
+  "$MANIFEST_TOOL" envelope --feed "$unsigned" --schema "$schema" > "$envelope"
   ( TAURI_SIGNING_PRIVATE_KEY="$SIGNING_PRIVATE_KEY" \
     TAURI_SIGNING_PRIVATE_KEY_PASSWORD="$SIGNING_PRIVATE_KEY_PASSWORD" \
     "$TAURI_CLI" signer sign "$envelope" )
   "$MANIFEST_TOOL" splice --feed "$unsigned" --envelope "$envelope" --sig "$envelope.sig" > "$signed"
-  "$MANIFEST_TOOL" verify --feed "$signed" --pubkey "$PUBKEY"
+  "$MANIFEST_TOOL" verify --feed "$signed" --pubkey "$PUBKEY" "$@"
 }
 
 # Only a stable release ships a production feed. A prerelease one, with live GitHub download URLs,
-# is a manifest released clients would install if it ever reached the live feed.
+# is a manifest released clients would install if it ever reached the live feed. Verifying it as
+# the stable channel's client would also proves its schema matches its version.
 if [ "$PRERELEASE" = false ]; then
-  sign_feed "$UNSIGNED_FEED" "$ARTIFACTS_ROOT/latest.json"
+  sign_feed "$UNSIGNED_FEED" "$ARTIFACTS_ROOT/latest.json" v1 --channel stable
 fi
 
 make_smoke_feed() {
@@ -133,7 +136,10 @@ make_smoke_feed() {
     | .platforms = {($platform): .platforms[$platform]}
     | .platforms[$platform].url = $url
   ' "$UNSIGNED_FEED" > "$unsigned"
-  sign_feed "$unsigned" "$directory/smoke-latest.json"
+  # Smoke feeds are v1 for every version, the only v1 envelope a prerelease may get. `--smoke`
+  # skips admission, which refuses a v1 prerelease on both channels, and pins the downloads to the
+  # reserved host.
+  sign_feed "$unsigned" "$directory/smoke-latest.json" v1 --smoke
   rm -f "$unsigned" "${unsigned%.json}.envelope.json" "${unsigned%.json}.envelope.json.sig"
 }
 
