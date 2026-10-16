@@ -81,6 +81,9 @@ jobs:
             exit 1
           fi
           cp "$nzip" "$nsig" "$nfeed" "$RUNNER_TEMP/n/"
+          # A prerelease N also carries its rc-v1 twin; the smoke script refuses a prerelease without it.
+          ntwin=$(find "$RUNNER_TEMP/n-dl" -name 'smoke-latest-rc.json' | head -1)
+          if [ -n "$ntwin" ]; then cp "$ntwin" "$RUNNER_TEMP/n/"; fi
           ls -la "$RUNNER_TEMP/n"
 
       # L8 preflight (piece-1 plan §6): every way the REAL N-1 fixture can silently rot fails HERE,

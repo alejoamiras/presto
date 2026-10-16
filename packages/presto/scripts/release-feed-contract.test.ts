@@ -529,6 +529,21 @@ describe("release smokes: a prerelease N's legs, wired", () => {
       'if ($NIsPrerelease -and @("positive", "negative") -cnotcontains $Mode) {',
     );
   });
+
+  test("the Windows workflow stages the rc-v1 twin beside the v1 smoke feed", () => {
+    const wf = Bun.YAML.parse(
+      fs.readFileSync(path.join(REPO, ".github/workflows/_e2e-updater-windows.yml"), "utf8"),
+    ) as { jobs: Record<string, Job> };
+    const stage = Object.values(wf.jobs)
+      .flatMap((job) => job.steps)
+      .find((s) => s.name === "Stage N updater artifacts");
+    expect(stage?.run).toContain(
+      "nfeed=$(find \"$RUNNER_TEMP/n-dl\" -name 'smoke-latest.json' | head -1)",
+    );
+    expect(stage?.run).toContain(
+      'ntwin=$(find "$RUNNER_TEMP/n-dl" -name \'smoke-latest-rc.json\' | head -1)\nif [ -n "$ntwin" ]; then cp "$ntwin" "$RUNNER_TEMP/n/"; fi',
+    );
+  });
 });
 
 /** The text of shell function `name`, from its header to the closing brace at column 0. */
