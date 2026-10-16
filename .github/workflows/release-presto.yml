@@ -514,11 +514,10 @@ jobs:
           if-no-files-found: error
 
       - name: Upload signed production update feed
-        if: needs.validate.outputs.is_prerelease == 'false'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: signed-update-feed
-          path: artifacts/latest.json
+          path: artifacts/${{ needs.validate.outputs.is_prerelease == 'true' && 'latest-rc.json' || 'latest.json' }}
           if-no-files-found: error
 
   build-headless:

@@ -119,10 +119,12 @@ sign_feed() {
   "$MANIFEST_TOOL" verify --feed "$signed" --pubkey "$PUBKEY" "$@"
 }
 
-# Only a stable release ships a production feed. A prerelease one, with live GitHub download URLs,
-# is a manifest released clients would install if it ever reached the live feed. Verifying it as
-# the stable channel's client would also proves its schema matches its version.
-if [ "$PRERELEASE" = false ]; then
+# A prerelease's production feed is rc-v1, a schema pre-channel clients reject and channel clients
+# admit only on the rc channel. Verifying each feed as its channel's client proves its schema
+# matches its version.
+if [ "$PRERELEASE" = true ]; then
+  sign_feed "$UNSIGNED_FEED" "$ARTIFACTS_ROOT/latest-rc.json" rc-v1 --channel rc
+else
   sign_feed "$UNSIGNED_FEED" "$ARTIFACTS_ROOT/latest.json" v1 --channel stable
 fi
 
@@ -136,10 +138,14 @@ make_smoke_feed() {
     | .platforms = {($platform): .platforms[$platform]}
     | .platforms[$platform].url = $url
   ' "$UNSIGNED_FEED" > "$unsigned"
-  # Smoke feeds are v1 for every version, the only v1 envelope a prerelease may get. `--smoke`
+  # Every version gets a v1 smoke feed, the only v1 envelope a prerelease may get, for baselines
+  # that predate the channel; a prerelease also gets its rc-v1 twin for those that have it. `--smoke`
   # skips admission, which refuses a v1 prerelease on both channels, and pins the downloads to the
   # reserved host.
   sign_feed "$unsigned" "$directory/smoke-latest.json" v1 --smoke
+  if [ "$PRERELEASE" = true ]; then
+    sign_feed "$unsigned" "$directory/smoke-latest-rc.json" rc-v1 --smoke
+  fi
   rm -f "$unsigned" "${unsigned%.json}.envelope.json" "${unsigned%.json}.envelope.json.sig"
 }
 

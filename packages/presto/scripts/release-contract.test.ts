@@ -964,7 +964,7 @@ case $cmd in
   verify-artifact) echo "verify-artifact $(basename "$artifact") pubkey=$(cat "$pubkey")" >>"${calls}" ;;
   envelope)
     echo "envelope $(basename "$feed") schema=$schema" >>"${calls}"
-    jq '{schema: "presto-update-manifest-v1", version, pub_date, platforms}' "$feed" ;;
+    jq --arg schema "presto-update-manifest-$schema" '{schema: $schema, version, pub_date, platforms}' "$feed" ;;
   splice) jq --rawfile m "$envelope" --rawfile s "$sig" '. + {manifest: $m, manifest_sig: $s}' "$feed" ;;
   verify) echo "verify $(basename "$feed") $mode" >>"${calls}" ;;
 esac
@@ -1004,6 +1004,7 @@ esac
       file,
       feed: JSON.parse(fs.readFileSync(path.join(artifacts, file), "utf8")) as {
         platforms: Record<string, { url: string }>;
+        manifest: string;
       },
     }));
     const config = JSON.parse(fs.readFileSync(conf, "utf8")) as {
@@ -1023,57 +1024,74 @@ esac
 }
 
 describe("release signer: prerelease feeds", () => {
-  test("a prerelease still signs every payload with the production key, but emits no latest.json", () => {
+  const GITHUB_DOWNLOADS = "https://github.com/alejoamiras/presto/releases/download/";
+  const schemaOf = (manifest: string) => (JSON.parse(manifest) as { schema: string }).schema;
+  const urlsOf = (feed: { platforms: Record<string, { url: string }> }) =>
+    Object.values(feed.platforms).map((platform) => platform.url);
+
+  test("a prerelease signs every payload with the production key and an rc-v1 latest-rc.json", () => {
     const run = runReleaseSigner("9.9.9-rc.1");
     expect(run.code, run.stderr).toBe(0);
     for (const payload of run.payloads) {
       expect(run.calls).toContain(`sign ${payload} key=production-key`);
       expect(run.calls).toContain(`verify-artifact ${payload} pubkey=${run.pubkey}`);
     }
-    expect(run.manifests.map((m) => path.basename(m.file))).toEqual(
-      Array(4).fill("smoke-latest.json"),
-    );
-    // A prerelease's only v1 envelopes are its smoke twins, verified as smoke feeds.
-    expect(run.calls.filter((call) => call.startsWith("envelope "))).toEqual(
-      Array(4).fill("envelope smoke-latest.unsigned.json schema=v1"),
-    );
-    expect(run.calls.filter((call) => call.startsWith("verify "))).toEqual(
-      Array(4).fill("verify smoke-latest.json --smoke"),
-    );
-  });
-
-  test("no prerelease manifest names a download host anyone can serve", () => {
-    const urls = runReleaseSigner("9.9.9-rc.1").manifests.flatMap((m) =>
-      Object.values(m.feed.platforms).map((platform) => platform.url),
-    );
+    expect(run.manifests.map((m) => path.basename(m.file)).sort()).toEqual([
+      "latest-rc.json",
+      ...Array(4).fill("smoke-latest-rc.json"),
+      ...Array(4).fill("smoke-latest.json"),
+    ]);
+    expect(run.calls.filter((call) => call.startsWith("envelope "))).toEqual([
+      "envelope latest.unsigned.json schema=rc-v1",
+      ...Array(4)
+        .fill([
+          "envelope smoke-latest.unsigned.json schema=v1",
+          "envelope smoke-latest.unsigned.json schema=rc-v1",
+        ])
+        .flat(),
+    ]);
+    expect(run.calls.filter((call) => call.startsWith("verify "))).toEqual([
+      "verify latest-rc.json --channel rc",
+      ...Array(4)
+        .fill(["verify smoke-latest.json --smoke", "verify smoke-latest-rc.json --smoke"])
+        .flat(),
+    ]);
+    const production = run.manifests.find((m) => m.file === "latest-rc.json");
+    expect(schemaOf(production?.feed.manifest ?? "{}")).toBe("presto-update-manifest-rc-v1");
+    const urls = urlsOf(production?.feed ?? { platforms: {} });
     expect(urls).toHaveLength(4);
-    for (const url of urls) expect(url.startsWith(SMOKE_DOWNLOAD_PREFIX), url).toBe(true);
+    for (const url of urls) {
+      expect(url.startsWith(`${GITHUB_DOWNLOADS}presto-v9.9.9-rc.1/`), url).toBe(true);
+    }
   });
 
-  test("a stable release keeps its GitHub-URL latest.json and moves only its smoke feeds", () => {
-    const run = runReleaseSigner("9.9.9");
-    expect(run.code, run.stderr).toBe(0);
-    expect(run.manifests.map((m) => m.file)).toContain("latest.json");
-    expect(run.calls).toContain("envelope latest.unsigned.json schema=v1");
-    expect(run.calls).toContain("verify latest.json --channel stable");
-    for (const { file, feed } of run.manifests) {
-      const prefix =
-        file === "latest.json"
-          ? "https://github.com/alejoamiras/presto/releases/download/presto-v9.9.9/"
-          : SMOKE_DOWNLOAD_PREFIX;
-      for (const { url } of Object.values(feed.platforms)) {
-        expect(url.startsWith(prefix), url).toBe(true);
+  test("no v1 prerelease manifest names a download host anyone can serve", () => {
+    const v1 = runReleaseSigner("9.9.9-rc.1").manifests.filter(
+      (m) => schemaOf(m.feed.manifest) === "presto-update-manifest-v1",
+    );
+    expect(v1.map((m) => path.basename(m.file))).toEqual(Array(4).fill("smoke-latest.json"));
+    for (const m of v1) {
+      for (const url of urlsOf(m.feed)) {
+        expect(url.startsWith(SMOKE_DOWNLOAD_PREFIX), url).toBe(true);
       }
     }
   });
 
-  test("the production feed is uploaded only for a stable release", () => {
-    const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs["sign-updater-artifacts"]?.steps ?? [];
-    const upload = steps.find((step) => step.name === "Upload signed production update feed");
-    expect(upload?.if).toBe("needs.validate.outputs.is_prerelease == 'false'");
-    const payloadUploads = steps.filter((s) => s.name?.startsWith("Upload signed") && s !== upload);
-    expect(payloadUploads).toHaveLength(4);
-    for (const step of payloadUploads) expect(step.if, step.name).toBeUndefined();
+  test("a stable release keeps its GitHub-URL latest.json and v1 smoke feeds only", () => {
+    const run = runReleaseSigner("9.9.9");
+    expect(run.code, run.stderr).toBe(0);
+    expect(run.manifests.map((m) => path.basename(m.file)).sort()).toEqual([
+      "latest.json",
+      ...Array(4).fill("smoke-latest.json"),
+    ]);
+    expect(run.calls).toContain("envelope latest.unsigned.json schema=v1");
+    expect(run.calls).toContain("verify latest.json --channel stable");
+    for (const { file, feed } of run.manifests) {
+      expect(schemaOf(feed.manifest), file).toBe("presto-update-manifest-v1");
+      const prefix =
+        file === "latest.json" ? `${GITHUB_DOWNLOADS}presto-v9.9.9/` : SMOKE_DOWNLOAD_PREFIX;
+      for (const url of urlsOf(feed)) expect(url.startsWith(prefix), url).toBe(true);
+    }
   });
 
   test("every smoke feed producer and consumer uses the reserved download host", () => {
@@ -1094,6 +1112,22 @@ describe("release signer: prerelease feeds", () => {
     expect(ephemeral.match(/https:\/\/[^/"\s]*\/releases\/download\//g)).toEqual([
       "https://$host/releases/download/",
     ]);
+  });
+});
+
+describe("release workflow: production feed artifact", () => {
+  test("the production feed is uploaded under its channel's name", () => {
+    const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs["sign-updater-artifacts"]?.steps ?? [];
+    const upload = steps.find((step) => step.name === "Upload signed production update feed");
+    expect(upload?.if).toBeUndefined();
+    expect(upload?.with?.name).toBe("signed-update-feed");
+    expect(upload?.with?.path).toBe(
+      // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression
+      "artifacts/${{ needs.validate.outputs.is_prerelease == 'true' && 'latest-rc.json' || 'latest.json' }}",
+    );
+    const payloadUploads = steps.filter((s) => s.name?.startsWith("Upload signed") && s !== upload);
+    expect(payloadUploads).toHaveLength(4);
+    for (const step of payloadUploads) expect(step.if, step.name).toBeUndefined();
   });
 });
 
