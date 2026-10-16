@@ -1019,24 +1019,37 @@ async function openChannel(
   await page.goto("/settings.html");
 }
 
-/** Holds every call of `cmd` until `answer` settles the oldest one with a result. */
-async function hold(page: Page, cmd: string) {
-  await page.addInitScript((cmd) => {
-    const w = window as any;
-    w.__held = [];
-    w.__TAURI_MOCK__.setHandler(cmd, () => new Promise((resolve) => w.__held.push(resolve)));
-  }, cmd);
+/** Holds every call of `cmd` until `answer` or `refuse` settles the oldest one. */
+function holdNow(cmd: string) {
+  const w = window as any;
+  w.__held = [];
+  w.__TAURI_MOCK__.setHandler(
+    cmd,
+    () => new Promise((resolve, reject) => w.__held.push({ resolve, reject })),
+  );
 }
 
-async function answer(page: Page, result: string | null, call: "oldest" | "newest" = "oldest") {
+async function hold(page: Page, cmd: string) {
+  await page.addInitScript(holdNow, cmd);
+}
+
+async function settleHeld(page: Page, outcome: "resolve" | "reject", value: unknown, call: string) {
   await expect.poll(() => page.evaluate(() => (window as any).__held.length)).toBeGreaterThan(0);
   await page.evaluate(
-    ({ result, call }) => {
+    ({ outcome, value, call }) => {
       const held = (window as any).__held;
-      (call === "oldest" ? held.shift() : held.pop())(result);
+      (call === "oldest" ? held.shift() : held.pop())[outcome](value);
     },
-    { result, call },
+    { outcome, value, call },
   );
+}
+
+async function answer(page: Page, result: unknown, call: "oldest" | "newest" = "oldest") {
+  await settleHeld(page, "resolve", result, call);
+}
+
+async function refuse(page: Page, message: string, call: "oldest" | "newest" = "oldest") {
+  await settleHeld(page, "reject", message, call);
 }
 
 const channelRadio = (page: Page, value: Channel) =>
@@ -1185,6 +1198,53 @@ test("a refused channel save goes back and says why", async ({ page }) => {
   await expect(page.locator("#developer-section .error-hint")).toHaveText(NEWER_CONFIG);
   await expect(channelRadio(page, "stable")).toBeChecked();
   await expect(page.locator("#channel-result")).toBeHidden();
+});
+
+test("failed overlapping saves show what is saved", async ({ page }) => {
+  // The newest failure would restore the older save's view, which was never stored either.
+  await hold(page, "set_update_channel");
+  await openChannel(page, { channel: "rc" });
+  await pick(page, "Stable");
+  await pick(page, "Release candidates");
+  await refuse(page, "disk full");
+  await refuse(page, "disk full");
+  await expect(channelRadio(page, "rc")).toBeChecked();
+  await expect(page.locator("#channel-status")).toHaveText(
+    "The newer of the next release candidate and the next stable release. You run 1.2.0.",
+  );
+  await expect(channelRadio(page, "rc")).toBeEnabled();
+});
+
+test("a save confirmed during a reload leaves the controls usable", async ({ page }) => {
+  await openChannel(page, { channel: "rc", version: "1.3.0-rc.2" });
+  await pick(page, "Stable");
+  await expect(page.locator("#leave-check")).toBeVisible();
+
+  // A failed theme save reloads every setting; the reload's config read stays pending.
+  await page.evaluate(holdNow, "get_config");
+  await page.evaluate(() =>
+    (window as any).__TAURI_MOCK__.setHandler("set_theme", () => {
+      throw "disk full";
+    }),
+  );
+  await page.locator("#theme label", { hasText: "Dark" }).click();
+  await expect(page.getByRole("switch", { name: "Developer mode" })).toBeDisabled();
+
+  await page.locator("#leave-confirm").click();
+  await expect(channelRadio(page, "stable")).toBeChecked();
+  // The reload read the config from before the save; it must not repaint over it.
+  await answer(page, {
+    config_version: 2,
+    https_enabled: false,
+    approved_origins: [],
+    speed: "full",
+    theme: "system",
+    onboarding_version: 1,
+    developer: { enabled: true, update_channel: "rc" },
+  });
+  await expect(page.getByRole("switch", { name: "Developer mode" })).toBeEnabled();
+  await expect(channelRadio(page, "rc")).toBeEnabled();
+  await expect(channelRadio(page, "stable")).toBeChecked();
 });
 
 test("read-only config shows the effective channel", async ({ page }) => {

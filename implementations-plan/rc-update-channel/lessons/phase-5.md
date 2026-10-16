@@ -38,3 +38,34 @@
   - developer on ignoring the stored choice;
   - showing the stored channel instead of the effective one;
   - the prompt never showing candidate copy.
+
+## Smoke half (`rc-lifecycle`)
+
+- **Relaunch stays in the group.** Tauri 2.11.5's `restart()` spawns the new binary with
+  `Command::spawn` (macOS re-reads `CFBundleExecutable`), so the relaunched app keeps the launched
+  process group and its stdout. One `stop_app` per leg ends it on macOS and Linux. On Windows the
+  NSIS installer starts the new app, so the legs stop every `Presto` process by name.
+- **R's macOS payload is renamed** `Presto-<version>.app.tar.gz`: R and N both bundle
+  `Presto.app.tar.gz`, and one serve directory holds both. The signature covers bytes, not the name.
+- **Feeds over R's payload.** `rc-feeds` signs four feeds over R's one payload: R in rc-v1, its v1
+  twin, rc.2 in rc-v1, and v1 `0.0.1`. Only R's is meant to install. Under a broken admission, rc.2
+  installs R's bytes, so `/health` would still read rc.1. The download assertion catches it, which
+  is why every refusal leg checks the download before the version and the log line. A local dry run
+  with a throwaway key checked the four through the real tool: R rc-v1 refused on stable and OK on
+  rc; the twin refused on both (`PrereleaseNotCandidate`); rc.2 is rc-v1; 0.0.1 is v1.
+- **Configs.** Every seed has `https_enabled: false`. With it true, first launch would install the
+  local CA, and on Windows CurrentUser\Root that is a GUI prompt a headless runner never answers.
+  `onboarding_version: 1` keeps the wizard closed. A1 and A2 seed a v1 config with no developer
+  block.
+- **Feed log marks.** The readiness probe also requests `latest.json`, so each launch reads only
+  the feed lines after a mark taken just before it. On Windows, non-feed 404s go to `feed.err`.
+  Every feed path is logged through the feed log.
+- **Docs in this arc.** `UPDATER_TESTING.md` and the CLAUDE.md smoke list name the mode now, so the
+  arc 2 PR does not leave them stale. Phase 7 still owns the release-smoke docs.
+- Local checks before dispatch:
+  - the feed-log helpers against a synthetic log (bash);
+  - the Windows script parsed with zero errors, and its helpers run in a PowerShell container
+    against the same kind of log;
+  - shellcheck 0.9.0 and actionlint;
+  - `ephemeral-updater.test.ts` refuses a non-rc.1 `rc-feeds` version, and the mutation that drops
+    that check fails the test.

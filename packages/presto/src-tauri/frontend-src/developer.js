@@ -30,6 +30,9 @@ let revision = 0;
 let saving = 0;
 // Numbers each change: only the newest may write the result line, so a superseded join's is dropped.
 let change = 0;
+// A failed save restores the view it replaced, which an overlapping failed save may never have
+// stored, so the view is read back once the last save settles.
+let unsure = false;
 
 function isPrerelease(version) {
   return version.split("+")[0].includes("-");
@@ -91,8 +94,8 @@ export function hydrateDeveloper(token, config, sysInfo) {
 }
 
 /**
- * Saves one change, shown at once. An error means nothing was saved, so the view goes back; a check
- * that ran and failed still saved, and only its result line says so.
+ * Saves one change, shown at once. An error means nothing was saved, so the view goes back and is
+ * then read back from disk; a check that ran and failed still saved, and only its result line says so.
  */
 async function save(command, args, next, anchor) {
   const mine = ++change;
@@ -109,6 +112,7 @@ async function save(command, args, next, anchor) {
     if (mine === change) resultEl.textContent = RESULT_TEXT[result] ?? "";
   } catch (err) {
     console.error(`Failed to invoke ${command}:`, err);
+    unsure = true;
     if (mine === change) {
       state = before;
       render();
@@ -118,6 +122,33 @@ async function save(command, args, next, anchor) {
   } finally {
     saving--;
     revision++;
+    if (saving === 0) settle();
+  }
+}
+
+// A load that began before the last save returns without painting, so the save hands the controls
+// back, or after a failure reads the saved choice first.
+function settle() {
+  if (unsure) {
+    unsure = false;
+    readBack();
+    return;
+  }
+  switchEl.disabled = false;
+  channelGroup.disabled = false;
+}
+
+async function readBack() {
+  const token = beginDeveloperLoad();
+  try {
+    const [config, sysInfo] = await Promise.all([invoke("get_config"), invoke("get_system_info")]);
+    hydrateDeveloper(token, config, sysInfo);
+  } catch (err) {
+    console.error("Failed to read the developer settings back:", err);
+    if (saving === 0 && token === revision) {
+      switchEl.disabled = false;
+      channelGroup.disabled = false;
+    }
   }
 }
 
