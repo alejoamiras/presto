@@ -123,7 +123,8 @@ Three further consequences follow from trusting the publisher, and none of them 
 - **Digest verification covers the version cache only.** A request for a *non-bundled* version
   executes a marker-verified cache entry and nothing else, unless it names the one label a
   developer pinned to a file of their own (decision 8). A versionless request, or one naming the
-  bundled version, walks a trusted, unverified search chain (`packages/presto/core/src/bb.rs`): the
+  bundled version (unless that is the pinned label, which decision 8 routes first), walks a
+  trusted, unverified search chain (`packages/presto/core/src/bb.rs`): the
   sidecar next to the executable, `~/.bb/bb`, and on Unix `bb` on `$PATH` (deliberately skipped on
   Windows, where a planted `bb.exe` could hijack it). An existing `BB_BINARY_PATH` operator override
   takes precedence over all of it, versioned requests included; only a request naming a custom
@@ -297,7 +298,10 @@ What bounds it:
 - **No other account may be able to change it**, checked when it is picked and at every spawn:
   - **Unix:** the file and every ancestor belong to the user or root, and nothing is
     world-writable. Group write is allowed only through the user's private group or a sticky
-    directory, and an ACL entry that lets anyone else write is refused.
+    directory, and an ACL entry that lets anyone else write is refused. The private-group test
+    reads the account database through NSS, so a source that does not enumerate (sssd's
+    default) can hide a second member; the rehash before every spawn turns that account's swap
+    into a refusal, not a run (#155).
   - **Windows:** the file must sit under `%USERPROFILE%`.
   - **macOS:** a quarantined file is refused, and so is an unsigned one on Apple Silicon. Settings
     gives a command to copy; Presto never changes quarantine, signatures or the exec bit itself.

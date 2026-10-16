@@ -115,6 +115,8 @@ Because the presto downloads `bb` at runtime (above), it is **decoupled from the
 
 ### bb Binary Resolution
 
+A request naming the label of a [custom bb](#developer-mode-custom-bb) runs that pinned file and nothing else, even when the label is the bundled version; with `BB_BINARY_PATH` set it is refused instead. Every other request resolves as follows.
+
 When **no specific version** is requested (or the bundled version is), the presto looks for the `bb` binary in this order:
 
 1. **`BB_BINARY_PATH` env var** — explicit override (CI, testing)
@@ -122,7 +124,7 @@ When **no specific version** is requested (or the bundled version is), the prest
 3. **`~/.bb/bb`** — user-installed via the Aztec CLI
 4. **`PATH`** — system-wide installation
 
-When a **specific version is requested**, the *only* acceptable source is the marker-verified version cache (unless `BB_BINARY_PATH` is set: that operator override runs for every request, or the version is the label of a [custom bb](#developer-mode-custom-bb), which runs that pinned file instead) — the presto never falls back to the sidecar/`~/.bb`/`PATH` for a requested version (that would silently run the wrong or an unverified `bb` over your private witness).
+When a **specific version is requested**, the *only* acceptable source is the marker-verified version cache (unless `BB_BINARY_PATH` is set: that operator override runs for every request except a custom bb's label, which it refuses) — the presto never falls back to the sidecar/`~/.bb`/`PATH` for a requested version (that would silently run the wrong or an unverified `bb` over your private witness).
 
 ### Cache Integrity (F-007)
 
@@ -301,7 +303,7 @@ To prove with a `bb` you built yourself, open Settings → **Advanced**, turn on
 
 1. Presto hashes the file and checks it **without running it**. It refuses a file that is not executable, not built for this computer, or that another account could change (a group- or world-writable file or folder, or one outside your user profile on Windows). On macOS it also refuses a quarantined file, and on Apple Silicon an unsigned one. A refusal comes with a command to copy; Presto never changes the file itself.
 2. Tick **I built this file myself, or I fully trust the person who did**, then **Test run**. Presto runs the file once with `--version`, with no proof data, and fills in the version it printed.
-3. Choose the version it answers, and click **Use this bb**. Pick a version no release has, such as `6.0.0-dev.1`, to keep it to your own tests. Every approved site that sends that `x-aztec-version` gets your build.
+3. Choose the version it answers, and click **Use this bb**. Pick a version no release has, such as `6.0.0-dev.1`, so no ordinary dApp reaches it by accident; any approved site that sends that `x-aztec-version`, on purpose or not, gets your build.
 
 While it is set, Settings opens on a banner, the tray menu names the version, and the approval popup tells you when a site's request will reach it. A proof it makes carries the response header `x-presto-bb: custom`. Every other version, and a request with no version, uses the official `bb`.
 

@@ -142,3 +142,26 @@ temporary `tauri-plugin-fs = "=2.5.2"` line, then dropped it; the lock keeps 2.5
 - `tauri-trust-boundary.test.ts` (T10: 26 handlers, no `dialog:` grant) and
   `webdriver-only-hooks.test.ts`.
 - `cargo build --release --locked`, then `assert-no-test-hooks.sh`: no test hooks.
+
+## Cross-arc pass (2026-10-16)
+
+Fresh Codex session `01a145b9-5e98-7f31-9d26-301a3127723a` (`gpt-6.1-sol`, high) over
+`git diff eb4b751^ HEAD`: **conditional**, no blocking finding. It confirmed the desktop uses core's
+inspection, label validation, rehash and setters as intended, the config-before-slot lock order with
+the guards held through the synchronous spawn, that headless never loads a desktop `config.json`,
+and the fixed wire text on both routes.
+
+| # | Severity | Claim | Disposition |
+|---|---|---|---|
+| 1 | should-fix | The Settings copy and the app README say an unreleased label "keeps it to your own tests"; an approved site can send that label and is served without a new popup. | Fixed: both now say it keeps ordinary dApps from reaching it by accident, and any approved site can ask on purpose. |
+| 2 | should-fix | Decision 8 promises "no other account may be able to change it" without the enumeration limit `primary_groups` notes: an NSS source that does not enumerate (sssd's default) can hide a second member of a group named after the user. | Fixed in the doc, filed as #155 (known limit: the rehash turns that account's swap into a refusal). |
+| 3 | should-fix | T13 pins a byte-identical sidecar copy under the bundled label, so a regression that keeps the custom header but runs the bundled file passes. | Not taken. Core's marker test proves the exact file runs and a changed one never does; T13 proves the desktop writes the pin core consumes and the response carries the header set on that same path. A wrapper that passes inspection needs a signed Mach-O or PE per OS, out of proportion for a class the core test already catches. |
+| 4 | nit | The routing paragraphs in `SECURITY_MODEL.md` and the app README read as unconditional, and the README says `BB_BINARY_PATH` runs for every request. | Fixed: the custom label's precedence is stated once, the override paragraph names the refused label. |
+
+**From CI, not Codex:** the macOS WebDriver lane refused the staged file. The `bb` that bb.js ships
+for arm64 macOS carries an ad-hoc signature (no CMS blob) whose designated requirement names an
+Apple certificate chain, so the kernel runs it while `codesign --verify` fails on the requirement
+and `os_gates` reported it unsigned. The gate now reads `codesign --verify --verbose=2`'s own
+"valid on disk" line, which is what the kernel checks; the macOS `custom_bb` unit test in the Cert
+Trust lane keeps the unsigned refusal. T13 now fails at once with the refusal's text instead of a
+20 s timeout.
