@@ -1,5 +1,44 @@
 # Phase 3: desktop backend (picker, commands, tray, popup DTO)
 
+## Checkpoint (2026-10-16, parked for a director handover)
+
+- **Branch:** `custom-bb-desktop`, rebased onto `main` `eb4b751` (#143, the arc 1 squash). Not
+  pushed; no PR yet.
+- **Done in arc 2:** P3, P4 and P5 are each committed with their gates green (`plan.md` marks them
+  ✓; the details are in `lessons/phase-3.md` to `phase-5.md`).
+  - `df9fd6b` P3: the four Settings-only commands, the picker, the tray line, the popup DTO.
+  - `e3114ce`: `plan.md` marks P1 and P2 landed at `eb4b751`.
+  - `d8ecf59` P4: the Settings banner and card, the popup line, the popup at 400×360.
+  - `aa3388a` P5: the T13 WebDriver spec and the docs (SECURITY_MODEL decision 8, the READMEs,
+    `CLAUDE.md`).
+- **Approved table:** no deviation. There are four commands and four `allow-*` grants, all on
+  `settings.json`, plus `get_pending_auth.custom_label`. `tauri-plugin-dialog` is registered in Rust
+  with no `dialog:*` grant (T10 pins it).
+  - Changes inside existing commands only: `set_developer_mode` calls
+    `custom_bb::developer_mode_saved`, which drops the candidate when developer mode turns off.
+  - The auth popup grew from 400×300 to 400×360, as the plan allows ("grow the popup").
+- **`tauri-plugin-dialog` vetting:** complete, recorded below under "Supply chain".
+  - `=2.7.3`, with `tauri-plugin-fs` held at 2.5.2 and `rfd` 0.16.0.
+  - Each `.crate` is identical to its upstream tag: 39/39, 94/94 and 54/54 files.
+  - The transitive list is below.
+- **Codex sessions** (resume with `resume-codex.sh <id> <followup> <dir> high`):
+  - Arc 1: `01a14169-ee8f-7dc0-9836-f9256232afe2`, three rounds, converged; its directory is not
+    recorded.
+  - Arc 2, round 1: thread `01a1457a-9c96-7853-a9b6-4bed1f2a1bb6`, directory `/tmp/codex-ke1qnKot`
+    (gpt-6.1-sol, high, read-only).
+    - It started 16:10 UTC and was still running when parked.
+    - Its prompt is `prompt.md` in that directory, and its answer lands in `response.md` there.
+    - If there is no `response.md`, the run died with this session. Start round 1 again from that
+      `prompt.md` with `run-codex.sh <prompt> <worktree> high read-only gpt-6.1-sol`.
+- **Exact next step:** read the arc 2 round-1 response and triage it. Fix, gate, and resume the
+  same session, at most 3 rounds.
+  - Then send the director the arc 2 boundary report: head SHA, Codex rounds and verdicts, gates,
+    deviations (none).
+  - On convergence, push `custom-bb-desktop` and open its PR against `main`. The PR body states the
+    WebDriver wall-clock: about 65 s before this arc and 77 s after it locally, with T13 at 11.7 s.
+- **Uncommitted on purpose:** `implementations-plan/custom-bb/ux/`, the local UX mockups, which are
+  never committed.
+
 ## Supply chain: `tauri-plugin-dialog` (2026-10-16)
 
 **Pinned `=2.7.3`, not the newest 2.x.** 2.8.0 and later require `tauri ^2.12`. Taking any of
