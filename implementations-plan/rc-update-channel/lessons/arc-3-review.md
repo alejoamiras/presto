@@ -24,3 +24,8 @@ approve-for-me mode. Round 1 found nothing in the Worker, the pipeline shell or 
    `blocker-1 (codex High)`. Removed; the rest of the file's older provenance tags are out of scope.
 
 Gate: `bun run test` exit 0, `bun run lint:actions`.
+
+## Round 2: clean
+
+Codex confirmed all three round 1 fixes at `a7ed849` and found no new material finding in the net
+diff.
