@@ -10,9 +10,10 @@ After all four desktop builds finish, the `release-signing` environment exposes 
 
 - sign the four updater payloads;
 - verify every payload signature against the public key embedded in `tauri.conf.json`;
-- assemble and verify `latest.json`, for a stable release only;
-- assemble and verify one-platform `smoke-latest.json` feeds, whose downloads name the reserved
-  `updater-smoke.test` host.
+- assemble and verify the production feed: `latest.json` (v1) for a stable release,
+  `latest-rc.json` (`rc-v1`) for a prerelease;
+- assemble and verify one-platform `smoke-latest.json` feeds, plus `rc-v1` `smoke-latest-rc.json`
+  twins for a prerelease, whose downloads name the reserved `updater-smoke.test` host.
 
 It never builds, installs, launches, or smoke-tests an application. Downstream jobs receive only signed artifacts and feeds.
 
