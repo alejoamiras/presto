@@ -41,6 +41,20 @@
 - A test pinning a Windows ordering matched `schtasks /Delete` inside Cleanup; anchor ordering pins on
   a unique comment.
 
+## 7.4 contract tests
+
+- T13, T15 and T20 were written alongside 7.1–7.3. The v1 override stays pinned to the ephemeral
+  twin and the stable production feed, and `--smoke` to the three smoke producers. The real round
+  trip in `updater-feed-e2e` covers the rc-v1 production feed and both twins.
+
+## 7.5 docs
+
+- Runbook: the 17th asset is the signed feed of either kind. A `Release candidates` section holds
+  candidate promote, `withdraw-rc`, the broken-candidate response and the first-live-candidate
+  protocol. Rollback notes how a stable promote settles `latest-rc.json`.
+- CLAUDE.md's release chain named a `sign-update-feed` job that does not exist; the real chain is
+  `build → sign-updater-artifacts → smoke → draft release → packaged E2E → tag → finalize`.
+
 ## Mutations (all red)
 
 | Mutation | Result |

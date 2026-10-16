@@ -74,7 +74,13 @@ The project is designed to:
   downloads so a request cannot drive unbounded fetch churn;
 - accept only correctly signed updater payloads, reject rollback and artifact confusion, and enforce
   an artifact size ceiling taken from the **signed envelope** rather than the feed's advertised
-  value, before the download is accepted.
+  value, before the download is accepted;
+- admit a release candidate only on the release-candidate channel, which only the Settings window
+  can choose, with developer mode on. A candidate is signed under its own envelope schema (`rc-v1`);
+  the stable channel refuses one when it checks, before it acts or prompts, and again from the
+  on-disk choice before it installs, and both channels refuse a prerelease signed as a stable. The
+  feed Worker's routing is not the boundary: a signed candidate served on `latest.json` is refused
+  there too.
 
 These controls reduce risk within the boundaries below. They do not turn those boundaries into
 cryptographic guarantees.
@@ -279,6 +285,7 @@ The decisions above do not authorize:
   health contract;
 - persisting a plaintext-proving consent anywhere;
 - installing an unsigned or incorrectly signed updater payload, or one exceeding the size ceiling;
+- installing a release candidate on an install that has not chosen release candidates in Settings;
 - letting the verified-sites list grant, skip or shorten an approval, or signing it with the updater
   key;
 - executing a requested cached `bb` version whose integrity marker is absent or invalid; or

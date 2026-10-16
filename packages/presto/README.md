@@ -287,6 +287,12 @@ On the first update, you'll see a prompt:
 
 With auto-update enabled, new versions are downloaded and installed in the background — the app restarts seamlessly. You can change this anytime in Settings.
 
+### Release candidates
+
+To test a release before it ships, open Settings → **Advanced**, turn on **Developer mode** and choose **Updates from: Release candidates**. Presto checks once right away and shows the result; from then on every check reads the release-candidate feed first and falls back to the stable one. A release candidate installs the way a stable update does: a prompt, or silently with Auto-Update on. Once the stable that follows it ships, the next check moves you to it.
+
+To leave, choose **Stable** or turn Developer mode off; on a release candidate, Presto asks first. You keep the release candidate you are running and get no further candidates, and the next stable above it updates you as usual. Turning Developer mode off also resets every developer setting. Reinstalling by hand keeps the channel, so choose Stable before reinstalling a stable. Every other install stays on stable and refuses a release candidate's update feed.
+
 ### Encrypted Connection (HTTPS)
 
 HTTPS between your browser and the presto is **default-on** on macOS, Linux, and Windows,
@@ -463,7 +469,7 @@ validate → build (4 desktop + 4 headless) → isolated updater signing → pla
 - **Build**: Tauri bundles for macOS arm64/x86_64, Linux x86_64, and Windows x86_64, plus headless `presto-server` for macOS arm64/x86_64 and Linux x86_64/arm64. Build jobs use throwaway updater keys.
 - **Updater signing**: one `release-signing` environment job receives the production updater key only after tooling and the verifier are prepared. It signs exact updater payload bytes, builds signed feeds, verifies them, and does not build, install, or launch apps.
 - **Release gates**: notarization/launch checks, blocking N-1→N updater smokes on macOS/Linux/Windows (including tamper rejection controls), then packaged E2E against the draft's own assets. The baseline resolver includes prereleases, selects the greatest complete published same-key release below the candidate, and fails closed if none exists. Any future updater-key rotation requires a deliberately reviewed migration change; it is not an evergreen dispatch option.
-- **Release**: publishes the verified draft after pushing the reviewed commit tag. Stable releases include signed `latest.json`; prereleases do not alter the live updater feed.
-- **Promote**: a separate `promote-only` dispatch verifies the 17-asset stable release and flips the live feed. With `bump_source=true`, it then opens the next-version PR.
+- **Release**: publishes the verified draft after pushing the reviewed commit tag. Stable releases include signed `latest.json`, prereleases a signed `latest-rc.json` that only the release-candidate channel admits; publishing alters neither live feed.
+- **Promote**: a separate `promote-only` dispatch verifies the 17-asset release and writes the feed key its version names (`latest.json` or `latest-rc.json`). With `bump_source=true`, a stable then opens the next-version PR. `withdraw-rc` deletes the live candidate so opted-in installs fall back to stable ([runbook](../../docs/RELEASE_RUNBOOK.md#release-candidates)).
 
 The Windows installer is intentionally not Authenticode-signed, so SmartScreen reports an unknown publisher on first install. Updater payloads are still Ed25519-signed and verified before application.

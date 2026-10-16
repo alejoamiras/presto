@@ -647,7 +647,7 @@ run IDs in lessons; the mutation run red on A1, A2 and C1. Layers: all, includin
 
 **Arc 2 boundary.**
 
-### Phase 6: feed Worker
+### Phase 6: feed Worker ✓
 
 1. In `packages/release-feed/src/index.ts`, add the stable-route guard, the RC route with the
    SemVer max, and the `/releases/download/*` 404 pin.
@@ -657,7 +657,7 @@ run IDs in lessons; the mutation run red on A1, A2 and C1. Layers: all, includin
 **Validation gate:** `bun run --cwd packages/release-feed test`,
 `bun run --cwd packages/release-feed typecheck`, `bun run test`. Layers: lint, typecheck, unit.
 
-### Phase 7: release pipeline and docs
+### Phase 7: release pipeline and docs ✓
 
 1. Signer: schema by version, prerelease file names, the two smoke feeds on
    `updater-smoke.test`, the schema assertion. Skip whatever Phase 0 already landed.
