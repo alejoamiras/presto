@@ -238,9 +238,9 @@ fn host_slice(head: &[u8], wanted: u32) -> Option<(u64, u64)> {
     })
 }
 
-/// The `datasize` of a 64-bit image's `LC_CODE_SIGNATURE` command, if it has one. A command is
-/// read only once its declared size fits the declared command region, so a header that lies
-/// about its sizes names no signature.
+/// The `datasize` of a 64-bit image's `LC_CODE_SIGNATURE` command, if it has one. The declared
+/// command region must fit the image and each command its region before anything in it is read,
+/// so a header that lies about its sizes names no signature.
 #[cfg(any(target_os = "macos", test))]
 fn signature_command(image: &[u8]) -> Option<u32> {
     let word = |at: usize| {
@@ -252,7 +252,9 @@ fn signature_command(image: &[u8]) -> Option<u32> {
         return None;
     }
     let ncmds = word(16)?;
-    let end = 32usize.checked_add(word(20)? as usize)?;
+    let end = 32usize
+        .checked_add(word(20)? as usize)
+        .filter(|&end| end <= image.len())?;
     let mut at = 32usize;
     for _ in 0..ncmds {
         let (cmd, size) = (word(at)?, word(at + 4)? as usize);
@@ -374,9 +376,14 @@ mod tests {
         );
         assert_eq!(signature_command(&thin_image(&[(0x19, segment)])), None);
         assert_eq!(signature_command(&thin_image(&[])), None);
-        // Truncated commands, a zero-sized command, a short signature command, a command region
-        // that lies about its size, and a 32-bit header end the walk without a hit.
+        // Truncated commands, a command region the image cannot hold, a zero-sized command, a
+        // short signature command, a region that lies about its size, and a 32-bit header end the
+        // walk without a hit.
         assert_eq!(signature_command(&signed_image[..40]), None);
+        let wide: &[u8] = &[4, 0, 0, 0, 16, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let cut = thin_image(&[(LC_CODE_SIGNATURE, wide)]);
+        assert_eq!(signature_command(&cut), Some(16));
+        assert_eq!(signature_command(&cut[..48]), None);
         let mut looped = signed_image.clone();
         looped[36..40].copy_from_slice(&0u32.to_le_bytes());
         assert_eq!(signature_command(&looped), None);
