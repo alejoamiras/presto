@@ -161,8 +161,12 @@ and the fixed wire text on both routes.
 **From CI, not Codex:** the macOS WebDriver lane refused the staged file. The `bb` that bb.js ships
 for arm64 macOS carries an ad-hoc signature (no CMS blob) whose designated requirement names an
 Apple certificate chain, so the kernel runs it while `codesign --verify` fails on the requirement
-and `os_gates` reported it unsigned. The gate now reads `codesign --verify --verbose=2`'s own
-"valid on disk" line, matched whole with its path prefix (a confirmation round caught the bare
-substring matching a pathname); the macOS `custom_bb` unit test in the Cert Trust lane keeps the
-unsigned refusal under such a name. T13 now fails at once with the refusal's text instead of a
-20 s timeout.
+and `os_gates` reported it unsigned. Reading `codesign --verify --verbose=2`'s "valid on disk"
+line did not help: Security.framework's `signature()` throws `errSecCSUnsigned` for a CMS-less
+signature without the ad-hoc flag, so no `codesign` or `SecStaticCodeCheckValidity` call can
+accept what the kernel runs. The gate now asks the Mach-O itself whether the host slice carries
+an `LC_CODE_SIGNATURE` with data (`binary_format::has_code_signature`, parser unit-tested on
+every OS) and leaves validity to the test run, where the kernel is the judge; the macOS
+`custom_bb` unit test in the Cert Trust lane keeps the unsigned refusal, since
+`--remove-signature` drops the load command. T13 now fails at once with the refusal's text
+instead of a 20 s timeout.

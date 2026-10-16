@@ -10,6 +10,15 @@ use super::{Refusal, RefusalCode};
 const HEAD_BYTES: u64 = 4096;
 /// Real universal binaries carry two or three slices; more means this is not one.
 const MAX_FAT_SLICES: usize = 16;
+/// Load commands beyond this are not a program Presto could run.
+#[cfg(target_os = "macos")]
+const MAX_LOAD_COMMAND_BYTES: u64 = 1 << 20;
+#[cfg(any(target_os = "macos", test))]
+const LC_CODE_SIGNATURE: u32 = 0x1D;
+#[cfg(any(target_os = "macos", test))]
+const CPU_X86_64: u32 = 0x0100_0007;
+#[cfg(any(target_os = "macos", test))]
+const CPU_ARM64: u32 = 0x0100_000C;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Format {
@@ -165,6 +174,89 @@ fn parse_mach_o(head: &[u8]) -> Option<Header> {
     }
 }
 
+/// Whether the image Presto would run carries an `LC_CODE_SIGNATURE` load command with data. Apple
+/// silicon refuses to start an image without one and accepts an ad-hoc signature, Aztec's own bb
+/// builds included, whose certificate-less, unflagged signature Security.framework calls unsigned;
+/// so this asks for presence only, and the test run lets the kernel judge validity.
+#[cfg(target_os = "macos")]
+pub(super) fn has_code_signature(path: &Path) -> std::io::Result<bool> {
+    use std::io::{Seek, SeekFrom};
+    let wanted = if cfg!(target_arch = "aarch64") {
+        CPU_ARM64
+    } else {
+        CPU_X86_64
+    };
+    let mut file = std::fs::File::open(path)?;
+    let mut head = Vec::new();
+    (&mut file).take(HEAD_BYTES).read_to_end(&mut head)?;
+    let Some(offset) = host_slice_offset(&head, wanted) else {
+        return Ok(false);
+    };
+    file.seek(SeekFrom::Start(offset))?;
+    let mut image = Vec::new();
+    file.take(32 + MAX_LOAD_COMMAND_BYTES)
+        .read_to_end(&mut image)?;
+    Ok(signature_command(&image).is_some_and(|datasize| datasize > 0))
+}
+
+/// Where the `wanted` architecture's image starts: 0 for a thin image, its slice's offset in a fat one.
+#[cfg(any(target_os = "macos", test))]
+fn host_slice_offset(head: &[u8], wanted: u32) -> Option<u64> {
+    let magic = *head.get(0..4)?.first_chunk::<4>()?;
+    if matches!(u32::from_le_bytes(magic), 0xFEED_FACF | 0xFEED_FACE) {
+        return Some(0);
+    }
+    let stride = match u32::from_be_bytes(magic) {
+        0xCAFE_BABE => 20,
+        0xCAFE_BABF => 32,
+        _ => return None,
+    };
+    let slices = u32::from_be_bytes(*head.get(4..8)?.first_chunk::<4>()?) as usize;
+    if slices == 0 || slices > MAX_FAT_SLICES {
+        return None;
+    }
+    (0..slices).map(|i| 8 + i * stride).find_map(|at| {
+        let cpu = u32::from_be_bytes(*head.get(at..at + 4)?.first_chunk::<4>()?);
+        if cpu != wanted {
+            return None;
+        }
+        Some(if stride == 20 {
+            u64::from(u32::from_be_bytes(
+                *head.get(at + 8..at + 12)?.first_chunk::<4>()?,
+            ))
+        } else {
+            u64::from_be_bytes(*head.get(at + 8..at + 16)?.first_chunk::<8>()?)
+        })
+    })
+}
+
+/// The `datasize` of a 64-bit image's `LC_CODE_SIGNATURE` command, if it has one.
+#[cfg(any(target_os = "macos", test))]
+fn signature_command(image: &[u8]) -> Option<u32> {
+    let word = |at: usize| {
+        Some(u32::from_le_bytes(
+            *image.get(at..at + 4)?.first_chunk::<4>()?,
+        ))
+    };
+    if word(0)? != 0xFEED_FACF {
+        return None;
+    }
+    let ncmds = word(16)?;
+    let end = 32usize.checked_add(word(20)? as usize)?;
+    let mut at = 32usize;
+    for _ in 0..ncmds {
+        let (cmd, size) = (word(at)?, word(at + 4)? as usize);
+        if cmd == LC_CODE_SIGNATURE {
+            return word(at + 12);
+        }
+        if size < 8 {
+            return None;
+        }
+        at = at.checked_add(size).filter(|&next| next <= end)?;
+    }
+    None
+}
+
 fn arch_name(arch: Arch) -> &'static str {
     match arch {
         Arch::X86_64 => "x86-64",
@@ -232,6 +324,76 @@ mod tests {
 
         assert_eq!(parse(b"#!/bin/sh\necho 1\n"), Header::Script);
         assert_eq!(parse(b"plain text"), Header::Unknown);
+    }
+
+    /// A 64-bit arm64 image whose load commands are `cmds`, each `(cmd, payload)`.
+    fn thin_image(cmds: &[(u32, &[u8])]) -> Vec<u8> {
+        let mut body = Vec::new();
+        for (cmd, payload) in cmds {
+            body.extend_from_slice(&cmd.to_le_bytes());
+            body.extend_from_slice(&(8 + payload.len() as u32).to_le_bytes());
+            body.extend_from_slice(payload);
+        }
+        let mut image = Vec::new();
+        for word in [
+            0xFEED_FACFu32,
+            CPU_ARM64,
+            0,
+            2,
+            cmds.len() as u32,
+            body.len() as u32,
+            0,
+            0,
+        ] {
+            image.extend_from_slice(&word.to_le_bytes());
+        }
+        image.extend_from_slice(&body);
+        image
+    }
+
+    #[test]
+    fn a_signature_command_is_found_only_when_present_and_sized() {
+        let signed: &[u8] = &[4, 0, 0, 0, 16, 0, 0, 0];
+        let empty: &[u8] = &[4, 0, 0, 0, 0, 0, 0, 0];
+        let segment: &[u8] = &[0u8; 64];
+        assert_eq!(
+            signature_command(&thin_image(&[(0x19, segment), (LC_CODE_SIGNATURE, signed)])),
+            Some(16)
+        );
+        assert_eq!(
+            signature_command(&thin_image(&[(LC_CODE_SIGNATURE, empty)])),
+            Some(0)
+        );
+        assert_eq!(signature_command(&thin_image(&[(0x19, segment)])), None);
+        assert_eq!(signature_command(&thin_image(&[])), None);
+        // Truncated commands, a zero-sized command, and a 32-bit header end the walk without a hit.
+        let image = thin_image(&[(0x19, segment), (LC_CODE_SIGNATURE, signed)]);
+        assert_eq!(signature_command(&image[..40]), None);
+        let mut looped = thin_image(&[(0x19, segment), (LC_CODE_SIGNATURE, signed)]);
+        looped[36..40].copy_from_slice(&0u32.to_le_bytes());
+        assert_eq!(signature_command(&looped), None);
+        let mut narrow = thin_image(&[(LC_CODE_SIGNATURE, signed)]);
+        narrow[..4].copy_from_slice(&0xFEED_FACEu32.to_le_bytes());
+        assert_eq!(signature_command(&narrow), None);
+    }
+
+    #[test]
+    fn the_host_slice_is_the_thin_image_or_the_matching_fat_slice() {
+        assert_eq!(host_slice_offset(&thin_image(&[]), CPU_ARM64), Some(0));
+        let mut fat = fat(&[CPU_X86_64, CPU_ARM64]);
+        fat[16..20].copy_from_slice(&4096u32.to_be_bytes());
+        fat[36..40].copy_from_slice(&16384u32.to_be_bytes());
+        assert_eq!(host_slice_offset(&fat, CPU_ARM64), Some(16384));
+        assert_eq!(host_slice_offset(&fat, CPU_X86_64), Some(4096));
+        assert_eq!(host_slice_offset(&fat, 0x0100_0012), None);
+        assert_eq!(host_slice_offset(&fat[..30], CPU_ARM64), None);
+        assert_eq!(host_slice_offset(b"plain text", CPU_ARM64), None);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_system_binary_carries_a_code_signature() {
+        assert!(has_code_signature(Path::new("/bin/ls")).unwrap());
     }
 
     #[test]
