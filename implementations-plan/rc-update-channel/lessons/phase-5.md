@@ -69,3 +69,33 @@
   - shellcheck 0.9.0 and actionlint;
   - `ephemeral-updater.test.ts` refuses a non-rc.1 `rc-feeds` version, and the mutation that drops
     that check fails the test.
+- Runs at `f411c06`, all green:
+
+  | Mode | Run | macOS | Linux | Windows |
+  |---|---|---|---|---|
+  | `rc-lifecycle` | 38828585161 (unix), 38828587685 (Windows) | 20 min | 18 min | 27 min |
+  | `positive` | 38828590815 (unix), 38828593217 (Windows) | 18 min | 12 min | 20 min |
+
+  The plan estimated 12, 18 and 28 min for `rc-lifecycle`. The five legs take about 3.5 min on
+  every OS (B and C2 install in 6–16 s); the rest is the third build.
+- presto.yml 38828596481 at `f411c06` failed Cert Trust (macos) on
+  `case_24_a_hung_list_check_never_delays_the_update_check`: a 334 ms gap between 10 ms update-check
+  ticks, against a 250 ms limit.
+  - Arc 2 touches neither the scheduler, the list refresh nor the test.
+  - It is the only failure of that job in the last 120 presto.yml runs, and it passed at `ac5810f`
+    (38830470281, all green).
+  - Likely cause: the binary runs 10 tests in parallel, in debug, on a 3-vCPU runner.
+  - The rerun of the failed job was cancelled by the new dispatch on the same branch (presto.yml's
+    concurrency group).
+- **Teeth.** The scratch branch `rc-update-channel-mutation` (never merged) has `admits` accept
+  everything. A `from` input starts the lifecycle at A1, A2 or C1 (C1 runs B first), and the unix
+  matrix runs Linux only, because the unix legs are shared code. All six runs failed on the
+  download assertion of the leg they started at, before any log-line check:
+
+  | Leg | Linux | Windows |
+  |---|---|---|
+  | A1 | 38830642332 | 38831263175 |
+  | A2 | 38830645015 | 38831266135 |
+  | C1 | 38830647608 | 38831268974 |
+
+  Each run printed `<leg>: the app downloaded an update it must refuse`.

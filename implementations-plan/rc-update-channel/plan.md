@@ -531,7 +531,7 @@ Threats, with paths (D demonstrated in source, P plausible, U needs unsupported 
 
 Each phase ends with its gate. Run the fast layers after each meaningful step.
 
-### Phase 0 (A4 approved): stop usable v1 prerelease manifests
+### Phase 0 (A4 approved): stop usable v1 prerelease manifests ✓
 
 Implemented at `ed9dffc`; Codex loop clean in round 2. Not pushed: the push, the dispatches and the
 PR wait for the director's word that 1.2.0 has published.
@@ -555,7 +555,7 @@ PR wait for the director's word that 1.2.0 has published.
 and the dispatched runs green. Layers: lint, unit (contract), real binaries. Then run the Codex
 loop; push and open the PR on the director's word that 1.2.0 has published. The owner merges it.
 
-### Phase 1: developer-mode contract (core, headless)
+### Phase 1: developer-mode contract (core, headless) ✓
 
 1. Add `UpdateChannel`, `DeveloperSettings`, `de_developer_lenient`, the `PrestoConfig` methods,
    `ChannelTransition` and `ConfigStore::effective_channel()` in `C/config.rs`.
@@ -569,7 +569,7 @@ loop; push and open the PR on the director's word that 1.2.0 has published. The 
 `cargo test --locked --manifest-path packages/presto/server/Cargo.toml`, `bun run lint:clippy`,
 `bun run lint`. Pass: exit 0; the named tests are present and green. Layers: lint, unit.
 
-### Phase 2: developer mode in Settings
+### Phase 2: developer mode in Settings ✓
 
 1. Add `set_developer_mode` in the six registration places. Set the trust-boundary count to 21.
 2. Build the folded Advanced row and the Developer section with its empty custom-bb slot. Keep
@@ -586,7 +586,7 @@ only on PRs and dispatch). Layers: lint, typecheck, unit, UI e2e, WebDriver.
 
 **Arc 1 boundary** (custom-bb may stack on this arc).
 
-### Phase 3: envelope and admission (core)
+### Phase 3: envelope and admission (core) ✓
 
 1. Add `presto-update-manifest-rc-v1`, `ManifestKind`, the rc-v1 ⇒ prerelease check and the `kind`
    return in `C/update_manifest.rs`. Add a schema parameter to `build_signed_envelope`.
@@ -605,7 +605,7 @@ green through `gh workflow run presto.yml --ref <branch>` (per A3). Pass: a muta
 that makes `admits` admit `(Stable, Candidate)` turns a test red (record it in lessons). Layers:
 lint, unit.
 
-### Phase 4: client channel wiring
+### Phase 4: client channel wiring ✓
 
 1. In `T/src/updater.rs` and `T/src/main.rs`, implement the per-check endpoints, the derived RC
    URL, `current_channel` and the `channel=` log line.
@@ -625,7 +625,7 @@ lint, unit.
 `bun run test`; from `T`: `cargo check --target x86_64-pc-windows-gnu --lib` (CLAUDE.md
 placeholder). Layers: lint, typecheck, unit, Windows compile.
 
-### Phase 5: channel control, prompt copy, real-binary lifecycle
+### Phase 5: channel control, prompt copy, real-binary lifecycle ✓
 
 1. Build control B with the status line (no chip), the leave and developer-off checks, the join
    result line and the RC prompt copy (A).
