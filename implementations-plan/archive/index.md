@@ -62,3 +62,8 @@ with `rg --no-ignore` / `git grep`.
 - [presto-verifier-identity](presto-verifier-identity/plan.md) — closed 2026-10-14 — the verifier
   binds a provenance statement to its signing identity at every consumer, while the OIDC publish job
   stays dependency-free (PR #111).
+- [rc-update-channel](rc-update-channel/plan.md) — closed 2026-10-16 — an opt-in release-candidate
+  update channel behind Settings → Advanced → Developer mode: an `rc-v1` manifest schema the stable
+  channel refuses at every admission point, a `latest-rc.json` feed route served only above the
+  stable, candidate promote and `withdraw-rc`, and release smokes that prove the refusal and the
+  install (PRs #130, #134, #135, #137).

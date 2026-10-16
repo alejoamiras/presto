@@ -45,8 +45,8 @@ function candidateIsNewer(candidate: Version, stable: Version): boolean {
   return false;
 }
 
-// The plugin reads a 204 as "no update" and a body that is not a release as a hard error, and moves
-// to the next endpoint on neither, so every refusal here is a 503.
+// The plugin reads a 204 as "no update" and a non-JSON body as a hard error, and moves to the next
+// endpoint on neither, so every refusal here is a 503.
 async function stableFeed(kv: KVNamespace): Promise<string | null> {
   const body = await readFeed(kv, STABLE_KEY);
   if (body !== null && versionOf(body, STABLE_KEY).prerelease) {

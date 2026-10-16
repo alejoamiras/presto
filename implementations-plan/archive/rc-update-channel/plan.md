@@ -1,7 +1,7 @@
 ---
 plan: rc-update-channel
 tier: deep
-status: approved 2026-10-15; implementing
+status: completed 2026-10-16
 base: 7153556 (#123)
 driver: claude-code
 eli5_mode: file (published by the director session)
@@ -12,6 +12,72 @@ explainer: off
 harden: decided later
 delivery: three stacked arcs + close-out layer
 ---
+
+## Outcome
+
+- **2026-10-16: completed.** Every arc landed on `main` as its own squash PR:
+  - arc 0 #130 (`4f9fc19`);
+  - arc 1 #134 (`928ca7c`);
+  - arc 2 #135 (`df8d527`);
+  - arc 3 #137 (`163e14e`).
+
+  This close-out is the last PR.
+- **Shipped:**
+  - **Arc 0:** no prerelease run signs a v1 manifest with live URLs. Smoke downloads name the
+    reserved `updater-smoke.test` (D23).
+  - **Arc 1:** the developer-mode config contract (core, headless) and the Settings → Advanced
+    toggle.
+  - **Arc 2:** the client channel:
+    - the `rc-v1` envelope schema;
+    - `admits` at check, act, present and install time, the last read from disk;
+    - endpoints rc → stable at 12 s each;
+    - the Updates-from control, the join check and the leave check;
+    - the RC prompt copy;
+    - `update-manifest verify --channel|--smoke`;
+    - the `rc-lifecycle` ephemeral smoke.
+  - **Arc 3:**
+    - the feed Worker's `latest-rc.json` route and stable guard;
+    - the signer's `rc-v1` `latest-rc.json`;
+    - promote for both keys behind `release-feed-keys.ts`;
+    - the A5 settle after a stable promote, and `withdraw-rc`;
+    - the two-route read-back and `probe-rc`;
+    - the release smokes' refusal and install legs;
+    - the runbook, security-model, README, testing and Cloudflare docs.
+- **Real-binary evidence:**
+  - **Arc 2, `rc-lifecycle`:** all five legs (A1, A2, B, C1, C2) passed on macOS, Linux and
+    Windows: 38828585161 (Unix) and 38828587685 (Windows), at `f411c06`.
+  - **Teeth:** with `admits` accepting everything (scratch branch `rc-update-channel-mutation`),
+    A1, A2 and C1 each failed on their download assertion: 6 runs, `lessons/phase-5.md`.
+  - **Arc 3:** 9 secretless dispatches at `0f42f1b`, all green (`lessons/phase-7.md`):
+    - `positive` 9.9.9 and 9.9.9-rc.1, `negative` 9.9.9-rc.1 and `rc-lifecycle` 9.9.9 on both smoke
+      workflows;
+    - `presto.yml`, whose `updater-feed-e2e` round trip passed for 9.9.9-rc.1 and 9.9.9.
+  - **Unproven by real binaries:** the refusal from an install that predates the channel (1.2.0
+    logs `update-manifest verification failed`). Every ephemeral N-1 has the channel, so only the
+    contract harness proves that branch until the first live candidate runs it against the
+    published 1.2.0 (#139).
+- **Reviews:** each arc's Codex loop (gpt-6.1-sol, high) converged:
+  - arc 0 in 2 rounds;
+  - arc 1 in 3;
+  - arc 2 in 3;
+  - arc 3 in 2.
+
+  The rounds are logged in `lessons/arc-*-review.md`. The final cross-arc pass found no high or
+  medium finding, and three low ones: a stale doc and two stale comments
+  (`lessons/cross-arc-review.md`).
+- **Changed or dropped:**
+  - **Delivery:** the arcs did not ship as a `gh stack`. Each arc branched from `main` once the
+    previous one merged, or merged `main` in when the earlier arc landed as a squash.
+  - **Smoke host:** `updater-smoke.invalid` became `updater-smoke.test` (D23).
+  - **`withdraw-rc`:** it withdraws, with a warning, anything in `latest-rc.json` that is not a
+    candidate. It refuses only another candidate (`lessons/arc-3-review.md`).
+  - **CLAUDE.md:** its release chain named a nonexistent `sign-update-feed` job; corrected in
+    arc 3.
+- **Known limits:** #122, #124, #125, #126, #127, #128.
+- **Open items:** #138 (O2: deploy the feed Worker; `probe-rc` fails daily until then) and #139 (O3:
+  the first live candidate and its per-OS checks, including the pre-channel refusal).
+- **This plan's `/goal` and `/loop` seeds are retired.** This file is a record of what was decided,
+  not instructions.
 
 # Opt-in release-candidate update channel
 
@@ -794,7 +860,7 @@ on one step (5 under `/loop`).
 Size: about 810 lines against the 600 target. The testing mandate (matrix, real-binary legs,
 owner protocol) and the IPC table account for the excess; restatement was cut.
 
-## Seeds
+## Seeds (retired 2026-10-16)
 
 ```
 /goal All phases marked ✓ in implementations-plan/rc-update-channel/plan.md, each backed by its validation gate reported passing in the transcript, including the rc-lifecycle smoke run IDs on macOS, Linux and Windows; for each phase `LESSONS_FILE=implementations-plan/rc-update-channel/lessons/phase-N.md` printed; /code-review NOT run; the Codex fix loop converged at arc 0 and at each of the 3 arc boundaries and in the final cross-arc pass, each evidenced by a resumed Codex pass with no new material findings quoted in the transcript; the arc 0 PR and the stacked PRs (3 arcs + close-out) exist, created only after all loops converged and after the director's word that 1.2.0 has published (`gh stack view` output in the transcript), the close-out archived the plan (`git show --stat` of the archive-move commit); `bun run test` and `bun run lint:actions` exit 0 in the transcript.
