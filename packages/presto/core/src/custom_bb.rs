@@ -242,17 +242,18 @@ fn os_gates(path: &Path) -> Result<(), Refusal> {
             )),
         ));
     }
-    // Intel Macs run unsigned code; Apple silicon kills an unsigned binary at exec.
+    // Intel Macs run unsigned code; Apple silicon kills an unsigned binary at exec. The kernel
+    // checks the signature's hashes, not its designated requirement, which `codesign --verify`
+    // enforces too; Aztec's own bb builds carry a certificate requirement and no certificate, so
+    // the verdict is the hash check's own line rather than the exit status.
     #[cfg(target_arch = "aarch64")]
     {
         let signed = std::process::Command::new("/usr/bin/codesign")
-            .arg("--verify")
+            .args(["--verify", "--verbose=2"])
             .arg(path)
             .stdin(std::process::Stdio::null())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status()
-            .is_ok_and(|status| status.success());
+            .output()
+            .is_ok_and(|out| String::from_utf8_lossy(&out.stderr).contains("valid on disk"));
         if !signed {
             return Err(Refusal::new(
                 RefusalCode::Unsigned,

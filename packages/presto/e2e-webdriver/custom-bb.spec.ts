@@ -59,6 +59,23 @@ async function waitForText(id: string, wanted: (text: string) => boolean, what: 
   );
 }
 
+/** The review either shows the file's hash or refuses it; a refusal fails at once, with its reason. */
+async function waitForReview(sha256: string): Promise<void> {
+  const deadline = Date.now() + 20_000;
+  for (;;) {
+    const [facts, refusal] = await browser.execute((): [string, string] => [
+      document.getElementById("custom-bb-review-facts")?.textContent ?? "",
+      document.getElementById("custom-bb-refused")?.hidden === false
+        ? (document.getElementById("custom-bb-refused-message")?.textContent ?? "")
+        : "",
+    ]);
+    if (refusal) throw new Error(`the review refused the staged file: ${refusal}`);
+    if (facts.includes(sha256)) return;
+    if (Date.now() > deadline) throw new Error("the review never showed the staged file's hash");
+    await browser.pause(250);
+  }
+}
+
 async function enabled(id: string): Promise<void> {
   await browser.waitUntil(
     async () =>
@@ -104,11 +121,7 @@ describe("Custom bb", () => {
       .digest("hex");
     await enabled("custom-bb-choose");
     await click("custom-bb-choose");
-    await waitForText(
-      "custom-bb-review-facts",
-      (text) => text.includes(sha256),
-      "the review never showed the staged file's hash",
-    );
+    await waitForReview(sha256);
 
     await click("custom-bb-tick");
     await enabled("custom-bb-test");
