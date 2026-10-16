@@ -1099,7 +1099,9 @@ test("a join that opens the prompt adds no line, and one that fails keeps the ch
   await answer(page, null);
   await pick(page, "Release candidates");
   await answer(page, "failed");
-  await expect(page.locator("#channel-result")).toHaveText("⚠ Couldn't check — try again");
+  await expect(page.locator("#channel-result")).toHaveText(
+    "\u26A0\uFE0E Couldn't check — try again",
+  );
   await expect(page.locator("#channel-result")).toHaveClass(/\bfailed\b/);
   await expect(channelRadio(page, "rc")).toBeChecked();
 });
@@ -1115,6 +1117,35 @@ test("a superseded join result is dropped", async ({ page }) => {
   await expect.poll(() => page.evaluate(() => (window as any).__held.length)).toBe(0);
   await expect(page.locator("#channel-result")).toBeHidden();
   await expect(channelRadio(page, "stable")).toBeChecked();
+  await expect(page.locator("#channel-status")).toHaveText("Stable releases only.");
+});
+
+test("a read-back that lands on Stable clears the join's result", async ({ page }) => {
+  await hold(page, "set_update_channel");
+  await openChannel(page);
+  await pick(page, "Release candidates");
+  await pick(page, "Stable");
+  await pick(page, "Release candidates");
+  // The last join answers first, the first join is a no-op, and the leave lands last: Stable is
+  // what the disk holds, so the read-back must not keep the join's line.
+  await answer(page, "up-to-date", "newest");
+  await expect(page.locator("#channel-result")).toHaveText("✓ Up to date");
+  await page.evaluate(() => {
+    const mock = (window as any).__TAURI_MOCK__;
+    mock.setHandler("get_config", () => ({
+      config_version: 2,
+      https_enabled: false,
+      approved_origins: [],
+      speed: "full",
+      theme: "system",
+      onboarding_version: 1,
+      developer: { enabled: true, update_channel: "stable" },
+    }));
+  });
+  await answer(page, null);
+  await answer(page, null);
+  await expect(channelRadio(page, "stable")).toBeChecked();
+  await expect(page.locator("#channel-result")).toBeHidden();
   await expect(page.locator("#channel-status")).toHaveText("Stable releases only.");
 });
 
@@ -1214,7 +1245,9 @@ test("turning developer mode on over a stored candidate choice joins and keeps t
 
   await expect(page.locator("#channel-result")).toHaveText("Checking…");
   await answer(page, "failed");
-  await expect(page.locator("#channel-result")).toHaveText("⚠ Couldn't check — try again");
+  await expect(page.locator("#channel-result")).toHaveText(
+    "\u26A0\uFE0E Couldn't check — try again",
+  );
   await expect(page.getByRole("switch", { name: "Developer mode" })).toBeChecked();
   await expect(channelRadio(page, "rc")).toBeChecked();
 });

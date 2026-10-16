@@ -16,7 +16,7 @@ const leaveCheck = document.getElementById("leave-check");
 /** The join check's result in the tray's words; a prompt that opened needs no line. */
 const RESULT_TEXT = {
   "up-to-date": "✓ Up to date",
-  failed: "⚠ Couldn't check — try again",
+  failed: "\u26A0\uFE0E Couldn't check — try again",
   installing: "Installing an update…",
   presented: "",
 };
@@ -93,6 +93,8 @@ export function hydrateDeveloper(token, config, sysInfo) {
     effective: sysInfo.effective_channel === "rc" ? "rc" : "stable",
     version: sysInfo.app_version ?? "",
   };
+  // A read-back that lands off the candidate channel outlives the join whose answer the line shows.
+  if (state.effective !== "rc") showResult("");
   render();
   // Unfolded while on, so the switch that explains the Developer section sits right above it.
   if (state.enabled) advanced.open = true;
