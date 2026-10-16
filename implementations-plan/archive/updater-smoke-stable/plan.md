@@ -1,6 +1,6 @@
 # Updater smoke from the live stable
 
-Tier: light. Branch `worktree-updater-smoke-stable`.
+Tier: light. Branch `worktree-updater-smoke-stable`. Status: completed 2026-10-16 (PR #123).
 
 ## Problem
 
@@ -130,3 +130,26 @@ Revert the PR. The workflow returns to one baseline; no state, key, or published
   test accepted `if:`/`continue-on-error` on the recheck. Fixed, mutation-checked.
 - **Diff review round 2, same session: CLEAN.** No findings; GitHub runtime evaluation of the
   matrix and rechecks remains unexercised until the next release dispatch.
+
+## Outcome
+
+- **2026-10-16: completed.** PR #123 landed on `main` as one squash commit (`7153556`).
+- **Shipped:** `resolve-updater-baseline.ts` reads the live signed feed, binds its bytes to the
+  `latest.json` asset digest of `presto-v<version>`, requires a published, complete, same-key stable
+  strictly below N, retries five times and fails closed; it emits `baselines`, the greatest lower
+  release first and the live stable second only when its tag differs. The four smoke callers take
+  `baseline` as a matrix dimension (the macOS `include` list became a `leg` dimension), and `tag`
+  and `finalize` repeat the check before the tag push and before publishing. Runbook and
+  `CLAUDE.md` updated.
+- **Real evidence:** the 1.2.0 publish (run 38805236135 at `2d94e51`) ran 14 updater smoke legs,
+  all green: positive and negative from `1.2.0-rc.3` (the greatest lower release) and from `1.1.3`
+  (the live stable) on darwin-aarch64, linux-x86_64 and windows-x86_64, plus positive on
+  darwin-x86_64. That dispatch exercised the matrix evaluation the round 2 review left unproven.
+  Run wall-clock 34.4 min against the 30–31 min projection; the Windows positive legs, the bound,
+  took 3.3–3.5 min each. The earlier dispatch at `7153556` (run 38795514641) failed in
+  `Build (x86_64-apple-darwin)`, fixed by #129; its baseline resolver had already succeeded.
+- **Residuals, accepted:** publishing reads the public feed and fails closed on an outage (Owner
+  decisions); when the greatest lower release and the live stable coincide, the dedupe runs one
+  set of legs, which is the pre-plan coverage.
+- **Seeds retired.** This plan's `/goal` and `/loop` seeds are retired; nothing here is an
+  instruction.
