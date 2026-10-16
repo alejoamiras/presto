@@ -1,4 +1,4 @@
-use super::prove::{acquire_prover, compute_threads, resolve_version};
+use super::prove::{acquire_prover, compute_threads, resolve_version, BbSource, ResolvedVersion};
 use super::*;
 
 // ── F-03 sink B (audit 2026-07-31-9c4cb0c) ──
@@ -1030,7 +1030,7 @@ async fn prove_returns_429_when_too_many_pending_origins() {
         let origin =
             crate::authorization::CanonicalOrigin::parse(&format!("https://origin-{i}.com"))
                 .unwrap();
-        let _ = auth.request(&origin);
+        let _ = auth.request(&origin, None);
     }
 
     // The 11th distinct origin should get 429
@@ -1129,6 +1129,13 @@ fn compute_threads_returns_none_without_config() {
     assert_eq!(compute_threads(&state), None);
 }
 
+fn official(source: BbSource) -> ResolvedVersion {
+    match source {
+        BbSource::Official(resolved) => resolved,
+        BbSource::Custom(_) => panic!("no custom bb is configured here"),
+    }
+}
+
 #[test]
 #[serial]
 fn resolve_version_flags_uncached_for_download() {
@@ -1142,7 +1149,7 @@ fn resolve_version_flags_uncached_for_download() {
     let core = HeadlessState::headless("1.0.0", Some("5.0.0-rc.1".to_string()), None, None);
     let state = AppState::headless(core);
     let version = Some("5.0.0-rc.2".to_string());
-    let resolved = resolve_version(&state, &version).expect("valid version resolves");
+    let resolved = official(resolve_version(&state, &version).expect("valid version resolves"));
     assert_eq!(resolved.version.as_deref(), Some("5.0.0-rc.2"));
     assert!(
         resolved.needs_download,
@@ -1159,8 +1166,10 @@ fn resolve_version_allows_older_compatible_version() {
     // download + digest verification.
     let core = HeadlessState::headless("1.0.0", Some("5.0.0-rc.2".to_string()), None, None);
     let state = AppState::headless(core);
-    let resolved = resolve_version(&state, &Some("5.0.0-rc.1".to_string()))
-        .expect("an older compatible version must be allowed");
+    let resolved = official(
+        resolve_version(&state, &Some("5.0.0-rc.1".to_string()))
+            .expect("an older compatible version must be allowed"),
+    );
     assert_eq!(resolved.version.as_deref(), Some("5.0.0-rc.1"));
 }
 
@@ -1172,7 +1181,7 @@ fn resolve_version_normalizes_bundled_to_none() {
     let core = HeadlessState::headless("1.0.0", Some("0.99.0".to_string()), None, None);
     let state = AppState::headless(core);
     let requested = Some("0.99.0".to_string());
-    let resolved = resolve_version(&state, &requested).expect("bundled resolves");
+    let resolved = official(resolve_version(&state, &requested).expect("bundled resolves"));
     assert!(
         resolved.version.is_none(),
         "bundled request must normalize to None (sidecar path)"
@@ -1197,7 +1206,7 @@ fn resolve_version_rejects_invalid_version() {
 #[test]
 fn resolve_version_returns_none_without_header() {
     let state = AppState::default();
-    let resolved = resolve_version(&state, &None).expect("no header resolves");
+    let resolved = official(resolve_version(&state, &None).expect("no header resolves"));
     assert_eq!(resolved.version, None);
     assert!(!resolved.needs_download);
 }
@@ -1832,4 +1841,349 @@ fn prover_idle_tracks_every_admitted_proof() {
     assert!(!state.prover_idle(), "one proof still admitted");
     drop(second);
     assert!(state.prover_idle());
+}
+
+// ── developer-mode custom bb ──
+
+#[cfg(unix)]
+mod custom_bb {
+    use super::*;
+    use crate::bb::test_support::FIND_OUTDIR;
+    use crate::bb::{AdmitGuard, BbBinary, SpawnGate};
+    use crate::config::ConfigStore;
+    use crate::custom_bb::{CustomBbPin, CustomRoute, Unavailable};
+    use std::path::{Path, PathBuf};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+    const LABEL: &str = "6.0.0-dev.1";
+    const DAPP: &str = "https://dapp.example";
+
+    struct Fixture {
+        _dir: tempfile::TempDir,
+        pin: CustomBbPin,
+        /// Created by the fake the moment it runs.
+        ran: PathBuf,
+        state: AppState,
+        refusals: Arc<AtomicUsize>,
+    }
+
+    /// A pinned fake bb that writes outputs for both schemes, then runs `tail`; developer mode on,
+    /// `DAPP` approved, no `BB_BINARY_PATH`.
+    fn pinned(tail: &str) -> Fixture {
+        use std::os::unix::fs::PermissionsExt;
+        std::env::remove_var("BB_BINARY_PATH");
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().canonicalize().unwrap();
+        let (path, ran) = (root.join("bb"), root.join("ran"));
+        let script = format!(
+            "#!/bin/sh\ntouch '{}'\n{FIND_OUTDIR}\nprintf '%032d' 0 > \"$out/proof\"\n{ULTRA_HONK_FAKE_BB}\n{tail}\n",
+            ran.display()
+        );
+        std::fs::write(&path, script).unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        let pin = CustomBbPin {
+            sha256: versions::sha256_file(&path).unwrap(),
+            path,
+            label: crate::custom_bb::check_label(LABEL).unwrap(),
+            pinned_at: 0,
+        };
+        let mut config = crate::custom_bb::developer_config(pin.clone());
+        config
+            .approved_origins
+            .push(crate::authorization::CanonicalOrigin::parse(DAPP).unwrap());
+        let refusals = Arc::new(AtomicUsize::new(0));
+        let counter = refusals.clone();
+        let state = AppState {
+            core: Arc::new(HeadlessState {
+                auth_manager: Some(Arc::new(crate::authorization::AuthorizationManager::new())),
+                config: Some(Arc::new(ConfigStore::for_test(config))),
+                bundled_version: Some("6.0.0-rc.6".to_string()),
+                ..Default::default()
+            }),
+            on_custom_bb_changed: Some(Arc::new(move || {
+                counter.fetch_add(1, Ordering::SeqCst);
+            })),
+            ..Default::default()
+        };
+        Fixture {
+            _dir: dir,
+            pin,
+            ran,
+            state,
+            refusals,
+        }
+    }
+
+    fn chonk_request() -> Request<Body> {
+        Request::builder()
+            .header("host", "127.0.0.1:59833")
+            .header("origin", DAPP)
+            .header("x-aztec-version", LABEL)
+            .method("POST")
+            .uri("/prove")
+            .header("content-type", "application/octet-stream")
+            .body(Body::from(vec![0u8; 16]))
+            .unwrap()
+    }
+
+    fn ultra_honk_labelled() -> Request<Body> {
+        let mut request = ultra_honk_request(ultra_honk_body(true), Some(DAPP));
+        request
+            .headers_mut()
+            .insert("x-aztec-version", LABEL.parse().unwrap());
+        request
+    }
+
+    /// Status, wire code, and the body as text (for what it must not contain).
+    async fn outcome(response: axum::http::Response<Body>) -> (StatusCode, String, String) {
+        let status = response.status();
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8_lossy(&body).to_string();
+        let code = serde_json::from_slice::<serde_json::Value>(&body)
+            .ok()
+            .and_then(|json| json["error"].as_str().map(str::to_string))
+            .unwrap_or_default();
+        (status, code, text)
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn a_request_naming_the_label_runs_the_pinned_bb_on_both_routes() {
+        let _home = crate::ScopedPrestoHome::new();
+        let f = pinned("");
+        // An uncached label on the official path would download; the custom route never may.
+        for _ in 0..versions::PER_ORIGIN_DOWNLOADS {
+            f.state.download_budget.take(Some(DAPP)).unwrap();
+        }
+        let app = router(f.state.clone());
+
+        let chonk = app.clone().oneshot(chonk_request()).await.unwrap();
+        assert_eq!(chonk.status(), StatusCode::OK);
+        assert_eq!(chonk.headers()["x-presto-bb"], "custom");
+        let exposed = chonk.headers()["access-control-expose-headers"]
+            .to_str()
+            .unwrap()
+            .to_ascii_lowercase();
+        assert!(exposed.contains("x-presto-bb"), "{exposed}");
+
+        let ultra_honk = app.oneshot(ultra_honk_labelled()).await.unwrap();
+        assert_eq!(ultra_honk.status(), StatusCode::OK);
+        assert_eq!(ultra_honk.headers()["x-presto-bb"], "custom");
+
+        assert!(f.ran.exists());
+        assert!(f.state.custom_bb_activity.lock().last_proof_at.is_some());
+        assert_eq!(f.refusals.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn a_changed_pinned_file_gets_a_fixed_503_and_never_runs() {
+        let _home = crate::ScopedPrestoHome::new();
+        let f = pinned("");
+        let mut rebuilt = std::fs::read_to_string(&f.pin.path).unwrap();
+        rebuilt.push_str("# rebuilt\n");
+        std::fs::write(&f.pin.path, rebuilt).unwrap();
+
+        let (status, code, body) = outcome(
+            router(f.state.clone())
+                .oneshot(chonk_request())
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(code, "custom_bb_unavailable");
+        let dir = f.pin.path.parent().unwrap().display().to_string();
+        assert!(
+            !body.contains(&dir) && !body.contains(&f.pin.sha256),
+            "{body}"
+        );
+        assert!(!f.ran.exists());
+        assert_eq!(f.refusals.load(Ordering::SeqCst), 1);
+        assert!(f.state.custom_bb_activity.lock().last_failure.is_some());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn stopping_while_a_request_waits_for_the_prover_refuses_it() {
+        let _home = crate::ScopedPrestoHome::new();
+        let f = pinned("");
+        let proving = Arc::new(AtomicBool::new(false));
+        let seen = proving.clone();
+        let mut state = f.state.clone();
+        state.on_status = Some(Arc::new(move |status: ServerStatus| {
+            if status == ServerStatus::Proving {
+                seen.store(true, Ordering::SeqCst);
+            }
+        }));
+        let busy = state.prove_semaphore.clone().try_acquire_owned().unwrap();
+        let request = tokio::spawn(router(state.clone()).oneshot(chonk_request()));
+        while !proving.load(Ordering::SeqCst) {
+            tokio::task::yield_now().await;
+        }
+        // On this single-threaded runtime the request ran on from `Proving` until it parked on the
+        // permit, so its route is already the custom one.
+        state
+            .config
+            .as_ref()
+            .unwrap()
+            .write()
+            .set_custom_bb(None)
+            .unwrap();
+        drop(busy);
+
+        let (status, code, _) = outcome(request.await.unwrap().unwrap()).await;
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(code, "custom_bb_unavailable");
+        assert!(!f.ran.exists());
+    }
+
+    /// Withdraws the pin while the file is being checked, the window just before the spawn.
+    struct WithdrawWhileVerifying {
+        route: CustomRoute,
+        config: Arc<ConfigStore>,
+    }
+
+    impl SpawnGate for WithdrawWhileVerifying {
+        fn path(&self) -> &Path {
+            self.route.path()
+        }
+        fn verify(&self) -> Result<(), Unavailable> {
+            let checked = self.route.verify();
+            self.config.write().set_custom_bb(None).unwrap();
+            checked
+        }
+        fn admit(&self) -> Result<Box<dyn AdmitGuard + '_>, Unavailable> {
+            self.route.admit()
+        }
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn a_pin_withdrawn_during_the_spawn_check_never_runs() {
+        let _home = crate::ScopedPrestoHome::new();
+        let f = pinned("");
+        let config = f.state.config.clone().unwrap();
+        let gate = WithdrawWhileVerifying {
+            route: CustomRoute::new(f.pin.clone(), config.clone()),
+            config,
+        };
+        let error = bb::prove_cancellable(
+            b"witness",
+            BbBinary::Exact(Arc::new(gate)),
+            None,
+            Arc::new(tokio::sync::Notify::new()),
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(
+            error.downcast_ref::<Unavailable>(),
+            Some(&Unavailable::Withdrawn)
+        );
+        assert!(!f.ran.exists());
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn a_crashing_custom_bb_gets_a_fixed_500_and_settings_keeps_the_detail() {
+        let _home = crate::ScopedPrestoHome::new();
+        let f = pinned("echo \"crashed in $0\" >&2\nexit 7");
+        let (status, code, body) = outcome(
+            router(f.state.clone())
+                .oneshot(chonk_request())
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(code, "prove_failed");
+        assert!(!body.contains("crashed") && !body.contains('7'), "{body}");
+        let detail = f.state.custom_bb_activity.lock().last_failure.clone();
+        assert!(detail.is_some_and(|failure| failure.detail.contains('7')));
+        assert_eq!(
+            f.refusals.load(Ordering::SeqCst),
+            0,
+            "a crash is not a refusal"
+        );
+    }
+
+    /// `TMPDIR` is process-wide, so the test re-runs itself alone in a child process.
+    #[tokio::test]
+    #[serial]
+    async fn a_custom_route_workspace_failure_keeps_its_path_off_the_wire() {
+        const CHILD: &str = "PRESTO_TEST_WORKSPACE_FAILURE_CHILD";
+        if std::env::var_os(CHILD).is_none() {
+            let name = concat!(
+                module_path!(),
+                "::a_custom_route_workspace_failure_keeps_its_path_off_the_wire"
+            );
+            let name = name.split_once("::").unwrap().1;
+            let child = std::process::Command::new(std::env::current_exe().unwrap())
+                .args(["--exact", name, "--test-threads=1"])
+                .env(CHILD, "1")
+                .output()
+                .unwrap();
+            let stdout = String::from_utf8_lossy(&child.stdout);
+            assert!(
+                child.status.success() && stdout.contains("1 passed"),
+                "{stdout}{}",
+                String::from_utf8_lossy(&child.stderr)
+            );
+            return;
+        }
+
+        let _home = crate::ScopedPrestoHome::new();
+        let f = pinned("");
+        let data = PathBuf::from(std::env::var_os("PRESTO_HOME").unwrap()).join("data");
+        std::fs::create_dir_all(&data).unwrap();
+        std::fs::write(data.join("prove-tmp"), "").unwrap();
+        std::env::set_var("TMPDIR", f.pin.path.with_file_name("no-tmp"));
+        let (status, code, body) = outcome(
+            router(f.state.clone())
+                .oneshot(ultra_honk_labelled())
+                .await
+                .unwrap(),
+        )
+        .await;
+        assert_eq!(status, StatusCode::INTERNAL_SERVER_ERROR);
+        assert_eq!(code, "prove_failed");
+        assert!(!body.contains("no-tmp"), "{body}");
+        assert!(!f.ran.exists());
+        let detail = f.state.custom_bb_activity.lock().last_failure.clone();
+        assert!(detail.is_some_and(|failure| failure.detail.contains("no-tmp")));
+    }
+
+    #[test]
+    #[serial]
+    fn the_label_is_refused_under_bb_binary_path_and_unrouted_by_a_store_that_cannot_persist() {
+        let _home = crate::ScopedPrestoHome::new();
+        let f = pinned("");
+        let label = Some(LABEL.to_string());
+        assert!(matches!(
+            resolve_version(&f.state, &label),
+            Ok(BbSource::Custom(_))
+        ));
+
+        std::env::set_var("BB_BINARY_PATH", &f.pin.path);
+        let overridden = resolve_version(&f.state, &label);
+        std::env::remove_var("BB_BINARY_PATH");
+        assert!(matches!(overridden, Err(ProveError::CustomBbUnavailable)));
+        assert_eq!(f.refusals.load(Ordering::SeqCst), 1);
+
+        // The headless server's store: built in memory, never persistable, so it never routes.
+        let record = f.state.config.as_ref().unwrap().read().clone();
+        let headless = AppState::headless(HeadlessState {
+            config: Some(Arc::new(ConfigStore {
+                lock: RwLock::new(record),
+                cap: None,
+            })),
+            ..Default::default()
+        });
+        assert!(matches!(
+            resolve_version(&headless, &label),
+            Ok(BbSource::Official(_))
+        ));
+    }
 }

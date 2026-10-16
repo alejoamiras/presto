@@ -198,6 +198,9 @@ jobs:
       # test — including crash_recovery's three patch_plist_* tests — had never compiled anywhere.
       - if: matrix.platform == 'macos'
         run: cargo test
+      # The custom bb's macOS gates (extended ACLs, quarantine, the arm64 signature) exist only here.
+      - if: matrix.platform == 'macos'
+        run: cargo test --locked --manifest-path ../core/Cargo.toml custom_bb
       # Tier-3: run the REAL NSIS uninstall hook on real Windows under each command line it has to tell
       # apart. This guard cannot be fixed after the fact — a release cannot fix its own uninstaller —
       # and getting it wrong deletes the user's trust anchor on a routine upgrade. The path that

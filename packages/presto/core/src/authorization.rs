@@ -4,6 +4,8 @@ use std::time::{Duration, Instant};
 use tokio::sync::oneshot;
 use url::Url;
 
+use crate::versions::AztecVersion;
+
 /// Canonicalize an origin string per RFC 6454 to a single comparable form.
 ///
 /// Tuple-origin schemes (`http`, `https`, `ws`, `wss`):
@@ -268,6 +270,9 @@ struct PendingRequest {
     /// so a non-canonical string can no longer enter the pending state.
     origin: CanonicalOrigin,
     senders: Vec<oneshot::Sender<AuthOutcome>>,
+    /// The first request's well-formed `x-aztec-version`: a fact about that request, which a
+    /// piggybacking request never replaces.
+    version: Option<AztecVersion>,
 }
 
 #[derive(Default)]
@@ -331,6 +336,7 @@ impl PendingState {
         origin: CanonicalOrigin,
         request_id: String,
         tx: oneshot::Sender<AuthOutcome>,
+        version: Option<AztecVersion>,
     ) -> bool {
         self.by_origin.insert(origin.clone(), request_id.clone());
         self.by_request.insert(
@@ -338,6 +344,7 @@ impl PendingState {
             PendingRequest {
                 origin,
                 senders: vec![tx],
+                version,
             },
         );
         if self.active.is_none() {
@@ -434,6 +441,7 @@ impl AuthorizationManager {
     pub fn request(
         &self,
         origin: &CanonicalOrigin,
+        version: Option<AztecVersion>,
     ) -> Result<(oneshot::Receiver<AuthOutcome>, String, bool, bool), RequestError> {
         let (tx, rx) = oneshot::channel();
         let mut st = self.state.lock();
@@ -460,7 +468,7 @@ impl AuthorizationManager {
             return Err(RequestError::TooMany);
         }
         let request_id = uuid::Uuid::new_v4().to_string();
-        let is_active = st.insert(origin.clone(), request_id.clone(), tx);
+        let is_active = st.insert(origin.clone(), request_id.clone(), tx, version);
         Ok((rx, request_id, true, is_active))
     }
 
@@ -558,11 +566,12 @@ impl AuthorizationManager {
     /// C9 (D8/D15): peek a pending request's SERVER-authoritative origin + whether it currently owns the
     /// active/actionable slot, WITHOUT consuming it. `None` for an unknown/resolved id. Backs
     /// `get_pending_auth` so the popup renders the origin the server will actually grant and disables its
-    /// buttons while it is merely queued.
-    pub fn peek(&self, request_id: &str) -> Option<(CanonicalOrigin, bool)> {
+    /// buttons while it is merely queued. Also returns the version its first request named.
+    pub fn peek(&self, request_id: &str) -> Option<(CanonicalOrigin, bool, Option<AztecVersion>)> {
         let st = self.state.lock();
-        let origin = st.by_request.get(request_id)?.origin.clone();
-        Some((origin, st.is_active(request_id)))
+        let pending = st.by_request.get(request_id)?;
+        let (origin, version) = (pending.origin.clone(), pending.version.clone());
+        Some((origin, st.is_active(request_id), version))
     }
 
     /// Returns true for localhost origins that should be auto-approved.
@@ -669,11 +678,11 @@ mod tests {
     #[tokio::test]
     async fn request_and_resolve() {
         let mgr = AuthorizationManager::new();
-        let (rx1, id1, is_first1, _) = mgr.request(&co("https://example.com")).unwrap();
+        let (rx1, id1, is_first1, _) = mgr.request(&co("https://example.com"), None).unwrap();
         assert!(is_first1);
 
         // A second request for the SAME origin piggybacks on the same request_id.
-        let (rx2, id2, is_first2, _) = mgr.request(&co("https://example.com")).unwrap();
+        let (rx2, id2, is_first2, _) = mgr.request(&co("https://example.com"), None).unwrap();
         assert!(!is_first2);
         assert_eq!(id1, id2, "same origin must share one request_id");
 
@@ -686,7 +695,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_deny() {
         let mgr = AuthorizationManager::new();
-        let (rx, id, _, _) = mgr.request(&co("https://evil.com")).unwrap();
+        let (rx, id, _, _) = mgr.request(&co("https://evil.com"), None).unwrap();
         mgr.resolve(&id, AuthDecision::Deny);
         assert_eq!(rx.await.unwrap().decision, AuthDecision::Deny);
     }
@@ -697,7 +706,7 @@ mod tests {
     #[tokio::test]
     async fn resolve_ignores_wrong_request_id() {
         let mgr = AuthorizationManager::new();
-        let (mut rx, id, _, _) = mgr.request(&co("https://example.com")).unwrap();
+        let (mut rx, id, _, _) = mgr.request(&co("https://example.com"), None).unwrap();
         mgr.resolve("not-the-real-id", AuthDecision::Allow);
         assert!(
             rx.try_recv().is_err(),
@@ -709,15 +718,38 @@ mod tests {
     }
 
     #[test]
+    fn a_pending_request_keeps_the_version_its_first_request_named() {
+        let mgr = AuthorizationManager::new();
+        let origin = co("https://example.com");
+        let (_first, id, is_first, _) = mgr
+            .request(&origin, AztecVersion::parse("6.0.0-dev.1"))
+            .unwrap();
+        assert!(is_first);
+        let (_piggyback, same, is_first, _) = mgr
+            .request(&origin, AztecVersion::parse("6.0.0-rc.6"))
+            .unwrap();
+        assert!(!is_first);
+        assert_eq!(same, id);
+        assert_eq!(
+            mgr.peek(&id).and_then(|(_, _, version)| version),
+            AztecVersion::parse("6.0.0-dev.1")
+        );
+        let (_other, other, _, _) = mgr.request(&co("https://other.example"), None).unwrap();
+        assert_eq!(mgr.peek(&other).map(|(_, _, version)| version), Some(None));
+    }
+
+    #[test]
     fn rejects_when_too_many_pending_origins() {
         let mgr = AuthorizationManager::new();
         for i in 0..MAX_PENDING_ORIGINS {
-            assert!(mgr.request(&co(&format!("https://site{i}.com"))).is_ok());
+            assert!(mgr
+                .request(&co(&format!("https://site{i}.com")), None)
+                .is_ok());
         }
         // One more should fail
-        assert!(mgr.request(&co("https://one-too-many.com")).is_err());
+        assert!(mgr.request(&co("https://one-too-many.com"), None).is_err());
         // Piggybacking on an existing origin should still work
-        assert!(mgr.request(&co("https://site0.com")).is_ok());
+        assert!(mgr.request(&co("https://site0.com"), None).is_ok());
     }
 
     /// codex quality audit #2: a single origin flooding /prove during the decision window must not
@@ -730,14 +762,17 @@ mod tests {
         // The first call creates the pending request (1 sender); each subsequent call piggybacks.
         let mut kept = Vec::new();
         for _ in 0..MAX_PIGGYBACK_SENDERS {
-            kept.push(mgr.request(&origin).expect("under the cap must succeed"));
+            kept.push(
+                mgr.request(&origin, None)
+                    .expect("under the cap must succeed"),
+            );
         }
         assert!(
-            mgr.request(&origin).is_err(),
+            mgr.request(&origin, None).is_err(),
             "the (MAX_PIGGYBACK_SENDERS + 1)-th concurrent request must be shed"
         );
         // A DIFFERENT origin is unaffected — the cap is per pending request, not global.
-        assert!(mgr.request(&co("https://other.example")).is_ok());
+        assert!(mgr.request(&co("https://other.example"), None).is_ok());
     }
 
     // ─── single-active-popup arbiter (C9 D18/D19) ───────────────────────
@@ -745,22 +780,22 @@ mod tests {
     #[tokio::test]
     async fn arbiter_first_is_active_second_is_queued() {
         let mgr = AuthorizationManager::new();
-        let (_rx1, id1, _first1, active1) = mgr.request(&co("https://a.com")).unwrap();
+        let (_rx1, id1, _first1, active1) = mgr.request(&co("https://a.com"), None).unwrap();
         assert!(active1, "first popup owns the active slot");
-        let (_rx2, id2, _first2, active2) = mgr.request(&co("https://b.com")).unwrap();
+        let (_rx2, id2, _first2, active2) = mgr.request(&co("https://b.com"), None).unwrap();
         assert!(
             !active2,
             "second distinct-origin popup is queued, not active"
         );
-        assert_eq!(mgr.peek(&id1).map(|(_, a)| a), Some(true));
-        assert_eq!(mgr.peek(&id2).map(|(_, a)| a), Some(false));
+        assert_eq!(mgr.peek(&id1).map(|(_, a, _)| a), Some(true));
+        assert_eq!(mgr.peek(&id2).map(|(_, a, _)| a), Some(false));
     }
 
     #[tokio::test]
     async fn arbiter_resolving_active_promotes_next() {
         let mgr = AuthorizationManager::new();
-        let (rx1, id1, _, _) = mgr.request(&co("https://a.com")).unwrap();
-        let (_rx2, id2, _, _) = mgr.request(&co("https://b.com")).unwrap();
+        let (rx1, id1, _, _) = mgr.request(&co("https://a.com"), None).unwrap();
+        let (_rx2, id2, _, _) = mgr.request(&co("https://b.com"), None).unwrap();
         // Resolving the active one (system path: timeout / window-close) promotes the queued one.
         let promoted = mgr.resolve(&id1, AuthDecision::Deny);
         assert_eq!(
@@ -770,7 +805,7 @@ mod tests {
         );
         assert_eq!(rx1.await.unwrap().decision, AuthDecision::Deny);
         assert_eq!(
-            mgr.peek(&id2).map(|(_, a)| a),
+            mgr.peek(&id2).map(|(_, a, _)| a),
             Some(true),
             "b.com now active"
         );
@@ -779,14 +814,14 @@ mod tests {
     #[tokio::test]
     async fn arbiter_resolving_queued_does_not_promote() {
         let mgr = AuthorizationManager::new();
-        let (_rx1, id1, _, _) = mgr.request(&co("https://a.com")).unwrap();
-        let (rx2, id2, _, _) = mgr.request(&co("https://b.com")).unwrap();
+        let (_rx1, id1, _, _) = mgr.request(&co("https://a.com"), None).unwrap();
+        let (rx2, id2, _, _) = mgr.request(&co("https://b.com"), None).unwrap();
         // Resolving the QUEUED one (its window was closed) leaves the active one; nobody is promoted.
         let promoted = mgr.resolve(&id2, AuthDecision::Deny);
         assert_eq!(promoted, None, "resolving a queued popup promotes nobody");
         assert_eq!(rx2.await.unwrap().decision, AuthDecision::Deny);
         assert_eq!(
-            mgr.peek(&id1).map(|(_, a)| a),
+            mgr.peek(&id1).map(|(_, a, _)| a),
             Some(true),
             "a.com remains active"
         );
@@ -795,8 +830,8 @@ mod tests {
     #[tokio::test]
     async fn arbiter_user_resolve_rejects_non_active() {
         let mgr = AuthorizationManager::new();
-        let (_rx1, id1, _, _) = mgr.request(&co("https://a.com")).unwrap();
-        let (mut rx2, id2, _, _) = mgr.request(&co("https://b.com")).unwrap();
+        let (_rx1, id1, _, _) = mgr.request(&co("https://a.com"), None).unwrap();
+        let (mut rx2, id2, _, _) = mgr.request(&co("https://b.com"), None).unwrap();
         // A USER decision from the QUEUED (non-active) popup is REJECTED server-side (arbiter enforcement).
         assert_eq!(
             mgr.resolve_active(&id2, AuthDecision::Allow),
@@ -814,7 +849,7 @@ mod tests {
             other => panic!("expected Resolved, got {other:?}"),
         }
         assert_eq!(
-            mgr.peek(&id2).map(|(_, a)| a),
+            mgr.peek(&id2).map(|(_, a, _)| a),
             Some(true),
             "b.com promoted after active resolved"
         );
@@ -1094,7 +1129,7 @@ mod tests {
     fn user_deny_cools_down_the_origin_blocking_immediate_retry() {
         let mgr = AuthorizationManager::new(); // 30s default
         let origin = co("https://evil.example");
-        let (_rx, id, _first, _active) = mgr.request(&origin).unwrap();
+        let (_rx, id, _first, _active) = mgr.request(&origin, None).unwrap();
         assert!(matches!(
             mgr.resolve_active(&id, AuthDecision::Deny),
             ResolveOutcome::Resolved(_)
@@ -1108,7 +1143,7 @@ mod tests {
     fn system_deny_paths_timeout_and_close_also_cool_down() {
         let mgr = AuthorizationManager::new();
         let origin = co("https://evil.example");
-        let (_rx, id, _first, _active) = mgr.request(&origin).unwrap();
+        let (_rx, id, _first, _active) = mgr.request(&origin, None).unwrap();
         // The auto-deny timeout and window-close both go through `resolve` (system path).
         mgr.resolve(&id, AuthDecision::Deny);
         assert!(mgr.state.lock().is_cooling_down(&origin, Instant::now()));
@@ -1118,7 +1153,7 @@ mod tests {
     fn allow_does_not_cool_down() {
         let mgr = AuthorizationManager::new();
         let origin = co("https://good.example");
-        let (_rx, id, _first, _active) = mgr.request(&origin).unwrap();
+        let (_rx, id, _first, _active) = mgr.request(&origin, None).unwrap();
         assert!(matches!(
             mgr.resolve_active(&id, AuthDecision::Allow),
             ResolveOutcome::Resolved(_)
@@ -1130,7 +1165,7 @@ mod tests {
     fn cooldown_expires_after_the_window() {
         let mgr = AuthorizationManager::new(); // 30s
         let origin = co("https://evil.example");
-        let (_rx, id, _first, _active) = mgr.request(&origin).unwrap();
+        let (_rx, id, _first, _active) = mgr.request(&origin, None).unwrap();
         mgr.resolve(&id, AuthDecision::Deny);
         // 31s in the future is past the 30s window → no longer cooling down (and the entry is pruned).
         assert!(!mgr

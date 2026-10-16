@@ -1,5 +1,8 @@
 # Implementation plans
 
+- [custom-bb](custom-bb/plan.md) — approved, phase 1 — developer mode runs one user-chosen,
+  hash-pinned `bb` for one version label
+
 Add one line per plan here when it opens; move the line to
 [`archive/index.md`](archive/index.md) when it closes. This file is read at the start of every
 planning run, so it stays short by design.

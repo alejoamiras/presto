@@ -321,7 +321,7 @@ pub fn show_auth_popup_window(
     // + un-timed and gains focus + its 60 s clock only when promoted.
     let is_active = auth_manager
         .peek(request_id)
-        .map(|(_, active)| active)
+        .map(|(_, active, _)| active)
         .unwrap_or(false);
     if is_active {
         commands::arm_active_popup(app, auth_manager, request_id);

@@ -1,4 +1,5 @@
 use crate::authorization::CanonicalOrigin;
+use crate::custom_bb::CustomBbPin;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -92,6 +93,13 @@ pub struct DeveloperSettings {
     /// [`PrestoConfig::update_channel`] turns it into the channel in effect.
     #[serde(default)]
     pub update_channel: UpdateChannel,
+    /// Read it through [`ConfigStore::effective_custom_bb`]; a malformed record loads as `None`.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "crate::custom_bb::de_custom_bb"
+    )]
+    pub custom_bb: Option<CustomBbPin>,
 }
 
 /// Channels in effect, not the stored choice: Stable whenever developer mode is off.
@@ -211,6 +219,22 @@ impl PrestoConfig {
             before,
             after: self.update_channel(),
         }
+    }
+
+    pub(crate) fn custom_bb(&self) -> Option<&CustomBbPin> {
+        self.developer
+            .custom_bb
+            .as_ref()
+            .filter(|_| self.developer.enabled)
+    }
+
+    /// Pinning needs developer mode; clearing never does.
+    pub fn set_custom_bb(&mut self, pin: Option<CustomBbPin>) -> Result<(), DeveloperModeOff> {
+        if pin.is_some() && !self.developer.enabled {
+            return Err(DeveloperModeOff);
+        }
+        self.developer.custom_bb = pin;
+        Ok(())
     }
 
     pub fn set_update_channel(
@@ -380,6 +404,24 @@ impl ConfigStore {
     /// The channel the updater follows, as of this store's load-time capability.
     pub fn effective_channel(&self) -> UpdateChannel {
         effective_channel(&self.lock.read(), self.cap.as_ref())
+    }
+
+    /// The custom bb in effect: none while this build may not write the config, since nothing here
+    /// could then stop it.
+    pub fn effective_custom_bb(&self) -> Option<CustomBbPin> {
+        self.cap.as_ref()?;
+        self.lock.read().custom_bb().cloned()
+    }
+
+    /// The read lock, held only while `pin` is still the custom bb in effect. A stop takes the write
+    /// lock, so it either precedes this check or follows whatever the caller does under the guard.
+    pub(crate) fn hold_custom_bb(
+        &self,
+        pin: &CustomBbPin,
+    ) -> Option<parking_lot::RwLockReadGuard<'_, PrestoConfig>> {
+        self.cap.as_ref()?;
+        let config = self.lock.read();
+        (config.custom_bb() == Some(pin)).then_some(config)
     }
 }
 
@@ -1562,5 +1604,76 @@ mod tests {
         );
         assert!(malformed.cap.is_none());
         assert_eq!(malformed.effective_channel(), UpdateChannel::Stable);
+    }
+
+    fn custom_pin() -> CustomBbPin {
+        CustomBbPin {
+            path: std::env::temp_dir().join("bb"),
+            sha256: "ab".repeat(32),
+            label: crate::custom_bb::check_label("6.0.0-dev.1").unwrap(),
+            pinned_at: 1_760_000_000,
+        }
+    }
+
+    #[test]
+    fn a_malformed_custom_bb_loses_only_itself() {
+        let mut record = serde_json::to_value(custom_pin()).unwrap();
+        record["sha256"] = serde_json::json!(5);
+        let loaded = load_str(
+            &serde_json::json!({
+                "config_version": 2,
+                "approved_origins": ["https://playground.presto.build"],
+                "developer": {"enabled": true, "update_channel": "rc", "custom_bb": record},
+            })
+            .to_string(),
+        );
+        assert!(loaded.cap.is_some());
+        assert_eq!(
+            loaded.config.approved_origins,
+            vec![co("https://playground.presto.build")]
+        );
+        assert_eq!(loaded.effective_channel(), UpdateChannel::Rc);
+        assert_eq!(loaded.config.developer.custom_bb, None);
+    }
+
+    #[test]
+    fn the_custom_bb_is_in_effect_only_while_developer_mode_is_on_and_off_clears_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.json");
+        let pin = custom_pin();
+        let mut config = PrestoConfig::default();
+        assert_eq!(
+            config.set_custom_bb(Some(pin.clone())),
+            Err(DeveloperModeOff)
+        );
+        config.set_developer_mode(true);
+        config.set_custom_bb(Some(pin.clone())).unwrap();
+        save_to(&config, &path, &PersistCapability::for_test()).unwrap();
+        let loaded = load_with_cap_from(&path);
+        assert_eq!(loaded.config.custom_bb(), Some(&pin));
+
+        let store = ConfigStore::new(loaded);
+        assert_eq!(store.effective_custom_bb(), Some(pin.clone()));
+        assert!(store.hold_custom_bb(&pin).is_some());
+        let read_only = ConfigStore {
+            lock: parking_lot::RwLock::new(store.read().clone()),
+            cap: None,
+        };
+        assert_eq!(read_only.effective_custom_bb(), None);
+        assert!(read_only.hold_custom_bb(&pin).is_none());
+
+        let mut hand_edited = config.clone();
+        hand_edited.developer.enabled = false;
+        assert_eq!(hand_edited.custom_bb(), None);
+
+        lock_mutate_save_to(&store, Some(&path), &PersistCapability::for_test(), |cfg| {
+            cfg.set_developer_mode(false);
+            true
+        })
+        .unwrap();
+        assert_eq!(store.read().developer, DeveloperSettings::default());
+        assert_eq!(store.effective_custom_bb(), None);
+        assert!(store.hold_custom_bb(&pin).is_none());
+        assert_eq!(load_with_cap_from(&path).config.developer.custom_bb, None);
     }
 }

@@ -713,7 +713,7 @@ pub fn get_pending_auth(
     require_label(window.label(), &label)?;
     Ok(auth
         .peek(&request_id)
-        .map(|(origin, active)| PendingAuthDto {
+        .map(|(origin, active, _)| PendingAuthDto {
             origin: origin.to_string(),
             active,
         }))

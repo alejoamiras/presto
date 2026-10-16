@@ -10,6 +10,7 @@ use crate::authorization::{
     AuthDecision, AuthOutcome, AuthorizationManager, CanonicalOrigin, Generation, RequestError,
 };
 use crate::config;
+use crate::versions::AztecVersion;
 
 use super::{AppState, ProveError, AUTH_QUEUE_BACKSTOP};
 
@@ -57,7 +58,10 @@ pub(crate) async fn authorize_origin(
         return Err(ProveError::OriginDenied(origin.to_string()));
     }
 
-    let outcome = request_authorization(state, auth_manager, &origin).await?;
+    let version = super::prove::requested_version(headers)
+        .as_deref()
+        .and_then(AztecVersion::parse);
+    let outcome = request_authorization(state, auth_manager, &origin, version).await?;
     match outcome.decision {
         AuthDecision::Allow => {
             persist_approved_origin(state, auth_manager, origin, outcome.generation)
@@ -105,6 +109,7 @@ async fn request_authorization(
     state: &AppState,
     auth_manager: &AuthorizationManager,
     origin: &CanonicalOrigin,
+    version: Option<AztecVersion>,
 ) -> Result<AuthOutcome, ProveError> {
     tracing::info!(origin = %origin, "Origin not approved, requesting authorization");
     // B2 (F9): `request` checks the post-deny cooldown atomically with the insert (so a concurrent Deny
@@ -112,7 +117,7 @@ async fn request_authorization(
     // prompt; only reached for a non-approved, non-headless origin, so approved sites are never affected
     // and expiry restores normal prompt-once behavior.
     let (rx, request_id, is_first, _is_active) = auth_manager
-        .request(origin)
+        .request(origin, version)
         .map_err(|error| map_request_error(origin, error))?;
 
     if is_first {
