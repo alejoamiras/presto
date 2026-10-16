@@ -71,3 +71,6 @@ with `rg --no-ignore` / `git grep`.
   smokes the update from the live stable as well as from the greatest lower release; the stable is
   the release the signed feed serves, bound to its asset digest, and a different key or an outage
   fails closed. 14 green legs on the 1.2.0 publish (PR #123).
+- [custom-bb](custom-bb/plan.md) — closed 2026-10-16 — developer mode pins one user-chosen,
+  hash-pinned `bb` to one version label: core route and inspection, Settings review, test run
+  and save, tray and popup lines; T13 proves it on three OSes (PRs #143, #145).

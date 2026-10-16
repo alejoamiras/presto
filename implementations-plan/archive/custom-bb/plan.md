@@ -1,7 +1,7 @@
 ---
 plan: custom-bb
 tier: mid
-status: approved (2026-10-15)
+status: completed 2026-10-16
 driver: claude-code
 eli5_mode: file
 code_review: off
@@ -12,6 +12,48 @@ quality: production
 base: a2a3a98 (origin/main, 2026-10-15)
 depends_on: the RC-channel plan's `PrestoConfig.developer: DeveloperSettings` contract
 ---
+
+## Outcome
+
+- **2026-10-16: completed.** Both arcs landed on `main` as their own squash PRs:
+  - arc 1, core, #143 (`eb4b751`);
+  - arc 2, desktop, #145 (`f848929`).
+
+  This close-out is the last PR.
+- **Shipped:**
+  - **Arc 1:** the pin (canonical path and SHA-256) for one version label; an inspection that
+    never runs the file (format and architecture, the executable bit, the path policy, macOS
+    quarantine and signature); the route on both schemes, `x-presto-bb: custom` on its proofs,
+    `503 custom_bb_unavailable` for a changed, missing or newly unsafe file and never a fallback;
+    the `bb --version` test run under the prove permit; `BB_BINARY_PATH` refuses the label; the
+    headless server has no custom bb.
+  - **Arc 2:** the four Settings-only commands behind the picker (`tauri-plugin-dialog` from Rust,
+    no `dialog:*` grant); the Settings review, trust tick, test run, save, card and banner; the
+    tray line and tooltip suffix; the approval popup's line, at 400×360; a candidate slot checked
+    under the config lock at the save and again right before every test-run spawn; developer mode
+    off clears the pin and the candidate.
+- **Real-binary evidence:**
+  - T13 pins the shipped sidecar through the picker seam, proves the `square` fixture through
+    `/prove/ultra-honk` with `x-presto-bb: custom`, stops, and proves it again officially: 11.9 s
+    on Linux locally (`lessons/phase-5.md`), and green on macOS, Linux and Windows in the PR's
+    WebDriver lanes (run 38946740028).
+  - The macOS lane's first run refused the staged file: the `bb` bb.js ships for arm64 macOS is
+    ad-hoc signed with a certificate-style designated requirement and no certificate, which the
+    kernel runs and `codesign --verify` rejects. Fixed in #145 (`lessons/phase-3.md`).
+- **Reviews:** each Codex loop (gpt-6.1-sol, high) converged: arc 1 in 3 rounds
+  (`lessons/phase-2.md`), arc 2 in 3 (`lessons/phase-3.md`). The cross-arc pass was conditional:
+  two copy and doc corrections, one residual filed as #155, one T13 suggestion not taken
+  (`lessons/phase-3.md`).
+- **Changed or dropped:**
+  - **Delivery:** not a `gh stack`. Arc 2 branched from `main` once arc 1 merged, and merged
+    `main` in before its own merge.
+  - **`tauri-plugin-dialog`:** pinned `=2.7.3` with `tauri-plugin-fs` held at 2.5.2, because the
+    newer releases drag `tauri` 2.12 in under the 7-day rule (`lessons/phase-3.md`).
+  - **The popup** grew from 400×300 to 400×360.
+- **Known limits:** #146, #147, #148, #149, #150, #151, #152, #153, #154, #155.
+- **Open items:** none. The hands-on release-candidate checks belong to #139, not this plan.
+- **This plan's `/goal` and `/loop` seeds are retired.** This file is a record of what was decided,
+  not instructions.
 
 # Developer mode: a custom `bb`
 
@@ -427,8 +469,8 @@ pass. **Layers:** lint, typecheck, unit, UI e2e (mocked).
 
 ### Phase 5: end to end, and docs
 
-**Status:** ✓ on Linux (`lessons/phase-5.md`): T13 took 11.7 s. macOS and Windows are left to the
-PR's WebDriver lanes.
+**Status:** ✓ (`lessons/phase-5.md`): T13 took 11.9 s on Linux locally, and passed on macOS,
+Linux and Windows in #145's WebDriver lanes (run 38946740028).
 
 1. **T13** (`e2e-webdriver/custom-bb.spec.ts`, with its `wdio.conf.ts` entry and hook export): one
    scenario on three OSes. Turn developer mode on and "pick" the shipped sidecar through the hook;

@@ -172,5 +172,9 @@ every OS) and leaves validity to the test run, where the kernel is the judge; th
 size before reading its payload (a header lying about its sizes named a signature), bound a
 fat read to its slice, and say "present" rather than "valid" in `inspect`'s doc, the refusal
 text, decision 8 and the README, since the kernel checks pages lazily and a proof can still
-die on a page the test run never touched. T13 now fails at once with the refusal's text
+die on a page the test run never touched; a last round bounded the declared command region to
+the bytes read, and Codex approved `35545dc`. T13 now fails at once with the refusal's text
 instead of a 20 s timeout.
+
+Two confirmation rounds followed in the same session: **conditional** (the bare substring
+and the NSS sentence, both fixed in `fcd8175`), then **approve** with nothing material open.
