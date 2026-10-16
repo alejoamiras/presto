@@ -267,6 +267,17 @@ pub fn notify_changed(app: &tauri::AppHandle) {
     }
 }
 
+/// After a developer mode save: turning it off also drops the candidate, so turning it back on
+/// starts a fresh review.
+pub fn developer_mode_saved(app: &tauri::AppHandle, enabled: bool) {
+    if !enabled {
+        if let Some(candidate) = app.try_state::<CandidateState>() {
+            *candidate.lock() = None;
+        }
+    }
+    notify_changed(app);
+}
+
 static PICKER_OPEN: AtomicBool = AtomicBool::new(false);
 
 struct PickerOpen;

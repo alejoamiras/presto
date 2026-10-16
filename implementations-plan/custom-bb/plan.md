@@ -406,6 +406,8 @@ before the hash (recorded in lessons). **Layers:** lint, typecheck, unit, integr
 
 ### Phase 4: Settings and popup UI
 
+**Status:** ✓ (`lessons/phase-4.md`). The auth popup grew to 400×360.
+
 1. D5 in `custom-bb.js`, `settings.html`, `authorize.html`/`.js` and `style.css`: existing tokens
    only, in all three theme blocks; every string via `textContent`; controls disabled until their
    state is known; the popup line above the permanence line, with conditional copy: "This site asks

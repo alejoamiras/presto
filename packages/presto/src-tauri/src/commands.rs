@@ -558,7 +558,7 @@ pub async fn set_developer_mode(
     require_label(window.label(), SETTINGS_LABEL)?;
     let saved = save_developer_mode(&config, None, enabled);
     if saved.is_ok() {
-        crate::custom_bb::notify_changed(&app);
+        crate::custom_bb::developer_mode_saved(&app, enabled);
     }
     crate::channel_change::apply(saved, &AppChannelEffects(&app)).await
 }

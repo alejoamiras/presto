@@ -1297,3 +1297,193 @@ test("at the real window size the Developer section and the leave check are reac
   }));
   expect(width.page, "the channel row overflows sideways").toBeLessThanOrEqual(width.window);
 });
+
+// ── Custom bb ──
+
+const BB_SHA = "9f2c1a7e4b0d83c6e5a1f7d2b9c40e88a3d61f5c07b2e9a4d8c1f36b5e70a29d";
+const BB_PATH = "/home/dev/barretenberg/cpp/build/bin/bb";
+const BB_OFF = {
+  state: "off",
+  label: null,
+  path: null,
+  sha256: null,
+  current_sha256: null,
+  pinned_at: null,
+  refusal: null,
+  activity: { last_proof_at: null, last_failure: null },
+};
+const BB_IN_USE = {
+  state: "in_use",
+  label: "6.0.0-dev.1",
+  path: BB_PATH,
+  sha256: BB_SHA,
+  pinned_at: 1,
+};
+
+/** Settings with developer mode on and the custom bb in `status`; a save pins what it was sent. */
+async function openCustomBb(page: Page, status: Record<string, unknown> = {}) {
+  await page.addInitScript(
+    ({ off, initial, sha, path }) => {
+      const mock = (window as any).__TAURI_MOCK__;
+      let current: Record<string, unknown> = initial;
+      mock.setHandler("custom_bb_status", () => current);
+      mock.setHandler("custom_bb_review", () => ({
+        outcome: "inspected",
+        path,
+        sha256: sha,
+        size: 91_500_000,
+        warnings: [],
+      }));
+      mock.setHandler("custom_bb_test_run", () => ({
+        version_suggestion: "6.0.0-dev.1",
+        excerpt: "6.0.0-dev.1\n",
+      }));
+      mock.setHandler("custom_bb_save", ({ choice }: any) => {
+        current = choice
+          ? {
+              ...off,
+              state: "in_use",
+              label: choice.label,
+              path,
+              sha256: choice.sha256,
+              pinned_at: 1,
+            }
+          : off;
+        return null;
+      });
+    },
+    { off: BB_OFF, initial: { ...BB_OFF, ...status }, sha: BB_SHA, path: BB_PATH },
+  );
+  await openChannel(page);
+}
+
+/** Answers custom_bb_status with `status` from now on, and reads it again the way a refocus does. */
+async function refocusWith(page: Page, status: Record<string, unknown>) {
+  await page.evaluate((next) => {
+    (window as any).__TAURI_MOCK__.setHandler("custom_bb_status", () => next);
+    window.dispatchEvent(new Event("focus"));
+  }, status);
+}
+
+test("a picked bb is reviewed, ticked, test-run and saved, and the banner then says it is on", async ({
+  page,
+}) => {
+  await openCustomBb(page);
+  const banner = page.locator("#custom-bb-banner");
+  await expect(page.locator("#custom-bb-summary")).toHaveText(
+    "Off. Every proof uses the official bb that Presto downloads and checks.",
+  );
+  await expect(banner).toBeHidden();
+
+  await page.getByRole("button", { name: "Choose file…" }).click();
+  const review = page.locator("#custom-bb-review");
+  await expect(review).toContainText(BB_PATH);
+  await expect(review).toContainText(BB_SHA);
+  await expect(review).toContainText("87.3 MB");
+  const testRun = page.getByRole("button", { name: "Test run" });
+  const use = page.getByRole("button", { name: "Use this bb" });
+  // Nothing runs before the tick, and nothing saves before a passing run.
+  await expect(testRun).toBeDisabled();
+  await expect(use).toBeDisabled();
+
+  await page.getByLabel("I built this file myself, or I fully trust the person who did.").check();
+  await testRun.click();
+  await expect(page.locator("#custom-bb-test-result")).toHaveText(
+    "✓ Test run passed. bb printed 6.0.0-dev.1.",
+  );
+  await expect(page.getByLabel("Use it when a site asks for bb version")).toHaveValue(
+    "6.0.0-dev.1",
+  );
+  await use.click();
+
+  await expect(review).toBeHidden();
+  await expect(banner).toBeVisible();
+  await expect(banner).not.toHaveClass(/refused/);
+  await expect(page.locator("#custom-bb-banner-title")).toHaveText("Custom bb is on");
+  await expect(page.locator("#custom-bb-banner-body")).toHaveText(
+    "Sites that ask for 6.0.0-dev.1 get your build (9f2c1a7e). Every other request uses the official bb.",
+  );
+  await expect(page.locator("#custom-bb-chip")).toHaveText("In use");
+  await expect(page.locator("#custom-bb-facts")).toContainText(BB_SHA);
+  expect((await callsFor(page, "custom_bb_review")).map((c: any) => c.args)).toEqual([
+    { source: "pick" },
+  ]);
+  expect((await callsFor(page, "custom_bb_test_run")).map((c: any) => c.args)).toEqual([
+    { sha256: BB_SHA, acknowledged: true },
+  ]);
+  expect((await callsFor(page, "custom_bb_save")).map((c: any) => c.args)).toEqual([
+    { choice: { sha256: BB_SHA, label: "6.0.0-dev.1" } },
+  ]);
+});
+
+test("a changed file, an override and a refused pick each say why and offer the way out", async ({
+  page,
+}) => {
+  const now = "3b7e90c1a6f24d58e0b9c7a1d3f5e8b2c4a6d8f0e1b3c5a7d9f2e4b6c8a0d2f6";
+  await openCustomBb(page, { ...BB_IN_USE, state: "changed", current_sha256: now });
+  const banner = page.locator("#custom-bb-banner");
+  await expect(banner).toHaveClass(/refused/);
+  await expect(page.locator("#custom-bb-banner-title")).toHaveText("Your custom bb changed");
+  await expect(page.locator("#custom-bb-banner-body")).toHaveText(
+    "Presto refuses proofs for 6.0.0-dev.1 until you review the new file or stop using it. Sites use their own prover meanwhile.",
+  );
+  await expect(page.locator("#custom-bb-chip")).toHaveText("Not used: file changed");
+  await expect(page.locator("#custom-bb-facts")).toContainText(now);
+
+  // Trust new build re-reads the pinned path, and keeps its label unless the user changes it.
+  await page.getByRole("button", { name: "Trust new build…" }).click();
+  await expect(page.getByLabel("Use it when a site asks for bb version")).toHaveValue(
+    "6.0.0-dev.1",
+  );
+  expect((await callsFor(page, "custom_bb_review")).map((c: any) => c.args)).toEqual([
+    { source: "pinned" },
+  ]);
+  await page.getByRole("button", { name: "Cancel" }).click();
+  await expect(page.locator("#custom-bb-review")).toBeHidden();
+
+  await refocusWith(page, { ...BB_OFF, ...BB_IN_USE, state: "overridden" });
+  await expect(page.locator("#custom-bb-banner-title")).toHaveText("Custom bb is not in use");
+  await expect(page.locator("#custom-bb-banner-body")).toContainText("BB_BINARY_PATH");
+  await expect(page.locator("#custom-bb-chip")).toHaveText("Not used: overridden");
+  await expect(page.locator("#custom-bb-banner-review")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Trust new build…" })).toBeHidden();
+  await expect(page.locator("#custom-bb-banner-stop")).toBeEnabled();
+
+  const fix = "xattr -d com.apple.quarantine /Users/dev/Downloads/bb";
+  await page.evaluate((command) => {
+    (window as any).__TAURI_MOCK__.setHandler("custom_bb_review", () => ({
+      outcome: "refused",
+      code: "quarantined",
+      message: "macOS quarantined this file because it came from the internet.",
+      fix: command,
+    }));
+  }, fix);
+  await page.getByRole("button", { name: "Change file…" }).click();
+  const refused = page.locator("#custom-bb-refused");
+  await expect(refused).toContainText("Presto can't use this file");
+  await expect(page.locator("#custom-bb-refused-message")).toHaveText(
+    "macOS quarantined this file because it came from the internet.",
+  );
+  await expect(page.locator("#custom-bb-refused-command")).toHaveText(fix);
+  await expect(page.getByRole("button", { name: "Choose another file…" })).toBeEnabled();
+  await expect(page.locator("#custom-bb-review")).toBeHidden();
+});
+
+test("stop using clears the banner and says every proof is official again", async ({ page }) => {
+  await openCustomBb(page, BB_IN_USE);
+  const banner = page.locator("#custom-bb-banner");
+  await expect(banner).toBeVisible();
+
+  await page.locator("#custom-bb-banner-stop").click();
+
+  await expect(banner).toBeHidden();
+  await expect(page.locator("#custom-bb-stopped")).toHaveText(
+    "Stopped. Every proof uses the official bb again.",
+  );
+  await expect(page.locator("#custom-bb-chip")).toBeHidden();
+  await expect(page.locator("#custom-bb-stop")).toBeHidden();
+  await expect(page.getByRole("button", { name: "Choose file…" })).toBeEnabled();
+  expect((await callsFor(page, "custom_bb_save")).map((c: any) => c.args)).toEqual([
+    { choice: null },
+  ]);
+});

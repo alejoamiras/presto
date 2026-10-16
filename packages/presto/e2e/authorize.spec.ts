@@ -1,5 +1,6 @@
 import path from "node:path";
 import { expect, type Page, test } from "@playwright/test";
+import { VIEWPORT_SIZES } from "./window-sizes.js";
 
 const MOCK_PATH = path.join(import.meta.dirname, "tauri-mock.js");
 
@@ -118,10 +119,10 @@ test("buttons disabled after invoke prevents double-click", async ({ page }) => 
   await expect(page.getByRole("button", { name: "Deny" })).toBeDisabled();
 });
 
-test("full origin untruncated + start reachable + buttons in the 400x300 window (F-014)", async ({
+test("full origin untruncated + start reachable + buttons in the 400x360 window (F-014)", async ({
   page,
 }) => {
-  await page.setViewportSize({ width: 400, height: 300 });
+  await page.setViewportSize({ width: 400, height: 360 });
   const long = `https://${"sub.".repeat(40)}trusted.example`;
   await mockPending(page, long);
   await page.goto("/authorize.html?requestId=req-abc");
@@ -141,7 +142,7 @@ test("full origin untruncated + start reachable + buttons in the 400x300 window 
   for (const name of ["Allow", "Deny"]) {
     const box = await page.getByRole("button", { name }).boundingBox();
     expect(box, name).not.toBeNull();
-    expect(box!.y + box!.height, name).toBeLessThanOrEqual(300);
+    expect(box!.y + box!.height, name).toBeLessThanOrEqual(360);
   }
 
   const style = await origin.evaluate((el) => {
@@ -218,4 +219,46 @@ test("IPC failure on get_verified_info falls back to unrecognized rendering", as
 
   await expect(page.locator("#origin")).toHaveText("https://nulo.sh");
   await expect(page.locator("#recognized")).toBeHidden();
+});
+
+test("a request the custom bb answers says so above the permanence line, and both fit the popup", async ({
+  page,
+}) => {
+  // The tallest popup: a verified site, the custom bb line and the permanence line.
+  await page.setViewportSize(VIEWPORT_SIZES.authorize);
+  await page.addInitScript(() => {
+    const mock = (window as any).__TAURI_MOCK__;
+    mock.setHandler("get_pending_auth", () => ({
+      origin: "https://playground.presto.build",
+      active: true,
+      custom_label: "6.0.0-dev.1",
+    }));
+    mock.setHandler("get_verified_info", () => ({ display_name: "Presto Playground" }));
+  });
+  await page.goto("/authorize.html?requestId=req-abc");
+
+  const line = page.locator("#custom-bb-line");
+  await expect(line).toHaveText(
+    "This site asks for bb 6.0.0-dev.1. While your custom bb answers that version, it runs these proofs, not the official one.",
+  );
+  await expect(page.locator("#recognized")).toBeVisible();
+  for (const selector of ["#custom-bb-line", "#permanence", "#allow", "#deny"]) {
+    await expect(page.locator(selector), selector).toBeInViewport({ ratio: 1 });
+  }
+  const below = await page.evaluate(
+    () =>
+      document.getElementById("custom-bb-line")!.getBoundingClientRect().bottom <=
+      document.getElementById("permanence")!.getBoundingClientRect().top,
+  );
+  expect(below, "the custom bb line sits above the permanence line").toBe(true);
+
+  // A stop in Settings reaches the next poll.
+  await page.evaluate(() => {
+    (window as any).__TAURI_MOCK__.setHandler("get_pending_auth", () => ({
+      origin: "https://playground.presto.build",
+      active: true,
+      custom_label: null,
+    }));
+  });
+  await expect(line).toBeHidden();
 });

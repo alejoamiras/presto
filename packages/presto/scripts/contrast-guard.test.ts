@@ -80,7 +80,11 @@ describe("contrast guard", () => {
         ["--danger", "--surface"],
         ["--danger-contrast", "--danger"],
         ["--warning", "--bg"],
+        ["--warning", "--surface"],
+        ["--warning", "--warning-bg"],
+        ["--text", "--warning-bg"],
         ["--go-text", "--bg"],
+        ["--go-text", "--surface"],
       ],
       "app",
     );
