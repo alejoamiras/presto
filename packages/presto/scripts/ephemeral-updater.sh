@@ -153,8 +153,13 @@ n1_dmg() {
   exit 1
 }
 
+# The release signer's smoke feeds for <version>: v1 for every version, and an rc-v1 twin for a
+# prerelease.
 feed() {
-  write_feed "$1" "$2" "$3" smoke-latest.json
+  write_feed "$1" "$2" "$3" smoke-latest.json v1
+  case "$1" in
+    *-*) write_feed "$1" "$2" "$3" smoke-latest-rc.json ;;
+  esac
 }
 
 # rc-lifecycle's feeds, all over R's one payload in <dir>: R's rc-v1 feed and its v1 twin, a higher

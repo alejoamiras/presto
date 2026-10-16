@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Sourced by updater-smoke.sh (macOS) and updater-smoke-linux.sh: how the app under test is
 # launched and stopped, and the modes whose checks are identical on both. The caller defines
-# APP_BIN, HEALTH, WORK, SERVE_DIR, CONFIG_DIR, N_VERSION, REPO_ROOT and log(). Written for macOS's
-# bash 3.2.
+# APP_BIN, HEALTH, WORK, SERVE_DIR, CONFIG_DIR, N_VERSION, N_ARTIFACTS_DIR, PLATFORM_KEY, N_SIG,
+# N_SIZE, N_BASENAME, ARTIFACT_HOST, REPO_ROOT and log(). Written for macOS's bash 3.2.
 
 # The feed's artifact prefix before it goes silent: well below any real payload.
 # shellcheck disable=SC2034  # read by the sourcing script
@@ -214,6 +214,100 @@ seed_developer() {
     "$1" "$2" > "$CONFIG_DIR/config.json"
 }
 
+# assert_feed_binds_n <feed>: a pre-signed smoke feed for exactly N's artifact on this platform.
+assert_feed_binds_n() {
+  jq -e --arg v "$N_VERSION" --arg key "$PLATFORM_KEY" --arg sig "$N_SIG" \
+    --arg url "https://$ARTIFACT_HOST/releases/download/$N_BASENAME" --argjson size "$N_SIZE" '
+      .version == $v
+      and (.platforms | keys == [$key])
+      and .platforms[$key].signature == $sig
+      and .platforms[$key].url == $url
+      and .platforms[$key].size == $size
+      and (.manifest | type == "string" and length > 0)
+      and (.manifest_sig | type == "string" and length > 0)
+    ' "$1" >/dev/null || {
+      echo "::error::pre-signed $(basename "$1") does not bind the exact N artifact"
+      return 1
+    }
+}
+
+# A prerelease N is offered only on the rc channel. Its positive and negative modes serve each feed
+# path from its own file: N's v1 smoke feed on latest.json, which a pre-channel N-1 takes, and its
+# rc-v1 twin on latest-rc.json, which an opted-in channel build reads first.
+n_is_prerelease() {
+  case "$N_VERSION" in
+    *-*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# Before the feed server starts, for a prerelease N: N's rc-v1 twin, checked like its v1 feed.
+stage_release_feeds() {
+  local twin
+  twin="$(find "$N_ARTIFACTS_DIR" -name 'smoke-latest-rc.json' | head -1)"
+  [ -n "$twin" ] || { echo "::error::no pre-signed smoke-latest-rc.json in $N_ARTIFACTS_DIR"; return 1; }
+  assert_feed_binds_n "$twin" || return 1
+  cp "$twin" "$WORK/latest-rc.json"
+  mkdir -p "$WORK/feeds"
+  serve_feed latest.json "$WORK/latest.json"
+  serve_feed latest-rc.json "$WORK/latest-rc.json"
+}
+
+# positive and negative: auto-update on, and the channel that offers N. The developer block also
+# proves a pre-channel N-1 loads a config a channel build wrote.
+seed_release_config() {
+  if n_is_prerelease; then
+    seed_developer true rc
+  else
+    seed_developer false stable
+  fi
+}
+
+# The first update check an app log holds, without color codes. Only a channel build names its
+# channel there, as `channel=stable` or `channel=rc`.
+first_check_line() {
+  grep -m1 'Checking for updates' "$1" | perl -pe 's/\e\[[0-9;]*m//g'
+}
+
+# A prerelease N's first positive leg: on the stable channel N-1 refuses N's rc-v1 feed from either
+# path, a pre-channel build on its schema and a channel build as a candidate. The only real-binary
+# proof that installed pre-channel users reject a production candidate feed.
+run_release_refusal_leg() {
+  local mark n1 refusal='update-manifest verification failed'
+  log "REFUSAL: on the stable channel, N-1 refuses $N_VERSION's rc-v1 feed on both paths"
+  seed_developer false stable
+  serve_feed latest.json "$WORK/latest-rc.json"
+  serve_feed latest-rc.json "$WORK/latest-rc.json"
+  mark="$(feed_mark)"
+  launch_app "$WORK/app-refusal.log" || return 1
+  n1="$(wait_for_n1)" || return 1
+  wait_for_line "$WORK/app-refusal.log" 'Checking for updates' 60 || return 1
+  if first_check_line "$WORK/app-refusal.log" | grep -q 'channel='; then
+    refusal='update refused on channel stable: CandidateOffChannel'
+  fi
+  assert_refused REFUSAL "$mark" "$WORK/app-refusal.log" "$n1" "$refusal" || return 1
+  stop_app || return 1
+  serve_feed latest.json "$WORK/latest.json"
+  serve_feed latest-rc.json "$WORK/latest-rc.json"
+}
+
+# assert_release_feed_order <mark> <app log>: N-1's first check line names the path it reads first,
+# latest-rc.json on the rc channel and latest.json otherwise, and this launch's update came from it.
+assert_release_feed_order() {
+  local first=/releases/latest.json
+  if first_check_line "$2" | grep -q 'channel=rc'; then
+    first=/releases/latest-rc.json
+  fi
+  assert_installed positive "$1" "$first "
+}
+
+assert_never_read_only() {
+  if grep -l "running read-only" "$WORK"/app*.log; then
+    echo "::error::a launch ran with a read-only config"
+    return 1
+  fi
+}
+
 # The feed log's length: a launch reads only the requests after its mark.
 feed_mark() {
   wc -l < "$WORK/feed.log" | tr -d ' '
@@ -253,8 +347,8 @@ wait_for_version() {
   return 1
 }
 
-# assert_refused <leg> <mark> <app log> <running version> <refusal>: the app fetched the stable feed
-# alone, downloaded nothing and still serves <running version> 60 s on. The refusal line is read
+# assert_refused <leg> <mark> <app log> <running version> <refusal ERE>: the app fetched the stable
+# feed alone, downloaded nothing and still serves <running version> 60 s on. The refusal line is read
 # last, so a build that admits the feed fails on its download, not on a missing log line.
 assert_refused() {
   local leg=$1 mark=$2 out=$3 running=$4 refusal=$5 end got
@@ -280,7 +374,7 @@ assert_refused() {
     echo "::error::$leg: the app requested latest-rc.json on the stable channel"
     return 1
   fi
-  if ! grep -qE "update refused on channel stable: $refusal" "$out"; then
+  if ! grep -qE "$refusal" "$out"; then
     echo "::error::$leg: no '$refusal' refusal in $(basename "$out")"
     return 1
   fi
@@ -313,7 +407,7 @@ assert_developer_rc() {
 # alternative on latest.json would end a reversed check with nothing; C1 leaves and refuses a newer
 # candidate; C2 opts in again and takes N from latest.json while latest-rc.json answers 503.
 run_rc_lifecycle_mode() {
-  local feeds="$R_ARTIFACTS_DIR" n1 mark
+  local feeds="$R_ARTIFACTS_DIR" n1 mark stable_refused="update refused on channel stable:"
 
   log "A1: the stable channel refuses R's rc-v1 feed"
   seed_pre_channel
@@ -323,7 +417,7 @@ run_rc_lifecycle_mode() {
   launch_app "$WORK/app-a1.log" || return 1
   n1="$(wait_for_n1)" || return 1
   [ "$n1" != "$R_VERSION" ] || { echo "::error::N-1 already runs R ($R_VERSION)"; return 1; }
-  assert_refused A1 "$mark" "$WORK/app-a1.log" "$n1" CandidateOffChannel || return 1
+  assert_refused A1 "$mark" "$WORK/app-a1.log" "$n1" "$stable_refused CandidateOffChannel" || return 1
   stop_app || return 1
 
   log "A2: the stable channel refuses R's v1 feed, a prerelease"
@@ -333,7 +427,7 @@ run_rc_lifecycle_mode() {
   mark="$(feed_mark)"
   launch_app "$WORK/app-a2.log" || return 1
   wait_for_version "$n1" 60 || return 1
-  assert_refused A2 "$mark" "$WORK/app-a2.log" "$n1" PrereleaseNotCandidate || return 1
+  assert_refused A2 "$mark" "$WORK/app-a2.log" "$n1" "$stable_refused PrereleaseNotCandidate" || return 1
   stop_app || return 1
 
   log "B: opted in, the launch check installs R from latest-rc.json"
@@ -358,7 +452,7 @@ run_rc_lifecycle_mode() {
   mark="$(feed_mark)"
   launch_app "$WORK/app-c1.log" || return 1
   wait_for_version "$R_VERSION" 60 || return 1
-  assert_refused C1 "$mark" "$WORK/app-c1.log" "$R_VERSION" CandidateOffChannel || return 1
+  assert_refused C1 "$mark" "$WORK/app-c1.log" "$R_VERSION" "$stable_refused CandidateOffChannel" || return 1
   stop_app || return 1
 
   log "C2: on the channel again, R takes $N_VERSION from latest.json while latest-rc.json answers 503"
@@ -370,9 +464,6 @@ run_rc_lifecycle_mode() {
   wait_for_version "$N_VERSION" 300 || return 1
   assert_installed C2 "$mark" "/releases/latest-rc.json /releases/latest.json " || return 1
   assert_developer_rc C2 || return 1
-  if grep -l "running read-only" "$WORK"/app-*.log; then
-    echo "::error::a launch ran with a read-only config"
-    return 1
-  fi
+  assert_never_read_only || return 1
   log "SUCCESS (rc-lifecycle) — refused R twice on stable, installed R on rc, refused a newer candidate after leaving, took $N_VERSION through the fallback"
 }

@@ -26,6 +26,7 @@
 set -euo pipefail
 
 N_VERSION="$1"
+# shellcheck disable=SC2034  # read by updater-smoke-modes.sh
 PLATFORM_KEY="$2"
 N_ARTIFACTS_DIR="$3"
 N1_DMG="$4"
@@ -66,6 +67,10 @@ log() { echo "── $* ──"; }
 
 # shellcheck disable=SC1091  # linted on its own
 source "$(dirname "${BASH_SOURCE[0]}")/updater-smoke-modes.sh"
+case "$MODE" in
+  positive|negative) ;;
+  *) if n_is_prerelease; then echo "::error::a prerelease N runs only the positive and negative modes"; exit 1; fi ;;
+esac
 
 # shellcheck disable=SC2317,SC2329  # invoked indirectly via `trap cleanup EXIT`; SC2317 is only
 # emitted by shellcheck < 0.10 (the CI runner's), which doesn't trace trap targets — every command
@@ -97,6 +102,7 @@ N_SIG_FILE="$(find "$N_ARTIFACTS_DIR" -name '*.app.tar.gz.sig' | head -1)"
 [ -n "$N_SIG_FILE" ] || { echo "::error::no *.app.tar.gz.sig in $N_ARTIFACTS_DIR"; exit 1; }
 N_BASENAME="$(basename "$N_TARBALL")"
 cp "$N_TARBALL" "$SERVE_DIR/$N_BASENAME"
+# shellcheck disable=SC2034  # read by updater-smoke-modes.sh
 N_SIG="$(cat "$N_SIG_FILE")"
 # Byte size of the GENUINE artifact (before any negative-mode tamper) — bound into the signed
 # manifest (F-004 Layer A + SEC-03). BSD/GNU `wc -c` both need the whitespace trimmed.
@@ -135,25 +141,17 @@ printf '127.0.0.1 %s\n' "$HOST" "$ARTIFACT_HOST" | sudo tee -a /etc/hosts >/dev/
 # ── Stage the pre-signed latest.json for N (F-004 Layer A) ──
 SIGNED_FEED="$(find "$N_ARTIFACTS_DIR" -name 'smoke-latest.json' | head -1)"
 [ -n "$SIGNED_FEED" ] || { echo "::error::no pre-signed smoke-latest.json in $N_ARTIFACTS_DIR"; exit 1; }
-jq -e --arg v "$N_VERSION" --arg key "$PLATFORM_KEY" --arg sig "$N_SIG" \
-  --arg url "https://$ARTIFACT_HOST/releases/download/$N_BASENAME" --argjson size "$N_SIZE" '
-    .version == $v
-    and (.platforms | keys == [$key])
-    and .platforms[$key].signature == $sig
-    and .platforms[$key].url == $url
-    and .platforms[$key].size == $size
-    and (.manifest | type == "string" and length > 0)
-    and (.manifest_sig | type == "string" and length > 0)
-  ' "$SIGNED_FEED" >/dev/null || {
-    echo "::error::pre-signed smoke feed does not bind the exact N artifact"; exit 1;
-  }
+assert_feed_binds_n "$SIGNED_FEED" || exit 1
 cp "$SIGNED_FEED" "$WORK/latest.json"
 log "latest.json:"; cat "$WORK/latest.json"
 
-# rc-lifecycle serves each feed path from its own file, which every leg replaces.
+# rc-lifecycle and a prerelease N serve each feed path from its own file, which a leg may replace.
 FEED_SOURCE=(--latest-json "$WORK/latest.json")
 if [ "$MODE" = "rc-lifecycle" ]; then
   stage_rc_lifecycle '*.app.tar.gz' || exit 1
+  FEED_SOURCE=(--feed-dir "$WORK/feeds")
+elif n_is_prerelease; then
+  stage_release_feeds || exit 1
   FEED_SOURCE=(--feed-dir "$WORK/feeds")
 fi
 
@@ -215,11 +213,20 @@ if [ "$MODE" = "prompt" ]; then
   exit 0
 fi
 
-# ── Pre-seed auto-update so N-1 updates without UI ──
-echo '{"config_version":1,"safari_support":false,"approved_origins":[],"speed":"full","auto_update":true}' > "$CONFIG_DIR/config.json"
+# ── Pre-seed auto-update so N-1 updates without UI: positive and negative on the channel that
+#    offers N, after a prerelease N's refusal leg ──
+if [ "$MODE" = "positive" ] || [ "$MODE" = "negative" ]; then
+  if [ "$MODE" = "positive" ] && n_is_prerelease; then
+    run_release_refusal_leg || { dump_logs; exit 1; }
+  fi
+  seed_release_config
+else
+  echo '{"config_version":1,"safari_support":false,"approved_origins":[],"speed":"full","auto_update":true}' > "$CONFIG_DIR/config.json"
+fi
 
 # ── Launch N-1 and exercise its ordinary same-key update path. ──
 log "launching N-1 (expecting auto-update → N)"
+MARK="$(feed_mark)"
 launch_app "$WORK/app.log" || { dump_logs; exit 1; }
 
 if [ "$MODE" = "stall" ]; then
@@ -264,6 +271,7 @@ if [ "$MODE" = "negative" ]; then
     dump_logs
     exit 1
   fi
+  assert_never_read_only || { dump_logs; exit 1; }
   log "SUCCESS (negative) — updater downloaded the tampered artifact and refused to update to $N_VERSION"
   dump_logs
   exit 0
@@ -287,6 +295,8 @@ for _ in $(seq 1 150); do
       exit 1
     fi
     assert_schedule_written_by_n "$T_N" || { dump_logs; exit 1; }
+    assert_release_feed_order "$MARK" "$WORK/app.log" || { dump_logs; exit 1; }
+    assert_never_read_only || { dump_logs; exit 1; }
     log "SUCCESS — updated to $GOT via the local feed (artifact downloaded); N recorded its own check"
     exit 0
   fi

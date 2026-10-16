@@ -19,7 +19,7 @@ const WF = Bun.YAML.parse(WF_TEXT) as { jobs: Record<string, Job> };
 
 function step(job: string, name: string): Step {
   const found = WF.jobs[job]?.steps.find((s) => s.name?.startsWith(name));
-  if (!found?.run) throw new Error(`no ${job} step named ${name}`);
+  if (!found) throw new Error(`no ${job} step named ${name}`);
   return found;
 }
 
@@ -175,6 +175,19 @@ describe("release candidate feed: which key a dispatch writes", () => {
   });
 });
 
+describe("release candidate feed: every release stages its own signed feed", () => {
+  test("a stable stages latest.json and a prerelease latest-rc.json, as the 17th asset", () => {
+    const download = step("release", "Download signed update feed");
+    const stage = step("release", "Stage the signed feed");
+    expect([download.if, stage.if]).toEqual([undefined, undefined]);
+    expect(stage.run).toContain('cp "signed-feed/$FEED_KEY" "release-files/$FEED_KEY"');
+    expect(step("release", "Create release").run).toContain(
+      "-o -name 'latest.json' -o -name 'latest-rc.json' \\) -print0)",
+    );
+    expect(step("promote", "Pre-flight").run).toContain('"$FEED_KEY" | LC_ALL=C sort)');
+  });
+});
+
 describe("release candidate feed: a stable promote settles the candidate key", () => {
   const settle = step("promote", "Delete a staged release candidate");
   const run = (kv: KV) => runStep(settle.run ?? "", { VERSION: "1.3.0", NAMESPACE_ID: "ns" }, kv);
@@ -214,7 +227,10 @@ describe("release candidate feed: withdraw-rc", () => {
       "  withdraw-rc:\n    name: Withdraw the release candidate (delete KV latest-rc.json)\n    needs: [validate]",
     );
     const deletes = WF_TEXT.match(/wrangler kv key delete \S+/g);
-    expect(deletes).toEqual(Array(2).fill("wrangler kv key delete latest-rc.json"));
+    expect(deletes).toEqual([
+      "wrangler kv key delete latest-rc.json",
+      "wrangler kv key delete latest-rc.json",
+    ]);
     expect(step("withdraw-rc", "Delete KV latest-rc.json").if).toBe(gha("!inputs.dry_run"));
     expect(WF_TEXT.match(/wrangler kv key put/g)).toHaveLength(1);
   });
@@ -332,3 +348,159 @@ cp "${work}/body-$i" "$out"
     expect([unreachable.code, unreachable.tool]).toEqual([1, ""]);
   });
 });
+
+const SCRIPTS = path.join(REPO, "packages/presto/scripts");
+const readScript = (name: string) => fs.readFileSync(path.join(SCRIPTS, name), "utf8");
+
+describe("release smokes: a prerelease N's refusal leg", () => {
+  /**
+   * Runs the unix refusal leg with the app simulated: `launch_app` writes `appLog` and the feed
+   * requests `requests`, and the clock advances 7 s per read, so the 60 s windows pass at once.
+   */
+  function refusalLeg(appLog: string, requests: string[]) {
+    const work = fs.mkdtempSync(path.join(tmpdir(), "release-leg-"));
+    try {
+      const harness = `
+        WORK=${JSON.stringify(work)}; CONFIG_DIR="$WORK/cfg"; mkdir -p "$CONFIG_DIR" "$WORK/feeds"
+        HEALTH=http://127.0.0.1:1/health; N_VERSION=9.9.9-rc.1; APP_PID=$(ps -o pgid= $$ | tr -d " ")
+        log() { :; }
+        source ${JSON.stringify(path.join(SCRIPTS, "updater-smoke-modes.sh"))}
+        echo '{"version":"9.9.9-rc.1","schema":"v1"}' > "$WORK/latest.json"
+        echo '{"version":"9.9.9-rc.1","schema":"rc-v1"}' > "$WORK/latest-rc.json"
+        : > "$WORK/feed.log"; echo 0 > "$WORK/clock"
+        date() { local t; t=$(cat "$WORK/clock"); echo $((t + 7)) > "$WORK/clock"; echo "$t"; }
+        sleep() { :; }; stop_app() { :; }
+        health_version() { echo 0.0.1; }; wait_for_n1() { echo 0.0.1; }
+        launch_app() {
+          echo "launched with $(jq -r .schema "$WORK/feeds/latest.json") $(jq -r .schema "$WORK/feeds/latest-rc.json")"
+          printf '%b' ${JSON.stringify(appLog)} > "$1"
+          printf 'feed-server: GET %s -> 200\\n' ${requests.map((r) => JSON.stringify(r)).join(" ")} >> "$WORK/feed.log"
+        }
+        run_release_refusal_leg
+        status=$?
+        echo "served $(jq -r .schema "$WORK/feeds/latest.json") $(jq -r .schema "$WORK/feeds/latest-rc.json")"
+        exit $status
+      `;
+      const r = Bun.spawnSync(["bash", "-c", harness]);
+      return { code: r.exitCode, out: r.stdout.toString() + r.stderr.toString() };
+    } finally {
+      fs.rmSync(work, { recursive: true, force: true });
+    }
+  }
+
+  // The color codes a terminal-bound tracing line may carry around a field name.
+  const CHECK_CHANNEL = "INFO Checking for updates... \\033[3mchannel\\033[0m=stable endpoint=x\\n";
+  const CHECK_PRE_CHANNEL = "INFO Checking for updates...\\n";
+
+  test("on the stable channel N-1 must refuse the rc-v1 twin on its schema or as a candidate", () => {
+    const channel = refusalLeg(
+      `${CHECK_CHANNEL}ERROR SECURITY: update refused on channel stable: CandidateOffChannel\\n`,
+      ["/releases/latest.json"],
+    );
+    expect(channel.code, channel.out).toBe(0);
+    // The positive leg then serves each feed from its own path.
+    expect(channel.out).toContain("launched with rc-v1 rc-v1");
+    expect(channel.out).toContain("served v1 rc-v1");
+    const pre = refusalLeg(
+      `${CHECK_PRE_CHANNEL}ERROR SECURITY: update-manifest verification failed (schema); refusing update\\n`,
+      ["/releases/latest.json"],
+    );
+    expect(pre.code, pre.out).toBe(0);
+  });
+
+  test("the refusal leg fails a build that downloads the candidate or refuses for another reason", () => {
+    const downloads = refusalLeg(CHECK_CHANNEL, ["/releases/latest.json", "/releases/download/x"]);
+    expect(downloads.code).toBe(1);
+    expect(downloads.out).toContain("REFUSAL: the app downloaded an update it must refuse");
+    const otherReason = refusalLeg(
+      `${CHECK_CHANNEL}ERROR SECURITY: update refused on channel stable: PrereleaseNotCandidate\\n`,
+      ["/releases/latest.json"],
+    );
+    expect(otherReason.code).toBe(1);
+    expect(otherReason.out).toContain("no 'update refused on channel stable: CandidateOffChannel'");
+    // A pre-channel check that ends without its schema refusal proves nothing.
+    const preChannelFailure = refusalLeg(
+      `${CHECK_PRE_CHANNEL}WARN Update check failed: connection reset\\n`,
+      ["/releases/latest.json"],
+    );
+    expect(preChannelFailure.code).toBe(1);
+    // A pre-channel build would also log its schema refusal for a channel build's candidate.
+    const preChannelLine = refusalLeg(
+      `${CHECK_CHANNEL}ERROR SECURITY: update-manifest verification failed (x); refusing update\\n`,
+      ["/releases/latest.json"],
+    );
+    expect(preChannelLine.code).toBe(1);
+  });
+});
+
+describe("release smokes: a prerelease N's legs, wired", () => {
+  const MODES = readScript("updater-smoke-modes.sh");
+
+  test("the unix legs: both feeds staged, the refusal leg first in positive, the channel's path first", () => {
+    expect(shellFunction(MODES, "stage_release_feeds")).toContain("-name 'smoke-latest-rc.json'");
+    expect(shellFunction(MODES, "stage_release_feeds")).toContain('assert_feed_binds_n "$twin"');
+    expect(shellFunction(MODES, "seed_release_config")).toContain(
+      "if n_is_prerelease; then\n    seed_developer true rc\n  else\n    seed_developer false stable",
+    );
+    expect(shellFunction(MODES, "assert_release_feed_order")).toContain(
+      "if first_check_line \"$2\" | grep -q 'channel=rc'; then\n    first=/releases/latest-rc.json",
+    );
+    for (const name of ["updater-smoke.sh", "updater-smoke-linux.sh"]) {
+      const script = readScript(name);
+      expect(script, name).toContain(
+        'elif n_is_prerelease; then\n  stage_release_feeds || exit 1\n  FEED_SOURCE=(--feed-dir "$WORK/feeds")',
+      );
+      expect(script, name).toContain(
+        'if [ "$MODE" = "positive" ] || [ "$MODE" = "negative" ]; then\n  if [ "$MODE" = "positive" ] && n_is_prerelease; then\n    run_release_refusal_leg || { dump_logs; exit 1; }\n  fi\n  seed_release_config\nelse',
+      );
+      expect(script, name).toContain('MARK="$(feed_mark)"\nlaunch_app "$WORK/app.log"');
+      expect(script, name).toContain(
+        'assert_release_feed_order "$MARK" "$WORK/app.log" || { dump_logs; exit 1; }',
+      );
+      expect(
+        script.match(/assert_never_read_only \|\| \{ dump_logs; exit 1; \}/g),
+        name,
+      ).toHaveLength(2);
+      expect(script, name).toContain(
+        '  *) if n_is_prerelease; then echo "::error::a prerelease N runs only the positive and negative modes"; exit 1; fi ;;',
+      );
+    }
+  });
+
+  test("the Windows legs match, with the refusal leg before crash recovery is armed", () => {
+    const script = readScript("updater-smoke-windows.ps1");
+    expect(script).toContain(
+      '$Twin = Get-ChildItem -Path $NArtifactsDir -Recurse -Filter "smoke-latest-rc.json"',
+    );
+    expect(script).toContain("Assert-BindsN $Twin.FullName");
+    expect(script).toContain(
+      'if ($NIsPrerelease) { Set-DeveloperConfig "true" "rc" } else { Set-DeveloperConfig "false" "stable" }',
+    );
+    const refusalCall = script.indexOf(
+      'if ($Mode -eq "positive" -and $NIsPrerelease) { Invoke-ReleaseRefusalLeg }',
+    );
+    expect(refusalCall).toBeGreaterThan(0);
+    expect(refusalCall).toBeLessThan(
+      script.indexOf("(#97) Clear any stale crash-recovery task FIRST"),
+    );
+    const leg = script.split("function Invoke-ReleaseRefusalLeg {")[1]?.split("\n  }\n")[0] ?? "";
+    expect(leg).toContain('Set-Feed "latest.json" (Join-Path $Work "latest-rc.json")');
+    expect(leg).toContain('Set-Feed "latest-rc.json" (Join-Path $Work "latest-rc.json")');
+    expect(leg).toContain('$refusal = "update-manifest verification failed"');
+    expect(leg).toContain(
+      "if ((Get-FirstCheckLine $mark) -match 'channel=') { $refusal = \"update refused on channel stable: CandidateOffChannel\" }",
+    );
+    expect(script).toContain(
+      '$first = if ((Get-FirstCheckLine $N1Mark) -match \'channel=rc\') { "/releases/latest-rc.json" } else { "/releases/latest.json" }',
+    );
+    expect(script.match(/Assert-NeverReadOnly \$ReleaseMark/g)).toHaveLength(2);
+    expect(script).toContain(
+      'if ($NIsPrerelease -and @("positive", "negative") -cnotcontains $Mode) {',
+    );
+  });
+});
+
+/** The text of shell function `name`, from its header to the closing brace at column 0. */
+function shellFunction(script: string, name: string): string {
+  return script.split(`\n${name}() {`)[1]?.split("\n}\n")[0] ?? "";
+}

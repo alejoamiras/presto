@@ -115,10 +115,10 @@ describe("site deployment contract", () => {
 describe("release-feed deployment contract", () => {
   test("only the promote workflow writes the exact verified feed bytes to production KV", () => {
     const release = read(".github/workflows/release-presto.yml");
-    expect(release).toContain("wrangler kv key put latest.json --path feed/latest.json --remote");
+    expect(release).toContain('wrangler kv key put "$FEED_KEY" --path "feed/$FEED_KEY" --remote');
     expect(release.match(/wrangler kv key put/g)).toHaveLength(1);
     expect(release).toContain("CLOUDFLARE_RELEASE_FEED_API_TOKEN");
-    expect(release.match(/environment: release-feed/g)).toHaveLength(2);
+    expect(release.match(/environment: release-feed/g)).toHaveLength(3);
   });
 
   test("KV is written only by promotion and the verified-sites publish job, which uses the API", () => {

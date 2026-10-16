@@ -115,7 +115,12 @@ test("both ephemeral updater smokes prepare their builds and signed feed through
     'bash packages/presto/scripts/sign-smoke-feed.sh "$feed" "$PWD" ${schema:+--schema "$schema"}',
   );
   expect(write).toContain('verify --feed "$feed" --pubkey "$pubkey" --smoke');
-  expect(shellFunction(script, "feed")).toContain("smoke-latest.json");
+  // The release signer's smoke feeds: v1 for every version, an rc-v1 twin for a prerelease.
+  expect(shellFunction(script, "feed").match(/write_feed .*$/gm)).toEqual([
+    'write_feed "$1" "$2" "$3" smoke-latest.json v1',
+    'write_feed "$1" "$2" "$3" smoke-latest-rc.json ;;',
+  ]);
+  expect(shellFunction(script, "feed")).toContain("    *-*) write_feed");
   // R's own feed in both schemas, a higher candidate, and a version no newer than N-1.
   expect(shellFunction(script, "rc_feeds").match(/(?<=^ {2})write_feed .*$/gm)).toEqual([
     'write_feed "$version" "$platform" "$dir" smoke-latest-rc.json',
@@ -230,7 +235,7 @@ for (const [file, { modes, foreign, scripts }] of Object.entries(MANUAL_SMOKE_MO
     };
     for (const mode of modes) expect(validate(mode, "9.9.9").ok).toBe(true);
     for (const version of ["1.2.3-rc.1", "0.0.2", "0.1.0"]) {
-      expect(validate(modes[0] ?? "", version).ok).toBe(true);
+      expect(validate("positive", version).ok).toBe(true);
     }
     for (const mode of ["", "bogus", `${modes[0]} x`, foreign]) {
       expect(validate(mode, "9.9.9").ok).toBe(false);
@@ -240,11 +245,14 @@ for (const [file, { modes, foreign, scripts }] of Object.entries(MANUAL_SMOKE_MO
     expect(smuggled.output).not.toContain("smuggled");
     const badVersions = ["01.2.3", "1.2.3-rc..1", "1.2.3-01", "1.2.3+build", "1.2", "0.0.0"];
     for (const version of [...badVersions, "0.0.1", "0.0.1-rc.1", '9.9.9"/e']) {
-      expect(validate(modes[0] ?? "", version).ok).toBe(false);
+      expect(validate("positive", version).ok).toBe(false);
     }
-    // R and its newer candidate are <n-version>-rc.1 and -rc.2, so N itself must be stable.
-    expect(validate("rc-lifecycle", "1.2.3-rc.1").ok).toBe(false);
-    expect(validate("rc-lifecycle", "1.2.3").ok).toBe(true);
+    // Only positive and negative serve a prerelease N on the rc channel; rc-lifecycle's R and newer
+    // candidate are <n-version>-rc.1 and -rc.2, so its N must be stable.
+    for (const mode of modes) {
+      const releaseLegs = mode === "positive" || mode === "negative";
+      expect([mode, validate(mode, "1.2.3-rc.1").ok]).toEqual([mode, releaseLegs]);
+    }
   });
 
   test(`${file}: its scripts accept exactly the modes it lets through`, () => {
@@ -1123,9 +1131,10 @@ describe("release workflow: production feed artifact", () => {
   test("the production feed is uploaded under its channel's name", () => {
     const steps = (Bun.YAML.parse(WF) as SmokeWorkflow).jobs["sign-updater-artifacts"]?.steps ?? [];
     const upload = steps.find((step) => step.name === "Upload signed production update feed");
+    const uploaded = upload?.with as { name?: string; path?: string } | undefined;
     expect(upload?.if).toBeUndefined();
-    expect(upload?.with?.name).toBe("signed-update-feed");
-    expect(upload?.with?.path).toBe(
+    expect(uploaded?.name).toBe("signed-update-feed");
+    expect(uploaded?.path).toBe(
       // biome-ignore lint/suspicious/noTemplateCurlyInString: a GitHub Actions expression
       "artifacts/${{ needs.validate.outputs.is_prerelease == 'true' && 'latest-rc.json' || 'latest.json' }}",
     );

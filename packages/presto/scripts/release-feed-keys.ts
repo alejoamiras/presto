@@ -19,7 +19,7 @@ type Version = { core: [bigint, bigint, bigint]; prerelease: boolean };
 function parse(version: string): Version {
   const match = VERSION.exec(version);
   if (!match) throw new Error(`${JSON.stringify(version)} is not X.Y.Z or X.Y.Z-rc.N`);
-  const [, major, minor, patch, rc] = match;
+  const [, major = "", minor = "", patch = "", rc] = match;
   return { core: [BigInt(major), BigInt(minor), BigInt(patch)], prerelease: rc !== undefined };
 }
 
@@ -51,10 +51,14 @@ export function candidateStanding(stableVersion: string, candidateText: string |
     return "unreadable";
   }
   if (!candidate.prerelease) return "unreadable";
-  for (let i = 0; i < 3; i++) {
-    if (candidate.core[i] !== stable.core[i]) {
-      return candidate.core[i] > stable.core[i] ? "above" : "below";
-    }
+  const [c0, c1, c2] = candidate.core;
+  const [s0, s1, s2] = stable.core;
+  for (const [c, s] of [
+    [c0, s0],
+    [c1, s1],
+    [c2, s2],
+  ] as const) {
+    if (c !== s) return c > s ? "above" : "below";
   }
   return "below";
 }
