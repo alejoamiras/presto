@@ -2,7 +2,7 @@
 
 **Status:** accepted project policy
 
-**Last reviewed:** 2026-09-18
+**Last reviewed:** 2026-10-16
 
 Presto moves proving work from browser WASM to a native `bb` process on the same machine. This
 document states what the project protects, where it depends on other systems, and which residual
@@ -121,11 +121,13 @@ Three further consequences follow from trusting the publisher, and none of them 
   compile-time list and is currently **empty**. Withdrawing a version that is later found vulnerable
   requires publishing a new Presto, not a server-side flip.
 - **Digest verification covers the version cache only.** A request for a *non-bundled* version
-  executes a marker-verified cache entry and nothing else. A versionless request, or one naming the
+  executes a marker-verified cache entry and nothing else, unless it names the one label a
+  developer pinned to a file of their own (decision 8). A versionless request, or one naming the
   bundled version, walks a trusted, unverified search chain (`packages/presto/core/src/bb.rs`): the
   sidecar next to the executable, `~/.bb/bb`, and on Unix `bb` on `$PATH` (deliberately skipped on
   Windows, where a planted `bb.exe` could hijack it). An existing `BB_BINARY_PATH` operator override
-  takes precedence over all of it, versioned requests included. Anyone who can write to those
+  takes precedence over all of it, versioned requests included; only a request naming a custom
+  `bb`'s label is refused instead (decision 8). Anyone who can write to those
   locations or set that variable already runs as the user.
 
 For the same reason, the child-process controls above are **containment of a trusted binary, not a
@@ -275,6 +277,54 @@ Residual: a malicious workflow change merged to `main` and then approved can exf
 `main` is the trust boundary here as everywhere else, and the recovery is a key rotation
 (`docs/RELEASE_RUNBOOK.md`, "Verified-sites list").
 
+### 8. A developer's own `bb` for exactly one label
+
+With developer mode on, Settings can pin one file of the user's own as the `bb` for one version
+label (`packages/presto/core/src/custom_bb.rs`, `packages/presto/src-tauri/src/custom_bb.rs`). This
+is the one deliberate exception to decision 1: no upstream digest vouches for that file, and Presto
+runs it because the user chose it.
+
+What bounds it:
+
+- **One file, one label.** Only a request whose `x-aztec-version` equals the label reaches the
+  file; every other request, versionless ones included, takes the official path. The label passes
+  the same gate as a request (canonical semver, no build metadata, not revoked), so a revoked label
+  cannot be pinned, and a label revoked later stops routing.
+- **The hash is the pin.** Presto records the SHA-256 that Settings showed, and rehashes the file
+  before every spawn. A changed, missing or newly unsafe file answers `503 custom_bb_unavailable`
+  and never falls back to the official `bb`. The wire text is fixed: a site sees
+  `x-presto-bb: custom` and never a path, a hash or `bb` output.
+- **No other account may be able to change it**, checked when it is picked and at every spawn:
+  - **Unix:** the file and every ancestor belong to the user or root, and nothing is
+    world-writable. Group write is allowed only through the user's private group or a sticky
+    directory, and an ACL entry that lets anyone else write is refused.
+  - **Windows:** the file must sit under `%USERPROFILE%`.
+  - **macOS:** a quarantined file is refused, and so is an unsigned one on Apple Silicon. Settings
+    gives a command to copy; Presto never changes quarantine, signatures or the exec bit itself.
+- **The user sees it.**
+  - Before saving, the file runs once (`--version`), only after the user ticks that they built it
+    or fully trust whoever did, and the run must pass.
+  - While a pin is set, Settings opens on a banner, the tray names the label, and the approval
+    popup says when a site's request will reach the file.
+  - Turning developer mode off deletes the pin. While `BB_BINARY_PATH` is set, the label is refused
+    rather than sent to the override.
+
+Accepted residuals:
+
+- **A local caller without `Origin` reaches it** with inputs of its choice and no popup, as it
+  reaches the official `bb` (decision 5). A debug or sanitizer build raises what such a caller can
+  learn.
+- **An approved origin decides when the file runs**, by sending the label, and can infer the label
+  from how responses differ. Approval is per origin, not per binary, and a site approved before the
+  pin sees no new popup.
+- **Same-user attacks stay out of scope**, as in decision 1. Malware running as the user can swap
+  the file between the rehash and the spawn, or write a pin of its own. The libraries and
+  configuration the file loads are not hashed. On Windows, a profile ACL the user loosened is
+  trusted.
+- **A wrong proof is still a 200.** Presto does not check what the custom build returns.
+- **Uninstalling keeps the pin**, like every other setting, so a reinstall with developer mode on
+  resumes routing.
+
 ## Not accepted
 
 The decisions above do not authorize:
@@ -288,7 +338,10 @@ The decisions above do not authorize:
 - installing a release candidate on an install that has not chosen release candidates in Settings;
 - letting the verified-sites list grant, skip or shorten an approval, or signing it with the updater
   key;
-- executing a requested cached `bb` version whose integrity marker is absent or invalid; or
+- executing a requested cached `bb` version whose integrity marker is absent or invalid;
+- running a custom `bb` for any label but its own, with developer mode off, or once its hash or
+  its file permissions fail the checks of decision 8, or answering its label with another `bb`;
+  or
 - representing a same-origin digest as proof of an uncompromised upstream publisher.
 
 ## Audit history

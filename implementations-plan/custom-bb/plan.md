@@ -427,6 +427,9 @@ pass. **Layers:** lint, typecheck, unit, UI e2e (mocked).
 
 ### Phase 5: end to end, and docs
 
+**Status:** ✓ on Linux (`lessons/phase-5.md`): T13 took 11.7 s. macOS and Windows are left to the
+PR's WebDriver lanes.
+
 1. **T13** (`e2e-webdriver/custom-bb.spec.ts`, with its `wdio.conf.ts` entry and hook export): one
    scenario on three OSes. Turn developer mode on and "pick" the shipped sidecar through the hook;
    test-run and save it as `6.0.0-dev.1`; from an unapproved origin, POST the committed Noir fixture

@@ -3,61 +3,16 @@
  * must write the default block, which is what an older build or a later launch reads. Joining the
  * candidate channel runs one check, answered by this build's stub update task.
  */
-import { ensureSettingsWindow, invokeHere, readConfig } from "./helpers.ts";
+import {
+  developerOnDisk,
+  ensureSettingsWindow,
+  invokeHere,
+  readConfig,
+  reloadSettings,
+  setDeveloperMode,
+} from "./helpers.ts";
 
 const DEFAULT_BLOCK = { enabled: false, update_channel: "stable" };
-
-const developerOnDisk = () => readConfig().developer as Record<string, unknown> | undefined;
-
-/** The switch ships disabled until the stored value is known, so wait for it before a click. */
-async function waitForHydration(): Promise<void> {
-  await browser.waitUntil(
-    async () =>
-      await browser.execute(() => {
-        const el = document.querySelector<HTMLInputElement>("#developer");
-        return el !== null && !el.disabled;
-      }),
-    { timeout: 5000, timeoutMsg: "the developer mode switch never became enabled" },
-  );
-}
-
-/** `refresh` can return while the old document still answers, so wait for a fresh one to hydrate. */
-async function reloadSettings(): Promise<void> {
-  await browser.execute(() => {
-    (window as unknown as { __beforeReload?: boolean }).__beforeReload = true;
-  });
-  await browser.refresh();
-  await browser.waitUntil(
-    async () =>
-      await browser.execute(
-        () =>
-          !(window as unknown as { __beforeReload?: boolean }).__beforeReload &&
-          document.querySelector<HTMLInputElement>("#developer")?.disabled === false,
-      ),
-    { timeout: 5000, timeoutMsg: "Settings never hydrated after a reload" },
-  );
-}
-
-async function setDeveloperMode(on: boolean): Promise<void> {
-  await waitForHydration();
-  await browser.execute((wanted: boolean) => {
-    (document.getElementById("advanced") as HTMLDetailsElement).open = true;
-    const el = document.getElementById("developer") as HTMLInputElement;
-    if (el.checked !== wanted) el.click();
-    // Turning it off while a release candidate runs on that channel asks first.
-    if (!(document.getElementById("developer-off-check") as HTMLElement).hidden) {
-      (document.getElementById("developer-off-confirm") as HTMLElement).click();
-    }
-  }, on);
-  await browser.waitUntil(
-    async () =>
-      developerOnDisk()?.enabled === on &&
-      (await browser.execute(
-        () => !(document.getElementById("developer-section") as HTMLElement).hidden,
-      )) === on,
-    { timeout: 5000, timeoutMsg: `developer mode never settled ${on ? "on" : "off"}` },
-  );
-}
 
 describe("Developer mode", () => {
   before(async () => {

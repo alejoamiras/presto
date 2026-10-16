@@ -122,7 +122,7 @@ When **no specific version** is requested (or the bundled version is), the prest
 3. **`~/.bb/bb`** — user-installed via the Aztec CLI
 4. **`PATH`** — system-wide installation
 
-When a **specific version is requested**, the *only* acceptable source is the marker-verified version cache (unless `BB_BINARY_PATH` is set: that operator override runs for every request) — the presto never falls back to the sidecar/`~/.bb`/`PATH` for a requested version (that would silently run the wrong or an unverified `bb` over your private witness).
+When a **specific version is requested**, the *only* acceptable source is the marker-verified version cache (unless `BB_BINARY_PATH` is set: that operator override runs for every request, or the version is the label of a [custom bb](#developer-mode-custom-bb), which runs that pinned file instead) — the presto never falls back to the sidecar/`~/.bb`/`PATH` for a requested version (that would silently run the wrong or an unverified `bb` over your private witness).
 
 ### Cache Integrity (F-007)
 
@@ -130,7 +130,7 @@ Every cached `bb` is verified end-to-end. On download (both the runtime and `bun
 
 - **Legacy caches** (populated before this change, with no marker) re-download on first use.
 - **Offline** machines with an unmarked cache fail closed until an online verified re-download.
-- **`BB_BINARY_PATH`** is a trusted, unverified operator override — the one documented exception to "nothing unverified runs" (whoever sets the process environment already controls the process).
+- **`BB_BINARY_PATH`** is a trusted, unverified operator override — the one documented exception to "nothing unverified runs" besides a [custom bb](#developer-mode-custom-bb), which runs only while its hash matches the one you pinned (whoever sets the process environment already controls the process).
 - Only releases that expose an asset digest (GitHub added these June 2025) are downloadable; older releases fail closed.
 
 ### Windows bb.exe pin provenance (F-008)
@@ -264,6 +264,8 @@ GitHub
 Quit
 ```
 
+While a [custom bb](#developer-mode-custom-bb) is set, a line under the version line names the version it answers, or says why Presto is not using it.
+
 ### Settings Window
 
 Click **Settings** in the tray menu to open the Settings window. From here you can:
@@ -292,6 +294,18 @@ With auto-update enabled, new versions are downloaded and installed in the backg
 To test a release before it ships, open Settings → **Advanced**, turn on **Developer mode** and choose **Updates from: Release candidates**. Presto checks once right away and shows the result; from then on every check reads the release-candidate feed first and falls back to the stable one. A release candidate installs the way a stable update does: a prompt, or silently with Auto-Update on. Once the stable that follows it ships, the next check moves you to it.
 
 To leave, choose **Stable** or turn Developer mode off; on a release candidate, Presto asks first. You keep the release candidate you are running and get no further candidates, and the next stable above it updates you as usual. Turning Developer mode off also resets every developer setting. Reinstalling by hand keeps the channel, so choose Stable before reinstalling a stable. Every other install stays on stable and refuses a release candidate's update feed.
+
+### Developer mode: custom bb
+
+To prove with a `bb` you built yourself, open Settings → **Advanced**, turn on **Developer mode**, and under **Developer → Custom bb** click **Choose file…**:
+
+1. Presto hashes the file and checks it **without running it**. It refuses a file that is not executable, not built for this computer, or that another account could change (a group- or world-writable file or folder, or one outside your user profile on Windows). On macOS it also refuses a quarantined file, and on Apple Silicon an unsigned one. A refusal comes with a command to copy; Presto never changes the file itself.
+2. Tick **I built this file myself, or I fully trust the person who did**, then **Test run**. Presto runs the file once with `--version`, with no proof data, and fills in the version it printed.
+3. Choose the version it answers, and click **Use this bb**. Pick a version no release has, such as `6.0.0-dev.1`, to keep it to your own tests. Every approved site that sends that `x-aztec-version` gets your build.
+
+While it is set, Settings opens on a banner, the tray menu names the version, and the approval popup tells you when a site's request will reach it. A proof it makes carries the response header `x-presto-bb: custom`. Every other version, and a request with no version, uses the official `bb`.
+
+Presto rehashes the file before every proof. If it changed, went missing, or another account could now change it, requests for that version get `503 custom_bb_unavailable` and Presto never swaps in the official `bb`. Settings then offers **Trust new build…** or **Stop using**. `BB_BINARY_PATH` overrides every choice, so while it is set the version is refused. Turning Developer mode off removes the custom `bb`. The headless server has no custom `bb`; use `BB_BINARY_PATH` there. [SECURITY_MODEL.md](../../docs/SECURITY_MODEL.md) decision 8 covers what this does and does not protect.
 
 ### Encrypted Connection (HTTPS)
 
