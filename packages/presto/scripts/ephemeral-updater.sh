@@ -3,11 +3,13 @@
 # built from the current ref: one run-local throwaway key signs N-1's artifacts, N's artifacts and the
 # feed manifest, and its pubkey is stamped into both builds (swapping only the private key fails
 # verification). Every bundle trusts only that key, so nothing built here may ship or be uploaded.
+# The rc-lifecycle mode adds a third build, R (a release candidate), and the feeds rc-feeds signs.
 #
 #   ephemeral-updater.sh keygen
 #   ephemeral-updater.sh stamp <version> <src-tauri-dir>
-#   ephemeral-updater.sh build <n-1|n> <version> <out-dir>
+#   ephemeral-updater.sh build <n-1|r|n> <version> <out-dir>
 #   ephemeral-updater.sh feed <version> <platform-key> <dir>
+#   ephemeral-updater.sh rc-feeds <r-version> <platform-key> <dir>
 #
 # RUNNER_OS picks the bundle (macOS app, Linux AppImage, Windows NSIS). TARGET, the Rust triple, is
 # set on unix only: Windows builds the host default into target/release. keygen appends
@@ -19,7 +21,7 @@ REPO=$(cd "$PRESTO/../.." && pwd)
 
 # Never echo an argument back: a crafted value could carry a `::` workflow command.
 usage() {
-  echo "usage: ephemeral-updater.sh keygen | stamp <version> <src-tauri-dir> | build <n-1|n> <version> <out-dir> | feed <version> <platform-key> <dir>" >&2
+  echo "usage: ephemeral-updater.sh keygen | stamp <version> <src-tauri-dir> | build <n-1|r|n> <version> <out-dir> | feed <version> <platform-key> <dir> | rc-feeds <r-version> <platform-key> <dir>" >&2
   exit 2
 }
 
@@ -77,7 +79,7 @@ stamp() {
 
 build() {
   local role=$1 version=$2 out=$3
-  case "$role" in n-1 | n) ;; *) usage ;; esac
+  case "$role" in n-1 | r | n) ;; *) usage ;; esac
   check_version "$version"
   [ -n "$out" ] || usage
   runner_os
@@ -92,8 +94,8 @@ build() {
     Linux) args+=(--bundles appimage) ;;
     Windows) args+=(--bundles nsis) ;;
   esac
-  # N-1's output must not be collected as N's.
-  if [ "$role" = n ]; then
+  # An earlier build's output must not be collected as this one's.
+  if [ "$role" != n-1 ]; then
     if [ "$RUNNER_OS" = Windows ]; then rm -rf "$bundle/nsis"; else rm -rf "$bundle"; fi
   fi
   stamp "$version" "$src"
@@ -102,14 +104,18 @@ build() {
   case "$RUNNER_OS" in
     macOS)
       bash "$PRESTO/scripts/assert-no-test-hooks.sh" "$bundle/macos/Presto.app"
-      if [ "$role" = n ]; then
-        cp "$bundle"/macos/*.app.tar.gz "$bundle"/macos/*.app.tar.gz.sig "$out/"
-      else
-        n1_dmg "$bundle/macos/Presto.app" "$out/Presto-N1.dmg"
-      fi
+      case "$role" in
+        n) cp "$bundle"/macos/*.app.tar.gz "$bundle"/macos/*.app.tar.gz.sig "$out/" ;;
+        # R's and N's updater bundles share one name, and the smoke serves both from one directory.
+        r)
+          cp "$bundle/macos/Presto.app.tar.gz" "$out/Presto-$version.app.tar.gz"
+          cp "$bundle/macos/Presto.app.tar.gz.sig" "$out/Presto-$version.app.tar.gz.sig"
+          ;;
+        n-1) n1_dmg "$bundle/macos/Presto.app" "$out/Presto-N1.dmg" ;;
+      esac
       ;;
     Linux)
-      if [ "$role" = n ]; then
+      if [ "$role" != n-1 ]; then
         cp "$bundle"/appimage/*.AppImage "$bundle"/appimage/*.AppImage.sig "$out/"
       else
         cp "$bundle"/appimage/*.AppImage "$out/"
@@ -119,7 +125,7 @@ build() {
     Windows)
       # The installer is LZMA-compressed; the binary it packs is this one.
       bash "$PRESTO/scripts/assert-no-test-hooks.sh" "$root/Presto.exe"
-      if [ "$role" = n ]; then
+      if [ "$role" != n-1 ]; then
         cp "$bundle"/nsis/*-setup.nsis.zip "$bundle"/nsis/*-setup.nsis.zip.sig "$out/"
       else
         cp "$bundle"/nsis/*-setup.exe "$out/"
@@ -148,8 +154,30 @@ n1_dmg() {
 }
 
 feed() {
+  write_feed "$1" "$2" "$3" smoke-latest.json
+}
+
+# rc-lifecycle's feeds, all over R's one payload in <dir>: R's rc-v1 feed and its v1 twin, a higher
+# candidate (rc.2), and a version no newer than N-1. The smoke expects only R's feed to be installed;
+# the others must be refused or ignored before any download, so they need no bytes of their own.
+rc_feeds() {
   local version=$1 platform=$2 dir=$3
+  [[ "$version" == *-rc.1 ]] || usage
+  # write_feed leaves the shell in the repo root.
+  case "$dir" in /* | [A-Za-z]:*) ;; *) dir="$PWD/$dir" ;; esac
+  write_feed "$version" "$platform" "$dir" smoke-latest-rc.json
+  write_feed "$version" "$platform" "$dir" smoke-latest-rc-v1.json v1
+  write_feed "${version%.1}.2" "$platform" "$dir" smoke-latest-rc2.json
+  write_feed 0.0.1 "$platform" "$dir" smoke-latest-old.json
+}
+
+# write_feed <version> <platform-key> <dir> <name> [v1|rc-v1]: signs <dir>/<name> over the one
+# payload in <dir>, in the version's schema unless one is given.
+write_feed() {
+  local version=$1 platform=$2 dir=$3 name=$4 schema=${5:-}
   check_version "$version"
+  [[ "$name" =~ ^smoke-latest[a-z0-9-]*\.json$ ]] || usage
+  case "$schema" in "" | v1 | rc-v1) ;; *) usage ;; esac
   [[ "$platform" =~ ^[a-z0-9_-]+$ ]] || usage
   [ -d "$dir" ] || usage
   runner_os
@@ -164,11 +192,11 @@ feed() {
   esac
   shopt -u nullglob
   if [ "${#payloads[@]}" -ne 1 ]; then
-    echo "::error::expected exactly one N updater payload" >&2
+    echo "::error::expected exactly one updater payload" >&2
     exit 1
   fi
   payload=${payloads[0]}
-  feed="$dir/smoke-latest.json"
+  feed="$dir/$name"
   pubkey="${RUNNER_TEMP:-$(mktemp -d)}/smoke-pubkey.b64"
   # Relative paths from the repo root, for the same MSYS reason as stamp.
   cd "$REPO"
@@ -181,7 +209,7 @@ feed() {
     --argjson size "$(wc -c < "$payload" | tr -d ' ')" \
     '{version:$version,notes:"ephemeral updater smoke",pub_date:$date,
       platforms:{($key):{signature:$signature,url:$url,size:$size}}}' > "$feed"
-  bash packages/presto/scripts/sign-smoke-feed.sh "$feed" "$PWD"
+  bash packages/presto/scripts/sign-smoke-feed.sh "$feed" "$PWD" ${schema:+--schema "$schema"}
   # Verify against the stamped config: the key the built app will actually trust.
   jq -er '.plugins.updater.pubkey' packages/presto/src-tauri/tauri.conf.json > "$pubkey"
   cargo run --locked --manifest-path packages/presto/core/Cargo.toml --example update-manifest -- \
@@ -193,5 +221,6 @@ case "${1:-}" in
   stamp) [ "$#" -eq 3 ] || usage; stamp "$2" "$3" ;;
   build) [ "$#" -eq 4 ] || usage; build "$2" "$3" "$4" ;;
   feed) [ "$#" -eq 4 ] || usage; feed "$2" "$3" "$4" ;;
+  rc-feeds) [ "$#" -eq 4 ] || usage; rc_feeds "$2" "$3" "$4" ;;
   *) usage ;;
 esac

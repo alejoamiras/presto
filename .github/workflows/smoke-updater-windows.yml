@@ -19,8 +19,8 @@ name: Smoke Updater Windows (manual)
 # secretless — no `${{ secrets.* }}` expression exists in this file (piece-2 ledger A3: job/file
 # separation is the isolation boundary, not workflow_call.secrets).
 #
-# NOT a PR gate: two Windows Tauri builds. Run it manually before a release, or when updater/
-# marker/NSIS-hook code changes.
+# NOT a PR gate: two Windows Tauri builds, three in `rc-lifecycle` (R = <n-version>-rc.1 between).
+# Run it manually before a release, or when updater/marker/NSIS-hook code changes.
 #
 # `mode` is a free-form string so a branch can add modes without editing `main`'s copy (a dispatch
 # validates `choice` inputs against the options on the ref it runs). The first step allowlists it,
@@ -30,7 +30,7 @@ on:
   workflow_dispatch:
     inputs:
       mode:
-        description: Smoke scenario (barrier | copy-initiator | positive | negative | prompt)
+        description: Smoke scenario (barrier | copy-initiator | positive | negative | prompt | rc-lifecycle)
         required: false
         default: barrier
         type: string
@@ -47,10 +47,11 @@ jobs:
   smoke-ephemeral:
     name: Ephemeral both-ends smoke (${{ inputs.mode || 'barrier' }})
     runs-on: windows-latest
-    timeout-minutes: 70 # TWO in-job Tauri builds (N-1 and N; the second is mostly incremental) + the smoke
+    timeout-minutes: 90 # Up to THREE in-job Tauri builds (all after the first mostly incremental) + the smoke
     env:
       N_VERSION: ${{ inputs.n-version || '9.9.9' }}
       N1_VERSION: "0.0.1"
+      R_VERSION: ${{ format('{0}-rc.1', inputs.n-version || '9.9.9') }}
       # The ps1 reads THIS variable — a job-local alias here once silently ran the positive path
       # under a "barrier" job title (run 30471013752).
       UPDATER_SMOKE_MODE: ${{ inputs.mode || 'barrier' }}
@@ -61,8 +62,8 @@ jobs:
         run: |
           set -euo pipefail
           case "$UPDATER_SMOKE_MODE" in
-            barrier|copy-initiator|positive|negative|prompt) ;;
-            *) echo "::error::mode is not supported on this ref (allowed: barrier, copy-initiator, positive, negative, prompt)"; exit 1 ;;
+            barrier|copy-initiator|positive|negative|prompt|rc-lifecycle) ;;
+            *) echo "::error::mode is not supported on this ref (allowed: barrier, copy-initiator, positive, negative, prompt, rc-lifecycle)"; exit 1 ;;
           esac
           # Canonical SemVer without build metadata, above N-1: anything else fails a later parse or
           # never qualifies as an update.
@@ -74,6 +75,10 @@ jobs:
           if [ "${BASH_REMATCH[1]}.${BASH_REMATCH[2]}" = "0.0" ] && [ "${BASH_REMATCH[3]}" -le 1 ]; then
             echo "::error::n-version must be above N-1 ($N1_VERSION)"; exit 1
           fi
+          # R and its newer candidate are <n-version>-rc.1 and -rc.2, both below a stable N.
+          if [ "$UPDATER_SMOKE_MODE" = rc-lifecycle ] && [ -n "${BASH_REMATCH[4]}" ]; then
+            echo "::error::rc-lifecycle needs a stable n-version"; exit 1
+          fi
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: ./.github/actions/setup-presto
@@ -82,7 +87,7 @@ jobs:
           rust-workspaces: packages/presto/src-tauri -> target
           rust-components: ""
 
-      # The barrier is injected between the builds, so only N's installer carries it.
+      # The barrier is injected before N's build, so only N's installer carries it.
       - name: Generate ephemeral signing key
         shell: bash
         run: bash packages/presto/scripts/ephemeral-updater.sh keygen
@@ -90,6 +95,11 @@ jobs:
       - name: Build synthetic N-1 (0.0.1, ephemeral pubkey, clean hooks)
         shell: bash
         run: bash packages/presto/scripts/ephemeral-updater.sh build n-1 "$N1_VERSION" "$RUNNER_TEMP/n1"
+
+      - name: Build R (release candidate, rc-lifecycle only)
+        if: env.UPDATER_SMOKE_MODE == 'rc-lifecycle'
+        shell: bash
+        run: bash packages/presto/scripts/ephemeral-updater.sh build r "$R_VERSION" "$RUNNER_TEMP/r"
 
       - name: Inject the L8 barrier sentinel into hooks.nsi (N's installer only)
         shell: bash
@@ -166,12 +176,18 @@ jobs:
         shell: bash
         run: bash packages/presto/scripts/ephemeral-updater.sh feed "$N_VERSION" windows-x86_64 "$RUNNER_TEMP/n"
 
+      - name: Sign and verify the release-candidate feeds (rc-lifecycle only)
+        if: env.UPDATER_SMOKE_MODE == 'rc-lifecycle'
+        shell: bash
+        run: bash packages/presto/scripts/ephemeral-updater.sh rc-feeds "$R_VERSION" windows-x86_64 "$RUNNER_TEMP/r"
+
       - name: Updater smoke (${{ inputs.mode || 'barrier' }}, ephemeral chain)
         shell: pwsh
         run: |
           $n1 = Get-ChildItem -Path "$env:RUNNER_TEMP\n1" -Filter "*-setup.exe" | Select-Object -First 1
           if (-not $n1) { Write-Error "N-1 installer not found"; exit 1 }
           if ($env:N1_VERSION -eq $env:N_VERSION) { Write-Error "N-1 == N ($env:N_VERSION) — a no-op update would pass trivially"; exit 1 }
+          $env:R_ARTIFACTS_DIR = "$env:RUNNER_TEMP\r"
           & packages/presto/scripts/updater-smoke-windows.ps1 `
             -NVersion $env:N_VERSION `
             -NArtifactsDir "$env:RUNNER_TEMP\n" `

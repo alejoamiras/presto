@@ -21,9 +21,10 @@ function scratch(): string {
   return dir;
 }
 
+// RUNNER_OS is set, so a refusal comes from the arguments rather than an unknown runner.
 function run(...args: string[]) {
   const proc = Bun.spawnSync(["bash", SCRIPT, ...args], {
-    env: { ...process.env, EPHEMERAL_PUBKEY: PUBKEY },
+    env: { ...process.env, EPHEMERAL_PUBKEY: PUBKEY, RUNNER_OS: "Linux" },
   });
   return { code: proc.exitCode, output: `${proc.stdout}${proc.stderr}` };
 }
@@ -51,6 +52,15 @@ test("a version outside the SemVer alphabet is refused before any file changes",
   const result = run("stamp", '9.9.9/"e', src);
   expect(result.code).toBe(2);
   expect(readFileSync(path.join(src, "Cargo.toml"), "utf8")).toBe(before);
+});
+
+// The higher candidate is derived by replacing the trailing rc.1.
+test("rc-feeds takes only an rc.1 version", () => {
+  const out = scratch();
+  for (const version of ["9.9.9", "9.9.9-rc.2", "9.9.9-rc.10"]) {
+    expect(run("rc-feeds", version, "linux-x86_64", out).code).toBe(2);
+  }
+  expect(readdirSync(out).sort()).toEqual(["Cargo.toml", "tauri.conf.json"]);
 });
 
 test("an unknown command or role exits 2 without echoing it", () => {

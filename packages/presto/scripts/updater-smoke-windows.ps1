@@ -44,6 +44,9 @@
                        reconciliation, stranding marker+handoff+token and skipping heal/rearm.
                        Also proves the ownership gate: autostart is OFF here, so NO
                        crash-recovery task may exist afterwards.)
+                     | rc-lifecycle (N-1 → R → N through the release-candidate channel on one
+                       install: reads R_VERSION and R_ARTIFACTS_DIR, R's payload with the feeds
+                       `ephemeral-updater.sh rc-feeds` signed over it; needs -N1Version)
 #>
 param(
   [Parameter(Mandatory)][string]$NVersion,
@@ -62,7 +65,7 @@ $ErrorActionPreference = "Stop"
 $Mode = if ($env:UPDATER_SMOKE_MODE) { $env:UPDATER_SMOKE_MODE } else { "positive" }
 # Every mode the release and manual workflows pass. Never echo a rejected value: it could carry a
 # `::` workflow command.
-if (@("positive", "negative", "barrier", "copy-initiator", "prompt") -cnotcontains $Mode) {
+if (@("positive", "negative", "barrier", "copy-initiator", "prompt", "rc-lifecycle") -cnotcontains $Mode) {
   Write-Error "UPDATER_SMOKE_MODE is not a supported mode"
   exit 1
 }
@@ -92,6 +95,12 @@ if ($Mode -eq "barrier" -and -not $BarrierPrefix) {
 }
 function BarrierFile($suffix) { Join-Path $ConfigDir "$BarrierPrefix-$suffix" }
 $QDir = Join-Path $Work "q"
+$RVersion = $env:R_VERSION
+$RArtifactsDir = $env:R_ARTIFACTS_DIR
+if ($Mode -eq "rc-lifecycle" -and -not ($RVersion -and $RArtifactsDir -and $N1Version)) {
+  Write-Error "rc-lifecycle mode requires R_VERSION, R_ARTIFACTS_DIR and -N1Version"
+  exit 1
+}
 $QProc = $null
 $AppProc = $null
 $FeedProc = $null
@@ -261,10 +270,26 @@ try {
   Copy-Item $SignedFeed.FullName (Join-Path $Work "latest.json")
   Log "latest.json:"; Get-Content (Join-Path $Work "latest.json")
 
+  # rc-lifecycle serves each feed path from its own file, which every leg replaces.
+  $FeedSource = @("--latest-json", "$Work\latest.json")
+  if ($Mode -eq "rc-lifecycle") {
+    $RZip = Get-ChildItem -Path $RArtifactsDir -Filter "*-setup.nsis.zip" | Select-Object -First 1
+    if (-not $RZip) { Write-Error "no *-setup.nsis.zip among R's artifacts"; exit 1 }
+    Copy-Item $RZip.FullName (Join-Path $ServeDir $RZip.Name)
+    foreach ($name in @("smoke-latest-rc", "smoke-latest-rc-v1", "smoke-latest-rc2", "smoke-latest-old")) {
+      if (-not (Test-Path (Join-Path $RArtifactsDir "$name.json"))) { Write-Error "no $name.json among R's artifacts"; exit 1 }
+    }
+    $Feeds = Join-Path $Work "feeds"
+    New-Item -ItemType Directory -Force -Path $Feeds | Out-Null
+    # The readiness probe reads latest.json before the first leg stages its own.
+    Copy-Item (Join-Path $Work "latest.json") (Join-Path $Feeds "latest.json")
+    $FeedSource = @("--feed-dir", $Feeds)
+  }
+
   # ── Start the local HTTPS feed on :443 (no sudo on Windows) ──
   Log "starting feed server on :443"
   $FeedProc = Start-Process -FilePath "bun" -PassThru `
-    -ArgumentList "$RepoRoot\packages\presto\scripts\updater-feed-server.ts","--cert","$Work\leaf.pem","--key","$Work\leaf.key","--latest-json","$Work\latest.json","--serve-dir","$ServeDir" `
+    -ArgumentList (@("$RepoRoot\packages\presto\scripts\updater-feed-server.ts", "--cert", "$Work\leaf.pem", "--key", "$Work\leaf.key") + $FeedSource + @("--serve-dir", "$ServeDir")) `
     -RedirectStandardOutput (Join-Path $Work "feed.log") -RedirectStandardError (Join-Path $Work "feed.err")
   $feedUp = $false
   for ($i = 0; $i -lt 20; $i++) {
@@ -289,6 +314,157 @@ try {
   if (-not $Exe) { Write-Error "installed N-1 exe ($NBinaryName) not found under $InstallRoot"; exit 1 }
 
   New-Item -ItemType Directory -Force -Path $ConfigDir | Out-Null
+  if ($Mode -eq "rc-lifecycle") {
+    # ── N-1 → R → N on one install. A1 and A2 refuse R on the stable channel; B opts in and
+    #    installs R through latest-rc.json, whose 0.0.1 alternative on latest.json would end a
+    #    reversed check with nothing; C1 leaves and refuses a newer candidate; C2 opts in again and
+    #    takes N from latest.json while latest-rc.json answers 503. Every launch reads only the feed
+    #    and log lines after its own marks. ──
+    $FeedLog = Join-Path $Work "feed.log"
+    $Config = Join-Path $ConfigDir "config.json"
+    function Fail($Message) { Dump-Logs; Write-Error $Message; exit 1 }
+    function Get-HealthVersion { try { (Invoke-RestMethod -Uri $HealthUrl -TimeoutSec 3).version } catch { $null } }
+    function Get-FeedMark { @(Get-Content $FeedLog -ErrorAction SilentlyContinue).Count }
+    # The paths requested since $Mark, in order.
+    function Get-FeedPaths($Mark) {
+      @(Get-Content $FeedLog -ErrorAction SilentlyContinue | Select-Object -Skip $Mark |
+        ForEach-Object { if ($_ -match '^feed-server: GET (\S+) -> ') { $Matches[1] } })
+    }
+    function Get-FeedRequests($Mark) {
+      @(Get-FeedPaths $Mark | Where-Object { $_ -match '^/releases/latest(-rc)?\.json$' })
+    }
+    # Set-Feed <latest.json|latest-rc.json> <feed file | HTTP status>
+    function Set-Feed($Name, $Source) {
+      Remove-Item (Join-Path $Feeds $Name), (Join-Path $Feeds "$Name.status") -Force -ErrorAction SilentlyContinue
+      if ($Source -match '^[1-5][0-9][0-9]$') { Set-Content -Path (Join-Path $Feeds "$Name.status") -Value $Source }
+      else { Copy-Item $Source (Join-Path $Feeds $Name) }
+    }
+    # Auto-update stays on, so a feed the app admits installs unasked.
+    function Set-PreChannelConfig {
+      '{"config_version":1,"https_enabled":false,"approved_origins":[],"speed":"full","auto_update":true,"onboarding_version":1}' | Set-Content $Config
+    }
+    function Set-DeveloperConfig($Enabled, $Channel) {
+      "{`"config_version`":2,`"https_enabled`":false,`"approved_origins`":[],`"speed`":`"full`",`"auto_update`":true,`"onboarding_version`":1,`"developer`":{`"enabled`":$Enabled,`"update_channel`":`"$Channel`"}}" | Set-Content $Config
+    }
+    function Wait-Version($Version, $Seconds) {
+      $end = (Get-Date).AddSeconds($Seconds)
+      while ((Get-Date) -lt $end) {
+        if ((Get-HealthVersion) -eq $Version) { return $true }
+        Start-Sleep -Seconds 2
+      }
+      $false
+    }
+    function Wait-Feed($Mark, $Path, $Seconds) {
+      $end = (Get-Date).AddSeconds($Seconds)
+      while ((Get-Date) -lt $end) {
+        if ((Get-FeedPaths $Mark) -contains $Path) { return $true }
+        Start-Sleep -Seconds 1
+      }
+      $false
+    }
+    # After an update the installer, not this script, started the app, so stop whichever Presto runs.
+    function Stop-AnyApp {
+      Get-Process -Name "Presto" -ErrorAction SilentlyContinue | ForEach-Object { & taskkill /PID $_.Id /T /F *> $null }
+      for ($i = 0; $i -lt 30; $i++) {
+        if (-not (Get-HealthVersion)) { return }
+        Start-Sleep -Seconds 1
+      }
+      Fail "/health still answers after every Presto process was stopped"
+    }
+    # The app fetched the stable feed alone, downloaded nothing and still serves $Running 60 s on.
+    # The refusal line is read last, so a build that admits the feed fails on its download.
+    function Assert-Refused($Leg, $FeedMark, $LogMark, $Running, $Refusal) {
+      if (-not (Wait-Feed $FeedMark "/releases/latest.json" 60)) { Fail "${Leg}: the app never requested latest.json" }
+      $end = (Get-Date).AddSeconds(60)
+      while ((Get-Date) -lt $end) {
+        if ((Get-FeedPaths $FeedMark) -match '^/releases/download/') { Fail "${Leg}: the app downloaded an update it must refuse" }
+        $got = Get-HealthVersion
+        if ($got -and $got -ne $Running) { Fail "${Leg}: /health reports $got, not $Running" }
+        Start-Sleep -Seconds 2
+      }
+      if ((Get-HealthVersion) -ne $Running) { Fail "${Leg}: the app no longer serves /health as $Running" }
+      if ((Get-FeedPaths $FeedMark) -contains "/releases/latest-rc.json") { Fail "${Leg}: the app requested latest-rc.json on the stable channel" }
+      if ((Get-LaunchLog $LogMark) -notmatch "update refused on channel stable: $Refusal") { Fail "${Leg}: no '$Refusal' refusal in this launch's log" }
+    }
+    # This launch's feed requests began in $Order, an artifact was downloaded, and the update
+    # transaction did not outlive the new version's startup.
+    function Assert-Installed($Leg, $FeedMark, $Order) {
+      $feeds = @(Get-FeedRequests $FeedMark)
+      if ((@($feeds | Select-Object -First $Order.Count) -join " ") -ne ($Order -join " ")) {
+        Fail "${Leg}: feed requests were '$($feeds -join " ")', expected them to begin '$($Order -join " ")'"
+      }
+      if (-not ((Get-FeedPaths $FeedMark) -match '^/releases/download/')) { Fail "${Leg}: /health changed version without a download from this feed" }
+      foreach ($f in @("update-in-progress.json", "update-txn", "update-txn-done")) {
+        if (Test-Path (Join-Path $ConfigDir $f)) { Fail "${Leg}: $f present after the update; the startup reconcile did not clear the transaction" }
+      }
+      $script:Exe = Get-ChildItem -Path $InstallRoot -Recurse -Filter $NBinaryName -ErrorAction SilentlyContinue | Select-Object -First 1
+      if (-not $script:Exe) { Fail "${Leg}: $NBinaryName not found under $InstallRoot after the update" }
+    }
+    function Assert-DeveloperRc($Leg) {
+      $dev = (Get-Content $Config -Raw | ConvertFrom-Json).developer
+      if (-not $dev -or @($dev.PSObject.Properties.Name).Count -ne 2 -or $dev.enabled -ne $true -or $dev.update_channel -ne "rc") {
+        Fail "${Leg}: config.json no longer holds developer {enabled, rc}: $(Get-Content $Config -Raw)"
+      }
+    }
+    $RFeed = { param($name) Join-Path $RArtifactsDir "$name.json" }
+    $RunMark = Get-LogMark
+
+    Log "A1: the stable channel refuses R's rc-v1 feed"
+    Set-PreChannelConfig
+    Set-Feed "latest.json" (& $RFeed "smoke-latest-rc")
+    Set-Feed "latest-rc.json" (& $RFeed "smoke-latest-rc")
+    $fm = Get-FeedMark
+    $mark = Start-App
+    if (-not (Wait-Version $N1Version 60)) { Fail "A1: N-1 never answered /health as $N1Version" }
+    Assert-Refused "A1" $fm $mark $N1Version "CandidateOffChannel"
+    Stop-AnyApp
+
+    Log "A2: the stable channel refuses R's v1 feed, a prerelease"
+    Set-PreChannelConfig
+    Set-Feed "latest.json" (& $RFeed "smoke-latest-rc-v1")
+    Set-Feed "latest-rc.json" (& $RFeed "smoke-latest-rc-v1")
+    $fm = Get-FeedMark
+    $mark = Start-App
+    if (-not (Wait-Version $N1Version 60)) { Fail "A2: N-1 never answered /health as $N1Version" }
+    Assert-Refused "A2" $fm $mark $N1Version "PrereleaseNotCandidate"
+    Stop-AnyApp
+
+    Log "B: opted in, the launch check installs R from latest-rc.json"
+    Set-DeveloperConfig "true" "rc"
+    Set-Feed "latest-rc.json" (& $RFeed "smoke-latest-rc")
+    Set-Feed "latest.json" (& $RFeed "smoke-latest-old")
+    $fm = Get-FeedMark
+    $mark = Start-App
+    if (-not (Wait-Version $RVersion 300)) { Fail "B: /health never reported $RVersion" }
+    Assert-Installed "B" $fm @("/releases/latest-rc.json")
+    if ((Get-FeedPaths $fm) -contains "/releases/latest.json") { Fail "B: the app fell back to latest.json although latest-rc.json answered" }
+    Assert-DeveloperRc "B"
+    Stop-AnyApp
+
+    Log "C1: developer mode off, R refuses a newer candidate"
+    Set-DeveloperConfig "false" "stable"
+    Set-Feed "latest.json" (& $RFeed "smoke-latest-rc2")
+    Set-Feed "latest-rc.json" (& $RFeed "smoke-latest-rc2")
+    $fm = Get-FeedMark
+    $mark = Start-App
+    if (-not (Wait-Version $RVersion 60)) { Fail "C1: R never answered /health as $RVersion" }
+    Assert-Refused "C1" $fm $mark $RVersion "CandidateOffChannel"
+    Stop-AnyApp
+
+    Log "C2: on the channel again, R takes $NVersion from latest.json while latest-rc.json answers 503"
+    Set-DeveloperConfig "true" "rc"
+    Set-Feed "latest-rc.json" "503"
+    Set-Feed "latest.json" (Join-Path $Work "latest.json")
+    $fm = Get-FeedMark
+    $mark = Start-App
+    if (-not (Wait-Version $NVersion 300)) { Fail "C2: /health never reported $NVersion" }
+    Assert-Installed "C2" $fm @("/releases/latest-rc.json", "/releases/latest.json")
+    Assert-DeveloperRc "C2"
+    if ((Get-LaunchLog $RunMark) -match "running read-only") { Fail "a launch ran with a read-only config" }
+    Log "SUCCESS (rc-lifecycle) — refused R twice on stable, installed R on rc, refused a newer candidate after leaving, took $NVersion through the fallback"
+    exit 0
+  }
+
   if ($Mode -eq "prompt") {
     # ── Auto-update off and onboarding done, so the prompt is the only window N-1 opens ──
     '{"config_version":1,"https_enabled":false,"approved_origins":[],"speed":"full","auto_update":false,"onboarding_version":1}' | Set-Content (Join-Path $ConfigDir "config.json")

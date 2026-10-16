@@ -108,10 +108,22 @@ test("both ephemeral updater smokes prepare their builds and signed feed through
     path.join(REPO, "packages/presto/scripts/ephemeral-updater.sh"),
     "utf8",
   );
-  const feed = script.split("\nfeed() {")[1]?.split("\n}\n")[0] ?? "";
-  expect(feed).toContain('feed="$dir/smoke-latest.json"');
-  expect(feed).toContain('bash packages/presto/scripts/sign-smoke-feed.sh "$feed" "$PWD"');
-  expect(feed).toContain('verify --feed "$feed" --pubkey "$pubkey" --smoke');
+  const write = shellFunction(script, "write_feed");
+  expect(write).toContain('feed="$dir/$name"');
+  expect(write).toContain(
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: a literal shell expansion
+    'bash packages/presto/scripts/sign-smoke-feed.sh "$feed" "$PWD" ${schema:+--schema "$schema"}',
+  );
+  expect(write).toContain('verify --feed "$feed" --pubkey "$pubkey" --smoke');
+  expect(shellFunction(script, "feed")).toContain("smoke-latest.json");
+  // R's own feed in both schemas, a higher candidate, and a version no newer than N-1.
+  expect(shellFunction(script, "rc_feeds").match(/(?<=^ {2})write_feed .*$/gm)).toEqual([
+    'write_feed "$version" "$platform" "$dir" smoke-latest-rc.json',
+    'write_feed "$version" "$platform" "$dir" smoke-latest-rc-v1.json v1',
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: a literal shell expansion
+    'write_feed "${version%.1}.2" "$platform" "$dir" smoke-latest-rc2.json',
+    'write_feed 0.0.1 "$platform" "$dir" smoke-latest-old.json',
+  ]);
   expect(script).not.toMatch(/secrets\.|\$\{\{/);
 
   const call = "bash packages/presto/scripts/ephemeral-updater.sh ";
@@ -132,10 +144,21 @@ test("both ephemeral updater smokes prepare their builds and signed feed through
     expect(order, workflow).toEqual([
       "keygen",
       'build n-1 "$N1_VERSION" "$RUNNER_TEMP/n1"',
+      'build r "$R_VERSION" "$RUNNER_TEMP/r"',
       ...(workflow.includes("windows") ? ["inject"] : []),
       'build n "$N_VERSION" "$RUNNER_TEMP/n"',
       `feed "$N_VERSION" ${platform} "$RUNNER_TEMP/n"`,
+      `rc-feeds "$R_VERSION" ${platform} "$RUNNER_TEMP/r"`,
     ]);
+    // R exists only for rc-lifecycle, and it is <n-version>-rc.1.
+    const rSteps = steps.slice(0, smoke).filter((s) => s.run?.includes('"$RUNNER_TEMP/r"'));
+    expect(
+      rSteps.map((s) => s.if),
+      workflow,
+    ).toEqual(Array(2).fill("env.UPDATER_SMOKE_MODE == 'rc-lifecycle'"));
+    const jobEnv = Object.values((Bun.YAML.parse(source) as SmokeWorkflow).jobs)[0]?.env;
+    // biome-ignore lint/suspicious/noTemplateCurlyInString: a literal workflow expression
+    expect(jobEnv?.R_VERSION).toBe("${{ format('{0}-rc.1', inputs.n-version || '9.9.9') }}");
     expect(source.replace(/^\s*#.*$/gm, ""), workflow).not.toMatch(/\$\{\{ secrets\./);
   }
 });
@@ -154,12 +177,12 @@ type SmokeWorkflow = {
 // `foreign` is the other workflow's mode, which this one must refuse.
 const MANUAL_SMOKE_MODES = {
   "smoke-updater-unix.yml": {
-    modes: ["positive", "negative", "prompt", "stall"],
+    modes: ["positive", "negative", "prompt", "stall", "rc-lifecycle"],
     foreign: "barrier",
     scripts: ["updater-smoke.sh", "updater-smoke-linux.sh"],
   },
   "smoke-updater-windows.yml": {
-    modes: ["barrier", "copy-initiator", "positive", "negative", "prompt"],
+    modes: ["barrier", "copy-initiator", "positive", "negative", "prompt", "rc-lifecycle"],
     foreign: "stall",
     scripts: ["updater-smoke-windows.ps1"],
   },
@@ -219,6 +242,9 @@ for (const [file, { modes, foreign, scripts }] of Object.entries(MANUAL_SMOKE_MO
     for (const version of [...badVersions, "0.0.1", "0.0.1-rc.1", '9.9.9"/e']) {
       expect(validate(modes[0] ?? "", version).ok).toBe(false);
     }
+    // R and its newer candidate are <n-version>-rc.1 and -rc.2, so N itself must be stable.
+    expect(validate("rc-lifecycle", "1.2.3-rc.1").ok).toBe(false);
+    expect(validate("rc-lifecycle", "1.2.3").ok).toBe(true);
   });
 
   test(`${file}: its scripts accept exactly the modes it lets through`, () => {
@@ -1099,7 +1125,7 @@ describe("update-manifest verify modes", () => {
     const ephemeral = fs.readFileSync(path.join(scripts, "ephemeral-updater.sh"), "utf8");
     for (const [script, owner] of [
       [RELEASE_SIGNER, "make_smoke_feed"],
-      [ephemeral, "feed"],
+      [ephemeral, "write_feed"],
     ] as const) {
       const inOwner = shellFunction(script, owner).match(/--smoke\b/g)?.length ?? 0;
       expect(inOwner, owner).toBeGreaterThan(0);
