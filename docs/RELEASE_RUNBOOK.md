@@ -278,7 +278,7 @@ stable can join yet.
 2. Promote it with `dry_run=true` and read the pre-flight log, then without. The read-back must show
    `rc.1` on `latest-rc.json` and the stable unchanged on `latest.json`.
 3. On one machine per OS, install `rc.1` by hand, turn on Developer mode and choose Release
-   candidates. Expect "Up to date".
+   candidates. Expect "✓ Up to date".
 4. Publish and promote `rc.2`. Expect its prompt, or with Auto-Update on its install at the next
    automatic check, and Settings showing `rc.2`.
 5. Choose Stable. Confirm the leave text and that no update is offered. Turn Developer mode off and

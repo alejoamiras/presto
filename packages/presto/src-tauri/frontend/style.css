@@ -945,12 +945,16 @@ h2 {
   font-size: 12px;
 }
 
-.channel-result {
-  margin: 6px 12px 0;
-}
-
 .channel-result:empty {
   display: none;
+}
+
+.channel-result.ok {
+  color: var(--go-text);
+}
+
+.channel-result.failed {
+  color: var(--danger);
 }
 
 /* Error hints — brief inline feedback on command failure */
