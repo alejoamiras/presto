@@ -324,8 +324,9 @@ with the output or run ID in the transcript.
 
 ### Phase 1: core pin, label gate, inspection, test run
 
-**Status:** ✓ (`lessons/phase-1.md`). Built on a local stand-in of the RC-channel contract, then
-rebased onto main once that contract landed (#134, #135).
+**Status:** ✓, landed with P2 as #143 (squash `eb4b751`) (`lessons/phase-1.md`). Built on a
+local stand-in of the RC-channel contract, then rebased onto main once that contract landed (#134,
+#135).
 
 1. `custom_bb.rs`: `CustomBbPin`, `de_custom_bb`, `check_label`, `inspect` (with D7),
    `verify_for_spawn`, `test_run` (takes a permit), `env_override_active`.
@@ -354,7 +355,7 @@ unit.
 
 ### Phase 2: core route, spawn gate, wire, popup label
 
-**Status:** ✓ (`lessons/phase-2.md`).
+**Status:** ✓, landed with P1 as #143 (squash `eb4b751`) (`lessons/phase-2.md`).
 
 1. `BbSource` in `resolve_version`; `Custom` skips the download, the lease and the cache-path check.
 2. `BbBinary::Exact` with `SpawnGate` in both runners: prepare the workspace and `verify_for_spawn`
@@ -380,6 +381,8 @@ Windows cross-check. **Pass:** all exit 0; T3, T5, T11 pass; T3 case 5 fails aga
 before the hash (recorded in lessons). **Layers:** lint, typecheck, unit, integration.
 
 ### Phase 3: desktop backend (picker, commands, tray, popup DTO)
+
+**Status:** ✓ (`lessons/phase-3.md`).
 
 1. Add `tauri-plugin-dialog` after the supply-chain review; register it with no permission.
 2. Exactly the four approved commands, `async`, hashing on `spawn_blocking`. The save preconditions
@@ -444,7 +447,7 @@ PR body states the WebDriver wall-clock before and after. **Layers:** lint, type
 | Arc | Branch | Phases | Stacks on | `/code-review` |
 |---|---|---|---|---|
 | 1 core | `worktree-custom-bb` | P1–P2 | `main`, after the RC-channel contract (A4) | off |
-| 2 desktop | `custom-bb-desktop` | P3–P5 | arc 1 | off |
+| 2 desktop | `custom-bb-desktop` | P3–P5 | `main`, once arc 1 landed (#143) | off |
 | close-out | `custom-bb-close-out` | docs only | arc 2 | off |
 
 Arc 1 is inert without a record, and nothing writes one yet; it touches `src-tauri` only to compile
