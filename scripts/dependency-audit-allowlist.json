@@ -1,5 +1,5 @@
 {
-  "reviewed": "2026-10-03",
+  "reviewed": "2026-10-17",
   "exceptions": [
     {
       "ecosystem": "npm",
@@ -104,6 +104,30 @@
       "expires": "2026-10-31",
       "reason": "Wrangler exact-pins miniflare, which exact-pins undici 7.29.0. Local Workers tooling only; nothing it runs ships in a published package or site bundle. The other undici copies are patched.",
       "upgrade": "Remove when the root wrangler pin moves to 4.147.0 or newer (miniflare with undici 7.29.1), which clears the release-age gate on 2026-10-09."
+    },
+    {
+      "ecosystem": "rust",
+      "id": "RUSTSEC-2026-0367",
+      "package": "zip",
+      "expires": "2026-11-30",
+      "reason": "tauri-plugin-updater (2.11.0 pinned; 2.12.0, 2.13.3 and 2.14.0 still require zip ^4) runs ZipArchive::extract only on the Windows updater payload, after its Ed25519 signature verified against the embedded production key, so an archive with a symlink entry (0368) must carry that signature. Windows compiles out the Unix permission and set-id handling (0367, 0369). A local writer of the updater's per-user temp directory already controls the installer it launches; these advisories add nothing there.",
+      "upgrade": "Remove when the updater resolves zip 9.0.0 or newer, carries verified fixes for these advisories, or stops extracting zip archives by taking the plain .exe payload."
+    },
+    {
+      "ecosystem": "rust",
+      "id": "RUSTSEC-2026-0368",
+      "package": "zip",
+      "expires": "2026-11-30",
+      "reason": "tauri-plugin-updater (2.11.0 pinned; 2.12.0, 2.13.3 and 2.14.0 still require zip ^4) runs ZipArchive::extract only on the Windows updater payload, after its Ed25519 signature verified against the embedded production key, so an archive with a symlink entry (0368) must carry that signature. Windows compiles out the Unix permission and set-id handling (0367, 0369). A local writer of the updater's per-user temp directory already controls the installer it launches; these advisories add nothing there.",
+      "upgrade": "Remove when the updater resolves zip 9.0.0 or newer, carries verified fixes for these advisories, or stops extracting zip archives by taking the plain .exe payload."
+    },
+    {
+      "ecosystem": "rust",
+      "id": "RUSTSEC-2026-0369",
+      "package": "zip",
+      "expires": "2026-11-30",
+      "reason": "tauri-plugin-updater (2.11.0 pinned; 2.12.0, 2.13.3 and 2.14.0 still require zip ^4) runs ZipArchive::extract only on the Windows updater payload, after its Ed25519 signature verified against the embedded production key, so an archive with a symlink entry (0368) must carry that signature. Windows compiles out the Unix permission and set-id handling (0367, 0369). A local writer of the updater's per-user temp directory already controls the installer it launches; these advisories add nothing there.",
+      "upgrade": "Remove when the updater resolves zip 9.0.0 or newer, carries verified fixes for these advisories, or stops extracting zip archives by taking the plain .exe payload."
     }
   ]
 }
