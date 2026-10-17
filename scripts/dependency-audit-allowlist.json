@@ -110,24 +110,24 @@
       "id": "RUSTSEC-2026-0367",
       "package": "zip",
       "expires": "2026-11-30",
-      "reason": "tauri-plugin-updater (every 2.x release through 2.14.0 requires zip ^4) runs ZipArchive::extract on the Windows updater payload only after its Ed25519 signature verified against the embedded production key, so a crafted archive needs that key. Windows applies no SUID/SGID bits or Unix permissions.",
-      "upgrade": "Remove when tauri-plugin-updater depends on zip 9.0.0 or newer."
+      "reason": "tauri-plugin-updater (2.11.0 pinned; 2.12.0, 2.13.3 and 2.14.0 still require zip ^4) runs ZipArchive::extract only on the Windows updater payload, after its Ed25519 signature verified against the embedded production key, so an archive with a symlink entry (0368) must carry that signature. Windows compiles out the Unix permission and set-id handling (0367, 0369). A local writer of the updater's per-user temp directory already controls the installer it launches; these advisories add nothing there.",
+      "upgrade": "Remove when tauri-plugin-updater depends on zip 9.0.0 or newer, or when the updater stops extracting zip archives (a verified backport or the plain .exe payload)."
     },
     {
       "ecosystem": "rust",
       "id": "RUSTSEC-2026-0368",
       "package": "zip",
       "expires": "2026-11-30",
-      "reason": "tauri-plugin-updater (every 2.x release through 2.14.0 requires zip ^4) runs ZipArchive::extract on the Windows updater payload only after its Ed25519 signature verified against the embedded production key, so a crafted archive needs that key. Windows applies no SUID/SGID bits or Unix permissions.",
-      "upgrade": "Remove when tauri-plugin-updater depends on zip 9.0.0 or newer."
+      "reason": "tauri-plugin-updater (2.11.0 pinned; 2.12.0, 2.13.3 and 2.14.0 still require zip ^4) runs ZipArchive::extract only on the Windows updater payload, after its Ed25519 signature verified against the embedded production key, so an archive with a symlink entry (0368) must carry that signature. Windows compiles out the Unix permission and set-id handling (0367, 0369). A local writer of the updater's per-user temp directory already controls the installer it launches; these advisories add nothing there.",
+      "upgrade": "Remove when tauri-plugin-updater depends on zip 9.0.0 or newer, or when the updater stops extracting zip archives (a verified backport or the plain .exe payload)."
     },
     {
       "ecosystem": "rust",
       "id": "RUSTSEC-2026-0369",
       "package": "zip",
       "expires": "2026-11-30",
-      "reason": "tauri-plugin-updater (every 2.x release through 2.14.0 requires zip ^4) runs ZipArchive::extract on the Windows updater payload only after its Ed25519 signature verified against the embedded production key, so a crafted archive needs that key. Windows applies no SUID/SGID bits or Unix permissions.",
-      "upgrade": "Remove when tauri-plugin-updater depends on zip 9.0.0 or newer."
+      "reason": "tauri-plugin-updater (2.11.0 pinned; 2.12.0, 2.13.3 and 2.14.0 still require zip ^4) runs ZipArchive::extract only on the Windows updater payload, after its Ed25519 signature verified against the embedded production key, so an archive with a symlink entry (0368) must carry that signature. Windows compiles out the Unix permission and set-id handling (0367, 0369). A local writer of the updater's per-user temp directory already controls the installer it launches; these advisories add nothing there.",
+      "upgrade": "Remove when tauri-plugin-updater depends on zip 9.0.0 or newer, or when the updater stops extracting zip archives (a verified backport or the plain .exe payload)."
     }
   ]
 }
