@@ -111,7 +111,7 @@
       "package": "zip",
       "expires": "2026-11-30",
       "reason": "tauri-plugin-updater (2.11.0 pinned; 2.12.0, 2.13.3 and 2.14.0 still require zip ^4) runs ZipArchive::extract only on the Windows updater payload, after its Ed25519 signature verified against the embedded production key, so an archive with a symlink entry (0368) must carry that signature. Windows compiles out the Unix permission and set-id handling (0367, 0369). A local writer of the updater's per-user temp directory already controls the installer it launches; these advisories add nothing there.",
-      "upgrade": "Remove when tauri-plugin-updater depends on zip 9.0.0 or newer, or when the updater stops extracting zip archives (a verified backport or the plain .exe payload)."
+      "upgrade": "Remove when the updater resolves zip 9.0.0 or newer, carries verified fixes for these advisories, or stops extracting zip archives by taking the plain .exe payload."
     },
     {
       "ecosystem": "rust",
@@ -119,7 +119,7 @@
       "package": "zip",
       "expires": "2026-11-30",
       "reason": "tauri-plugin-updater (2.11.0 pinned; 2.12.0, 2.13.3 and 2.14.0 still require zip ^4) runs ZipArchive::extract only on the Windows updater payload, after its Ed25519 signature verified against the embedded production key, so an archive with a symlink entry (0368) must carry that signature. Windows compiles out the Unix permission and set-id handling (0367, 0369). A local writer of the updater's per-user temp directory already controls the installer it launches; these advisories add nothing there.",
-      "upgrade": "Remove when tauri-plugin-updater depends on zip 9.0.0 or newer, or when the updater stops extracting zip archives (a verified backport or the plain .exe payload)."
+      "upgrade": "Remove when the updater resolves zip 9.0.0 or newer, carries verified fixes for these advisories, or stops extracting zip archives by taking the plain .exe payload."
     },
     {
       "ecosystem": "rust",
@@ -127,7 +127,7 @@
       "package": "zip",
       "expires": "2026-11-30",
       "reason": "tauri-plugin-updater (2.11.0 pinned; 2.12.0, 2.13.3 and 2.14.0 still require zip ^4) runs ZipArchive::extract only on the Windows updater payload, after its Ed25519 signature verified against the embedded production key, so an archive with a symlink entry (0368) must carry that signature. Windows compiles out the Unix permission and set-id handling (0367, 0369). A local writer of the updater's per-user temp directory already controls the installer it launches; these advisories add nothing there.",
-      "upgrade": "Remove when tauri-plugin-updater depends on zip 9.0.0 or newer, or when the updater stops extracting zip archives (a verified backport or the plain .exe payload)."
+      "upgrade": "Remove when the updater resolves zip 9.0.0 or newer, carries verified fixes for these advisories, or stops extracting zip archives by taking the plain .exe payload."
     }
   ]
 }
