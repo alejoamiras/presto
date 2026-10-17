@@ -738,6 +738,20 @@ describe("release-presto.yml — B6 publish/promote contract", () => {
     expect(WF).toContain("inputs.bump_source && !inputs.dry_run");
     expect(WF).toContain("needs.mark-github-latest.result == 'success'");
   });
+
+  test("a skipped withdraw-rc upstream cannot skip GitHub Latest or the source bump", () => {
+    // On a promote, `withdraw-rc` is skipped and sits upstream of both jobs through verify-live-feed; the
+    // implicit success() treats a skipped ancestor as a skip, so each job carries its own status function
+    // and names the results it needs. [mut: drop `!cancelled()` from either `if` → fails]
+    const latestJob = WF.split("  mark-github-latest:")[1]?.split("\n  bump-source:")[0] ?? "";
+    const bumpJob = WF.split("  bump-source:")[1] ?? "";
+    expect(latestJob).toMatch(
+      /if: \$\{\{ !cancelled\(\) && needs\.validate\.result == 'success' && needs\.verify-live-feed\.result == 'success' && inputs\.mode == 'promote-only' && inputs\.bump_source && !inputs\.dry_run \}\}/,
+    );
+    expect(bumpJob).toMatch(
+      /if: \$\{\{ !cancelled\(\) && needs\.validate\.result == 'success' && needs\.mark-github-latest\.result == 'success' && inputs\.mode == 'promote-only' && inputs\.bump_source && !inputs\.dry_run \}\}/,
+    );
+  });
 });
 
 describe("release-machinery hardening (2026-08-17 GitHub asset-CDN incident)", () => {

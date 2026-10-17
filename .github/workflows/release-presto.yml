@@ -1692,7 +1692,9 @@ jobs:
   mark-github-latest:
     name: Mark GitHub release as Latest
     needs: [validate, verify-live-feed]
-    if: ${{ inputs.mode == 'promote-only' && inputs.bump_source && !inputs.dry_run && needs.verify-live-feed.result == 'success' }}
+    # Own status function: `withdraw-rc` sits upstream through verify-live-feed and is skipped on a promote,
+    # and the implicit success() reads a skipped ancestor as a skip.
+    if: ${{ !cancelled() && needs.validate.result == 'success' && needs.verify-live-feed.result == 'success' && inputs.mode == 'promote-only' && inputs.bump_source && !inputs.dry_run }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:
@@ -1726,7 +1728,7 @@ jobs:
     # B6: bump source only after a REAL organic-GA promotion — mode==promote-only, bump_source=true, not a
     # dry_run, and GitHub Latest has caught up. A ROLLBACK promote (bump_source=false) must NOT bump source
     # or move the human-facing badge away from the newest GA.
-    if: ${{ inputs.mode == 'promote-only' && inputs.bump_source && !inputs.dry_run && needs.mark-github-latest.result == 'success' }}
+    if: ${{ !cancelled() && needs.validate.result == 'success' && needs.mark-github-latest.result == 'success' && inputs.mode == 'promote-only' && inputs.bump_source && !inputs.dry_run }}
     runs-on: ubuntu-latest
     timeout-minutes: 5
     # No default-GITHUB_TOKEN perms: a short-lived, repo-scoped GitHub App
