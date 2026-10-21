@@ -242,7 +242,8 @@ Every other dependency waits out a 7-day release-age quarantine. The Aztec names
 `bunfig.toml` (the workspace install) and `setup-aztec`'s npm configuration (the CLI installer's
 separate graph), because Aztec releases are consumed the day they ship. Since 6.0.0-rc.4 that
 installer runs `npm ci` from Aztec's release lock, which the quarantine does not re-check: its
-third-party versions are the ones Aztec locked, with integrity, and its Aztec entries carry none.
+third-party versions are the ones Aztec locked, with integrity, and most of its Aztec entries carry
+none.
 The exemption is
 **exact names only**; a scope glob would let any new package under the scope skip quarantine
 unreviewed. `scripts/bunfig-aztec-excludes.test.ts` holds the bunfig list equal to the lock, and

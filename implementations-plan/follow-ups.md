@@ -139,7 +139,8 @@ None of these were re-checked on 2026-09-18.
     `scripts/bunfig-aztec-excludes.test.ts` checks the workspace list against the lock.
     `scripts/aztec-installer-graph.ts` checks the installer's tree on every job, and fails on drift
     and on any version other than the release. Since 6.0.0-rc.4 the installer installs from
-    Aztec's release lock, whose Aztec entries carry no integrity, and Aztec uses upstream `viem`.
+    Aztec's release lock, most of whose Aztec entries carry no integrity, and Aztec uses upstream
+    `viem`.
   - Aztec releases are consumed the same day by design, so these scopes get no observation window.
   - This is a permanent exposure on the dependency surface the product leans on hardest.
   **Verified 2026-10-21** against the 6.0.0-rc.4 lock and release lock.

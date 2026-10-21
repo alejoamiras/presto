@@ -48,9 +48,10 @@ runs:
       uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
       with:
         # Pinned, not "stable": the foundry the Aztec release's installer names in its `versions`
-        # file. Since 6.0.0-rc.4 the L1 deploy calls `forge script` itself with
-        # `--disable-external-identification`, which 1.4.1 rejects; the version installer creates no
-        # ~/.aztec/current, so the deploy resolves forge from PATH, which is this one.
+        # file and copies into the version's `internal-bin`, which the `aztec` wrapper puts first
+        # on its PATH. The deploy runs whichever copy it resolves, so both must match. Since
+        # 6.0.0-rc.4 it calls `forge script` itself with `--disable-external-identification`, which
+        # 1.4.1 rejects.
         version: v1.8.5
 
     - name: Cache Aztec CLI
@@ -59,12 +60,12 @@ runs:
       uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: ~/.aztec/versions/${{ steps.detect.outputs.version }}
-        # The `-minage7` salt is load-bearing, not decoration. The aztec version alone does NOT
-        # identify the tree: the installer resolves transitive dependencies unlocked, so the same
-        # version installed on two days can differ — which is how `snappy@7.4.0` got in. Once a broken
-        # tree is cached, the install step is skipped by its `cache-hit` guard and any fix applied
-        # THERE never runs; the cache just keeps serving the breakage. Bump this salt whenever the
-        # install recipe changes so the remedy is actually exercised.
+        # The salt is load-bearing, not decoration. The aztec version alone does not identify the
+        # tree: the recipe below (npm, its age gate, the allowed install scripts) shapes it too, and
+        # before 6.0.0-rc.4 the installer resolved transitive dependencies unlocked, which is how
+        # `snappy@7.4.0` got in. Once a broken tree is cached, the install step is skipped by its
+        # `cache-hit` guard and any fix applied THERE never runs; the cache just keeps serving the
+        # breakage. Bump this salt whenever the install recipe changes so the remedy is exercised.
         key: ${{ runner.os }}-aztec-${{ steps.detect.outputs.version }}-minage7-npm12-exactexempt-allowscripts6
 
     - name: Install Aztec CLI
@@ -123,7 +124,7 @@ runs:
         ls -la ~/.aztec/versions/${{ steps.detect.outputs.version }}/bin/
 
     # Runs on a cache hit too: the npmrc assertion proves the age-gate configuration, not what the
-    # unlocked installer resolved.
+    # installer installed.
     - name: Check the installed Aztec graph against the reviewed list
       if: inputs.skip_cli != 'true'
       shell: bash
@@ -159,12 +160,10 @@ runs:
       if: inputs.skip_cli != 'true'
       shell: bash
       run: |
-        # The aztec bundle ships its own forge in versions/<v>/bin. Since aztec 4.3.1 the L1 deploy
-        # path (l1-contracts/scripts/forge_broadcast.js) spawns bare `forge` with upstream-foundry
-        # args, but the 4.3.1-bundled forge's `script` CLI is incompatible (requires `--batch`) —
-        # the local network then fails L1 deploy and never comes up. The aztec bin dir was prepended
-        # to PATH above (the CLI itself needs it), so neutralize just the bundled forge: the
-        # foundry-toolchain forge (installed earlier in this action) must be the one that resolves.
+        # Older aztec bundles put their own forge in versions/<v>/bin, ahead of the
+        # foundry-toolchain forge on PATH, and 4.3.1's `script` CLI broke the L1 deploy (it required
+        # `--batch`). Current bundles keep forge in internal-bin, at the foundry version pinned
+        # above, so this finds nothing; it still fails a job whose PATH has no forge at all.
         AZTEC_BIN="$HOME/.aztec/versions/${{ steps.detect.outputs.version }}/bin"
         if [ -x "$AZTEC_BIN/forge" ]; then
           mv "$AZTEC_BIN/forge" "$AZTEC_BIN/forge.aztec-bundled"

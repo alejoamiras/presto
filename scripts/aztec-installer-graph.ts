@@ -3,14 +3,14 @@
  * reviewed list that exempts them from npm's release-age gate. The installer installs Aztec's own
  * release lock as is, so a new first-party package in it installs without the list noticing; only
  * this name comparison catches it, and it must run whether or not the install step was cached. It
- * checks names and versions, never bytes: the lock's Aztec entries carry no integrity. The
+ * checks names and versions, never bytes: most of the lock's Aztec entries carry no integrity. The
  * exemption is by name, so every package must also be at its reviewed version, the
  * release being installed: `@aztec-foundation/*` at the foundation version (bb.js's; a separate
  * number since 6.0.0-rc.3), the rest at the Aztec version. Any other version skipped the gate
  * unreviewed.
  *
- * The graph is the prefix's `package-lock.json` (every platform's optional packages, which the age
- * gate also filters) joined with what is on disk, so a package missing from the lock still counts.
+ * The graph is the prefix's `package-lock.json` (every platform's optional packages, installed or
+ * not) joined with what is on disk, so a package missing from the lock still counts.
  *
  * Usage: bun scripts/aztec-installer-graph.ts <install-prefix> <list-file> <aztec-version> <foundation-version>
  */
