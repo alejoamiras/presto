@@ -8,14 +8,15 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 
 ## Dated — two cliffs, 2026-10-31 and 2026-11-30
 
-- **The thirteen dependency-audit exceptions expire on two days.**
+- **The twelve dependency-audit exceptions expire on two days.**
   `scripts/dependency-audit-allowlist.json` accepts:
-  - until **2026-10-31**: `undici` GHSA-rfgv-xxqx-mfg5 and GHSA-w293-vg96-wgc3;
-  - until **2026-11-30**: `undici` (×3), `@fastify/busboy`, `@opentelemetry/propagator-jaeger`,
-    `basic-ftp`, `braces`, `deepmerge-ts`, `extract-zip` (×2) and `serialize-javascript`.
+  - until **2026-10-31**: `undici` GHSA-rfgv-xxqx-mfg5 and GHSA-w293-vg96-wgc3 (wrangler's miniflare);
+  - until **2026-11-30**: `@opentelemetry/propagator-jaeger`, `basic-ftp`, `braces`,
+    `deepmerge-ts`, `extract-zip` (×2), `serialize-javascript` and `zip` (×3, RustSec).
   - The audit gate goes red on 2026-11-01 on the first two, and on 2026-12-01 on the rest. Each
     entry's `reason` says what pins it.
-  - **Verified 2026-10-14** against the allowlist and PR #105's audit log.
+  - **Verified 2026-10-21** against the allowlist and the Aztec 6.0.0-rc.4 audit, which dropped
+    undici 5 and `@fastify/busboy` with their four exceptions.
 - **#106: drop the root `sharp` 0.35.5 override at the next wrangler bump.** wrangler 4.150.0's
   miniflare pins sharp 0.35.5 itself. Left in place, the override would hold back sharp's later
   fixes. `archive/presto-audit-fix/plan.md`
@@ -138,16 +139,16 @@ None of these were re-checked on 2026-09-18.
   2026-09-27). Accepted by the owner 2026-09-25. `archive/workers-builds/plan.md` (Security)
 - **Aztec's scopes are exempt from the seven-day release-age floor.** This was an owner decision
   (2026-08-18, extended to v6's `@aztec-labs/*` and `@aztec-foundation/*` on 2026-09-28).
-  - The names are exact: 42 in `bunfig.toml`, and 62 in `installer-aztec-packages.txt` for
+  - The names are exact: 41 in `bunfig.toml`, and 61 in `installer-aztec-packages.txt` for
     `setup-aztec`'s npmrc. A glob is silently ignored.
   - Each list must equal its own resolved graph, and each has a separate check.
     `scripts/bunfig-aztec-excludes.test.ts` checks the workspace list against the lock.
     `scripts/aztec-installer-graph.ts` checks the installer's tree on every job, and fails on drift
-    and on any version other than the release. The one exception is the `@aztec/viem` fork, which is
-    held to its own pin, 2.38.3.
+    and on any version other than the release. Since 6.0.0-rc.4 the installer installs from
+    Aztec's release lock, whose Aztec entries carry no integrity, and Aztec uses upstream `viem`.
   - Aztec releases are consumed the same day by design, so these scopes get no observation window.
   - This is a permanent exposure on the dependency surface the product leans on hardest.
-  **Verified 2026-09-29.**
+  **Verified 2026-10-21** against the 6.0.0-rc.4 lock and release lock.
 - **Automated cumulative age enforcement was reverted during review and is not on `main`** — the
   registry-age checker, its composite action and the thirteen workflow wirings were all removed. What
   remains is bunfig's npm-resolution-time floor plus a 7-day cooldown on the github-actions Dependabot
