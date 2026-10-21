@@ -1,9 +1,10 @@
 /**
  * Compares the Aztec-scoped packages the Aztec CLI installer put under an install prefix with the
- * reviewed list that exempts them from npm's release-age gate. The installer's lock is Aztec's and
- * its Aztec entries carry no integrity, so a new first-party package installs without the list
- * noticing; only this name comparison catches it, and it must run whether or not the install step
- * was cached. The exemption is by name, so every package must also be at its reviewed version, the
+ * reviewed list that exempts them from npm's release-age gate. The installer installs Aztec's own
+ * release lock as is, so a new first-party package in it installs without the list noticing; only
+ * this name comparison catches it, and it must run whether or not the install step was cached. It
+ * checks names and versions, never bytes: the lock's Aztec entries carry no integrity. The
+ * exemption is by name, so every package must also be at its reviewed version, the
  * release being installed: `@aztec-foundation/*` at the foundation version (bb.js's; a separate
  * number since 6.0.0-rc.3), the rest at the Aztec version. Any other version skipped the gate
  * unreviewed.

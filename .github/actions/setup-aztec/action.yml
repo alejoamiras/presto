@@ -47,12 +47,11 @@ runs:
       if: inputs.skip_cli != 'true'
       uses: foundry-rs/foundry-toolchain@908c540300062bd5a7e473851cdb4282204cee09 # v1.9.1
       with:
-        # Pinned, not "stable": aztec's L1 deploy wrapper (l1-contracts/scripts/forge_broadcast.js,
-        # since 4.3.1) passes `--batch-size` WITHOUT `--batch`; foundry 1.7 made `--batch-size`
-        # require the new `--batch` flag, so a floating stable (1.7.1) fails the deploy with
-        # "required arguments were not provided: --batch". v1.4.1 is the lineage aztec bundles and
-        # tests against. Revisit when aztec's wrapper supports the 1.7 CLI.
-        version: v1.4.1
+        # Pinned, not "stable": the foundry the Aztec release's installer names in its `versions`
+        # file. Since 6.0.0-rc.4 the L1 deploy calls `forge script` itself with
+        # `--disable-external-identification`, which 1.4.1 rejects; the version installer creates no
+        # ~/.aztec/current, so the deploy resolves forge from PATH, which is this one.
+        version: v1.8.5
 
     - name: Cache Aztec CLI
       if: inputs.skip_cli != 'true'
@@ -76,14 +75,15 @@ runs:
         export FOUNDRY_DIR="$HOME/.foundry"
         # Since 6.0.0-rc.4 the installer runs `npm ci` from the release's own lock
         # (`packages.tar.gz`); before, an unlocked `npm install` let `snappy@7.4.0` (2026-08-12), whose
-        # native binding cannot load, break `aztec start` on every Aztec version at once. The 7 days
-        # stay for any version npm still resolves, and the lock's Aztec entries carry no integrity, so
-        # the graph check below still holds the names and versions.
+        # native binding cannot load, break `aztec start` on every Aztec version at once. `npm ci`
+        # installs the lock as is, so the 7 days below re-check none of its versions: they bind only
+        # an install that resolves (the installer's `AZTEC_UP_SKIP_PACKAGE_LOCK=1` path, never set
+        # here). The third-party tree is whatever Aztec locked, with npm integrity.
         export npm_config_min_release_age=7
         # The quarantine would also ETARGET the Aztec release itself for its first 7 days, so the
         # reviewed names in `installer-aztec-packages.txt` are exempt, one exact name each (a scope
-        # glob would exempt a new package unreviewed); third-party transitives keep the 7 days, and
-        # the graph check below holds the list exact. `min-release-age-exclude` needs npm 12; Node
+        # glob would exempt a new package unreviewed), and the graph check below holds the list
+        # exact. `min-release-age-exclude` needs npm 12; Node
         # 24 bundles npm 11.
         npm install -g npm@12.0.2
         AZTEC_LIST="$GITHUB_WORKSPACE/.github/actions/setup-aztec/installer-aztec-packages.txt"

@@ -240,8 +240,10 @@ From v6 the SDKs and the playground depend on `@aztec-labs/*` and `@aztec-founda
 
 Every other dependency waits out a 7-day release-age quarantine. The Aztec names are exempt, in both
 `bunfig.toml` (the workspace install) and `setup-aztec`'s npm configuration (the CLI installer's
-separate graph: since 6.0.0-rc.4 an `npm ci` from Aztec's release lock, whose Aztec entries carry no
-integrity), because Aztec releases are consumed the day they ship. The exemption is
+separate graph), because Aztec releases are consumed the day they ship. Since 6.0.0-rc.4 that
+installer runs `npm ci` from Aztec's release lock, which the quarantine does not re-check: its
+third-party versions are the ones Aztec locked, with integrity, and its Aztec entries carry none.
+The exemption is
 **exact names only**; a scope glob would let any new package under the scope skip quarantine
 unreviewed. `scripts/bunfig-aztec-excludes.test.ts` holds the bunfig list equal to the lock, and
 `scripts/aztec-installer-graph.ts` holds the installer list equal to what the installer resolved, on a
