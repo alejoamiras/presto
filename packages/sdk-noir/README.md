@@ -41,8 +41,8 @@ suggested copy.
 ## Installation
 
 ```bash
-# Aztec v6 bb.js (6.0.0-rc.6, from Aztec 6.0.0-rc.3), on the `testnet` dist-tag
-npm install @alejoamiras/presto-noir@testnet @aztec-foundation/bb.js@6.0.0-rc.6
+# Aztec v6 bb.js (6.0.0-rc.7, from Aztec 6.0.0-rc.4), on the `testnet` dist-tag
+npm install @alejoamiras/presto-noir@testnet @aztec-foundation/bb.js@6.0.0-rc.7
 # Aztec v5 bb.js (5.2.0), npm `latest`
 npm install @alejoamiras/presto-noir @aztec/bb.js@5.2.0
 ```
@@ -148,6 +148,7 @@ adapter must prove natively against a headless presto built with the real `bb`):
 
 | `@alejoamiras/presto-noir` | bb.js (peer, exact) | `bbVersion` (default) | Presto |
 |---|---|---|---|
+| 2.0.0-rc.3 | `@aztec-foundation/bb.js` 6.0.0-rc.7 | 6.0.0-rc.7 | ≥ 1.1.3 |
 | 2.0.0-rc.2 | `@aztec-foundation/bb.js` 6.0.0-rc.6 | 6.0.0-rc.6 | ≥ 1.1.3 |
 | 2.0.0-rc.1 | `@aztec-foundation/bb.js` 6.0.0-rc.1 | 6.0.0-rc.1 | ≥ 1.1.3 |
 | 1.2.0 | `@aztec/bb.js` 5.2.0 | 5.2.0 | ≥ 1.1.0 |

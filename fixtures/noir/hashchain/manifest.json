@@ -4,7 +4,7 @@
   "verifierTarget": "noir-recursive-no-zk",
   "toolchain": {
     "nargo": "1.0.0-rc.3",
-    "bbJs": "6.0.0-rc.6",
+    "bbJs": "6.0.0-rc.7",
     "backend": "WasmWorker"
   },
   "files": {
@@ -29,11 +29,11 @@
       "bytes": 133024
     },
     "vk": {
-      "sha256": "9a989bef1fceedd00ae488eee6c190d49b90a99c3d634fe71ef9262bf73f1627",
+      "sha256": "273970b8efd6c20ccece9d36207f64844a3623f4019790145d08dee7f31fbb65",
       "bytes": 3680
     },
     "proof": {
-      "sha256": "5ed1eae7cee4d09a28286c364f58e70c0a56c5150bb2a57281be299c603dd866",
+      "sha256": "a900b0885a7a72da030d6b3e57b1608aead38f59fb610ea6f6217f0794008a3b",
       "bytes": 13120,
       "fields": 410
     },

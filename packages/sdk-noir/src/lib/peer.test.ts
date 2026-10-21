@@ -15,7 +15,7 @@ test("a missing or unexpected @aztec-foundation/bb.js is one clear error at the 
   const backend = new PrestoUltraHonkBackend("bytecode", factory);
 
   await expect(backend.generateProof(new Uint8Array())).rejects.toThrow(
-    "needs its peer dependency @aztec-foundation/bb.js@6.0.0-rc.6",
+    "needs its peer dependency @aztec-foundation/bb.js@6.0.0-rc.7",
   );
   await expect(backend.verifyProof({ proof: new Uint8Array(), publicInputs: [] })).rejects.toThrow(
     "needs its peer dependency",
