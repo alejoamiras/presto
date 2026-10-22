@@ -17,7 +17,7 @@ TypeScript SDK that routes Aztec private kernel proving to a local native presto
 ## Installation
 
 ```bash
-# Aztec v6 (6.0.0-rc.4), on the `testnet` dist-tag
+# Aztec v6 (6.0.0), on the `testnet` dist-tag
 npm install @alejoamiras/presto@testnet
 # Aztec v5 (5.2.0, `@aztec/*` packages), npm `latest`
 npm install @alejoamiras/presto

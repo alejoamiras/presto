@@ -3,7 +3,7 @@
  * and WASM proofs, and the CLI flags are all verified per version. Each is a barretenberg release, the
  * tag Presto downloads `bb` by; since Aztec 6.0.0-rc.3 it differs from the `@aztec-labs/*` version.
  */
-export const TESTED_BB_VERSIONS: readonly string[] = ["6.0.0-rc.7"];
+export const TESTED_BB_VERSIONS: readonly string[] = ["6.0.0"];
 export const TESTED_BB_VERSION = TESTED_BB_VERSIONS[0] as string;
 
 /**

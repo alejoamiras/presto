@@ -143,7 +143,7 @@ None of these were re-checked on 2026-09-18.
     `viem`.
   - Aztec releases are consumed the same day by design, so these scopes get no observation window.
   - This is a permanent exposure on the dependency surface the product leans on hardest.
-  **Verified 2026-10-21** against the 6.0.0-rc.4 lock and release lock.
+  **Verified 2026-10-22** against the 6.0.0 lock and release lock.
 - **Automated cumulative age enforcement was reverted during review and is not on `main`** — the
   registry-age checker, its composite action and the thirteen workflow wirings were all removed. What
   remains is bunfig's npm-resolution-time floor plus a 7-day cooldown on the github-actions Dependabot
