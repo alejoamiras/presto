@@ -482,7 +482,7 @@ async fn health(
         }
     }
     // Versions are keyed by barretenberg release, the bb.js version clients send; since Aztec
-    // 6.0.0-rc.3 it differs from the `@aztec-labs/*` one. The server holds no mapping between them,
+    // 6.0.0-rc.3 it can differ from the `@aztec-labs/*` one. The server holds no mapping between them,
     // so both keys carry the same string; `aztec_version` is the historical wire name.
     let version_pairs: Vec<_> = available
         .iter()

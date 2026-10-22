@@ -17,13 +17,13 @@ TypeScript SDK that routes Aztec private kernel proving to a local native presto
 ## Installation
 
 ```bash
-# Aztec v6 (6.0.0-rc.3, the Aztec testnet), on the `testnet` dist-tag
+# Aztec v6 (6.0.0), on the `testnet` dist-tag
 npm install @alejoamiras/presto@testnet
 # Aztec v5 (5.2.0, `@aztec/*` packages), npm `latest`
 npm install @alejoamiras/presto
 ```
 
-> The SDK's version mirrors the Aztec line it targets — SDK `X.Y.Z` is built against Aztec `X.Y.Z`. A bare install resolves npm `latest`, the release promoted as current-stable, which stays on the v5 line until Aztec v6 is stable; `testnet` carries the newest release, the v6 prerelease today. Native proving for Aztec v6 needs the Presto app **1.1.3 or later**: older apps cannot fetch a v6 `bb` and the SDK falls back to WASM.
+> The SDK's version mirrors the Aztec line it targets — SDK `X.Y.Z` is built against Aztec `X.Y.Z`. A bare install resolves npm `latest`, the release promoted as current-stable, which stays on the v5 line until the stable v6 release is promoted to it; `testnet` carries the newest release. Native proving for Aztec v6 needs the Presto app **1.1.3 or later**: older apps cannot fetch a v6 `bb` and the SDK falls back to WASM.
 
 The SDK ships its Aztec packages (`@aztec-labs/*` and `@aztec-foundation/*` from v6, `@aztec/*` through v5) as exact-pinned **dependencies** (not peer dependencies), so it installs standalone. When your project already depends on the same exact Aztec version — the normal case for an Aztec dApp — npm/Bun dedupe them to a single graph.
 
@@ -552,7 +552,7 @@ Practical guidance for integrators:
 
 ## Version Compatibility
 
-The SDK sends the `bb` release it proves with, its exact `@aztec-foundation/bb.js` pin, as the `x-aztec-version` header on prove requests. The presto uses it to select (or download) the matching `bb` binary, so no manual version matching is needed. Since Aztec 6.0.0-rc.3 that number differs from the `@aztec-labs/*` one; the header and `status.sdkAztecVersion` keep their historical names. The SDK reads the version from its own manifest, so an override, alias or forced dedupe that gives `@aztec-labs/bb-prover` a different bb.js is unsupported: Presto would still prove with the pinned release.
+The SDK sends the `bb` release it proves with, its exact `@aztec-foundation/bb.js` pin, as the `x-aztec-version` header on prove requests. The presto uses it to select (or download) the matching `bb` binary, so no manual version matching is needed. Since Aztec 6.0.0-rc.3 that number can differ from the `@aztec-labs/*` one; the header and `status.sdkAztecVersion` keep their historical names. The SDK reads the version from its own manifest, so an override, alias or forced dedupe that gives `@aztec-labs/bb-prover` a different bb.js is unsupported: Presto would still prove with the pinned release.
 
 ## Claude Code Skill
 

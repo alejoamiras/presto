@@ -94,6 +94,16 @@ export const WINDOWS_BB_CHECKSUMS: Record<string, WindowsBbPin> = {
     provenance: "manual-review",
     note: "v6.0.0-rc.6 asset (the bb.js Aztec 6.0.0-rc.3 pins), reviewed 2026-10-13: prerelease published 2026-10-08 by AztecBot, tag on the GitHub-verified commit 654cc60 that v6.0.0-rc.1's tag also names; downloaded-file sha256sum EQUALS the GitHub API asset digest (7120520 bytes). Diff against the 6.0.0-rc.1 pin (re-downloaded, still 6335a036…6607): still a single bb.exe (PE, 39320576 bytes, embeds 6.0.0-rc.6), no bundled DLLs, identical imported-DLL set. Reproduce: curl -fsSL -o bb.tar.gz https://github.com/AztecProtocol/barretenberg/releases/download/v6.0.0-rc.6/barretenberg-amd64-windows.tar.gz && sha256sum bb.tar.gz. Change-detector only (SEC-02).",
   },
+  "6.0.0-rc.7": {
+    sha256: "d4cffc1ec04816312fdbbcff3a18994f6d55f800b5829edf5e0420f117e56b44",
+    provenance: "manual-review",
+    note: "v6.0.0-rc.7 asset (the bb.js Aztec 6.0.0-rc.4 pins), reviewed 2026-10-21: prerelease published 2026-10-20 by AztecBot, uploaded by AztecBot; downloaded-file sha256sum EQUALS the GitHub API asset digest (8390830 bytes). The tag names commit 654cc60, as v6.0.0-rc.1 and v6.0.0-rc.6 do, so it is not evidence. Diff against the 6.0.0-rc.6 pin (re-downloaded, still d79cb3ee…d1ac): still a single bb.exe (PE x86-64, 46878208 bytes, embeds 6.0.0-rc.7), no bundled DLLs, identical imported-DLL set. .text grew 7.3 MB; bb.js 6.0.0-rc.7's provenance-attested amd64-linux bb grew 7.5 MB over rc.6's, so the growth is upstream. Reproduce: curl -fsSL -o bb.tar.gz https://github.com/AztecProtocol/barretenberg/releases/download/v6.0.0-rc.7/barretenberg-amd64-windows.tar.gz && sha256sum bb.tar.gz. Change-detector only (SEC-02).",
+  },
+  "6.0.0": {
+    sha256: "0e4a356ad74ea6fe75b1915ca1aac8f31b7ff4aa60b43e33d372a8f213fac1cb",
+    provenance: "manual-review",
+    note: "v6.0.0 asset (the bb.js Aztec 6.0.0 pins), reviewed 2026-10-22: stable release published 2026-10-22 by AztecBot, uploaded by AztecBot; downloaded-file sha256sum EQUALS the GitHub API asset digest (8390827 bytes). The tag names commit 654cc60, as every v6 tag before it does, so it is not evidence. Diff against the 6.0.0-rc.7 pin (re-downloaded, still d4cffc1e…6b44): same size (46878208 bytes), and the only differing bytes are 5 in the embedded version string (6.0.0-rc.7 → 6.0.0). Reproduce: curl -fsSL -o bb.tar.gz https://github.com/AztecProtocol/barretenberg/releases/download/v6.0.0/barretenberg-amd64-windows.tar.gz && sha256sum bb.tar.gz. Change-detector only (SEC-02).",
+  },
 };
 
 export function windowsBbReleaseTag(version: string): string {

@@ -19,8 +19,8 @@ describe("public contract", () => {
     expect(typeof noir.resolveVerifierTarget).toBe("function");
     expect(typeof noir.loopbackPermission).toBe("function");
     expect(typeof noir.watchLoopbackPermission).toBe("function");
-    expect(noir.TESTED_BB_VERSION).toBe("6.0.0-rc.6");
-    expect(noir.TESTED_BB_VERSIONS).toEqual(["6.0.0-rc.6"]);
+    expect(noir.TESTED_BB_VERSION).toBe("6.0.0");
+    expect(noir.TESTED_BB_VERSIONS).toEqual(["6.0.0"]);
     expect(noir.VERIFIER_TARGETS).toContain("noir-recursive-no-zk");
     const target: VerifierTarget = "evm";
     const options: PrestoUltraHonkBackendOptions = { fallback: "none" };
@@ -36,7 +36,7 @@ describe("public contract", () => {
       'fallback: "none"',
       "PrestoUnavailableError",
       "TESTED_BB_VERSION",
-      "@aztec-foundation/bb.js@6.0.0-rc.6",
+      "@aztec-foundation/bb.js@6.0.0",
       "verifyProof",
     ]) {
       expect(readme).toContain(needle);

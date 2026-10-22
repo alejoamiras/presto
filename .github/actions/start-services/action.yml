@@ -14,7 +14,7 @@ runs:
       if: inputs.aztec_node_url == 'http://localhost:8080'
       shell: bash
       env:
-        FORGE_BROADCAST_TIMEOUT: "300"
+        FORGE_BROADCAST_TIMEOUT_MS: "300000"
       run: aztec start --local-network > /tmp/aztec-node.log 2>&1 &
 
     - name: Wait for Aztec node

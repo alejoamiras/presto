@@ -12,7 +12,7 @@ You are helping a developer integrate `@alejoamiras/presto` into their Aztec dAp
 
 - **Presto's app version is not an Aztec version.** Presto proves with the `bb` release this SDK
   sends with every request (`x-aztec-version`, automatic: the SDK's `@aztec-foundation/bb.js`
-  version, which since Aztec 6.0.0-rc.3 differs from the `@aztec-labs/*` one) and fetches that `bb`
+  version, which since Aztec 6.0.0-rc.3 can differ from the `@aztec-labs/*` one) and fetches that `bb`
   on first use; `/health.aztec_version` is only the version bundled with the app. See
   [Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions)
 - **Install and connect prompts already exist:** `<presto-banner>` from
@@ -20,7 +20,7 @@ You are helping a developer integrate `@alejoamiras/presto` into their Aztec dAp
   Don't design your own
 - Package: `@alejoamiras/presto`
 - Ships its Aztec packages as exact-pinned dependencies (installs standalone; dedupes with a host on the same exact version)
-- `@testnet` targets Aztec v6 (`6.0.0-rc.1`, `@aztec-labs/*` and `@aztec-foundation/*`); `latest` stays on Aztec v5 (`5.2.0`, `@aztec/*`). Native v6 proving needs the Presto app 1.1.3 or later
+- `@testnet` targets Aztec v6 (`6.0.0`, `@aztec-labs/*` and `@aztec-foundation/*`); `latest` stays on Aztec v5 (`5.2.0`, `@aztec/*`). Native v6 proving needs the Presto app 1.1.3 or later
 - Presto ports: HTTP `127.0.0.1:59833`, HTTPS `127.0.0.1:59834`
 - Zero config by default — just `new PrestoProver()`; constructing it sends nothing
 - **Never contact Presto on page load in a browser.** The first status check or proof makes Chrome
@@ -152,7 +152,7 @@ prompt again. The browser still decides every request, so a site it blocks is ne
 ### 1. Install
 
 ```bash
-npm install @alejoamiras/presto@testnet   # Aztec v6 (6.0.0-rc.1)
+npm install @alejoamiras/presto@testnet   # Aztec v6 (6.0.0)
 npm install @alejoamiras/presto           # Aztec v5 (5.2.0), npm `latest`
 ```
 

@@ -96,7 +96,7 @@ The defaults are `59833` for HTTP and `59834` for the desktop HTTPS listener. Th
 
 ### Automatic Version Management
 
-The presto automatically downloads and caches `bb` binaries on demand. When the SDK sends a prove request for a `bb` release the presto doesn't have yet (the SDK sends its bb.js version, which since Aztec 6.0.0-rc.3 differs from the `@aztec-labs/*` one), it downloads that binary from Aztec's GitHub releases, caches it, and uses it immediately.
+The presto automatically downloads and caches `bb` binaries on demand. When the SDK sends a prove request for a `bb` release the presto doesn't have yet (the SDK sends its bb.js version, which since Aztec 6.0.0-rc.3 can differ from the `@aztec-labs/*` one), it downloads that binary from Aztec's GitHub releases, caches it, and uses it immediately.
 
 Cached binaries are stored in `~/.presto/versions/` with a retention policy per network tier:
 
@@ -215,7 +215,7 @@ The presto will download the matching `bb` binary on the first prove request (fr
 | `ALLOWED_ORIGINS` | Comma-separated browser origins pre-approved for `/prove`. **Unset = deny-by-default** (non-localhost denied; localhost auto-approved). Mutually exclusive with `--allow-all` / `PRESTO_ALLOW_ALL`. |
 | `PRESTO_ALLOW_ALL` | `1` or `true` → approve **all** browser origins (the pre-SEC-01 behavior). Opt-in; mutually exclusive with `ALLOWED_ORIGINS`. Prefer `ALLOWED_ORIGINS` for an explicit allowlist. (`--allow-all` CLI flag is equivalent.) |
 | `BB_BINARY_PATH` | Path to a pre-installed `bb` binary. It runs for **every** request, whatever `bb` release that request names; a request for an uncached release still downloads that release first, then runs this one. Leave it unset to prove with several `bb` releases. |
-| `AZTEC_BB_VERSION` | The `bb` release to report as bundled (`/health.aztec_version`), e.g. `6.0.0-rc.6` for Aztec 6.0.0-rc.3; a request for it skips the download. A label, not a check: nothing confirms it matches the binary. Unset, `/health` reports `unknown`. |
+| `AZTEC_BB_VERSION` | The `bb` release to report as bundled (`/health.aztec_version`), e.g. `6.0.0`, the bb.js version Aztec 6.0.0 pins; a request for it skips the download. A label, not a check: nothing confirms it matches the binary. Unset, `/health` reports `unknown`. |
 | `GITHUB_TOKEN` | Optional token for the GitHub API call that finds a version's `bb` release. Anonymous calls are capped at 60 an hour per address, which shared CI runners can exhaust. |
 | `PRESTO_HOME` | Private state directory (`config.json`, `versions/`, `data/`) instead of the per-user defaults. Required by `--port`, so parallel instances on one host never share state. The bb CRS (`~/.bb-crs`) stays shared. |
 | `RUST_LOG` | Standard `tracing-subscriber` filter (e.g. `info`, `debug`). |

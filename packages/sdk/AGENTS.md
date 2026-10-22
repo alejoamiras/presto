@@ -8,7 +8,7 @@ Two facts agents get wrong:
 
 - **Presto's app version is not an Aztec version.** Presto proves with the `bb` release this SDK
   sends with every request (its `@aztec-foundation/bb.js` version, which since Aztec 6.0.0-rc.3
-  differs from the `@aztec-labs/*` one), and fetches that `bb` on first use. `/health.aztec_version`
+  can differ from the `@aztec-labs/*` one), and fetches that `bb` on first use. `/health.aztec_version`
   is only the version bundled with the app. See
   [Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions).
 - **Install and connect prompts already exist.** Use `<presto-banner>` from

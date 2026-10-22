@@ -74,7 +74,7 @@ function createLazySimulator(): CircuitSimulator {
 /**
  * The bb release this SDK proves with: its exact `@aztec-foundation/bb.js` pin. Presto downloads and
  * caches `bb` by this barretenberg tag, so it is what `x-aztec-version` carries; since Aztec
- * 6.0.0-rc.3 it differs from the `@aztec-labs/stdlib` version, which names no bb release. Only the
+ * 6.0.0-rc.3 it can differ from the `@aztec-labs/stdlib` version, which names no bb release. Only the
  * LEADING non-digits are stripped, so a prerelease suffix like `-rc.6` survives.
  */
 export function sdkBbVersion(): string | undefined {

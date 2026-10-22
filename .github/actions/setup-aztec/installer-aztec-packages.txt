@@ -59,4 +59,3 @@
 @aztec-labs/wallet-sdk
 @aztec-labs/wallets
 @aztec-labs/world-state
-@aztec/viem

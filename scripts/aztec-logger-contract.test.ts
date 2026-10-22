@@ -28,7 +28,7 @@ describe("@aztec-labs/foundation logger JEST_WORKER_ID contract", () => {
     // equality-restricted (`=== "x"`) rewrite would invert/narrow the bypass while still
     // matching a loose contains-check.
     const m = src.match(
-      /if\s*\(\s*(!?)\s*process\.env\.JEST_WORKER_ID\s*([^)]*)\)\s*(\{[\s\S]*?\n\s*\})/,
+      /if\s*\(\s*(!?)\s*(?:process\.env|getEnv\(\))\.JEST_WORKER_ID\s*([^)]*)\)\s*(\{[\s\S]*?\n\s*\})/,
     );
     expect(m, `no JEST_WORKER_ID conditional found in ${loggerPath}`).toBeTruthy();
     expect(m?.[1], "JEST_WORKER_ID condition is NEGATED — the bypass polarity flipped").toBe("");
@@ -44,6 +44,16 @@ describe("@aztec-labs/foundation logger JEST_WORKER_ID contract", () => {
       consequent,
       "Jest branch unexpectedly builds a transport (worker) — the bypass is gone",
     ).not.toContain("pino.transport");
+  });
+
+  test("getEnv(), when the branch reads through it, is process.env, where the preloads set the flag", () => {
+    if (!/getEnv\(\)\.JEST_WORKER_ID/.test(src)) return;
+    const env = readFileSync(join(dirname(entry), "../config/env.js"), "utf8");
+    const body = env.match(/export function getEnv\(\)\s*\{([\s\S]*?)\n\}/)?.[1] ?? "";
+    expect(body, "getEnv() no longer returns process.env").toMatch(
+      /return\s+process\.env\s*\?\?\s*\{\}\s*;/,
+    );
+    expect(body.match(/return\b/g)?.length, "getEnv() gained another return path").toBe(2);
   });
 
   test("the worker transport is still what the non-Jest path builds (bypass is meaningful)", () => {

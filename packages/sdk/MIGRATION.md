@@ -1,6 +1,6 @@
 # Migration guide
 
-## Aztec v6 (`6.0.0-rc.3`)
+## Aztec v6 (`6.0.0`)
 
 Aztec v6 renames its npm scopes: most `@aztec/<name>` packages become `@aztec-labs/<name>`, while
 bb.js, the Noir packages and the L1 artifacts move to `@aztec-foundation/` (for example
@@ -8,12 +8,12 @@ bb.js, the Noir packages and the L1 artifacts move to `@aztec-foundation/` (for 
 dependencies, then install the SDK built for v6:
 
 ```bash
-npm install @alejoamiras/presto@testnet   # Aztec v6, 6.0.0-rc.3
+npm install @alejoamiras/presto@testnet   # Aztec v6, 6.0.0
 npm install @alejoamiras/presto           # Aztec v5 (5.2.0), npm `latest`
 ```
 
-`latest` stays on v5 until Aztec v6 is stable. The SDK API is unchanged. From Aztec 6.0.0-rc.3 the
-`@aztec-foundation/*` packages carry their own release number (rc.3 ships bb.js 6.0.0-rc.6), and the
+`latest` stays on v5 until the stable v6 release is promoted to it. The SDK API is unchanged. From Aztec 6.0.0-rc.3 the
+`@aztec-foundation/*` packages carry their own release number (6.0.0-rc.4 shipped bb.js 6.0.0-rc.7; 6.0.0 ships 6.0.0), and the
 SDK sends its bb.js version as `x-aztec-version`; that header and `status.sdkAztecVersion` keep their
 historical names. Native proving for v6 needs
 the Presto app 1.1.3 or later, which downloads `bb` from `AztecProtocol/barretenberg`; an older app

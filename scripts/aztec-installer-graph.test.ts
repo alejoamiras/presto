@@ -24,12 +24,7 @@ function prefix(
   const root = mkdtempSync(join(tmpdir(), "aztec-graph-"));
   roots.push(root);
   const version = (path: string) =>
-    versions[path] ??
-    (path === VIEM
-      ? "2.38.3"
-      : path.includes("@aztec-foundation/")
-        ? RELEASE.foundation
-        : RELEASE.labs);
+    versions[path] ?? (path.includes("@aztec-foundation/") ? RELEASE.foundation : RELEASE.labs);
   for (const [path, name] of Object.entries(installed)) {
     mkdirSync(join(root, path), { recursive: true });
     writeFileSync(
@@ -47,14 +42,14 @@ function prefix(
   return root;
 }
 
-const VIEM = "node_modules/@aztec-labs/aztec/node_modules/@aztec/viem";
+const LEGACY = "node_modules/@aztec-labs/aztec/node_modules/@aztec/foundation";
 const INSTALLED = {
   "node_modules/@aztec-labs/aztec": "@aztec-labs/aztec",
-  [VIEM]: "@aztec/viem",
+  [LEGACY]: "@aztec/foundation",
   "node_modules/snappy": "snappy",
 };
 const OTHER_PLATFORM = { "node_modules/@aztec-foundation/wsdb-darwin-arm64": "" };
-const LISTED = ["@aztec-foundation/wsdb-darwin-arm64", "@aztec-labs/aztec", "@aztec/viem"];
+const LISTED = ["@aztec-foundation/wsdb-darwin-arm64", "@aztec-labs/aztec", "@aztec/foundation"];
 const clean = { added: [], removed: [], offRelease: [] };
 
 describe("installer graph check", () => {
@@ -94,12 +89,12 @@ describe("installer graph check", () => {
       prefix(
         INSTALLED,
         { ...OTHER_PLATFORM, [nested]: "" },
-        { [nested]: "6.0.0-rc.2", [VIEM]: RELEASE.labs },
+        { [nested]: "6.0.0-rc.2", [LEGACY]: "2.38.3" },
       ),
     );
     expect(compareGraph(graph, LISTED, RELEASE)).toEqual({
       ...clean,
-      offRelease: ["@aztec-foundation/wsdb-darwin-arm64@6.0.0-rc.2", `@aztec/viem@${RELEASE.labs}`],
+      offRelease: ["@aztec-foundation/wsdb-darwin-arm64@6.0.0-rc.2", "@aztec/foundation@2.38.3"],
     });
   });
 
@@ -129,6 +124,8 @@ describe("installer graph check", () => {
   test("the list takes exact names only", () => {
     expect(() => parseReviewedList("@aztec-labs/*\n")).toThrow("not an exact Aztec package name");
     expect(() => parseReviewedList("left-pad\n")).toThrow("not an exact Aztec package name");
-    expect(() => parseReviewedList("@aztec/viem\n@aztec/viem\n")).toThrow("listed twice");
+    expect(() => parseReviewedList("@aztec/foundation\n@aztec/foundation\n")).toThrow(
+      "listed twice",
+    );
   });
 });
