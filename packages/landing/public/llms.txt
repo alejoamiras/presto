@@ -4,7 +4,7 @@
 
 Facts an integrating agent must get right:
 
-- Presto's app version (1.x) is not an Aztec version. Presto proves with the `bb` release the dApp's SDK sends with every request (its bb.js version, which since Aztec 6.0.0-rc.3 differs from the `@aztec-labs/*` one), and downloads that `bb` on first use; the desktop app bundles one. `/health.aztec_version` names only the bundled version.
+- Presto's app version (1.x) is not an Aztec version. Presto proves with the `bb` release the dApp's SDK sends with every request (its bb.js version, which since Aztec 6.0.0-rc.3 can differ from the `@aztec-labs/*` one), and downloads that `bb` on first use; the desktop app bundles one. `/health.aztec_version` names only the bundled version.
 - Do not design install or connect prompts. Use the `<presto-banner>` web component from `@alejoamiras/presto-banners`; it is keyed to the SDK's `PrestoStatus`.
 - Never contact Presto on page load. Chrome 142+ and Firefox 153+ ask the visitor for permission on the first request. Keep the prover local with `setForceLocal(true)`, read `loopbackPermission()` (it never prompts), and connect only from a click that explains the prompt.
 - Keep the browser default of HTTPS-only private proving. `httpsOnly: false` with `allowInsecureDowngrade: true` is only for a visitor-confirmed, current-tab escape hatch.

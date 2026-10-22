@@ -50,7 +50,7 @@ npm install @alejoamiras/presto-noir @aztec/bb.js@5.2.0
 The bb.js peer (`@aztec-foundation/bb.js` from 2.0.0, `@aztec/bb.js` before) is pinned **exactly** to
 the release this adapter is tested against (`TESTED_BB_VERSION`, see [Compatibility](#compatibility));
 a project already on that bb.js keeps its single copy. `latest` stays on the 1.x line for bb.js 5.2.0
-until Aztec v6 is stable. The transport comes from [`@alejoamiras/presto-core`](../sdk-core/README.md),
+until the v6 line is promoted to it. The transport comes from [`@alejoamiras/presto-core`](../sdk-core/README.md),
 an exact-pinned dependency. Native proving needs Presto **1.1.0** or newer, and **1.1.3** or newer for
 bb 6, which older apps cannot download. An app older than 1.1.0 does not advertise `ultra_honk` in
 `/health.schemes`, so nothing is sent and the backend proves in WASM (`scheme-unsupported`).

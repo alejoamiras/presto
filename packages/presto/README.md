@@ -96,7 +96,7 @@ The defaults are `59833` for HTTP and `59834` for the desktop HTTPS listener. Th
 
 ### Automatic Version Management
 
-The presto automatically downloads and caches `bb` binaries on demand. When the SDK sends a prove request for a `bb` release the presto doesn't have yet (the SDK sends its bb.js version, which since Aztec 6.0.0-rc.3 differs from the `@aztec-labs/*` one), it downloads that binary from Aztec's GitHub releases, caches it, and uses it immediately.
+The presto automatically downloads and caches `bb` binaries on demand. When the SDK sends a prove request for a `bb` release the presto doesn't have yet (the SDK sends its bb.js version, which since Aztec 6.0.0-rc.3 can differ from the `@aztec-labs/*` one), it downloads that binary from Aztec's GitHub releases, caches it, and uses it immediately.
 
 Cached binaries are stored in `~/.presto/versions/` with a retention policy per network tier:
 

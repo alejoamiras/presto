@@ -238,7 +238,7 @@ pub fn versions_to_evict_for_size(
 /// `bb` releases KNOWN to be vulnerable — a REVOCATION list, **EMPTY by default**.
 ///
 /// `x-aztec-version` carries the barretenberg release the client proves with (the SDK's exact
-/// `@aztec-foundation/bb.js` pin, which since Aztec 6.0.0-rc.3 differs from the `@aztec-labs/*`
+/// `@aztec-foundation/bb.js` pin, which since Aztec 6.0.0-rc.3 can differ from the `@aztec-labs/*`
 /// version), and each client needs exactly that `bb`. So a "newer-is-safer" floor
 /// keyed on this string would wrongly reject a legitimate older-but-compatible dApp (e.g. an Aztec 5.0.1
 /// app talking to a 5.1.0-bundled presto). Instead this is a targeted denylist: the app owner adds a
