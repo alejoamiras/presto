@@ -129,7 +129,7 @@ confirmed, current-tab-only HTTP escape hatch by setting both `httpsOnly: false`
 > `unconfirmed` diagnosis. The SDK's loopback annotation does not bypass permission, and HTTPS is subject to the
 > same address-space gate.
 
-> **Versioning / dist-tags.** SDK `X.Y.Z` targets Aztec `X.Y.Z` — the published version is derived from the pinned Aztec `stdlib` dependency (`@aztec-labs/stdlib` from v6, `@aztec/stdlib` through v5). `latest` carries v6 from 6.0.0, v5 stays installable by exact version (`5.2.0-revision.5`), and no prerelease is ever promoted to `latest`. The standard release path publishes on npm's **`testnet`** dist-tag; **`latest`** is moved to it in a separate, deliberate step, so the two usually match and differ only while a newer line is being validated or after a rollback. The presto downloads the matching `bb` binary **at runtime**, so an Aztec version bump ships **SDK-only** — already-installed prestos need no re-release. `@alejoamiras/presto-core` and `@alejoamiras/presto-noir` carry their own semver (their `package.json` version, published once) and follow the same `testnet` → `latest` path. See the [release runbook](docs/RELEASE_RUNBOOK.md).
+> **Versioning / dist-tags.** SDK `X.Y.Z` targets Aztec `X.Y.Z` — the published version is derived from the pinned Aztec `stdlib` dependency (`@aztec-labs/stdlib` from v6, `@aztec/stdlib` through v5). `latest` carries v6 from 6.0.0, v5 stays installable by exact version (`5.2.0-revision.5`), and only a stable or `-revision.N` version is ever promoted to `latest`. The standard release path publishes on npm's **`testnet`** dist-tag; **`latest`** is moved to it in a separate, deliberate step, so the two usually match and differ only while a newer line is being validated or after a rollback. The presto downloads the matching `bb` binary **at runtime**, so an Aztec version bump ships **SDK-only** — already-installed prestos need no re-release. `@alejoamiras/presto-core` and `@alejoamiras/presto-noir` carry their own semver (their `package.json` version, published once) and follow the same `testnet` → `latest` path. See the [release runbook](docs/RELEASE_RUNBOOK.md).
 
 ### For Noir circuits (`@alejoamiras/presto-noir`)
 
@@ -152,9 +152,9 @@ const { proof, publicInputs } = await backend.generateProof(witness, {
 ```
 
 Any circuit compiled with nargo, any bb verifier target, no Aztec node. Native proving needs
-Presto **1.1.0** or newer (an older app does not advertise the scheme, so the backend proves in
-WASM without sending anything); the transport
-rules above — HTTPS-only in browsers, origin approval, no automatic HTTP `/prove` — are the same.
+Presto **1.1.3** or newer for bb.js 6, or **1.1.0** for bb.js 5.2.0 (an app older than 1.1.0 does not
+advertise the scheme, so the backend proves in WASM without sending anything); the transport rules
+above — HTTPS-only in browsers, origin approval, no automatic HTTP `/prove` — are the same.
 See the [presto-noir README](packages/sdk-noir/README.md).
 
 ### For users (Desktop App)
