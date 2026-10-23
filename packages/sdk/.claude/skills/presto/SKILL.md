@@ -20,7 +20,7 @@ You are helping a developer integrate `@alejoamiras/presto` into their Aztec dAp
   Don't design your own
 - Package: `@alejoamiras/presto`
 - Ships its Aztec packages as exact-pinned dependencies (installs standalone; dedupes with a host on the same exact version)
-- `@testnet` targets Aztec v6 (`6.0.0`, `@aztec-labs/*` and `@aztec-foundation/*`); `latest` stays on Aztec v5 (`5.2.0`, `@aztec/*`). Native v6 proving needs the Presto app 1.1.3 or later
+- `latest` targets Aztec v6 (`6.0.0`, `@aztec-labs/*` and `@aztec-foundation/*`); `@5.2.0-revision.5` targets Aztec v5 (`5.2.0`, `@aztec/*`). Native v6 proving needs the Presto app 1.1.3 or later
 - Presto ports: HTTP `127.0.0.1:59833`, HTTPS `127.0.0.1:59834`
 - Zero config by default — just `new PrestoProver()`; constructing it sends nothing
 - **Never contact Presto on page load in a browser.** The first status check or proof makes Chrome
@@ -152,8 +152,8 @@ prompt again. The browser still decides every request, so a site it blocks is ne
 ### 1. Install
 
 ```bash
-npm install @alejoamiras/presto@testnet   # Aztec v6 (6.0.0)
-npm install @alejoamiras/presto           # Aztec v5 (5.2.0), npm `latest`
+npm install @alejoamiras/presto                    # Aztec v6 (6.0.0), npm `latest`
+npm install @alejoamiras/presto@5.2.0-revision.5   # Aztec v5 (5.2.0)
 ```
 
 ### 2. Create the prover
@@ -372,7 +372,7 @@ embed an ordinary cross-origin iframe whose document does not send its own COEP;
 
 ## Checklist
 
-- [ ] `npm install @alejoamiras/presto@testnet` (Aztec v6) or `@alejoamiras/presto` (Aztec v5)
+- [ ] `npm install @alejoamiras/presto` (Aztec v6) or `@alejoamiras/presto@5.2.0-revision.5` (Aztec v5)
 - [ ] Create one `new PrestoProver()`, call `setForceLocal(true)`, and pass that instance to PXE or wallet
 - [ ] Nothing contacts Presto on page load: no `checkPrestoStatus()` before consent unless `loopbackPermission()` is `"granted"`
 - [ ] A Connect button explains the browser's permission question before it appears, then connects
