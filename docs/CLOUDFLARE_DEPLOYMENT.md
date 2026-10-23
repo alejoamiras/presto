@@ -34,16 +34,19 @@ branch decision lives in `scripts/workers-build.ts`.
 | Build command | `bun scripts/workers-build.ts landing` | `bun scripts/workers-build.ts playground` |
 | Deploy command | `bunx wrangler deploy --config packages/landing/wrangler.jsonc` | `bunx wrangler deploy --config packages/playground/wrangler.jsonc` |
 | Preview command | `bunx wrangler preview --config packages/landing/wrangler.jsonc` | `bunx wrangler preview --config packages/playground/wrangler.jsonc` |
-| Build variables | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1` | same, plus `NODE_VERSION=24.20.0` |
+| Build variables | `BUN_VERSION=1.4.2`, `SKIP_DEPENDENCY_INSTALL=1` | same, plus `NODE_VERSION=24` |
 | Build watch paths (include) | `packages/landing/*`, `scripts/*`, `package.json`, `bun.lock`, `bunfig.toml`, `.bun-version` | `packages/playground/*`, `packages/sdk/*`, `packages/sdk-core/*`, `packages/sdk-noir/*`, `packages/banners/*`, `fixtures/noir/*`, `scripts/*`, `.github/scripts/*`, `package.json`, `bun.lock`, `bunfig.toml`, `.bun-version`, `tsconfig.json` |
 | API token | the custom build token below | same |
 
 The build script installs with `--frozen-lockfile --ignore-scripts` (no dependency lifecycle script
-runs next to the token), refuses a Bun other than `.bun-version`, and for the playground checks npm
-≥ 11 (npm 10 omits verified attestations from `npm audit signatures --json`), `bash` and `tar` on
-every branch, so a preview proves the image can run the production path. Keep `BUN_VERSION` equal to
-`.bun-version`: a Bun bump that forgets the dashboard fails the build instead of building on the
-wrong Bun. An empty commit bypasses watch paths and always builds.
+runs next to the token) and refuses a Bun other than `.bun-version`. For the playground it checks
+`bash` and `tar` on every branch, so a preview proves the image can run the production path, and
+runs exactly the npm the playground's lockfile pins (its `npm` devDependency, npm 11 or later),
+never the image's: the image puts its own npm 10.9.2 first on `PATH` whatever `NODE_VERSION`
+installs, and npm 10 omits verified attestations from `npm audit signatures --json`.
+`NODE_VERSION` only picks the Node that runs it; keep it on the current Node 24 release. Keep
+`BUN_VERSION` equal to `.bun-version`: a Bun bump that forgets the dashboard fails the build
+instead of building on the wrong Bun. An empty commit bypasses watch paths and always builds.
 
 **Moving the Bun version.** Each Worker has two build triggers, production (`main`) and preview
 (every other branch), and each keeps its own build variables. The dashboard's Build variables edit
