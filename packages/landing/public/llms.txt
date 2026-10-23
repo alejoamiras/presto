@@ -13,7 +13,7 @@ Facts an integrating agent must get right:
 
 ## Packages
 
-- [@alejoamiras/presto](https://github.com/alejoamiras/presto/blob/main/packages/sdk/README.md): Aztec SDK with a drop-in `PrestoProver`. `npm install @alejoamiras/presto@testnet` targets Aztec v6; npm `latest` targets Aztec v5.
+- [@alejoamiras/presto](https://github.com/alejoamiras/presto/blob/main/packages/sdk/README.md): Aztec SDK with a drop-in `PrestoProver`. `npm install @alejoamiras/presto` targets Aztec v6; `@alejoamiras/presto@5.2.0-revision.5` targets Aztec v5.
 - [@alejoamiras/presto-noir](https://github.com/alejoamiras/presto/blob/main/packages/sdk-noir/README.md): drop-in for bb.js `UltraHonkBackend`, proving any Noir circuit natively with WASM fallback.
 - [@alejoamiras/presto-banners](https://github.com/alejoamiras/presto/blob/main/packages/banners/README.md): `<presto-banner>` install and connect banners for integrating dApps.
 - [@alejoamiras/presto-core](https://github.com/alejoamiras/presto/blob/main/packages/sdk-core/README.md): the transport both SDKs share; dApps rarely import it directly.
