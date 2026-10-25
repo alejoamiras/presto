@@ -114,7 +114,7 @@ Restore `src-tauri/gen/schemas/` after each build.
 0, case_24 alone (`--exact`) is green 20 of 20, and the mutant fails 3 of 3; from the root,
 `bun run lint:clippy` and `bun run lint` exit 0.
 
-### Phase 3: auth-flow hooks (#98) [ ]
+### Phase 3: auth-flow hooks (#98) [✓]
 Change the spec. Run each case at retry 0 in a fresh app session (no carried cooldown), from
 `packages/presto`: `bun run test:e2e:webdriver --spec ./e2e-webdriver/auth-flow.spec.ts` against a
 `--features webdriver` app (the archived runner, `recon.md`). Runs: (a) old hooks + a `throw` after
