@@ -9,8 +9,8 @@ not belong here. Sections are stable; append, never re-sort.
 
 - **Hoisting RAII guards into a struct reverses their drop order** (fields drop in declaration order).
   `archive/presto-noir/lessons/phase-3.md`
-- **A blocking `recv()` in `#[tokio::test]` deadlocks** — the single-threaded runtime cannot drive the
-  sender. `archive/presto-noir/lessons/phase-4.md`
+- **`#[tokio::test]` is one thread**: a blocking `recv()` deadlocks it, and a blocked task stalls its
+  siblings, which `multi_thread` hides. `archive/presto-noir/lessons/phase-4.md`, `archive/tests-1/plan.md`
 - **`Guard::drop` runs before tokio reaps the child** — confirm a kill from a spawned task, not `Drop`.
   `archive/presto-noir/lessons/arc-1-review.md`
 - **Clippy scores `tracing!` expansions and `#[test]` bodies under `--all-targets`**.
@@ -26,6 +26,9 @@ not belong here. Sections are stable; append, never re-sort.
   lock that writes it. `archive/custom-bb/lessons/phase-3.md`
 - **Linux cannot compile macOS `cfg` code** (`aws-lc-sys` needs a Darwin toolchain) — CI's macOS
   lane is the first compile; check `libc` bindings by hand. `archive/custom-bb/lessons/phase-1.md`
+- **An error's `to_string()` can name a local path and drop the OS reason** (tar, tempfile) — keep
+  it off the wire; log `error = &e as &dyn Error`, which prints `error.sources`.
+  `archive/server-1/recon.md`
 
 ## Build, bundling and dependencies
 
@@ -70,8 +73,9 @@ not belong here. Sections are stable; append, never re-sort.
   (2026-10, 6.0.0-rc.3) `archive/presto-rc3/lessons/phase-4.md`
 - **Pin a test host to `.test`, not `.invalid`** — resolvers may NXDOMAIN `.invalid` before the hosts
   file (RFC 6761 §6.4). `archive/rc-update-channel/lessons/phase-0.md`
-- **An env var set in one test leaks into every concurrent test** — run that test alone in a child
-  process. `archive/custom-bb/lessons/phase-2.md`
+- **Env vars and `flock` probes need the test process alone** — a var leaks into concurrent tests, and
+  a spawn's child holds every descriptor until it execs; use core's `run_alone()`.
+  `archive/custom-bb/lessons/phase-2.md`, `archive/tests-1/lessons/phase-0.md`
 - **Playwright's `reuseExistingServer` on a fixed port tests whichever worktree's server is up** —
   check the port is free first. `archive/custom-bb/lessons/phase-4.md`
 
@@ -129,7 +133,8 @@ not belong here. Sections are stable; append, never re-sort.
 - **Local shellcheck 0.11 passes what CI's 0.9 fails** — use `koalaman/shellcheck:v0.9.0`.
   `archive/workers-builds/lessons/post-impl.md`
 - **A fresh worktree needs `frontend:build` and the `binaries/bb-<triple>` placeholders before any
-  `src-tauri` cargo command**; a `--features webdriver` build rewrites `gen/schemas/*.json`.
+  `src-tauri` cargo command**; a `src-tauri` build, even `lint:clippy`, can rewrite
+  `gen/schemas/*.json`.
   `archive/custom-bb/lessons/phase-1.md`
 - **wdio's tray host without root: `apt-get download stalonetray`, `dpkg -x` into a prefix,
   `dbus-run-session`.** `archive/custom-bb/lessons/phase-5.md`

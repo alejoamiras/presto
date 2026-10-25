@@ -208,6 +208,8 @@ mod tests {
             std::fs::read(&self.path).unwrap()
         }
 
+        /// Exact only in a test run with `crate::run_alone`: a concurrent test's spawn holds the
+        /// lock from its fork to its exec.
         fn lock_is_free(&self) -> bool {
             crate::file_lock::try_lock_exclusive(&self.path.with_extension("json.lock"))
                 .unwrap()
@@ -328,6 +330,9 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_directory_never_blocks_and_fails_the_save() {
+        if crate::run_alone() {
+            return;
+        }
         let dir = Dir::new();
         std::fs::create_dir_all(&dir.path).unwrap();
         let store = dir.store();
@@ -344,6 +349,9 @@ mod tests {
 
     #[test]
     fn the_disk_never_moves_backwards() {
+        if crate::run_alone() {
+            return;
+        }
         let dir = Dir::new();
         let store = dir.store();
         let six = signed("list-6");
@@ -360,6 +368,9 @@ mod tests {
 
     #[test]
     fn a_different_list_at_the_stored_version_is_equivocation() {
+        if crate::run_alone() {
+            return;
+        }
         let dir = Dir::new();
         let store = dir.store();
         let five = signed("list-5");
@@ -374,6 +385,9 @@ mod tests {
 
     #[test]
     fn a_save_waits_for_the_lock_and_releases_it() {
+        if crate::run_alone() {
+            return;
+        }
         let dir = Dir::new();
         let store = dir.store();
         assert!(matches!(

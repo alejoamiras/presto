@@ -9,6 +9,7 @@ use super::cache_layout::{
     bb_binary_name, sha256_file, verify_bb_entry, verify_cached_bb, versions_base_dir,
     write_bb_marker, MARKER_NAME,
 };
+use super::download_error::{DownloadError, DownloadFailure};
 use super::release_metadata::{
     current_platform, download_url, fetch_github_asset_digest, http_client, sha256_hex,
 };
@@ -18,7 +19,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::Duration;
 
-pub async fn download_bb(version: &AztecVersion) -> Result<PathBuf, Box<dyn Error + Send + Sync>> {
+pub async fn download_bb(version: &AztecVersion) -> Result<PathBuf, DownloadError> {
     // The `&AztecVersion` parameter IS the #99 traversal guard: a value of this type can only have
     // been built by `AztecVersion::parse`, which ran `is_valid_version`. An unsafe version therefore
     // cannot reach this sink (`remove_dir_all` below) — the bypass the old sink-side recheck defended
@@ -36,12 +37,23 @@ pub async fn download_bb(version: &AztecVersion) -> Result<PathBuf, Box<dyn Erro
     // uncached version would otherwise stream the full tarball only to discard it.
     let expected_digest = expected_digest(version_str).await?;
     let bytes = download_tarball(version).await?;
-    let archive_digest = sha256_hex(&bytes);
+    install_verified(version, &bytes, &expected_digest)
+}
+
+fn install_verified(
+    version: &AztecVersion,
+    bytes: &[u8],
+    expected_digest: &str,
+) -> Result<PathBuf, DownloadError> {
+    let version_str: &str = version;
+    let archive_digest = sha256_hex(bytes);
     if archive_digest != expected_digest {
-        return Err(format!(
-            "Integrity check failed for bb v{version}: expected sha256:{expected_digest}, got sha256:{archive_digest}"
-        )
-        .into());
+        return Err(DownloadError::new(
+            DownloadFailure::IntegrityCheckFailed,
+            format!(
+                "Integrity check failed for bb v{version}: expected sha256:{expected_digest}, got sha256:{archive_digest}"
+            ),
+        ));
     }
     tracing::info!(
         version = version_str,
@@ -56,11 +68,15 @@ pub async fn download_bb(version: &AztecVersion) -> Result<PathBuf, Box<dyn Erro
     // codex #4: install ONLY into the trusted home-rooted cache; never fall back to CWD (which an
     // attacker could pre-own). No resolvable home ⇒ refuse to write a downloaded binary anywhere.
     let version_dir = versions_base_dir()
-        .ok_or(
-            "SECURITY: home directory unresolved; refusing to install bb to an untrusted location",
-        )?
+        .ok_or_else(|| {
+            DownloadError::new(
+                DownloadFailure::UnpackFailed,
+                "SECURITY: home directory unresolved; refusing to install bb to an untrusted location",
+            )
+        })?
         .join(version.as_str());
-    install_version_dir(&version_dir, &bytes, version_str, &archive_digest)?;
+    install_version_dir(&version_dir, bytes, version_str, &archive_digest)
+        .map_err(|error| DownloadError::new(DownloadFailure::UnpackFailed, error))?;
 
     tracing::info!(version = version_str, "bb cached successfully");
     Ok(version_dir.join(bb_binary_name()))
@@ -129,54 +145,49 @@ fn finalize_downloaded_binary(
 /// Content-Length is an early fail-fast; the running per-chunk counter is the real ceiling) stops a
 /// Content-Length-omitting server from OOM-ing us by streaming gigabytes. Mirrors copy-bb.ts
 /// `MAX_BB_TARBALL_BYTES`. Byte-identical to the pre-Q11 inline block.
-async fn download_tarball(version: &AztecVersion) -> Result<Vec<u8>, Box<dyn Error + Send + Sync>> {
+async fn download_tarball(version: &AztecVersion) -> Result<Vec<u8>, DownloadError> {
     let url = download_url(version);
     tracing::info!(version = %version, %url, "Downloading bb");
 
     let response = http_client()?.get(&url).send().await?;
-    if !response.status().is_success() {
-        return Err(format!(
-            "Failed to download bb v{version}: HTTP {}",
-            response.status()
-        )
-        .into());
+    let status = response.status();
+    if !status.is_success() {
+        return Err(DownloadError::new(
+            DownloadFailure::for_status(status),
+            format!("Failed to download bb v{version}: HTTP {status}"),
+        ));
     }
 
     const MAX_DOWNLOAD_BYTES: usize = 64 * 1024 * 1024;
     if let Some(len) = response.content_length() {
         if len > MAX_DOWNLOAD_BYTES as u64 {
-            return Err(format!(
-                "bb v{version} download too large (advertised {len} bytes, max {MAX_DOWNLOAD_BYTES})"
-            )
-            .into());
+            return Err(DownloadError::new(
+                DownloadFailure::RequestFailed,
+                format!(
+                    "bb v{version} download too large (advertised {len} bytes, max {MAX_DOWNLOAD_BYTES})"
+                ),
+            ));
         }
     }
     let mut response = response; // chunk() takes &mut self
     let mut bytes: Vec<u8> = Vec::with_capacity(8 * 1024 * 1024);
     while let Some(chunk) = response.chunk().await? {
         if bytes.len().saturating_add(chunk.len()) > MAX_DOWNLOAD_BYTES {
-            return Err(format!(
-                "bb v{version} download exceeded {MAX_DOWNLOAD_BYTES} bytes — aborting"
-            )
-            .into());
+            return Err(DownloadError::new(
+                DownloadFailure::RequestFailed,
+                format!("bb v{version} download exceeded {MAX_DOWNLOAD_BYTES} bytes — aborting"),
+            ));
         }
         bytes.extend_from_slice(&chunk);
     }
     Ok(bytes)
 }
 
-/// The GitHub release asset's published SHA-256 digest (hex) for this platform's tarball.
-/// **Fail-closed:** a missing digest (`Ok(None)`) or a fetch error is an error, not a skip — we never
-/// install unverified code. The bundled sidecar path never reaches here.
-async fn expected_digest(version: &str) -> Result<String, Box<dyn Error + Send + Sync>> {
+/// The GitHub release asset's published SHA-256 digest (hex) for this platform's tarball. The
+/// bundled sidecar path never reaches here.
+async fn expected_digest(version: &str) -> Result<String, DownloadError> {
     let asset_name = format!("barretenberg-{}.tar.gz", current_platform());
-    match fetch_github_asset_digest(version, &asset_name).await {
-        Ok(Some(expected)) => Ok(expected),
-        Ok(None) => {
-            Err(format!("Cannot verify bb v{version}: no digest available from GitHub API").into())
-        }
-        Err(e) => Err(format!("Cannot verify bb v{version}: digest fetch failed: {e}").into()),
-    }
+    fetch_github_asset_digest(version, &asset_name).await
 }
 
 /// Monotonic sequence making each staging dir name unique within a process; combined with the PID +
@@ -266,8 +277,9 @@ fn reap_stale_stages(version_dir: &Path) {
 /// verified re-download next use). The staging dir is unique per run, so concurrent publishers never
 /// collide; a torn/last-loser publish is caught by `verify_cached_bb` on next use.
 ///
-/// Private + single-caller: `download_bb` passes `versions_base_dir().join(version)` where `version`
-/// came from a validated `AztecVersion`, so the `remove_dir_all` here never sees an attacker path.
+/// Private + single-caller: `install_verified` passes `versions_base_dir().join(version)` where
+/// `version` came from a validated `AztecVersion`, so the `remove_dir_all` here never sees an
+/// attacker path.
 pub(crate) fn install_version_dir(
     version_dir: &Path,
     bytes: &[u8],
@@ -466,14 +478,26 @@ fn extract_bb_from_tarball_capped(
     Err("bb binary not found in tarball".into())
 }
 
+/// A real extraction failure filed under `failure`: unpacking into `missing`, which does not exist,
+/// fails with tar's error, and that error names the destination.
+#[cfg(test)]
+pub(crate) fn unpack_error(failure: DownloadFailure, missing: &Path) -> DownloadError {
+    let tarball = tests::make_targz(&[(bb_binary_name(), 4, 0)]);
+    DownloadError::new(
+        failure,
+        extract_bb_from_tarball(&tarball, missing).expect_err("the destination does not exist"),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::cache_layout::version_bb_path;
     use super::*;
+    use serial_test::serial;
     use std::io::Write;
 
     /// Build a gzipped tar with the given entries: `(path, size, byte)`.
-    fn make_targz(entries: &[(&str, usize, u8)]) -> Vec<u8> {
+    pub(super) fn make_targz(entries: &[(&str, usize, u8)]) -> Vec<u8> {
         let mut tar_buf = Vec::new();
         {
             let mut builder = tar::Builder::new(&mut tar_buf);
@@ -890,6 +914,39 @@ mod tests {
         assert!(result.is_err());
         // No "bb" file should have been created
         assert!(!tmp.path().join("bb").exists());
+    }
+
+    #[test]
+    #[serial]
+    fn install_verified_files_a_bad_digest_and_a_bad_archive_under_their_steps() {
+        let _home = crate::ScopedPrestoHome::new();
+        let version = AztecVersion::parse("6.0.0").unwrap();
+        let no_bb = make_targz(&[("barretenberg/README", 4, 0)]);
+
+        let mismatch = install_verified(&version, &no_bb, &"0".repeat(64)).unwrap_err();
+        assert_eq!(
+            mismatch.failure(),
+            DownloadFailure::IntegrityCheckFailed,
+            "{mismatch}"
+        );
+        let unpack = install_verified(&version, &no_bb, &sha256_hex(&no_bb)).unwrap_err();
+        assert_eq!(unpack.failure(), DownloadFailure::UnpackFailed, "{unpack}");
+        assert!(!version_bb_path(&version).unwrap().exists());
+    }
+
+    /// Live: upstream never publishes this tag, so the metadata lookup answers 404.
+    #[tokio::test]
+    #[serial]
+    async fn an_unpublished_release_is_reported_as_not_found() {
+        if std::env::var("PRESTO_DOWNLOAD_TEST").is_err() {
+            eprintln!(
+                "Skipping an_unpublished_release_is_reported_as_not_found (set PRESTO_DOWNLOAD_TEST=1 to enable)"
+            );
+            return;
+        }
+        let version = AztecVersion::parse("0.0.0-presto-unpublished.1").unwrap();
+        let error = download_bb(&version).await.unwrap_err();
+        assert_eq!(error.failure(), DownloadFailure::ReleaseNotFound, "{error}");
     }
 
     /// Full download E2E: download a real bb binary from GitHub, verify SHA-256,
