@@ -6,20 +6,14 @@ Lifted from the three plans in `archive/` on 2026-09-18. Each entry says whether
 against `main`** that day or only carried from the log. Anything the sweep found already fixed was
 dropped rather than carried — see "Closed by the sweep" at the bottom for what that covered.
 
-## Dated — two cliffs, 2026-10-31 and 2026-11-30
+## Dated — 2026-11-30
 
-- **The twelve dependency-audit exceptions expire on two days.**
-  `scripts/dependency-audit-allowlist.json` accepts:
-  - until **2026-10-31**: `undici` GHSA-rfgv-xxqx-mfg5 and GHSA-w293-vg96-wgc3 (wrangler's miniflare);
-  - until **2026-11-30**: `@opentelemetry/propagator-jaeger`, `basic-ftp`, `braces`,
-    `deepmerge-ts`, `extract-zip` (×2), `serialize-javascript` and `zip` (×3, RustSec).
-  - The audit gate goes red on 2026-11-01 on the first two, and on 2026-12-01 on the rest. Each
-    entry's `reason` says what pins it.
-  - **Verified 2026-10-21** against the allowlist and the Aztec 6.0.0-rc.4 audit, which dropped
-    undici 5 and `@fastify/busboy` with their four exceptions.
-- **#106: drop the root `sharp` 0.35.5 override at the next wrangler bump.** wrangler 4.150.0's
-  miniflare pins sharp 0.35.5 itself. Left in place, the override would hold back sharp's later
-  fixes. `archive/presto-audit-fix/plan.md`
+- **The ten dependency-audit exceptions expire on 2026-11-30.**
+  `scripts/dependency-audit-allowlist.json` accepts `@opentelemetry/propagator-jaeger`, `basic-ftp`,
+  `braces`, `deepmerge-ts`, `extract-zip` (×2), `serialize-javascript` and `zip` (×3, RustSec).
+  - The audit gate goes red on 2026-12-01 on them. Each entry's `reason` says what pins it.
+  - **Verified 2026-10-25** against the allowlist, after the wrangler 4.151.1 bump retired the two
+    `undici` exceptions (miniflare now pins undici 7.29.1).
 
 ## Owner actions
 

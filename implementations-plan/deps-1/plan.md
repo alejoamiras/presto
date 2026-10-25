@@ -193,7 +193,7 @@ registrator in both packages. Phase 5 adds the allowlist entries the owner picke
   2026-10-27T18:06Z. Every lock change comes from Bun's resolver, never a hand edit.
 - **Exploitability of F-red here**: unknown. The owner ask records each copy's consumer.
 
-## Phase 1: wrangler bump and override removal (#106)
+## Phase 1: wrangler bump and override removal (#106) ✓
 
 1. Run `bun run audit:dependencies > <scratch>/audit-trunk.txt`. It must print its `Dependency audit:`
    summary line. Exit 1 is expected (F-red).
@@ -300,8 +300,8 @@ registrator in both packages. Phase 5 adds the allowlist entries the owner picke
     `Audit dependencies` stays red because of #172, and that the merge redeploys both sites from
     identical assets.
 - **Arc 2** = phases 3-5, plus the plan's close-out.
-  - Branch `deps-1-a3`. Take it from `origin/main` once arc 1 has merged. Otherwise stack it on arc 1
-    (`gh stack`).
+  - Branch `deps-1-a2`, taken from `origin/main` after arc 1 merges. No stacked PRs: the implementer
+    brief overrides the earlier stacking option.
   - Title: `chore(deps): re-resolve the caret undici copies and bump happy-dom to 21`.
   - Body: `Closes #172` if green, else `Refs #172`. It says the next banners release must bump its
     version (F9).
@@ -326,6 +326,7 @@ registrator in both packages. Phase 5 adds the allowlist entries the owner picke
 | D14 | live test T4 | env-gated | CI job alone: the owner's rule asks for an opt-in real-data test |
 | D15 | a3 grouping | its own PR, after 2026-10-27 | fold into arc 1: arc 1 would wait two days for the age gate |
 | D16 | `happy-dom` scope | playground and banners | playground only: banners' copy keeps the advisory (F8) |
+| D18 | arc 2 base | `origin/main` after arc 1 merges | stacking on arc 1: the implementer brief allows no stacked PRs |
 | D17 | the rest of F-red | an owner ask; nothing lands unpicked | entries the panel chooses: a risk acceptance belongs to the owner |
 
 **Outline B** (npm's own tooling): write a synthetic `package-lock.json` from the bundle, then run the
@@ -370,8 +371,7 @@ after 3 failures on one step.
    surface after 3 rounds. New state, a lifecycle, a protocol, a recovery policy or a public contract
    is a plan change: stop for approval.
 3. **Delivery.** Run `bun run test` and `bun run lint:actions`. Push the arc branch, then run
-   `gh pr create --base main` with the Delivery title and body. If arc 2 is stacked on an unmerged
-   arc 1, open it with `gh stack submit --auto` instead, and run `gh stack sync` after arc 1 merges.
+   `gh pr create --base main` with the Delivery title and body. Arc 2 starts only after arc 1 merges.
    Arc 1 only: comment on #106 that its
    "green" step did not hold, because of #172. Watch `gh pr checks`, bounded inside one tool call.
 4. **Close-out** (arc 2's final commits):
@@ -404,7 +404,7 @@ after 3 failures on one step.
 Not run by this lane; the orchestrator drives implementation.
 
 ```
-/goal Phases 1-5 of implementations-plan/deps-1/plan.md are ✓ (phase 5 may be ✓-skipped with no owner pick), each backed by its gate passing in the transcript, with LESSONS_FILE=implementations-plan/deps-1/lessons/phase-N.md printed per phase; /code-review NOT run; the Codex loop converged per arc (a resumed pass with no new material finding, quoted); both PRs exist (arc 2 against main, or stacked on arc 1 while it is unmerged), each opened after its loop, the second carrying the close-out (git show --stat of the archive move); bun run test and bun run lint:actions exit 0.
+/goal Phases 1-5 of implementations-plan/deps-1/plan.md are ✓ (phase 5 may be ✓-skipped with no owner pick), each backed by its gate passing in the transcript, with LESSONS_FILE=implementations-plan/deps-1/lessons/phase-N.md printed per phase; /code-review NOT run; the Codex loop converged per arc (a resumed pass with no new material finding, quoted); both PRs exist against main (arc 2 branched from main after arc 1 merged), each opened after its loop, the second carrying the close-out (git show --stat of the archive move); bun run test and bun run lint:actions exit 0.
 ```
 
 ```
