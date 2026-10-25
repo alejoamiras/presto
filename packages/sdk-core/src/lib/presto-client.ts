@@ -542,14 +542,24 @@ export class PrestoClient {
       logger.warn("Presto does not serve this route, falling back", { code });
       return fallback("route-missing");
     }
+    if (status === 500 && code === "download_failed") {
+      // Not `message`: for this code it is the presto's whole error chain, which is no contract.
+      logger.warn("Presto could not download bb for this version, falling back", {
+        status,
+        code,
+        aztecVersion: this.#aztecVersion,
+      });
+      return fallback("download-failed");
+    }
     // 503 (shutting down / version-evicting), 408 (body_read_timeout), 413 (payload_too_large),
-    // 429 (too_many_requests / prove_queue_full / origin_queue_full), and 500 with a RECOGNISED code.
+    // 429 (too_many_requests / prove_queue_full / origin_queue_full / download_budget_exhausted),
+    // and 500 prove_failed.
     if (
       status === 503 ||
       status === 408 ||
       status === 413 ||
       status === 429 ||
-      (status === 500 && (code === "download_failed" || code === "prove_failed"))
+      (status === 500 && code === "prove_failed")
     ) {
       logger.warn("Presto could not serve this proof, falling back", { status, code });
       return fallback("transient");

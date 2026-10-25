@@ -118,7 +118,8 @@ misconfiguration throws `PrestoHttpError` in both modes.
 | `route-missing` | the app advertised the scheme but has no route | `404` |
 | `denied` / `cooldown` | the user denied this origin / a recent denial is cooling down | `403` |
 | `version-mismatch` | the presto refuses the requested `bbVersion` | `403 version_not_allowed` |
-| `transient` | capacity or a transient failure: the global queue, the per-origin cap of four jobs, timeouts, `prove_failed` | `408` / `413` / `429` / `503`, known `500`s |
+| `download-failed` | the presto could not download or install `bb` for the requested `bbVersion`: no such release, a failed or rate-limited GitHub request, a failed integrity check; the reason names the stage, not whether it lasts | `500 download_failed` |
+| `transient` | capacity or a transient failure: the global queue, the per-origin cap of four jobs, the budget of new `bb` downloads, timeouts, `prove_failed` | `408` / `413` / `429` / `503`, `500 prove_failed` |
 | `network` | the request got no HTTP response (refused, TLS failure, timeout) | — |
 | `endpoint-changed` | the core client's endpoint was reconfigured mid-proof (core reserves it; this backend has no such call) | — |
 | `malformed-response` | a `200` whose body was over the cap, not JSON, or not a proof (empty, misaligned, oversized key) | — |

@@ -73,9 +73,10 @@ function jobViolations(text: string): string[] {
 /**
  * Code the import scanner cannot see: `require`, a non-literal `import()`, and any subprocess other
  * than npm reading the registry, spawned from a literal array or through a `run(command)` helper
- * whose every call passes one.
+ * whose every call, in any module, passes one. The helper may be imported only by its own name, so
+ * no alias escapes the call check. Syntax only: a call behind another binding is not seen.
  */
-function codeViolations(code: string): string[] {
+function codeViolations(code: string, dir = import.meta.dir): string[] {
   const violations: string[] = [];
   if (/\brequire\s*\(/.test(code)) violations.push("require");
   for (const [call] of code.matchAll(/\bimport\s*\([^)]*\)/g)) {
@@ -83,15 +84,44 @@ function codeViolations(code: string): string[] {
   }
   if (/\bBun\s*\.\s*(\$|spawn\s*\()|child_process/.test(code)) violations.push("subprocess API");
   const helper = /\bfunction run\(command: string\[\]/.test(code);
+  // A literal array counts only as a whole argument: anything after it may rewrite the command.
   for (const [call, argument] of code.matchAll(
-    /\bBun\s*\.\s*spawnSync\s*\(\s*(\[[^\]]*\]|\w+\b(?!\s*[.[(]))?/g,
+    /\bBun\s*\.\s*spawnSync\s*\(\s*(\[[^\]]*\](?=\s*[,)])|\w+\b(?!\s*[.[(]))?/g,
   )) {
     if (!isNpmRead(argument) && !(helper && argument === "command")) violations.push(call);
   }
-  for (const [call, array] of code.matchAll(/(?<!function )\brun\s*\(\s*(\[[^\]]*\])?/g)) {
-    if (helper && !isNpmRead(array)) violations.push(call);
+  for (const [call, array] of code.matchAll(
+    /(?<!function )\brun\s*\(\s*(\[[^\]]*\](?=\s*[,)]))?/g,
+  )) {
+    if (!isNpmRead(array)) violations.push(call);
   }
-  return violations;
+  return [...violations, ...leafImportViolations(code, dir)];
+}
+
+const BOUNDED_SPAWN = resolve(repository, "scripts/npm-command.ts");
+
+/**
+ * References to the bounded-spawn module, however its path is spelled, other than a static import of
+ * `run` and its deadline: a dynamic import, a re-export or any other name escapes the `run` check.
+ */
+function leafImportViolations(code: string, dir: string): string[] {
+  const leaf = (specifier = "") =>
+    specifier.startsWith(".") && Bun.resolveSync(specifier, dir) === BOUNDED_SPAWN;
+  const onlyRun = (clause = "") =>
+    /^\{([^}]*)\}$/
+      .exec(clause.trim())?.[1]
+      ?.split(",")
+      .every((name) => ["run", "NPM_TIMEOUT_MS", ""].includes(name.trim()));
+  const statements = [...code.matchAll(/\b(import|export)\s+([^;]*?)\s+from\s+["']([^"']+)["']/g)]
+    .filter(
+      ([, keyword, clause, specifier]) =>
+        leaf(specifier) && !(keyword === "import" && onlyRun(clause)),
+    )
+    .map(([statement]) => statement);
+  const dynamic = [...code.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)]
+    .filter(([, specifier]) => leaf(specifier))
+    .map(([call]) => call);
+  return [...statements, ...dynamic];
 }
 
 /** Every module `entries` reach through static or dynamic imports, and each non-built-in specifier. */
@@ -226,7 +256,8 @@ describe("publish job isolation", () => {
   test("the identity-bound check runs unprivileged, after a locked install, and can fail the run", () => {
     const verify = job(publish, "verify");
     expect(verify).toContain("needs: [pack, publish]");
-    expect(verify).toContain("npm install --ignore-scripts");
+    // The verifier's own bounded, script-free install is the fresh registry install.
+    expect(verify).not.toContain("npm install");
     before(
       verify,
       "bun install --frozen-lockfile --ignore-scripts",
@@ -249,10 +280,8 @@ describe("publish job isolation", () => {
     expect(modules.has(resolve(repository, "scripts/registry-consistency.ts"))).toBe(true);
     expect(publishJob).not.toContain("verify-sdk-package-signatures");
     for (const module of modules) {
-      expect({ module, violations: codeViolations(readFileSync(module, "utf8")) }).toEqual({
-        module,
-        violations: [],
-      });
+      const violations = codeViolations(readFileSync(module, "utf8"), dirname(module));
+      expect({ module, violations }).toEqual({ module, violations: [] });
     }
   });
 
@@ -290,12 +319,11 @@ describe("publish job isolation", () => {
     expect(source("scripts/release-plan.ts")).toContain(
       "verifySdkPackageSignatures(version, pkg, tagCommit)",
     );
-    // Promotion: the tag is compared against the signed commit, and a rollback's legacy-workflow
-    // allowance reaches the signed verification too.
+    // Promotion: the tag is compared against the signed commit.
     const promote = source("scripts/promote-sdk-latest.ts");
     // Only a rollback may accept the reusable workflow's earlier name as signer.
     expect(promote).toMatch(
-      /const provenance = await verifySdkPackageSignatures\(\s*version,\s*pkg,\s*undefined,\s*allowedWorkflows,\s*rollback \? ROLLBACK_SIGNERS : RELEASE_SIGNERS,?\s*\)/,
+      /const provenance = await verifySdkPackageSignatures\(\s*version,\s*pkg,\s*undefined,\s*rollback \? ROLLBACK_SIGNERS : RELEASE_SIGNERS,?\s*\)/,
     );
     expect(promote).toContain("tagCommit !== provenance.commit");
   });
@@ -515,8 +543,67 @@ describe("the credentialed-job guards", () => {
       "a helper called with a variable",
       "function run(command: string[], cwd: string) {\n  Bun.spawnSync(command);\n}\nrun(list, dir);",
     ],
+    [
+      "an imported helper running another tool",
+      'import { run } from "./npm-command.ts";\nrun(["bunx", "tool"]);',
+    ],
+    [
+      "an aliased helper",
+      'import { run as execute } from "./npm-command.ts";\nexecute(["bunx", "tool"]);',
+    ],
+    [
+      "the unchecked spawn",
+      'import { spawnBounded } from "./npm-command.ts";\nspawnBounded(["bunx", "tool"]);',
+    ],
+    [
+      "the unchecked spawn by another path",
+      'import { spawnBounded } from "././npm-command.ts";\nspawnBounded(["bunx", "tool"]);',
+    ],
+    [
+      "the unchecked spawn by a dynamic import",
+      'const { spawnBounded } = await import("../scripts/npm-command.ts");',
+    ],
+    ["a re-export of the bounded spawn", 'export { spawnBounded } from "./npm-command.ts";'],
+    [
+      "a spawned array rewritten after the check",
+      'Bun.spawnSync(["npm", "view", a].concat(["exec"]));',
+    ],
+    [
+      "a helper array rewritten after the check",
+      'import { run } from "./npm-command.ts";\nrun(["npm", "view", a].map(() => "bunx"));',
+    ],
+    [
+      "an optional chain on the array",
+      'run(["npm", "view", a]?.map((_, i) => ["npm", "exec", "t"][i]));',
+    ],
+    ["a comment before the chain", 'Bun.spawnSync(["npm", "view", a] /* */ .concat(["exec"]));'],
   ])("the code guard refuses %s", (_, code) => {
     expect(codeViolations(code)).not.toEqual([]);
+  });
+});
+
+describe("registry deadlines", () => {
+  const source = (rel: string) => readFileSync(resolve(repository, rel), "utf8");
+
+  test("the release scripts reach npm only through the bounded spawn", () => {
+    const direct = /\bBun\s*\.\s*spawn(Sync)?\s*\(\s*\[\s*"npm"/;
+    const bounded = [
+      "scripts/get-sdk-publish-version.ts",
+      "scripts/sdk-release-verification.ts",
+      "scripts/registry-consistency.ts",
+      "scripts/published-playground.ts",
+    ];
+    for (const rel of [...bounded, "scripts/release-plan.ts"]) {
+      expect({ rel, direct: direct.test(source(rel)) }).toEqual({ rel, direct: false });
+    }
+    // Release planning keeps an unbounded local `run` for git; npm must not reach it.
+    expect(source("scripts/release-plan.ts")).not.toMatch(/\brun\s*\(\s*\[\s*"npm"/);
+    // Its npm command is a variable, so only a spawn of any kind shows a bypass of the bounded one.
+    expect(source("scripts/get-sdk-publish-version.ts")).not.toMatch(/\bBun\s*\.\s*(spawn|\$)/);
+    for (const rel of bounded) expect(source(rel)).toMatch(/from "\.\/npm-command(\.ts)?"/);
+    expect(source("scripts/release-plan.ts")).toMatch(
+      /import \{[^}]*\bnpmViewJson,[^}]*\bpublishedVersions,[^}]*\} from "\.\/get-sdk-publish-version\.ts"/,
+    );
   });
 });
 
