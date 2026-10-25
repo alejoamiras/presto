@@ -102,8 +102,8 @@ describe("verified-sites secrets and privileges", () => {
   test("the seed, the App key and the KV token each reach exactly one step", () => {
     expect(secretUses(sign)).toEqual([
       "sign/Sign: secrets.VERIFIED_SITES_SIGNING_SEED",
-      "record/actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1: secrets.RELEASE_BOT_APP_ID",
-      "record/actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1: secrets.RELEASE_BOT_PRIVATE_KEY",
+      "record/actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510: secrets.RELEASE_BOT_APP_ID",
+      "record/actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510: secrets.RELEASE_BOT_PRIVATE_KEY",
     ]);
     expect(secretUses(publish)).toEqual([
       "publish/Write the document unless KV refuses it: secrets.CLOUDFLARE_RELEASE_FEED_API_TOKEN",
