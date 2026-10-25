@@ -2,7 +2,8 @@
 
 - `bun update undici` (bun 1.4.2) on `main` at b85134c changed only `bun.lock`, in 8 lines, exactly
   the F7 trial: root and `npm/undici` 6.29.0 → 6.29.1, `webdriver/undici` 6.28.1 dropped, and
-  `cheerio/undici` 7.29.1 → 7.30.1. `package.json` is untouched. Its summary line reads
+  `cheerio/undici` 7.29.1 → 7.30.1. `package.json` is untouched. The `npm/undici` entry is lock-only:
+  Bun links no copy beside npm, so node-gyp still loads the bundled 6.29.0. Its summary line reads
   `undici 6.28.1 -> 7.30.1`, which is misleading; the diff is the record.
 - The frozen install and a plain `bun install` afterwards both leave the lock unchanged.
 - Gate, 2026-10-25: lint and `bun run test` exited 0. `bun audit` now lists GHSA-xjj6-f33q-929c only

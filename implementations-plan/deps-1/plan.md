@@ -16,7 +16,7 @@ asks: none
 
 # deps-1: bump wrangler, drop the sharp override, audit npm's bundle, clear what bumps can clear
 
-Size: about 400 lines against the 350 target. It covers three issues in five phases over two arcs,
+Size: about 400 lines against the 350 target. It covers three issues in five phases over three arcs,
 with restatement already cut.
 
 ## Outcome & Quality Bar
@@ -108,7 +108,7 @@ Arcs: arc 1 (#175, merged as b85134c) is the orchestrator's a1 and a2. The orche
   unit tests check it.
 
 **Asks** (settled on a working assumption, nobody to ask):
-- Ask 1. Clear F-red in arc 1? **No.** Arc 2 does what in-range bumps can do. The rest is the owner's
+- Ask 1. Clear F-red in arc 1? **No.** Arcs 2 and 3 do what in-range bumps can do. The rest is the owner's
   call (`OWNER-ASKS.md` Ask 1).
 - Ask 2. Which wrangler? **4.151.1, exact**: the trial covers it. If its install fails, take the next
   version that passes the gate and rerun phase 1 in full.
@@ -159,8 +159,9 @@ export async function auditNpmBundle(
   versions sent, <m> advisories`; push the findings. Gating, the allowlist and the exit code do not
   change.
 
-**Arc 2 (#172)** changes data only. Phase 3 runs `bun update undici` (F7). Phase 4 bumps the
-registrator in both packages. Phase 5 adds the allowlist entries the owner picked, verbatim, if any.
+**Arcs 2 and 3 (#172)** change data only. Arc 2: phase 3 runs `bun update undici` (F7), and phase 5
+adds the entries the owner picked (P4-01), verbatim. Arc 3: phase 4 bumps the registrator in both
+packages.
 
 **File-level change map.**
 
@@ -285,7 +286,7 @@ registrator in both packages. Phase 5 adds the allowlist entries the owner picke
 **Validation gate.**
 - Commands: `bun install --frozen-lockfile`, `bun run --cwd packages/playground test:unit`,
   `bun run --cwd packages/banners test:unit`, `bun run lint`, `bun run test`, `bun run audit:dependencies`.
-- Pass criteria: every command exits 0 except the audit, and the audit prints no `happy-dom` line.
+- Pass criteria: every command exits 0, the audit included (0 blocked, so `Closes #172` holds).
 
 ## Phase 5: the owner's picks (#172) ✓
 
@@ -332,11 +333,11 @@ P4-01, Option A: both entries, verbatim from `OWNER-ASKS.md` Ask 1.
 | D12 | audit job install | unchanged | `--ignore-scripts` (Codex, "prefer"): F4 shows the same tree either way |
 | D13 | `{}` answer | passes | fail: a clean bundle is a real answer; a canary is new state |
 | D14 | live test T4 | env-gated | CI job alone: the owner's rule asks for an opt-in real-data test |
-| D15 | a3 grouping | its own PR, after 2026-10-27 | fold into arc 1: arc 1 would wait two days for the age gate |
+| D15 | a3 grouping | its own PR, after 2026-10-27 | fold into arc 1: arc 1 would wait two days for the age gate; superseded by D19 |
 | D16 | `happy-dom` scope | playground and banners | playground only: banners' copy keeps the advisory (F8) |
 | D17 | the rest of F-red | an owner ask; nothing lands unpicked | entries the panel chooses: a risk acceptance belongs to the owner |
-| D19 | a3 grouping | arc 2 = phases 3 + 5 now; arc 3 = phase 4 + close-out after the age gate (orchestrator) | one PR after 2026-10-27: holds the in-range fixes and the owner's picks two days for nothing |
 | D18 | arc 2 base | `origin/main` after arc 1 merges | stacking on arc 1: the implementer brief allows no stacked PRs |
+| D19 | a3 grouping | arc 2 = phases 3 + 5 now; arc 3 = phase 4 + close-out after the age gate (orchestrator) | one PR after 2026-10-27: holds the in-range fixes and the owner's picks two days for nothing |
 
 **Outline B** (npm's own tooling): write a synthetic `package-lock.json` from the bundle, then run the
 pinned `npm audit --json --package-lock-only`. Two formats to keep in step, plus a spawn and a temp
@@ -356,6 +357,8 @@ read the source). Rejected.
 | arc 1 r1 | Codex gpt-6.1-sol high, `01a170fd` (diff 1298669..b43cbd5) | clean | none needed | — |
 | arc 1 r1 | Opus diff review (fresh) | clean, 3 minor | the walker names the file on a malformed or `null` manifest, and a non-JSON answer gets its own error (both tested); the doc comment states its failure contract; dot entries skipped inside `@scope` too; D18 reordered | symlinked files inside a package (needs a tampered tree, KL-2); the `lessons.md` citation is fixed in arc 2's close-out |
 | arc 1 r2 | Codex resume `01a170fd` (fix diff cfaf6a1) | clean | converged | — |
+| arc 2 r1 | Codex gpt-6.1-sol high, `01a172ed` (diff b85134c..a8fcf05) | 0 material, 1 doc note | stale arc references after D19 in `OWNER-ASKS.md` and the plan, fixed | — |
+| arc 2 r1 | Opus diff review (fresh) | 1 material, 2 minor | phase 4's gate would have passed a red audit: it now requires 0 blocked; D15 marked superseded and D19 reordered; phase-3 lesson notes that `npm/undici` is lock-only; the stale `braces` exception goes in arc 3's close-out | — |
 
 ## Post-implementation
 
@@ -384,7 +387,7 @@ after 3 failures on one step.
    surface after 3 rounds. New state, a lifecycle, a protocol, a recovery policy or a public contract
    is a plan change: stop for approval.
 3. **Delivery.** Run `bun run test` and `bun run lint:actions`. Push the arc branch, then run
-   `gh pr create --base main` with the Delivery title and body. Arc 2 starts only after arc 1 merges.
+   `gh pr create --base main` with the Delivery title and body. Each later arc starts only after the previous one merges.
    Arc 1 only: comment on #106 that its
    "green" step did not hold, because of #172. Watch `gh pr checks`, bounded inside one tool call.
 4. **Close-out** (arc 3's final commits):
@@ -403,6 +406,7 @@ after 3 failures on one step.
    - Put every other open item in its home: an issue with a `Record` link; `owner-decision` or
      `blocked:external`; a private draft advisory for a suspected exploitable weakness; an Outcome line
      for what was rejected or done.
+   - Drop the `braces` exception if the audit still prints it as STALE.
    - Delete `STATUS.md`.
    - In its own commit, run `git mv implementations-plan/deps-1 implementations-plan/archive/deps-1`.
      Add one line to `archive/index.md`, and none to `index.md`. Repair what `git grep -n deps-1` finds.
