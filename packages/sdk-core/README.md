@@ -59,8 +59,8 @@ that answered its own health check, so a concurrent proof's HTTP demotion cannot
 condition the presto signals
 comes back as `{ kind: "fallback", reason }` — offline, denied, cooldown, version mismatch, an app
 that does not advertise the route's scheme (nothing is sent), a `404` from one that does, capacity
-(`408`/`413`/`429`/`503`, `500 prove_failed`), a failed `bb` download (`500 download_failed`, reason
-`download-failed`), a body over the cap. Only a
+(`408`/`413`/`429`/`503`), a failed `bb` run (`500 prove_failed`), a failed `bb` download
+(`500 download_failed`, reason `download-failed`), a body over the cap. Only a
 caller misconfiguration (`400`, an unrecognised `500`, an unexpected status) throws
 `PrestoHttpError`.
 
