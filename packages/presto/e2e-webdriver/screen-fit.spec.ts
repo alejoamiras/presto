@@ -1,15 +1,10 @@
 /**
- * Settings on a screen shorter than it, against the real window manager path.
+ * Settings against the native window: built inside a screen shorter than it, unchanged where it fits.
  *
- * Every window is built at a fixed size and cannot be resized, so on a short screen the only remedy
- * is to build it smaller and let `body.scrollable` take the rest. Where it fits, nothing may change.
- * The desktop-ui suite sizes static pages by hand and so cannot see either; only the native window
- * knows where its frame landed.
- *
- * Assertions compare one coordinate space each. Linux runs on Xvfb with no window manager, where
- * `getWindowRect()` (physical, outer) and `screen.*` (CSS px) coincide once DPR 1 and a zero origin
- * are checked. macOS compares the window with its own configured size. Windows only reports: its
- * rect includes invisible resize borders, so a containment check there would not mean what it says.
+ * Each assertion stays in one coordinate space. On the Xvfb the Linux lanes own (no window manager),
+ * `getWindowRect()` (physical, outer) and `screen.*` (CSS px) coincide once DPR 1 and a zero origin are
+ * checked. macOS compares the frame with the screen. Windows only reports: its rect includes
+ * invisible resize borders, so a containment check there would not mean what it says.
  */
 import * as os from "node:os";
 import { WINDOW_SIZES } from "../e2e/window-sizes.ts";
@@ -32,12 +27,15 @@ interface PageGeometry {
   content: number;
 }
 
-/** The Xvfb geometry `_e2e-webdriver.yml` gave this Linux run, as `WIDTHxHEIGHTx24`. */
-function linuxScreen(): { width: number; height: number } {
-  const match = /^(\d+)x(\d+)x24$/.exec(process.env.WDIO_SCREEN ?? "");
-  if (!match) {
-    throw new Error(`WDIO_SCREEN must name the Xvfb geometry, got "${process.env.WDIO_SCREEN}"`);
-  }
+/**
+ * The Xvfb geometry the harness gave this Linux run (`WIDTHxHEIGHTx24`), or `null` on a display it did
+ * not start, whose size and window manager are unknown. CI must always name one.
+ */
+function linuxScreen(): { width: number; height: number } | null {
+  const named = process.env.WDIO_SCREEN;
+  if (!named && !process.env.CI) return null;
+  const match = /^(\d+)x(\d+)x24$/.exec(named ?? "");
+  if (!match) throw new Error(`WDIO_SCREEN must name the Xvfb geometry, got "${named}"`);
   return { width: Number(match[1]), height: Number(match[2]) };
 }
 
@@ -65,7 +63,7 @@ describe("Window fit", () => {
         content: (document.scrollingElement as HTMLElement).scrollHeight,
       };
     });
-    // The per-platform measurement the PR reports; nothing else records what each OS really does.
+    // Logged on every lane: the only record of each OS's real window geometry.
     console.log(`screen-fit ${PLATFORM}: ${JSON.stringify({ rect, ...page })}`);
   });
 
@@ -74,15 +72,17 @@ describe("Window fit", () => {
   });
 
   if (PLATFORM === "darwin") {
-    it("opens Settings with a frame of its configured height", () => {
-      // Tauri's default title bar draws inside the window, so the frame is the configured size.
-      expect(rect.height / page.dpr).toBe(SETTINGS.height);
+    it("opens Settings at its configured height, inside the screen", () => {
+      // Tauri's default title bar draws inside the window, so where it fits the frame is the
+      // configured size; on a shorter screen only containment is exact enough to assert.
+      const frame = rect.height / page.dpr;
+      if (page.screen.availHeight >= SETTINGS.height) expect(frame).toBe(SETTINGS.height);
+      else expect(frame).toBeLessThanOrEqual(page.screen.availHeight);
     });
   }
 
-  if (PLATFORM === "linux") {
-    const expected = linuxScreen();
-
+  const expected = PLATFORM === "linux" ? linuxScreen() : null;
+  if (expected) {
     it("runs on the display the lane configured", () => {
       expect(page.dpr).toBe(1);
       expect([page.screen.availLeft, page.screen.availTop]).toEqual([0, 0]);
@@ -98,8 +98,7 @@ describe("Window fit", () => {
       });
 
       it("scrolls Settings to its end with every section open", async () => {
-        // Collapsed, Settings fits the shrunk window, so open Advanced, its tallest section, to make
-        // the page overflow and prove the end is reachable by scrolling rather than cut off.
+        // Advanced open is the page's tallest state, so its end is the one that must be reachable.
         const verdict = await browser.execute(() => {
           const root = document.scrollingElement as HTMLElement;
           const advanced = document.getElementById("advanced") as HTMLDetailsElement;

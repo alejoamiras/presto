@@ -41,7 +41,10 @@ if [ -z "${DISPLAY:-}" ] && [ -z "${WAYLAND_DISPLAY:-}" ]; then
     exit 2
   fi
   echo "No display: starting owned Xvfb + DBus + stalonetray (as CI does)"
-  setsid Xvfb :99 -screen 0 1280x800x24 >/dev/null 2>&1 &
+  # screen-fit.spec.ts checks the window against this geometry; a display this script did not start
+  # has none it can name, and the spec then only reports.
+  export WDIO_SCREEN=1280x800x24
+  setsid Xvfb :99 -screen 0 "$WDIO_SCREEN" >/dev/null 2>&1 &
   OWNED_PGIDS+=("$!")
   export DISPLAY=:99
   sleep 1

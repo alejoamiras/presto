@@ -218,9 +218,9 @@ fn open_or_focus_window(app: &AppHandle, config: WindowConfig) -> Option<tauri::
             }
             reassert_theme(&window);
         });
-    // A window taller or wider than the work area is shrunk to fit it, and its page scrolls. Windows
-    // counts its title bar against the work area and macOS draws it inside the inner size, so
-    // Tauri's fit is exact there.
+    // A window taller or wider than the work area is built smaller to fit it. Tauri's fit holds on
+    // Windows, whose title bar it estimates a few px high for a fixed frame, and on macOS, which draws
+    // the title bar inside the inner size; on Linux it leaves the title bar out.
     #[cfg(not(target_os = "linux"))]
     let builder = builder
         .inner_size(config.width, config.height)
