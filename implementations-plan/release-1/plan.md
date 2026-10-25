@@ -80,8 +80,9 @@ the next agent who edits a release script.
   - `run`: `spawnBounded`, then the existing non-zero-exit error. It returns stdout.
   - `registry-consistency.ts` imports `run` from the leaf.
 - **`get-sdk-publish-version.ts`** owns `npmViewJson(spec, field)` and `publishedVersions(name)`.
-  `npmViewJson` uses `spawnBounded` and classifies `E404` on **stderr only**, as `release-plan.ts:285`
-  does today, so a timeout or a parse error never reads as absent. `release-plan.ts` imports both
+  `npmViewJson` uses `spawnBounded`. It classifies `E404` only on the `error.code` that npm writes
+  under `--json`, so a timeout, a parse error or registry text never reads as absent. (Round 1
+  tightened this: stderr echoes registry text.) `release-plan.ts` imports both
   and deletes its copies. The async, unbounded `getPublishedVersions` goes. This module is outside
   the credentialed graph, so `--json` is allowed.
 - **`sdk-release-verification.ts`**:
@@ -123,7 +124,7 @@ the next agent who edits a release script.
 
 - **Threat**: a hostile or broken registry, or a proxy, stalls a call. Today the call holds the job
   until its ceiling. After the change it fails closed and names itself. A deadline only adds a
-  failure exit, and `E404` stays stderr-bound, so no timeout becomes "absent". "Absent" matters: it
+  failure exit, and `E404` comes only from npm's error code, so no timeout becomes "absent". "Absent" matters: it
   is the input that lets release planning choose to publish.
 - **Credentialed job**: the leaf joins the `publish` job's graph. The guard changes above keep the
   `run` call checks and close the alias and `spawnBounded` bypasses. It cannot stop a reviewed
@@ -204,7 +205,8 @@ is the PR's final commits. There are no lanes: the two phases are short and sequ
 
 Codex round 1 (gpt-6.1-sol, high): **conditional approve**. Every condition is adopted:
 - E404 on stderr only (**demonstrated** for message matching, because a timeout or command text
-  can contain `E404`). The fix is `spawnBounded` plus classification on stderr.
+  can contain `E404`). The fix is `spawnBounded` plus classification on stderr. Fix round 1
+  tightened it to npm's `--json` `error.code`.
 - The guard alias bypass (**demonstrated**): canonical, unaliased leaf imports in the graph, and the
   comment states the guard's syntactic limit.
 - Test the stalled body as well as the stalled header.
@@ -233,6 +235,21 @@ It also confirmed the following:
   The 5.2.0 rollback-signer test stays.
 
 Resumed verification of the three fixes: **approve**. No material finding remains.
+
+## Audit verdicts (implementation)
+
+- Codex fix round 1: **2 material findings**, both demonstrated and both fixed in `dc2d20f`.
+  - E404 read from stderr, which can echo registry text. Now npm's `error.code` decides.
+  - Other spellings of the leaf path, a dynamic import or a re-export bypassed the guard's
+    whitelist. Specifiers now resolve by path.
+  - Detail: `lessons/review-round-1.md`.
+- Same-family review (Opus), run beside round 1, found two low, test-only findings. Both were
+  adopted:
+  - A chained literal array (`[...].map(...)`) passed the call check.
+  - The contract test missed release planning's local `run(["npm", …])` and a reverted
+    `Bun.spawnSync` in `get-sdk-publish-version.ts`.
+  - Detail: `lessons/review-round-2.md`.
+- Codex fix round 2 (resumed): **clean** on the round-1 fixes.
 
 ## Post-implementation
 

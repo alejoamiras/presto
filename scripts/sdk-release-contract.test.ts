@@ -84,12 +84,15 @@ function codeViolations(code: string, dir = import.meta.dir): string[] {
   }
   if (/\bBun\s*\.\s*(\$|spawn\s*\()|child_process/.test(code)) violations.push("subprocess API");
   const helper = /\bfunction run\(command: string\[\]/.test(code);
+  // A literal array counts only when nothing chained after it can rewrite the command.
   for (const [call, argument] of code.matchAll(
-    /\bBun\s*\.\s*spawnSync\s*\(\s*(\[[^\]]*\]|\w+\b(?!\s*[.[(]))?/g,
+    /\bBun\s*\.\s*spawnSync\s*\(\s*(\[[^\]]*\](?!\s*[.[])|\w+\b(?!\s*[.[(]))?/g,
   )) {
     if (!isNpmRead(argument) && !(helper && argument === "command")) violations.push(call);
   }
-  for (const [call, array] of code.matchAll(/(?<!function )\brun\s*\(\s*(\[[^\]]*\])?/g)) {
+  for (const [call, array] of code.matchAll(
+    /(?<!function )\brun\s*\(\s*(\[[^\]]*\](?!\s*[.[]))?/g,
+  )) {
     if (!isNpmRead(array)) violations.push(call);
   }
   return [...violations, ...leafImportViolations(code, dir)];
@@ -561,6 +564,14 @@ describe("the credentialed-job guards", () => {
       'const { spawnBounded } = await import("../scripts/npm-command.ts");',
     ],
     ["a re-export of the bounded spawn", 'export { spawnBounded } from "./npm-command.ts";'],
+    [
+      "a spawned array rewritten after the check",
+      'Bun.spawnSync(["npm", "view", a].concat(["exec"]));',
+    ],
+    [
+      "a helper array rewritten after the check",
+      'import { run } from "./npm-command.ts";\nrun(["npm", "view", a].map(() => "bunx"));',
+    ],
   ])("the code guard refuses %s", (_, code) => {
     expect(codeViolations(code)).not.toEqual([]);
   });
@@ -580,6 +591,10 @@ describe("registry deadlines", () => {
     for (const rel of [...bounded, "scripts/release-plan.ts"]) {
       expect({ rel, direct: direct.test(source(rel)) }).toEqual({ rel, direct: false });
     }
+    // Release planning keeps an unbounded local `run` for git; npm must not reach it.
+    expect(source("scripts/release-plan.ts")).not.toMatch(/\brun\s*\(\s*\[\s*"npm"/);
+    // Its npm command is a variable, so only a spawn of any kind shows a bypass of the bounded one.
+    expect(source("scripts/get-sdk-publish-version.ts")).not.toMatch(/\bBun\s*\.\s*(spawn|\$)/);
     for (const rel of bounded) expect(source(rel)).toMatch(/from "\.\/npm-command(\.ts)?"/);
     expect(source("scripts/release-plan.ts")).toMatch(
       /import \{[^}]*\bnpmViewJson,[^}]*\bpublishedVersions,[^}]*\} from "\.\/get-sdk-publish-version\.ts"/,
