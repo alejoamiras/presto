@@ -175,7 +175,7 @@ body is checked.
 needs the empty `bb-x86_64-pc-windows-gnu.exe` placeholder). Layers: lint, typecheck, unit,
 Windows compile.
 
-### Phase 3: docs
+### Phase 3: docs ✓
 
 Add one clause to `CLAUDE.md`'s Presto paragraph: error bodies carry no presto-derived path, and
 `download_failed` names its cause. **Validation gate**: `bun run lint` exits 0.
