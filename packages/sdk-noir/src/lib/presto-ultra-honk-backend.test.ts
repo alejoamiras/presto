@@ -190,6 +190,12 @@ describe("PrestoUltraHonkBackend", () => {
       null,
     ],
     [
+      "failed bb download (500)",
+      { "/health": healthOk, "/prove/ultra-honk": () => proveError(500, "download_failed") },
+      "download-failed",
+      null,
+    ],
+    [
       "a 200 that is not the route's shape",
       { "/health": healthOk, "/prove/ultra-honk": () => Response.json({ proof: 1 }) },
       "malformed-response",
