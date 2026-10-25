@@ -15,18 +15,20 @@ import {
 } from "./helpers.ts";
 
 const TEST_ORIGIN = "https://test-e2e-webdriver.example.com";
+// The Deny test's own origin: every Deny, a cleanup one included, cools its origin down for 30 s.
+const DENY_ORIGIN = "https://test-e2e-webdriver-deny.example.com";
 const PROVE_URL = "http://127.0.0.1:59833/prove";
 
 /**
- * Fire a /prove POST with an unknown origin. The request blocks until the
- * auth popup is resolved (Allow/Deny) or the 60s server timeout fires.
+ * Fire a /prove POST with an unknown origin. The request blocks until its popup is decided or
+ * closed, or the popup's 60 s decision deadline passes (a queued request waits up to 660 s).
  */
-function fireProveRequest(): Promise<Response> {
+function fireProveRequest(origin: string): Promise<Response> {
   return fetch(PROVE_URL, {
     method: "POST",
     headers: {
       "Content-Type": "application/octet-stream",
-      Origin: TEST_ORIGIN,
+      Origin: origin,
     },
     body: new Uint8Array([0]),
   });
@@ -39,6 +41,7 @@ describe("Authorization Flow", () => {
   before(async () => {
     settingsHandle = await browser.getWindowHandle();
     await removeOriginViaUI(TEST_ORIGIN);
+    await removeOriginViaUI(DENY_ORIGIN);
   });
 
   beforeEach(async () => {
@@ -47,6 +50,9 @@ describe("Authorization Flow", () => {
   });
 
   afterEach(async () => {
+    // Closing the popup denies the request; awaiting it first would wait out the popup's 60 s
+    // decision deadline, past the hook's timeout.
+    await closeExtraWindows(settingsHandle);
     if (pendingProve) {
       await pendingProve.catch(() => {});
       pendingProve = null;
@@ -57,6 +63,7 @@ describe("Authorization Flow", () => {
     try {
       await closeExtraWindows(settingsHandle);
       await removeOriginViaUI(TEST_ORIGIN);
+      await removeOriginViaUI(DENY_ORIGIN);
     } catch (e) {
       console.error("Auth flow cleanup failed:", e);
     }
@@ -65,7 +72,7 @@ describe("Authorization Flow", () => {
   it("should show auth popup and persist the origin on Allow", async () => {
     const handlesBefore = await browser.getWindowHandles();
 
-    pendingProve = fireProveRequest();
+    pendingProve = fireProveRequest(TEST_ORIGIN);
 
     const authWindowHandle = await waitForNewWindow(handlesBefore);
     expect(authWindowHandle).not.toBeNull();
@@ -108,7 +115,7 @@ describe("Authorization Flow", () => {
     // Deny would hand a standing grant to a site the user just refused.)
     const handlesBefore = await browser.getWindowHandles();
 
-    pendingProve = fireProveRequest();
+    pendingProve = fireProveRequest(DENY_ORIGIN);
 
     const authWindowHandle = await waitForNewWindow(handlesBefore);
     expect(authWindowHandle).not.toBeNull();
@@ -116,20 +123,20 @@ describe("Authorization Flow", () => {
     await browser.switchToWindow(authWindowHandle!);
 
     // C9 (D8/A): wait for the server origin to render (get_pending_auth) + the click-guard to elapse.
-    await waitForActivePopup(TEST_ORIGIN);
+    await waitForActivePopup(DENY_ORIGIN);
     await decidePopup(authWindowHandle!, "#deny");
     const proveResponse = await pendingProve;
     pendingProve = null;
     expect(proveResponse.status).toBe(403);
 
     const origins = (readConfig().approved_origins as string[]) || [];
-    expect(origins).not.toContain(TEST_ORIGIN);
+    expect(origins).not.toContain(DENY_ORIGIN);
 
     await browser.switchToWindow(settingsHandle);
 
     // B2 (F9): re-request within the cooldown → refused fast with 403 and NO new consent window.
     const handlesBeforeRetry = await browser.getWindowHandles();
-    pendingProve = fireProveRequest();
+    pendingProve = fireProveRequest(DENY_ORIGIN);
     const retryResponse = await pendingProve;
     pendingProve = null;
     expect(retryResponse.status).toBe(403);

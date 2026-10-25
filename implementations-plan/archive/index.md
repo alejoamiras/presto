@@ -80,3 +80,6 @@ with `rg --no-ignore` / `git grep`.
 - [server-1](server-1/plan.md) — closed 2026-10-25 — client-facing error bodies carry no path the
   presto derived: `download_failed` names only the failed step, every `prove_failed` is fixed text,
   and the log keeps the error with its source chain (PR #180).
+- [tests-1](tests-1/plan.md) — closed 2026-10-25 — the store and config lock probes run alone in a
+  child test process, feed case_24 proves independence on one thread, and auth-flow closes its
+  popup before awaiting (PR #176; known limits #177, #179).

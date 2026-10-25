@@ -2113,24 +2113,7 @@ mod custom_bb {
     #[tokio::test]
     #[serial]
     async fn a_custom_route_workspace_failure_keeps_its_path_off_the_wire() {
-        const CHILD: &str = "PRESTO_TEST_WORKSPACE_FAILURE_CHILD";
-        if std::env::var_os(CHILD).is_none() {
-            let name = concat!(
-                module_path!(),
-                "::a_custom_route_workspace_failure_keeps_its_path_off_the_wire"
-            );
-            let name = name.split_once("::").unwrap().1;
-            let child = std::process::Command::new(std::env::current_exe().unwrap())
-                .args(["--exact", name, "--test-threads=1"])
-                .env(CHILD, "1")
-                .output()
-                .unwrap();
-            let stdout = String::from_utf8_lossy(&child.stdout);
-            assert!(
-                child.status.success() && stdout.contains("1 passed"),
-                "{stdout}{}",
-                String::from_utf8_lossy(&child.stderr)
-            );
+        if crate::run_alone() {
             return;
         }
 
