@@ -41,6 +41,7 @@ Presto never logs the witness itself, and never returns it in an HTTP error body
 not redacted. `bb` is a third-party binary and can print whatever it wants, including paths and
 witness diagnostics (`packages/presto/core/src/bb.rs` says so at the call site). No witness leak
 through that channel has been observed; what is accurate is that it is *not a guarantee we enforce*.
+An error a site receives names what failed, never a path on your computer; the detail stays in the log.
 
 Browser prover instances are HTTPS-only by default: no proving payload and no `/prove` request goes over
 HTTP. After an HTTPS connection failure the SDK may make one bounded, witness-free HTTP
