@@ -8,11 +8,31 @@ code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
 quality_bar: production
-status: draft, awaiting approval
+status: completed 2026-10-25 (PR #182)
 worktree: .claude/worktrees/windows-1
 branch: worktree-windows-1
 base: main @ 9ecd90e
 ---
+
+## Outcome
+
+- **Date**: 2026-10-25. **Status**: completed; delivered in PR #182, awaiting merge. Closes #116.
+- **Shipped**: a window that does not fit the primary monitor's usable area is built to fit it:
+  `prevent_overflow()` on Windows and macOS, `windows::fit_to_work_area` with an explicit frame
+  position on Linux. `screen-fit.spec.ts` runs on every WebDriver lane; the Linux built-debug lane
+  runs on a 1280×672 screen. The P5-01 sentence is in `PRIVACY.md`.
+- **CI geometry**:
+  - Linux at 1280×672: a 500×640 frame at y=0.
+  - Linux at 1280×1024: 500×680 at y=172.
+  - macOS: the runner's work area is 674 px, and the frame matches it exactly (674 at y=31).
+  - Windows: Settings keeps 680 in a 720 px work area.
+- **WebDriver step wall-clock**: within run-to-run noise on every lane (after: Linux dev 58 s,
+  built-debug 57 s, macOS 67 s, Windows 67 s).
+- **Known limits**: #183 (Linux: Wayland, title bars over 32 px), #184 (Tauri's Linux centring and
+  Windows estimate), #185 (declared minimum 520×424); all closed as not planned.
+- **Open items**: none from this lane. The dependency audit's happy-dom block, seen in the local
+  gate after merging `main`, is #172.
+- The `/goal` and `/loop` seeds below are retired.
 
 # windows-1: fit a too-tall window to the screen at creation; one PRIVACY.md sentence
 
@@ -190,6 +210,9 @@ group with `kill -- -<pgid>`, then release the rows. Never stop another run's pr
   reachable. (At 640 px the collapsed page also overflows, by 32 px.)
 - Fact 7's 701-px outer height did not hold on Xvfb without a window manager: there the frame equals
   the inner size (680 before, 640 after). The shots lead's figure included decorations.
+- The macOS runner's work area is 674 px, not the tall screen Delivery assumed. So its frame is 674,
+  not 680, and the check asserts containment there. The frame fills the work area exactly, so
+  Fact 3 holds and this was not a stop.
 - `origin/main` (b85134c) was merged in before Phase 1, and the plan commit was amended with its
   `STATUS.md` line before any push (138e947, not 1be908d).
 

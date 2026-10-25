@@ -29,6 +29,8 @@ not belong here. Sections are stable; append, never re-sort.
 - **An error's `to_string()` can name a local path and drop the OS reason** (tar, tempfile) — keep
   it off the wire; log `error = &e as &dyn Error`, which prints `error.sources`.
   `archive/server-1/recon.md`
+- **On Linux, Tauri's `.center()` and `prevent_overflow()` ignore the title bar, and
+  `primary_monitor()` reads on the calling thread** (GDK: main only). `archive/windows-1/recon.md`
 
 ## Build, bundling and dependencies
 
@@ -64,9 +66,6 @@ not belong here. Sections are stable; append, never re-sort.
 - **A test that self-skips with `return` reports `ok`, and "green" without a run ID is not green** —
   grep the lane's log for the skip; a platform with no lane was never exercised.
   `archive/presto-noir/lessons/audit-fixes.md`
-- **A regression test proves nothing until it fails against the old code**.
-  `archive/lna-consent/lessons/cross-arc-review.md`
-- **A native-path smoke can pass on a silent WASM fallback** — assert the phase trail.
 - **A refused loopback port and a Local Network Access block are both `Failed to fetch`** — only CDP
   `Network.loadingFailed` tells them apart. `archive/lna-consent/lessons/arc-2-review.md`
 - **An Aztec local network accepts fake proofs** unless `DEBUG_FORCE_TX_PROOF_VERIFICATION=true`.
