@@ -8,11 +8,26 @@ code_review: off
 explainer: off
 eli5_mode: skipped (orchestrator-owned)
 quality_bar: production
-status: approved by the final Codex pass 2026-10-25 (auto-continue); orchestrator approval pending
+status: completed 2026-10-25 (PR #180)
 worktree: .claude/worktrees/server-1
 branch: worktree-server-1
 base: main @ 80b562e
 ---
+
+## Outcome
+
+- **Date**: 2026-10-25. **Status**: completed; delivered in PR #180, awaiting merge.
+- **Shipped**: `500 download_failed` names only the failed step through `versions::DownloadFailure`;
+  every `500 prove_failed` body is fixed text (`ProveFailed(&'static str)`); the log records both
+  errors with their source chain. Codes and statuses are unchanged.
+- **Deviations**: none in behaviour. The test helper is `versions::unpack_error`, not a re-export.
+- **Rejected**: "could not install" for `UnpackFailed` (the brief fixes the four phrases); widening
+  the macOS CI `custom_bb` filter (I3).
+- **Known limits**: none.
+- **Open items**: none. The `verified_sites::store` lock flake seen during the gates is #141, which
+  was already open; this lane added its second test there. The owner ask about a PRIVACY.md sentence
+  is `OWNER-ASKS.md` #1.
+- The `/goal` and `/loop` seeds below are retired.
 
 # server-1: error bodies carry no local filesystem path
 
