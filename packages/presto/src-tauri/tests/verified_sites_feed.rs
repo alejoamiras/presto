@@ -585,7 +585,12 @@ async fn case_24_a_hung_list_check_never_delays_the_update_check() {
         .await
     });
 
+    // On one thread a blocked list check also holds up this sleep, so a block that outlasts the
+    // window fails even after 20 checks.
+    let started = Instant::now();
     tokio::time::sleep(FEED_TIMEOUT / 2).await;
+    let slept = started.elapsed();
+    assert!(slept < FEED_TIMEOUT, "a 1 s sleep took {slept:?}");
     let checks = checks.load(Ordering::Relaxed);
     assert!(checks >= 20, "only {checks} update checks");
     assert_eq!(

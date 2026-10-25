@@ -20,8 +20,8 @@ const DENY_ORIGIN = "https://test-e2e-webdriver-deny.example.com";
 const PROVE_URL = "http://127.0.0.1:59833/prove";
 
 /**
- * Fire a /prove POST with an unknown origin. The request blocks until the
- * auth popup is resolved (Allow/Deny) or the 60s server timeout fires.
+ * Fire a /prove POST with an unknown origin. The request blocks until its popup is decided or
+ * closed, or the popup's 60 s decision deadline passes (a queued request waits up to 660 s).
  */
 function fireProveRequest(origin: string): Promise<Response> {
   return fetch(PROVE_URL, {

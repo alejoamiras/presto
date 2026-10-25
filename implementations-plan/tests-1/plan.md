@@ -79,11 +79,13 @@ while a list check is pending. Sub-second latency has no consequence (wake tick 
 multi-thread runtime hide a blocked one, so the 250 ms bound saw only OS jitter.
 - case_24 (`src-tauri/tests/verified_sites_feed.rs`): `#[tokio::test]` (current-thread, one
   comment line on why: any blocking in the pending check stops the update task outright); delete
-  the worst-gap assertion; keep `checks.len() >= 20`, one request, list 4.
+  the worst-gap assertion; keep `checks.len() >= 20`, one request, list 4. *Review round 1:* the
+  1 s sleep must also end before `FEED_TIMEOUT`, since a block that starts after 20 checks holds
+  it up too.
 - **Not taken**: a raised bound or a median (blind to blocking too); a paused clock (blocking
   freezes virtual time); a loop to 20 checks (passes once a partial block ends, as this does).
-- **Residual (KL1)**: a healthy run fails only if starved ≥ ~800 ms of the 1 s window (the old
-  bound: 240 ms over), and a block shorter than that passes.
+- **Residual (KL1)**: a healthy run fails only if starved ≥ ~800 ms of the 1 s window or 1 s past
+  it (the old bound: 240 ms); a block that ends before 2 s and leaves 20 checks passes.
 
 **Phase 3 (#98).** Two causes: `afterEach` awaits a request that only a decision ends, and one
 shared origin lets test 1's cleanup Deny cool down test 2.
@@ -171,6 +173,7 @@ close-out as its final commits. No lanes: three small phases, one author.
 
 | Round | Verdict | Adopted | Rejected |
 |---|---|---|---|
+| Review 1: Codex (sol, high) | findings: 2 | case_24 passed a 2 s block that starts after 20 checks (demonstrated, 3/3): the 1 s sleep must end before `FEED_TIMEOUT` (both mutants then fail 3/3, healthy 20/20); the `fireProveRequest` comment named 60 s the server timeout (now the popup's deadline, 660 s queued) | none |
 | Codex final, resumed | **approve** | the three conditions verified resolved; no new finding | none |
 | Codex final (fresh, sol, high) | conditional approve | executable post-implementation (script paths, prompt files, trailer, footer, push and check the final head); run (e) for the Deny test; backstop 660 s | none |
 | Codex 1 (sol, high) | conditional approve | case_24's invariant stated, KL1; #98 limited to failures after the popup opens, run (c), KL2; config's own mutant; WebDriver gate required, fresh app per run; I1/I2 stay inferences, the Windows lane gates delivery; size cut. Codex chose A (B passes a delayed release), current-thread (other cases keep multi-thread), close-then-await + origins | none |
