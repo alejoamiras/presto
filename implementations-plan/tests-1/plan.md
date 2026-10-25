@@ -101,7 +101,7 @@ marker only picks which body runs in the test binary; every deny and cooldown as
 
 ## Phases
 
-### Phase 1: lock-release checks (#141) [ ]
+### Phase 1: lock-release checks (#141) [✓]
 Make the phase 1 changes above. Mutants, each reverted: leak a `try_clone()` of the lock file
 (`std::mem::forget`) in `save_if_newer`, then in `acquire_config_write_lock`.
 **Gate**: from `packages/presto/core`, `cargo test --locked` 40 times with 0 failures, and each

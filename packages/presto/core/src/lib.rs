@@ -139,6 +139,34 @@ impl Drop for ScopedPrestoHome {
     }
 }
 
+/// Runs one test alone in a child test process: `true` in the parent once the child passed (the
+/// test then returns), `false` in the child, which runs the body. For a test that cannot share its
+/// process: process-wide state, or a `flock` probe, which reads held while a concurrent test's spawn
+/// is between fork and exec. Call as `run_alone(module_path!(), "<test fn>")`.
+#[cfg(test)]
+pub(crate) fn run_alone(module: &str, test: &str) -> bool {
+    const ALONE: &str = "PRESTO_TEST_ALONE";
+    if std::env::var_os(ALONE).is_some() {
+        return false;
+    }
+    let module = module
+        .split_once("::")
+        .map_or("", |(_, below_crate)| below_crate);
+    let child = std::process::Command::new(std::env::current_exe().unwrap())
+        .args(["--exact", &format!("{module}::{test}"), "--test-threads=1"])
+        .env(ALONE, "1")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&child.stdout);
+    // `1 passed` also catches a name that matched nothing.
+    assert!(
+        child.status.success() && stdout.contains("1 passed"),
+        "{stdout}{}",
+        String::from_utf8_lossy(&child.stderr)
+    );
+    true
+}
+
 #[cfg(test)]
 mod presto_home_tests {
     use serial_test::serial;
