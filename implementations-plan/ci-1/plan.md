@@ -202,7 +202,8 @@ stop after 3 failures on one step.
    The body: what changed and why; the review in two or three lines (F3–F6); the gate results; that
    the audit is red on `main` for happy-dom and stays red here; Ask A1's offer; `Supersedes #169`;
    `Delivers ask3`; the Claude Code footer. No label. Never comment on, close or approve #169.
-4. **Close-out**, as the PR's final commits: merge `origin/main` and read what changed in `lessons.md`
+4. **Close-out**, as the PR's final commits: run `git fetch origin main && git merge origin/main`, and
+   read what changed in `lessons.md`
    and `archive/index.md`. Write `## Outcome` after the front matter (date, status, PR, `Known limits:`,
    `Open items:`, a line retiring the seeds, A2's disposition line). Promote a lesson only if it
    would bite another task. File any open item in its home (table below). Delete `STATUS.md`. Run
@@ -251,6 +252,11 @@ Codex re-checked the tags, release, #169's head and the eight upstream blobs liv
 - `gh pr checks --watch` had no bound (plausible). Fix: `timeout 590`, at most three times.
 
 Round 2 (resumed): `VERDICT: approve`. No regressions.
+
+**Arc 1 Codex loop** (session 01a1754b): round 1 `MATERIAL FINDINGS: none`; it confirmed the exact
+scope and re-checked the upstream blobs live. Opus diff review alongside: none material. Two minor
+points adopted: the unpushed implementation commit's body said "only bundled dependencies moved",
+missing the module-init helper (reworded; same tree), and the close-out now fetches before merging.
 
 ## Seeds (drafts; not run — the orchestrator owns execution)
 
