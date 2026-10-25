@@ -84,14 +84,14 @@ function codeViolations(code: string, dir = import.meta.dir): string[] {
   }
   if (/\bBun\s*\.\s*(\$|spawn\s*\()|child_process/.test(code)) violations.push("subprocess API");
   const helper = /\bfunction run\(command: string\[\]/.test(code);
-  // A literal array counts only when nothing chained after it can rewrite the command.
+  // A literal array counts only as a whole argument: anything after it may rewrite the command.
   for (const [call, argument] of code.matchAll(
-    /\bBun\s*\.\s*spawnSync\s*\(\s*(\[[^\]]*\](?!\s*[.[])|\w+\b(?!\s*[.[(]))?/g,
+    /\bBun\s*\.\s*spawnSync\s*\(\s*(\[[^\]]*\](?=\s*[,)])|\w+\b(?!\s*[.[(]))?/g,
   )) {
     if (!isNpmRead(argument) && !(helper && argument === "command")) violations.push(call);
   }
   for (const [call, array] of code.matchAll(
-    /(?<!function )\brun\s*\(\s*(\[[^\]]*\](?!\s*[.[]))?/g,
+    /(?<!function )\brun\s*\(\s*(\[[^\]]*\](?=\s*[,)]))?/g,
   )) {
     if (!isNpmRead(array)) violations.push(call);
   }
@@ -572,6 +572,11 @@ describe("the credentialed-job guards", () => {
       "a helper array rewritten after the check",
       'import { run } from "./npm-command.ts";\nrun(["npm", "view", a].map(() => "bunx"));',
     ],
+    [
+      "an optional chain on the array",
+      'run(["npm", "view", a]?.map((_, i) => ["npm", "exec", "t"][i]));',
+    ],
+    ["a comment before the chain", 'Bun.spawnSync(["npm", "view", a] /* */ .concat(["exec"]));'],
   ])("the code guard refuses %s", (_, code) => {
     expect(codeViolations(code)).not.toEqual([]);
   });

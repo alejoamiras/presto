@@ -10,3 +10,4 @@
 - 2026-10-25 gate: Phase 2 green (focused 81 pass/1 env skip; bun run test 0; both greps empty).
 - 2026-10-25 review: Codex fix round 1 — 2 material (E404 via stderr text; guard import-path spellings), both fixed; bun run test 0.
 - 2026-10-25 review: Codex round 2 clean; Opus review 2 low test-only findings adopted (chained-array bypass, contract blind spots); bun run test 0.
+- 2026-10-25 review: Codex round 3 (hard stop) 1 low test-only finding (?.map / comment bypass) fixed with positive lookahead; bun run test 0, lint:actions 0; no 4th round.

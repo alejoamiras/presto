@@ -250,6 +250,9 @@ Resumed verification of the three fixes: **approve**. No material finding remain
     `Bun.spawnSync` in `get-sdk-publish-version.ts`.
   - Detail: `lessons/review-round-2.md`.
 - Codex fix round 2 (resumed): **clean** on the round-1 fixes.
+- Codex fix round 3 (resumed, the hard stop), on the same-family fixes: 1 low, test-only finding. A
+  `?.map` or a comment after the literal array still passed. Fixed by allowlisting `,` or `)`
+  after the array, and verified locally. No fourth round. Detail: `lessons/review-round-3.md`.
 
 ## Post-implementation
 
