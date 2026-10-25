@@ -7,6 +7,7 @@
 
 mod cache_layout;
 mod download_budget;
+mod download_error;
 mod downloader;
 mod leases;
 mod release_metadata;
@@ -20,7 +21,10 @@ pub use cache_layout::{
 };
 pub(crate) use cache_layout::{is_hex64, sha256_file};
 pub use download_budget::{BudgetExhausted, DownloadBudget, PER_ORIGIN_DOWNLOADS};
+pub use download_error::{DownloadError, DownloadFailure};
 pub use downloader::download_bb;
+#[cfg(test)]
+pub(crate) use downloader::unpack_error;
 pub use leases::{acquire as acquire_lease, Contended, Lease};
 pub use release_metadata::{current_platform, download_url};
 pub(crate) use version_policy::{check_version_against, KNOWN_VULNERABLE_VERSIONS};

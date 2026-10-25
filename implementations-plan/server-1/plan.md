@@ -131,7 +131,7 @@ that `bb_failure` now logs once. The three other `ProveFailed` sites already pas
 
 ## Phases
 
-### Phase 1: `download_failed` carries a coarse cause
+### Phase 1: `download_failed` carries a coarse cause ✓
 
 Steps: add `download_error.rs`; migrate the four functions; add `asset_digest` and
 `install_verified`; change `ProveError::DownloadFailed`, `prove_parts` and `download_if_needed`.

@@ -648,13 +648,9 @@ async fn download_if_needed(
     if let Some(callback) = state.on_status.as_ref() {
         callback(ServerStatus::Downloading);
     }
-    versions::download_bb(version).await.map_err(|error| {
-        tracing::error!(version = %version, error = %error, "Failed to download bb");
-        ProveError::DownloadFailed {
-            version: version.to_string(),
-            detail: error.to_string(),
-        }
-    })?;
+    versions::download_bb(version)
+        .await
+        .map_err(|error| download_failed(version, &error))?;
     tracing::info!(version = %version, "Download complete");
     spawn_cache_cleanup(state, version);
     // The established observable sequence is Proving → Downloading → Proving → Idle.
@@ -662,6 +658,23 @@ async fn download_if_needed(
         callback(ServerStatus::Proving);
     }
     Ok(())
+}
+
+/// The log gets the error with its whole source chain; the site gets only the failed step.
+fn download_failed(
+    version: &versions::AztecVersion,
+    error: &versions::DownloadError,
+) -> ProveError {
+    tracing::error!(
+        version = %version,
+        failure = ?error.failure(),
+        error = error as &(dyn std::error::Error + 'static),
+        "Failed to download bb"
+    );
+    ProveError::DownloadFailed {
+        version: version.to_string(),
+        failure: error.failure(),
+    }
 }
 
 fn spawn_cache_cleanup(state: &AppState, version: &versions::AztecVersion) {
@@ -799,6 +812,43 @@ mod tests {
             Body::from_stream(futures_util::stream::pending::<Result<Bytes, std::io::Error>>());
         let res = read_body(body, 1024, Duration::from_secs(30)).await;
         assert!(matches!(res, Err(ProveError::BodyReadTimeout)));
+    }
+
+    #[tokio::test]
+    async fn a_failed_download_tells_the_site_its_step_and_never_the_error() {
+        use versions::DownloadFailure::*;
+        let dir = tempfile::tempdir().unwrap();
+        let missing = dir.path().join("missing");
+        let path = missing.display().to_string();
+        let version = versions::AztecVersion::parse("6.0.0").unwrap();
+        for (failure, cause) in [
+            (ReleaseNotFound, "release not found"),
+            (RequestFailed, "request failed"),
+            (IntegrityCheckFailed, "integrity check failed"),
+            (UnpackFailed, "could not unpack"),
+        ] {
+            let error = versions::unpack_error(failure, &missing);
+            // What the log receives: the path, and the OS reason behind it.
+            assert!(error.to_string().contains(&path), "{error}");
+            assert!(std::error::Error::source(&error).is_some(), "{error}");
+
+            let response = download_failed(&version, &error).into_response();
+            assert_eq!(
+                response.status(),
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR
+            );
+            let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+                .await
+                .unwrap();
+            let text = String::from_utf8_lossy(&body);
+            assert!(!text.contains(&path), "{text}");
+            let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+            assert_eq!(json["error"], "download_failed");
+            assert_eq!(
+                json["message"],
+                format!("Failed to download bb v6.0.0: {cause}")
+            );
+        }
     }
 }
 
