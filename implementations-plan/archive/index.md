@@ -87,3 +87,5 @@ with `rg --no-ignore` / `git grep`.
   usable area is built to fit it (Tauri's `prevent_overflow` on Windows and macOS, `fit_to_work_area`
   on Linux), proven on a 1280×672 Linux WebDriver lane; the P5-01 privacy sentence (PR #182; known
   limits #183, #184, #185).
+- [ci-1](ci-1/plan.md) — closed 2026-10-25 — Dependabot's create-github-app-token v3.3.0 and
+  rust-toolchain v1 bumps, with a reviewed re-pin of the App-key tripwire test (PR #186, supersedes #169).
