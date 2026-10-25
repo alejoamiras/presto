@@ -8,3 +8,4 @@
 - 2026-10-25 gate: plan committed; auto-continue to arc 1 (no owner ask touches a1).
 - 2026-10-25 a1 start: Delivery amended to the implementer brief (sequential arcs, no PR based on a1; D16).
 - 2026-10-25 phase 1 gate: PASS (core 196, noir 40, bun run lint 0, bun run test 0, clean tree, no manifest/lock in diff).
+- 2026-10-25 a1 codex loop: converged in 2 rounds (R1 clean; Opus 1 doc fix; R2 clean).

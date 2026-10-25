@@ -415,6 +415,9 @@ window) and D4 (Opus would log `message`; the final Codex pass showed why not).
   all verified and adopted (Delivery, close-out step 1, the seeds). No committable file still
   describes the advisory.
 - **Final pass, round 4** (resumed): `approve`.
+- **Arc a1 fix loop** (gpt-6.1-sol `high`, session `01a17108-93dd-79e2-8acf-0c8a9767f48c`): R1 `clean`.
+  The Opus diff review found 1 doc slip: core README filed `500 prove_failed` under "capacity". It is
+  fixed. R2 `clean`. Converged in 2 rounds.
 
 ## Seeds
 
