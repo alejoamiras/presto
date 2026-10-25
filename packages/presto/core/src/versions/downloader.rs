@@ -40,7 +40,6 @@ pub async fn download_bb(version: &AztecVersion) -> Result<PathBuf, DownloadErro
     install_verified(version, &bytes, &expected_digest)
 }
 
-/// Check the downloaded tarball against its published digest, then install it into the cache.
 fn install_verified(
     version: &AztecVersion,
     bytes: &[u8],

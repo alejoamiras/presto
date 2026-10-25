@@ -18,8 +18,6 @@ pub enum DownloadFailure {
 }
 
 impl DownloadFailure {
-    /// A refused metadata or tarball request: 404 is a missing release, anything else a failed
-    /// request.
     pub(crate) fn for_status(status: reqwest::StatusCode) -> Self {
         if status == reqwest::StatusCode::NOT_FOUND {
             Self::ReleaseNotFound

@@ -365,15 +365,15 @@ pub(super) fn bb_failure(
     custom: bool,
     error: &(dyn std::error::Error + Send + Sync + 'static),
 ) -> ProveError {
-    if custom && error.downcast_ref::<Unavailable>().is_some() {
-        custom_refused(state, error.to_string());
-        return ProveError::CustomBbUnavailable;
-    }
     tracing::error!(
         custom,
         error = error as &(dyn std::error::Error + 'static),
         "Proving failed"
     );
+    if custom && error.downcast_ref::<Unavailable>().is_some() {
+        custom_refused(state, error.to_string());
+        return ProveError::CustomBbUnavailable;
+    }
     if custom {
         state
             .custom_bb_activity
