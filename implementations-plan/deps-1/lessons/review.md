@@ -8,3 +8,7 @@
   `null` manifest now names its file. A non-JSON bulk answer gets its own error. The doc comment
   states its failure contract. Dot entries are skipped inside `@scope` dirs too.
 - Not changed: symlinked files inside a package (needs a tampered tree, KL-2).
+
+## Arc 1, round 2
+
+- Codex resume on the fix diff (cfaf6a1): **clean**. The loop converged in 2 rounds.

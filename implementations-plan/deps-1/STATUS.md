@@ -9,3 +9,4 @@
 - 2026-10-25 final Codex pass: conditional approve → approve after verify-only resume. Plan committed; gate passed (no OWNER-ASKS entry concerns a surface a person sees; Ask 1 is a security acceptance arc 1 does not depend on).
 - 2026-10-25 arc 1 phase 1 gate: PASS (frozen install, lint, test, 4 dry-runs; audit BLOCKED set = trunk baseline; no sharp; no stale undici). Workers Builds checks pending the PR.
 - 2026-10-25 arc 1 phase 2 gate: PASS (unit 7+1 skip, live 8, lint, test, lint:actions; audit coverage 141 pkgs, bundle findings with source; BLOCKED keys = phase 1).
+- 2026-10-25 arc 1 Codex loop converged (r1 clean, Opus clean+3 minor applied, r2 clean). Final gates on cfaf6a1+: frozen install, test, lint:actions PASS; audit BLOCKED keys = trunk baseline.

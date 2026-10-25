@@ -346,6 +346,7 @@ read the source). Rejected.
 | final | Codex gpt-6.1-sol high, fresh `01a170f1` | conditional approve, then **approve** after a verify-only resume | dropped the lock-splice fallback (phase 1 step 3); corrected the `zod` rationale in `OWNER-ASKS.md` (exhausting client memory goes beyond data trust); delivery is conditional on stacking | none |
 | arc 1 r1 | Codex gpt-6.1-sol high, `01a170fd` (diff 1298669..b43cbd5) | clean | none needed | — |
 | arc 1 r1 | Opus diff review (fresh) | clean, 3 minor | the walker names the file on a malformed or `null` manifest, and a non-JSON answer gets its own error (both tested); the doc comment states its failure contract; dot entries skipped inside `@scope` too; D18 reordered | symlinked files inside a package (needs a tampered tree, KL-2); the `lessons.md` citation is fixed in arc 2's close-out |
+| arc 1 r2 | Codex resume `01a170fd` (fix diff cfaf6a1) | clean | converged | — |
 
 ## Post-implementation
 
