@@ -332,7 +332,9 @@ describe("PrestoClient", () => {
       ["413 payload_too_large", 413, "payload_too_large", "transient", null, null],
       ["429 too_many_requests", 429, "too_many_requests", "transient", null, null],
       ["429 origin_queue_full", 429, "origin_queue_full", "transient", null, null],
-      ["500 download_failed", 500, "download_failed", "transient", null, null],
+      // The budget refused to try, so it says nothing about the release: capacity, not a download.
+      ["429 download_budget_exhausted", 429, "download_budget_exhausted", "transient", null, null],
+      ["500 download_failed", 500, "download_failed", "download-failed", null, null],
       ["500 prove_failed", 500, "prove_failed", "transient", null, null],
     ];
     for (const [name, status, code, reason, wantPhase, notPhase] of fallbackCases) {

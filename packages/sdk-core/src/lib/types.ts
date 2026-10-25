@@ -217,7 +217,12 @@ export type FallbackReason =
   | "version-mismatch"
   /** The presto answered `404`: an app that predates this route. */
   | "route-missing"
-  /** A transient/capacity condition the presto itself signalled (`408`/`413`/`429`/`503`, known `500`s). */
+  /**
+   * The presto could not download or install the `bb` release for this version (`500
+   * download_failed`). Says which stage failed, not whether a retry can succeed.
+   */
+  | "download-failed"
+  /** A transient/capacity condition the presto itself signalled (`408`/`413`/`429`/`503`, `500 prove_failed`). */
   | "transient"
   /** A `200` whose body was over the cap, stalled, or was not JSON. */
   | "malformed-response";
