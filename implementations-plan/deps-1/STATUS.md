@@ -10,3 +10,6 @@
 - 2026-10-25 arc 1 phase 1 gate: PASS (frozen install, lint, test, 4 dry-runs; audit BLOCKED set = trunk baseline; no sharp; no stale undici). Workers Builds checks pending the PR.
 - 2026-10-25 arc 1 phase 2 gate: PASS (unit 7+1 skip, live 8, lint, test, lint:actions; audit coverage 141 pkgs, bundle findings with source; BLOCKED keys = phase 1).
 - 2026-10-25 arc 1 Codex loop converged (r1 clean, Opus clean+3 minor applied, r2 clean). Final gates on cfaf6a1+: frozen install, test, lint:actions PASS; audit BLOCKED keys = trunk baseline.
+- 2026-10-25 arc 2 phase 3 gate: PASS (bun update undici: 8 lock lines; frozen + plain install stable; lint, test 0; audit BLOCKED keys = main).
+- 2026-10-25 arc 2 phase 5 gate: PASS (P4-01 Option A entries added verbatim; lint, test 0; audit: 1 blocked = happy-dom, 12 accepted). Plan regrouped per orchestrator: arc 3 = phase 4 + close-out after 2026-10-27T18:06Z (D19).
+- 2026-10-25 arc 2 Codex loop converged (r1 0 material + Opus 1 material fixed, r2 clean). Final gates on a84a4ae+: frozen install, test, lint:actions PASS; audit BLOCKED keys = happy-dom only (main: happy-dom, undici, zod).

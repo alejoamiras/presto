@@ -5,12 +5,15 @@ lane may not add an allowlist entry without your pick.
 
 ## Ask 1: the blocked packages that no in-scope bump can fix (#172)
 
+**Answered: P4-01, Option A** (delegated by the owner, recorded by the orchestrator 2026-10-25). Arc 2
+adds both entries below verbatim.
+
 **Surface.** `scripts/dependency-audit-allowlist.json`. The `Dependency Audit` job gates both release
 workflows (`docs/RELEASE_RUNBOOK.md:142`). Until each row below is fixed or accepted, every release
 dispatch fails at `dependency-audit`.
 
 **What ships now, without your pick.** Arc 1 (the wrangler bump, no `sharp` override, the audit of
-npm's bundle). Arc 2's re-resolution of the caret `undici` copies, and its `happy-dom` bump after
+npm's bundle). Arc 2's re-resolution of the caret `undici` copies, and arc 3's `happy-dom` bump after
 2026-10-27. With no pick, the audit stays red on the rows below, and #172 stays open.
 
 | Package and advisory | Who pins it | Reaches what users run? | Allowlist entry I would add | Wait for upstream |
@@ -23,7 +26,7 @@ npm's bundle). Arc 2's re-resolution of the caret `undici` copies, and its `happ
 accepts both copies, or none.
 
 **Options.**
-- **A. Accept both entries until 2026-11-30.** The audit goes green once arc 2 lands. Releases can
+- **A. Accept both entries until 2026-11-30.** The audit goes green once arc 3 lands. Releases can
   run. Each entry expires on its date, so it comes back for review.
 - **B. Accept `undici`, wait on `zod`.** The audit stays red on `zod` alone. Releases stay blocked
   until Aztec moves.
@@ -40,4 +43,4 @@ keys, and both entries expire in five weeks.
 
 Waiting keeps every release blocked, with no upstream date for `zod`.
 
-`happy-dom` (GHSA-834v-8h66-3h79) is not part of this ask. Arc 2 fixes it with a bump.
+`happy-dom` (GHSA-834v-8h66-3h79) is not part of this ask. Arc 3 fixes it with a bump.
