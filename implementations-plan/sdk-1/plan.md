@@ -7,10 +7,10 @@ code_review: off
 claude_model: opus
 codex_model: sol
 explainer: off
-status: audited 2026-10-25 (final Codex: approve); approval is the orchestrator's
+status: approved 2026-10-25 (final Codex: approve; auto-continue); a1 implementing
 created: 2026-10-25
 worktree: .claude/worktrees/sdk-1
-branch: worktree-sdk-1 (a1), sdk-1-version (a2, based on a1)
+branch: worktree-sdk-1 (a1), sdk-1-a2 (a2, from origin/main after a1 merges)
 base: main @ 80b562e
 budget: recon 1 agent (Sonnet); code-review off; Codex gpt-6.1-sol at high (program brief)
 ---
@@ -160,7 +160,7 @@ derives from Aztec).
 - **B: one PR with code and docs; the owner's release PR bumps later (as #64 did).** `main` stays
   green, and `release-plan.ts` refuses any release that includes core until the bump lands, so the
   bump cannot be forgotten. But the lane brief gives the bump to this lane.
-- **C (chosen): a1 = B's PR; a2 = only the version edits, a draft PR based on a1.** a2 is merged
+- **C (chosen): a1 = B's PR; a2 = only the version edits, a draft PR opened after a1 merges.** a2 is merged
   right before the owner dispatches the release. This is Codex's pick (high confidence). It also
   meets Opus's concern, because the owner still writes no PR. Cost: one draft PR that waits. Before
   a2 merges, refresh it against `main` and rerun its checks. a2 must not grow: one production-path
@@ -255,7 +255,7 @@ Steps (tests first, so each new expectation is seen failing against the old clas
 ### Phase 2 (a2): the version transition
 
 Steps:
-1. After a1's Codex loop converges and its PR exists, run `git switch -c sdk-1-version worktree-sdk-1`.
+1. After a1 merges: `git fetch origin main && git checkout -b sdk-1-a2 origin/main && bun install`.
 2. Set core to `1.3.0` and presto-noir to `2.1.0`. Run `bun install`. Then `git diff -- bun.lock`
    must show exactly the two version lines. If it shows more, restore the file and edit the two
    lines by hand.
@@ -263,8 +263,7 @@ Steps:
 
 **Validation gate.**
 - Commands: `bun install --frozen-lockfile`; `bun run lint`; `bun run test`;
-  `git status --porcelain`; `git diff --name-only worktree-sdk-1...sdk-1-version -- . ':!implementations-plan'`
-  (once a1 has merged and `origin/main` is merged into a2, use `origin/main...sdk-1-version`).
+  `git status --porcelain`; `git diff --name-only origin/main...HEAD -- . ':!implementations-plan'`.
 - Pass criteria: every command exits 0, and `git status` prints nothing. The name list is exactly
   the two manifests, `bun.lock` (2 changed lines), the noir README (one row) and `CLAUDE.md` (one
   line). None of them is a `published` path in `app.yml:71-87`.
@@ -275,17 +274,13 @@ Steps:
 | Arc | Phases | Branch | Base | PR | `code_review` |
 |---|---|---|---|---|---|
 | a1 | 1 | `worktree-sdk-1` (the plan commit first) | `main` | `fix(sdk-core): report a failed bb download as download-failed`; ready; `Closes #102` | off |
-| a2 | 2 + close-out | `sdk-1-version`, from a1's head | a1 | `build(sdk): presto-core 1.3.0 and presto-noir 2.1.0 for the download-failed release`; draft | off |
+| a2 | 2 + close-out | `sdk-1-a2`, from `origin/main` after a1 merges | `main` | `build(sdk): presto-core 1.3.0 and presto-noir 2.1.0 for the download-failed release`; draft | off |
 
-- a2 is the top layer and carries the close-out, so the plan closes when a2 merges.
-- No pushed branch is rewritten, so `gh stack sync` and `gh stack rebase` are not used: they
-  force-push. When `main` moves, merge `origin/main` into a1, run its gate, and push; then merge a1
-  into a2, run its gate, and push.
-- After a1 squash-merges, merge `origin/main` into a2. That merge brings back
-  `implementations-plan/sdk-1/` beside the archived copy: the squash adds it independently of a2's
-  move. Carry any difference into `archive/sdk-1/`, then `git rm -r implementations-plan/sdk-1`.
-  Commit, then check the whole `git diff origin/main...sdk-1-version`, `implementations-plan/` included.
-  Run the gates, push, and run `gh pr edit <a2> --base main` if GitHub has not retargeted it.
+- Arcs are sequential, one PR each against `main`, no stacked PRs (the program's implementer
+  rule). a2 starts only after a1 merges, so the plan it archives is already on `main`.
+- a2 carries the close-out, so the plan closes when a2 merges.
+- No pushed branch is rewritten (no rebase, no `gh stack sync`, no force-push). When `main` moves
+  under an open PR, merge `origin/main` into it, run its gate, and push.
 - Parallelism: none. a2 is five small file edits.
 - The orchestrator merges a1 when it is green. It merges a2 only under the Ask above.
 
@@ -299,11 +294,11 @@ plan, phase, review or issue references. Log each meaningful attempt in `lessons
 each gate, run `agent-worktree status sdk-1 "phase N green: <next>"`. Stop and reassess after 3
 failures on one step.
 
-1. **Codex audit, per arc at its boundary** (a1 before a2's branch exists; a2 before its PR). Write the
+1. **Codex audit, per arc** (each before its PR). Write the
    prompt to a fresh `mktemp` file under the lane's scratch directory. Run
    `~/.claude/skills/codex/scripts/run-codex.sh <prompt> <worktree> high read-only gpt-6.1-sol`.
    The prompt carries:
-   - the arc's diff (a1: `git diff 80b562e..worktree-sdk-1`; a2: `git diff worktree-sdk-1..sdk-1-version`);
+   - the arc's diff (a1: `git diff 80b562e..worktree-sdk-1`; a2: `git diff origin/main...sdk-1-a2`);
    - this plan, its decision ledger, and the arc map ("arc N of 2");
    - the adversarial and security ask;
    - the line "Never open, list or search `~/.agents/orchy/`";
@@ -323,19 +318,20 @@ failures on one step.
      reviews, or spends a paragraph where a sentence works — and flag places where a non-obvious
      invariant or constraint deserves a comment it doesn't have. Comments are permanent context
      every future reader, human or LLM, pays to re-read: they must be few, dense, and exact."
-3. **Cross-arc pass.** After a2's loop, open a fresh Codex session over `git diff 80b562e..sdk-1-version`
-   with the cross-arc ask (the seams, duplication, drift from the plan). Run the same loop.
+3. **Cross-arc pass.** After a2's loop, open a fresh Codex session over a1's merged diff
+   (`gh pr diff <a1>`) plus a2's diff, with the cross-arc ask (the seams, duplication, drift from
+   the plan). Run the same loop.
 4. **Delivery.** Run `bun run test`, `bun run lint` and `bun run lint:actions` first.
    - a1, after its loop: `git push -u origin worktree-sdk-1`, then
      `gh pr create --base main --title <a1 title> --body-file <file>`.
-   - a2, after its loop and the cross-arc pass: `git push -u origin sdk-1-version`, then
-     `gh pr create --draft --base worktree-sdk-1 --title <a2 title> --body-file <file>`.
+   - a2, after its loop and the cross-arc pass: `git push -u origin sdk-1-a2`, then
+     `gh pr create --draft --base main --title <a2 title> --body-file <file>`.
    - Each body states what changed and why and the gate results, and ends with
      `🤖 Generated with [Claude Code](https://claude.com/claude-code)`.
    - a1's body also carries `Closes #102`. a2's body carries the window and the merge rule.
 5. **Close-out**, as a2's final commits:
-   1. Run `git fetch origin`. Merge `origin/main` into a1, run Phase 1's gate, and push a1. Then
-      merge a1 into a2. Read what changed in `lessons.md` and in the archive index.
+   1. Run `git fetch origin` and merge `origin/main` into a2. Read what changed in `lessons.md` and
+      in the archive index.
    2. Write `## Outcome` after the front matter: date, status, what shipped (both PR numbers),
       `Known limits:`, `Open items:`, and one line that retires the seeds.
    3. Promote the generalizable gotchas to `lessons.md`, with the pruning pass.
@@ -344,8 +340,8 @@ failures on one step.
    6. Run `git mv implementations-plan/sdk-1 implementations-plan/archive/sdk-1` in its own commit.
       Fix the links it breaks. Add one line to `archive/index.md`. Add no row to `index.md`.
    7. Rerun `bun run test`, `bun run lint`, `bun run lint:actions` and Phase 2's scope check. Push
-      each branch with `git push`. Then run `gh pr checks <n> --watch` on the pushed head of each PR
-      (bounded, in the foreground) and report. Do not merge.
+      with `git push`. Then run `gh pr checks <n> --watch` on the pushed head (bounded, in the
+      foreground) and report. Do not merge.
    8. Stop. The implementing session ends here, with a2 a draft. The orchestrator owns what follows:
       refresh a2 against `main` and rerun its checks, mark it ready and merge it under the Ask,
       and resume a session for the teardown.
@@ -379,6 +375,7 @@ failures on one step.
 | D13 | Push after the close-out; gates run on a clean, committed tree; the seeds stop once a2's draft is up | final Codex F2–F4 | adopted |
 | D14 | No log assertion in tests | final Codex F5 | rejected (see Trade-offs) |
 | D15 | Plain branches, merges and `git push`; no `gh stack sync`/`rebase` (they force-push) | final Codex R2; program hard rule | adopted |
+| D16 | a2 starts from `origin/main` after a1 merges, PR against `main`; no PR based on a1 | the program's implementer brief (no stacked PRs) | adopted at implementation; removes the post-squash plan-folder step |
 | D5 | Tests first. Change core row :335; add `429 download_budget_exhausted` and one noir row; no union doc-sync test | Codex F3, F4; Opus F5 | adopted |
 | D6 | Docs: core README, noir table, SDK README and skill (naming `["presto"]`); in a2, the noir tested-pairs row and CLAUDE.md. Not MIGRATION.md or the `errors.ts` lists | draft; Codex F5; Opus F8 | adopted |
 | D7 | `429 download_budget_exhausted` stays `transient`, and the docs name the budget | lane brief; Codex F4 | adopted |
@@ -421,13 +418,13 @@ window) and D4 (Opus would log `message`; the final Codex pass showed why not).
 
 ## Seeds
 
-Drafts (no ELI5; the orchestrator owns approval). One seed per session, inside the worktree.
+Final (auto-continue approval, 2026-10-25; no ELI5). One seed per session, inside the worktree.
 `/goal` is recommended: completion shows in the transcript.
 
 ```
-/goal Phases 1 and 2 marked ✓ in implementations-plan/sdk-1/plan.md, each backed by its validation gate reported passing in the transcript (phase 1: the two download_failed rows seen red then green, core and noir unit, `bun run lint`, `bun run test`, a clean tree; phase 2: `bun install --frozen-lockfile`, lint, test, a clean tree, the five-file scope check); `LESSONS_FILE=implementations-plan/sdk-1/lessons/phase-N.md` printed per phase; `/code-review` NOT run (code_review: off); the Codex fix loop on gpt-6.1-sol at high converged for a1 and for a2 at their boundaries and for the fresh cross-arc pass, each evidenced by a resumed pass with no new material findings quoted in the transcript; a1's PR (ready, `Closes #102`) and a2's draft PR (base a1) exist, opened only after convergence; a2's pushed head includes the archive move (`git show --stat`); `gh pr checks` reported on both pushed heads. Never publish, release, merge, mark a2 ready, or push to main.
+/goal Phase 1 (a1) marked ✓ in implementations-plan/sdk-1/plan.md, backed by its validation gate reported passing in the transcript (the two download_failed rows seen red then green, core and noir unit, `bun run lint`, `bun run test`, a clean tree); `LESSONS_FILE=implementations-plan/sdk-1/lessons/phase-1.md` printed; `/code-review` NOT run (code_review: off); the Codex fix loop on gpt-6.1-sol at high converged over `git diff 80b562e..worktree-sdk-1`, evidenced by a resumed pass with no new material findings quoted in the transcript; a1's PR against main exists, ready, saying `Closes #102`, opened only after convergence; `gh pr checks` reported on its pushed head. a2 is a separate later run from origin/main after a1 merges. Never publish, release, merge, rebase, force-push, or push to main.
 ```
 
 ```
-/loop 15m Drive implementations-plan/sdk-1 forward. Each firing: read plan.md and lessons/ from `sdk-1-version` once it exists, else from `worktree-sdk-1` (authoritative); `git status`, `git log --oneline -5`, `gh pr list --head worktree-sdk-1` and `gh pr list --head sdk-1-version` and their checks. If the plan sits under implementations-plan/archive/ on `sdk-1-version`: if `git fetch -q origin main && git cat-file -e FETCH_HEAD:implementations-plan/archive/sdk-1/plan.md` succeeds, run `agent-worktree done sdk-1 --merged`, report, and stop; else, if `git rev-parse sdk-1-version` equals `git rev-parse origin/sdk-1-version` and both PRs' checks were reported on those heads, report once "delivered: a2 is a draft awaiting the owner's release" and stop (the orchestrator owns a2 from there); else finish close-out step 7. Otherwise take the next step in plan.md; after each edit run the touched package's `test:unit`, then `bun run lint` and `bun run test`; commit signed. A phase is green only when its gate as written passes: paste it, mark ✓, write lessons/phase-N.md, print `LESSONS_FILE=…`, `agent-worktree status sdk-1 "phase N green: <next>"`. At each arc boundary run the Codex loop per Post-implementation before moving on; then the cross-arc pass, the PRs (a2 as a draft), the close-out, the push, `gh pr checks`; report and stop. Never rebase or force-push. Decisions: Codex at high on gpt-6.1-sol, logged in lessons. Same step failing 5 times: reassess with Codex. Never publish, release, merge, mark a2 ready, or push to main.
+/loop 15m Drive implementations-plan/sdk-1 forward. Each firing: read plan.md and lessons/ on the current branch (authoritative), `git status`, `git log --oneline -5`, `gh pr list --head <branch>` and its checks. If plan.md is gone: if `git fetch -q origin main && git cat-file -e FETCH_HEAD:implementations-plan/archive/sdk-1/plan.md` succeeds, run `agent-worktree done sdk-1 --merged`, report, and stop; else, if `git rev-parse HEAD` equals `git rev-parse @{u}` and the a2 PR's checks were reported on that head, report once "delivered: a2 is a draft awaiting the owner's release" and stop; else finish close-out step 7. Otherwise take the next step in plan.md for the current arc (a1 on `worktree-sdk-1`; a2 on `sdk-1-a2`, started from origin/main only after a1 merged); after each edit run the touched package's `test:unit`, then `bun run lint` and `bun run test`; commit signed. A phase is green only when its gate as written passes: paste it, mark ✓, write lessons/phase-N.md, print `LESSONS_FILE=…`, `agent-worktree status sdk-1 "phase N green: <next>"`. Then the arc's Codex loop per Post-implementation, its PR (a2 as a draft), and for a2 the cross-arc pass and the close-out; `gh pr checks`; report and stop. Decisions: Codex at high on gpt-6.1-sol, logged in lessons. Same step failing 5 times: reassess with Codex. Never publish, release, merge, mark a2 ready, rebase, force-push, or push to main.
 ```
