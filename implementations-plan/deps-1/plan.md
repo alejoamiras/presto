@@ -224,7 +224,7 @@ registrator in both packages. Phase 5 adds the allowlist entries the owner picke
   `landing.yml` repeats the dry-runs.
 - No test is added: this is a data change, and the gate proves it.
 
-## Phase 2: audit the pinned npm's bundle (#167)
+## Phase 2: audit the pinned npm's bundle (#167) ✓
 
 1. Export `PINNED_NPM_DIR`.
 2. Add `npmBundle` and `auditNpmBundle`, and wire them in.
