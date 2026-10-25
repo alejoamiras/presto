@@ -16,6 +16,7 @@ export const config: WebdriverIO.Config = {
   // must never run before the specs that assert the pristine unchecked state.
   specs: [
     "./e2e-webdriver/smoke.spec.ts",
+    "./e2e-webdriver/screen-fit.spec.ts",
     "./e2e-webdriver/settings.spec.ts",
     "./e2e-webdriver/theme.spec.ts",
     "./e2e-webdriver/trust-boundary.spec.ts",

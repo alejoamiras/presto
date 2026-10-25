@@ -735,6 +735,9 @@ jobs:
     with:
       runner: ubuntu-latest
       mode: built-debug
+      # A 1280x720 screen less a 48 px taskbar, shorter than Settings: this lane proves a window that
+      # does not fit is built inside the screen. The dev lane keeps the default screen as the control.
+      screen: 1280x672x24
 
   windows-prebuild:
     name: Windows Prebuild Smoke
