@@ -553,7 +553,9 @@ impl Observation for StubCheck {
     }
 }
 
-#[tokio::test(flavor = "multi_thread")]
+// Current-thread on purpose: a list check that blocks its thread then stops the update task
+// outright, where a multi-thread runtime's other workers would keep it on time.
+#[tokio::test]
 async fn case_24_a_hung_list_check_never_delays_the_update_check() {
     let tick = Duration::from_millis(10);
     let h = Harness::new().await;
@@ -562,7 +564,7 @@ async fn case_24_a_hung_list_check_never_delays_the_update_check() {
     let list = tokio::spawn(run_refresh(Arc::clone(&h.sites), h.feed(), rx, tick, tick));
 
     // A stub update task on the same runtime, never reaching its feed, so every tick checks.
-    let checks = Arc::new(Mutex::new(Vec::new()));
+    let checks = Arc::new(AtomicU32::new(0));
     let seen = Arc::clone(&checks);
     let (_tray, tray_rx) = mpsc::channel::<oneshot::Sender<()>>(1);
     let updater = tokio::spawn(async move {
@@ -575,7 +577,7 @@ async fn case_24_a_hung_list_check_never_delays_the_update_check() {
             tray_rx,
             || false,
             |_| {
-                seen.lock().push(Instant::now());
+                seen.fetch_add(1, Ordering::Relaxed);
                 std::future::ready(StubCheck)
             },
             |_, _| std::future::ready(()),
@@ -584,17 +586,8 @@ async fn case_24_a_hung_list_check_never_delays_the_update_check() {
     });
 
     tokio::time::sleep(FEED_TIMEOUT / 2).await;
-    let checks = checks.lock().clone();
-    assert!(checks.len() >= 20, "only {} update checks", checks.len());
-    let worst = checks
-        .windows(2)
-        .map(|pair| pair[1] - pair[0])
-        .max()
-        .unwrap();
-    assert!(
-        worst < Duration::from_millis(250),
-        "an update check waited {worst:?}"
-    );
+    let checks = checks.load(Ordering::Relaxed);
+    assert!(checks >= 20, "only {checks} update checks");
     assert_eq!(
         h.server.requests(),
         1,

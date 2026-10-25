@@ -107,7 +107,7 @@ Make the phase 1 changes above. Mutants, each reverted: leak a `try_clone()` of 
 **Gate**: from `packages/presto/core`, `cargo test --locked` 40 times with 0 failures, and each
 mutant fails its tests; from the root, `bun run lint:clippy`, `bun run lint`, `bun run test` exit 0.
 
-### Phase 2: case_24 (#136) [ ]
+### Phase 2: case_24 (#136) [✓]
 Change case_24. Mutant, reverted: in `refresh`, send the request, then block the thread 2 s.
 Restore `src-tauri/gen/schemas/` after each build.
 **Gate**: from `packages/presto/src-tauri`, `cargo test --locked --test verified_sites_feed` exits
