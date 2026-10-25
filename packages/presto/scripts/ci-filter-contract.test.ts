@@ -217,6 +217,10 @@ describe("presto CI path routing", () => {
       "'scripts/dependency-audit.test.ts'",
       "'scripts/dependency-audit-allowlist.json'",
       "'.github/workflows/dependency-audit.yml'",
+      "'scripts/workers-build.ts'",
+      "'scripts/npm-packages.ts'",
+      "'.bun-version'",
+      "'bunfig.toml'",
     ]) {
       expect(audit).toContain(dependencyPath);
     }

@@ -16,6 +16,8 @@ const PRODUCTION_BRANCH = "main";
  * `npm audit signatures --json`.
  */
 export const PINNED_NPM_BIN = "packages/playground/node_modules/.bin";
+/** The pinned npm itself: its bundled `node_modules` is the code that npm runs. */
+export const PINNED_NPM_DIR = "packages/playground/node_modules/npm";
 
 export function buildSteps(site: string, branch: string | undefined): string[][] {
   if (!SITES.includes(site as Site)) {

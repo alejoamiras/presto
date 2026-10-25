@@ -139,7 +139,7 @@ cargo test --locked --manifest-path packages/presto/server/Cargo.toml
 cargo test --locked --manifest-path packages/presto/src-tauri/Cargo.toml
 ```
 
-`audit:dependencies` combines `bun audit` with `cargo audit` over all three Rust lockfiles. Both release workflows run the same audit as a publication gate. New npm high/critical findings and every RustSec vulnerability block. npm moderate/low findings and RustSec informational warnings are reported. A blocking finding may be accepted only in `scripts/dependency-audit-allowlist.json` with an exact package/advisory pair, rationale, upgrade path, and future expiry. Never extend an expired exception just to make a release green.
+`audit:dependencies` combines `bun audit` with `cargo audit` over all three Rust lockfiles, and sends every package bundled inside the playground's pinned npm (its `bundleDependencies`, which `bun.lock` does not record) to the registry's bulk advisory endpoint. Both release workflows run the same audit as a publication gate. New npm high/critical findings and every RustSec vulnerability block. npm moderate/low findings and RustSec informational warnings are reported. A blocking finding may be accepted only in `scripts/dependency-audit-allowlist.json` with an exact package/advisory pair, rationale, upgrade path, and future expiry. An exception covers every copy of its package, so its rationale must hold for every source its `ACCEPTED` lines print. Never extend an expired exception just to make a release green.
 
 ## Releasing the presto
 
