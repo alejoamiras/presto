@@ -77,3 +77,6 @@ with `rg --no-ignore` / `git grep`.
 - [release-1](release-1/plan.md) — closed 2026-10-25 — the release scripts' registry calls share one
   bounded spawn and the 180 s deadline, the credentialed-job guard follows the move, and the dead
   `publish-testnet.yml` rollback allowance goes (PR #174; open: #173).
+- [tests-1](tests-1/plan.md) — closed 2026-10-25 — the store and config lock probes run alone in a
+  child test process, feed case_24 proves independence on one thread, and auth-flow closes its
+  popup before awaiting (PR #176; known limits #177, #179).
