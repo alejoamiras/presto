@@ -64,11 +64,12 @@ adds spawns to the parent test process and raises that check's exposure.
 **Phase 1 (#141).** Cause: a `flock` belongs to the open file description; another test's spawn
 forks, and until its exec the child holds a copy of every descriptor, so a dropped lock reads as
 held for ~20 µs. Fix the cause: probe in a process with no concurrent spawner.
-- `core/src/lib.rs`: `#[cfg(test)] pub(crate) fn run_alone(test: &str) -> bool` beside
-  `ScopedPrestoHome`, lifted from `server/tests.rs:2109-2133`: the parent re-runs `current_exe()
-  --exact <test> --test-threads=1` with a marker variable, asserts success and `1 passed` (a
-  rename fails loudly) and returns `true`; the child returns `false` and runs the body.
-- The four probing tests in `store.rs` and `config.rs:1063` open with `if crate::run_alone("<path>")
+- `core/src/lib.rs`: `#[cfg(test)] pub(crate) fn run_alone() -> bool` beside `ScopedPrestoHome`,
+  lifted from `server/tests.rs:2109-2133`: the parent re-runs `current_exe() --exact <test>
+  --test-threads=1` with a marker variable, asserts success and `1 passed`, and returns `true`;
+  the child returns `false` and runs the body. *Review round 1:* `<test>` is the calling thread's
+  name, which libtest sets to the test's path, so no call site can name another test.
+- The four probing tests in `store.rs` and `config.rs:1063` open with `if crate::run_alone()
   { return; }`; their assertions stay exact. `server/tests.rs` calls the helper (one mechanism).
 - **Not taken**: (B) the issue's `lock_exclusive_within` probe, a retry that passes a delayed
   release; `/proc/self/fd` (Linux-only); `#[serial]` on every spawner (each future one must know).
@@ -173,6 +174,7 @@ close-out as its final commits. No lanes: three small phases, one author.
 
 | Round | Verdict | Adopted | Rejected |
 |---|---|---|---|
+| Review 1: Opus (general-purpose) | findings: 1 | a call site naming a different existing test passed without its own body (latent, traced); its fix (match `test <name> ... ok`) reads the same wrong name, so the helper takes the name from the test's thread instead; all six sites proven by mutants, 40/40 runs | the case_24 rename nit: the name states the invariant the plan defines |
 | Review 1: Codex (sol, high) | findings: 2 | case_24 passed a 2 s block that starts after 20 checks (demonstrated, 3/3): the 1 s sleep must end before `FEED_TIMEOUT` (both mutants then fail 3/3, healthy 20/20); the `fireProveRequest` comment named 60 s the server timeout (now the popup's deadline, 660 s queued) | none |
 | Codex final, resumed | **approve** | the three conditions verified resolved; no new finding | none |
 | Codex final (fresh, sol, high) | conditional approve | executable post-implementation (script paths, prompt files, trailer, footer, push and check the final head); run (e) for the Deny test; backstop 660 s | none |

@@ -2113,10 +2113,7 @@ mod custom_bb {
     #[tokio::test]
     #[serial]
     async fn a_custom_route_workspace_failure_keeps_its_path_off_the_wire() {
-        if crate::run_alone(
-            module_path!(),
-            "a_custom_route_workspace_failure_keeps_its_path_off_the_wire",
-        ) {
+        if crate::run_alone() {
             return;
         }
 

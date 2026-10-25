@@ -330,10 +330,7 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn a_directory_never_blocks_and_fails_the_save() {
-        if crate::run_alone(
-            module_path!(),
-            "a_directory_never_blocks_and_fails_the_save",
-        ) {
+        if crate::run_alone() {
             return;
         }
         let dir = Dir::new();
@@ -352,7 +349,7 @@ mod tests {
 
     #[test]
     fn the_disk_never_moves_backwards() {
-        if crate::run_alone(module_path!(), "the_disk_never_moves_backwards") {
+        if crate::run_alone() {
             return;
         }
         let dir = Dir::new();
@@ -371,10 +368,7 @@ mod tests {
 
     #[test]
     fn a_different_list_at_the_stored_version_is_equivocation() {
-        if crate::run_alone(
-            module_path!(),
-            "a_different_list_at_the_stored_version_is_equivocation",
-        ) {
+        if crate::run_alone() {
             return;
         }
         let dir = Dir::new();
@@ -391,7 +385,7 @@ mod tests {
 
     #[test]
     fn a_save_waits_for_the_lock_and_releases_it() {
-        if crate::run_alone(module_path!(), "a_save_waits_for_the_lock_and_releases_it") {
+        if crate::run_alone() {
             return;
         }
         let dir = Dir::new();

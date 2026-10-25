@@ -139,26 +139,26 @@ impl Drop for ScopedPrestoHome {
     }
 }
 
-/// Runs one test alone in a child test process: `true` in the parent once the child passed (the
-/// test then returns), `false` in the child, which runs the body. For a test that cannot share its
-/// process: process-wide state, or a `flock` probe, which reads held while a concurrent test's spawn
-/// is between fork and exec. Call as `run_alone(module_path!(), "<test fn>")`.
+/// Runs the calling test alone in a child test process: `true` in the parent once the child passed
+/// (the test then returns), `false` in the child, which runs the body. For a test that cannot share
+/// its process: process-wide state, or a `flock` probe, which reads held while a concurrent test's
+/// spawn is between fork and exec. Call it from the test's own thread, which libtest names after
+/// the test.
 #[cfg(test)]
-pub(crate) fn run_alone(module: &str, test: &str) -> bool {
+pub(crate) fn run_alone() -> bool {
     const ALONE: &str = "PRESTO_TEST_ALONE";
     if std::env::var_os(ALONE).is_some() {
         return false;
     }
-    let module = module
-        .split_once("::")
-        .map_or("", |(_, below_crate)| below_crate);
+    let thread = std::thread::current();
+    let test = thread.name().expect("libtest names each test's thread");
     let child = std::process::Command::new(std::env::current_exe().unwrap())
-        .args(["--exact", &format!("{module}::{test}"), "--test-threads=1"])
+        .args(["--exact", test, "--test-threads=1"])
         .env(ALONE, "1")
         .output()
         .unwrap();
     let stdout = String::from_utf8_lossy(&child.stdout);
-    // `1 passed` also catches a name that matched nothing.
+    // `1 passed` also catches a thread name that matched no test.
     assert!(
         child.status.success() && stdout.contains("1 passed"),
         "{stdout}{}",

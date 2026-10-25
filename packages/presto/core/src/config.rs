@@ -1062,10 +1062,7 @@ mod tests {
 
     #[test]
     fn config_write_lock_is_exclusive_and_released_on_drop() {
-        if crate::run_alone(
-            module_path!(),
-            "config_write_lock_is_exclusive_and_released_on_drop",
-        ) {
+        if crate::run_alone() {
             return;
         }
         // [mut: delete the `flock`/`LockFileEx` call in acquire_config_write_lock → the held guard no longer
