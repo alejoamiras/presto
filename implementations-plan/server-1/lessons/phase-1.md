@@ -5,3 +5,5 @@
   panicked at its `!text.contains(&path)` assertion; restored, it passes.
 - Gated live run, 2026-10-25: `PRESTO_DOWNLOAD_TEST=1 cargo test --locked --manifest-path packages/presto/core/Cargo.toml -- an_unpublished_release_is_reported_as_not_found --nocapture`
   printed `test versions::downloader::tests::an_unpublished_release_is_reported_as_not_found ... ok` (0.25 s): GitHub answered 404, filed as `ReleaseNotFound`.
+- A `bun run lint:clippy` build of `src-tauri` rewrote `src-tauri/gen/schemas/linux-schema.json` (6 lines removed) with no
+  `--features webdriver`; restored with `git checkout` before committing.

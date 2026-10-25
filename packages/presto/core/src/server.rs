@@ -556,7 +556,8 @@ pub(crate) enum ProveError {
     },
     /// This origin (or the app as a whole) started too many uncached bb downloads recently.
     DownloadBudgetExhausted,
-    ProveFailed(String),
+    /// Fixed text only: a bb error's own text can name local paths, so it goes to the log instead.
+    ProveFailed(&'static str),
     InvalidOrigin,
     OriginDenied(String),
     TooManyRequests,
@@ -710,7 +711,11 @@ impl ProveError {
                     format!("Failed to download bb v{version}: {cause}"),
                 )
             }
-            ProveError::ProveFailed(e) => (StatusCode::INTERNAL_SERVER_ERROR, "prove_failed", e),
+            ProveError::ProveFailed(e) => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "prove_failed",
+                e.to_string(),
+            ),
             ProveError::InvalidRequest(detail) => (
                 StatusCode::BAD_REQUEST,
                 "invalid_request",

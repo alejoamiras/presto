@@ -157,7 +157,7 @@ and lists the new tests; `bun run lint:clippy`, `bun run lint` and `bun run test
 runs no Rust test). Clippy on `src-tauri` first needs `frontend:build` and the
 `binaries/bb-<triple>` placeholders (`lessons.md`). Layers: lint, typecheck, unit.
 
-### Phase 2: every `prove_failed` body is fixed text
+### Phase 2: every `prove_failed` body is fixed text ✓
 
 Steps: `ProveFailed(&'static str)`; the new `bb_failure`; `log_prove_failure` drops the error
 text; fix the comment at `server/ultra_honk.rs:341`. Files: `server.rs`, `server/prove.rs`,

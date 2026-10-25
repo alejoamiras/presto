@@ -7,3 +7,4 @@
 - 2026-10-25 Codex final fresh pass: conditional approve; 4 adopted, 1 rejected (macOS filter); resumed check: approve.
 - 2026-10-25 gate passed under auto-continue: no owner ask on a surface arc 1 touches.
 - 2026-10-25 phase 1 gate green: core cargo test 440 passed (one rerun: `verified_sites::store` `a_directory_never_blocks_and_fails_the_save` failed its `lock_is_free` check under full-suite load, passed alone 3/3 and on the rerun; not this lane's code); lint:clippy, bun run lint, bun run test exit 0; gated live 404 test ran and passed.
+- 2026-10-25 phase 2 gate green: core cargo test 441 passed; lint:clippy, bun run lint, bun run test exit 0; src-tauri windows-gnu --lib check and core --tests windows-gnu check exit 0.

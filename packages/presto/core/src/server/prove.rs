@@ -341,7 +341,7 @@ pub(crate) async fn prove(
     })
     .await?;
     let elapsed = start.elapsed();
-    log_prove_outcome(result.as_ref().map(Vec::len), elapsed);
+    log_prove_outcome(result.as_ref().ok().map(Vec::len), elapsed);
 
     let proof = result.map_err(|e| bb_failure(&state, custom, e.as_ref()))?;
     let encoded = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &proof);
@@ -356,26 +356,31 @@ pub(crate) async fn prove(
 /// Response header naming a proof the custom bb made. Never a path, hash or bb output.
 pub(crate) const CUSTOM_BB_HEADER: &str = "x-presto-bb";
 
-/// What a site learns from a bb failure. On the custom route the detail can name local paths, so the
-/// site gets a fixed message and Settings gets the detail; a file that may not run is a 503, on which
-/// every published SDK degrades.
+/// What a site learns from a bb failure: fixed text, because the error can name local paths (the
+/// prove workspace, the custom file). The log gets the error with its source chain, and Settings
+/// gets it on the custom route; a custom file that may not run is a 503, on which every published
+/// SDK degrades.
 pub(super) fn bb_failure(
     state: &AppState,
     custom: bool,
     error: &(dyn std::error::Error + Send + Sync + 'static),
 ) -> ProveError {
-    if !custom {
-        return ProveError::ProveFailed(error.to_string());
-    }
-    if error.downcast_ref::<Unavailable>().is_some() {
+    if custom && error.downcast_ref::<Unavailable>().is_some() {
         custom_refused(state, error.to_string());
         return ProveError::CustomBbUnavailable;
     }
-    state
-        .custom_bb_activity
-        .lock()
-        .record(Err(error.to_string()));
-    ProveError::ProveFailed("bb prove failed".to_string())
+    tracing::error!(
+        custom,
+        error = error as &(dyn std::error::Error + 'static),
+        "Proving failed"
+    );
+    if custom {
+        state
+            .custom_bb_activity
+            .lock()
+            .record(Err(error.to_string()));
+    }
+    ProveError::ProveFailed("bb prove failed")
 }
 
 fn custom_refused(state: &AppState, detail: String) {
@@ -425,7 +430,7 @@ where
     let _cancel_on_drop = CancelOnDrop(cancel.clone());
     tokio::spawn(work(held, cancel))
         .await
-        .map_err(|_| ProveError::ProveFailed("prove task failed".into()))
+        .map_err(|_| ProveError::ProveFailed("prove task failed"))
 }
 
 /// What a scheme handler holds after the shared admission gate. Field order is the drop order:
@@ -584,10 +589,14 @@ async fn prove_permit(state: &AppState) -> Result<OwnedSemaphorePermit, ProveErr
         .map_err(|_| ProveError::ServiceUnavailable)
 }
 
-fn log_prove_outcome<E: std::fmt::Display>(result: Result<usize, &E>, elapsed: Duration) {
-    match result {
-        Ok(proof_bytes) => log_prove_success(proof_bytes, elapsed),
-        Err(e) => log_prove_failure(e, elapsed),
+/// A failure's error is logged by [`bb_failure`]; only its timing is logged here.
+fn log_prove_outcome(proof_bytes: Option<usize>, elapsed: Duration) {
+    match proof_bytes {
+        Some(proof_bytes) => log_prove_success(proof_bytes, elapsed),
+        None => tracing::debug!(
+            elapsed_ms = elapsed.as_millis() as u64,
+            "Failed prove timing"
+        ),
     }
 }
 
@@ -597,14 +606,6 @@ fn log_prove_success(proof_bytes: usize, elapsed: Duration) {
         elapsed_ms = elapsed.as_millis() as u64,
         proof_bytes,
         "Proving timing and size"
-    );
-}
-
-fn log_prove_failure(error: &impl std::fmt::Display, elapsed: Duration) {
-    tracing::error!("Proving failed: {error}");
-    tracing::debug!(
-        elapsed_ms = elapsed.as_millis() as u64,
-        "Failed prove timing"
     );
 }
 
