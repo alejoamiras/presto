@@ -6,3 +6,4 @@
 - 2026-10-25 audit: Codex round 1 conditional approve; all 5 conditions adopted (E404 on stderr, guard aliasing, stalled body test, grep gate, open follow-up + narrowed title).
 - 2026-10-25 audit: final fresh Codex pass conditional approve (3 local conditions adopted); resumed verification: approve.
 - 2026-10-25 gate: plan approved by the panel; OWNER-ASKS none; committing plan.
+- 2026-10-25 gate: Phase 1 green (focused 83 pass; lint:actions 0; bun run test 0, after one lint fix: codeViolations complexity 17>15 -> extracted leafImportViolations).

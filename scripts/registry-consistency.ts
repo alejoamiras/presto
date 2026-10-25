@@ -4,6 +4,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { run } from "./npm-command.ts";
 import { isValidVersion, NPM_PACKAGES, type NpmPackage, packageFromArgs } from "./npm-packages.ts";
 import {
   type ProvenanceStatement,
@@ -23,31 +24,6 @@ export interface SignatureAudit {
     attestations?: { provenance?: { predicateType?: string } };
     attestationBundles?: Array<{ predicateType?: string; bundle?: AuditedBundle }>;
   }>;
-}
-
-/**
- * npm's own timeouts do not bound a registry, or a proxy, that accepts the connection and never
- * answers: such an install was still waiting after 25 minutes. A cold install and audit of the
- * largest package take about 30 s.
- */
-export const NPM_TIMEOUT_MS = 180_000;
-
-export function run(command: string[], cwd: string, timeoutMs = NPM_TIMEOUT_MS): string {
-  const result = Bun.spawnSync(command, {
-    cwd,
-    stdout: "pipe",
-    stderr: "pipe",
-    timeout: timeoutMs,
-  });
-  if (result.exitedDueToTimeout) {
-    throw new Error(`${command.join(" ")} gave no answer within ${timeoutMs / 1000} s`);
-  }
-  if (result.exitCode !== 0) {
-    throw new Error(
-      `${command.join(" ")} failed (${result.exitCode}): ${result.stderr.toString().trim()}`,
-    );
-  }
-  return result.stdout.toString();
 }
 
 export function hasVerifiedSdkProvenance(

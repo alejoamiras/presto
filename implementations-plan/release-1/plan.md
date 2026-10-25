@@ -134,7 +134,7 @@ the next agent who edits a release script.
 
 ## Phases
 
-### Phase 1 — one bounded spawn under every release-script registry call (#132)
+### Phase 1 — one bounded spawn under every release-script registry call (#132) ✓
 1. Create `scripts/npm-command.ts`. Move the timeout test into `scripts/npm-command.test.ts`.
    Repoint `registry-consistency.ts` and its test.
 2. Move `npmViewJson` and `publishedVersions` into `get-sdk-publish-version.ts`. Update

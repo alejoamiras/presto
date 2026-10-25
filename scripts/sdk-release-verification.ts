@@ -1,3 +1,4 @@
+import { NPM_TIMEOUT_MS, run } from "./npm-command.ts";
 import {
   NPM_PACKAGES,
   type NpmPackage,
@@ -44,14 +45,7 @@ export interface VerifiedProvenance {
 }
 
 function npmView(spec: string, field: string): string {
-  const result = Bun.spawnSync(["npm", "view", spec, field], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if (result.exitCode !== 0) {
-    throw new Error(`npm view failed: ${result.stderr.toString().trim()}`);
-  }
-  const value = result.stdout.toString().trim();
+  const value = run(["npm", "view", spec, field]).trim();
   if (!value) throw new Error(`npm view ${spec} ${field} returned an empty value`);
   return value;
 }
@@ -118,6 +112,31 @@ export function verifyProvenanceStatement(
   };
 }
 
+/** The SLSA provenance statement in the registry's attestation response at `url`. */
+export async function fetchAttestationStatement(
+  url: string,
+  timeoutMs = NPM_TIMEOUT_MS,
+): Promise<ProvenanceStatement> {
+  let body: AttestationResponse;
+  try {
+    // One signal bounds the body as well as the headers: a stalled body would otherwise hang json().
+    const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!response.ok) throw new Error(`attestation request failed: HTTP ${response.status}`);
+    body = (await response.json()) as AttestationResponse;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new Error(`GET ${url} gave no answer within ${timeoutMs / 1000} s`, { cause: error });
+    }
+    throw error;
+  }
+  const attestation = body.attestations?.find(
+    (item) => item.predicateType === "https://slsa.dev/provenance/v1",
+  );
+  const payload = attestation?.bundle?.dsseEnvelope?.payload;
+  if (!payload) throw new Error("npm package has no SLSA provenance attestation payload");
+  return JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+}
+
 /**
  * The registry's attestation payload checked against the registry's own `dist.integrity`: two
  * unauthenticated responses, consistent with each other. The signed statement is what
@@ -137,17 +156,8 @@ export async function fetchAndVerifySdkProvenance(
   if (!encodedDigest) throw new Error(`unexpected npm integrity format: ${integrity}`);
   const expectedSha512 = Buffer.from(encodedDigest, "base64").toString("hex");
   if (expectedSha512.length !== 128) throw new Error("npm integrity is not a SHA-512 digest");
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`attestation request failed: HTTP ${response.status}`);
-  const body = (await response.json()) as AttestationResponse;
-  const attestation = body.attestations?.find(
-    (item) => item.predicateType === "https://slsa.dev/provenance/v1",
-  );
-  const payload = attestation?.bundle?.dsseEnvelope?.payload;
-  if (!payload) throw new Error("npm package has no SLSA provenance attestation payload");
-  const statement = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
   return verifyProvenanceStatement(
-    statement,
+    await fetchAttestationStatement(url),
     version,
     expectedCommit,
     allowedWorkflows,

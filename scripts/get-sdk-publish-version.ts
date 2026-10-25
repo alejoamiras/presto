@@ -15,6 +15,7 @@
  */
 
 import { aztecVersionOf } from "./aztec-manifest.ts";
+import { spawnBounded } from "./npm-command.ts";
 import {
   isExactSemver,
   isPrerelease,
@@ -102,24 +103,23 @@ export function baseVersionFor(
   }
 }
 
-async function getPublishedVersions(name: string): Promise<string[]> {
-  const proc = Bun.spawn(["npm", "view", name, "versions", "--json"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  const exitCode = await proc.exited;
-
-  if (exitCode !== 0) {
-    const stderr = await new Response(proc.stderr).text();
-    if (stderr.includes("E404")) {
-      return [];
-    }
-    throw new Error(`npm view failed (exit ${exitCode}): ${stderr}`);
+/** `npm view` output as JSON, or `undefined` when the registry has no such package or version. */
+export function npmViewJson(spec: string, field: string): unknown {
+  const command = ["npm", "view", spec, field, "--json"];
+  const result = spawnBounded(command);
+  if (result.exitCode !== 0) {
+    const stderr = result.stderr.toString();
+    if (stderr.includes("E404")) return undefined;
+    throw new Error(`${command.join(" ")} failed (${result.exitCode}): ${stderr.trim()}`);
   }
+  const text = result.stdout.toString().trim();
+  return text ? JSON.parse(text) : undefined;
+}
 
-  const stdout = await new Response(proc.stdout).text();
-  const parsed = JSON.parse(stdout);
-  return Array.isArray(parsed) ? parsed : [parsed];
+export function publishedVersions(name: string): string[] {
+  const parsed = npmViewJson(name, "versions");
+  if (parsed === undefined) return [];
+  return Array.isArray(parsed) ? parsed : [parsed as string];
 }
 
 async function main() {
@@ -129,7 +129,7 @@ async function main() {
     readManifest(pkg) as Parameters<typeof baseVersionFor>[1],
     rest[0],
   );
-  const versions = await getPublishedVersions(pkg.name);
+  const versions = publishedVersions(pkg.name);
   console.log(resolvePackageVersion(pkg, base, versions));
 }
 

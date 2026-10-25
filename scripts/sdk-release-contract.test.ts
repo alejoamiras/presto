@@ -73,7 +73,8 @@ function jobViolations(text: string): string[] {
 /**
  * Code the import scanner cannot see: `require`, a non-literal `import()`, and any subprocess other
  * than npm reading the registry, spawned from a literal array or through a `run(command)` helper
- * whose every call passes one.
+ * whose every call, in any module, passes one. The helper may be imported only by its own name, so
+ * no alias escapes the call check. Syntax only: a call behind another binding is not seen.
  */
 function codeViolations(code: string): string[] {
   const violations: string[] = [];
@@ -89,9 +90,19 @@ function codeViolations(code: string): string[] {
     if (!isNpmRead(argument) && !(helper && argument === "command")) violations.push(call);
   }
   for (const [call, array] of code.matchAll(/(?<!function )\brun\s*\(\s*(\[[^\]]*\])?/g)) {
-    if (helper && !isNpmRead(array)) violations.push(call);
+    if (!isNpmRead(array)) violations.push(call);
   }
-  return violations;
+  return [...violations, ...leafImportViolations(code)];
+}
+
+/** Imports from the bounded-spawn module that name anything but `run` and its deadline, as written. */
+function leafImportViolations(code: string): string[] {
+  return [...code.matchAll(/\bimport\s+([^;]*?)\s+from\s+["']\.\/npm-command(?:\.ts)?["']/g)]
+    .filter(([, clause]) => {
+      const names = /^\{([^}]*)\}$/.exec(clause?.trim() ?? "")?.[1]?.split(",");
+      return !names?.every((name) => ["run", "NPM_TIMEOUT_MS", ""].includes(name.trim()));
+    })
+    .map(([statement]) => statement);
 }
 
 /** Every module `entries` reach through static or dynamic imports, and each non-built-in specifier. */
@@ -226,7 +237,8 @@ describe("publish job isolation", () => {
   test("the identity-bound check runs unprivileged, after a locked install, and can fail the run", () => {
     const verify = job(publish, "verify");
     expect(verify).toContain("needs: [pack, publish]");
-    expect(verify).toContain("npm install --ignore-scripts");
+    // The verifier's own bounded, script-free install is the fresh registry install.
+    expect(verify).not.toContain("npm install");
     before(
       verify,
       "bun install --frozen-lockfile --ignore-scripts",
@@ -515,8 +527,41 @@ describe("the credentialed-job guards", () => {
       "a helper called with a variable",
       "function run(command: string[], cwd: string) {\n  Bun.spawnSync(command);\n}\nrun(list, dir);",
     ],
+    [
+      "an imported helper running another tool",
+      'import { run } from "./npm-command.ts";\nrun(["bunx", "tool"]);',
+    ],
+    [
+      "an aliased helper",
+      'import { run as execute } from "./npm-command.ts";\nexecute(["bunx", "tool"]);',
+    ],
+    [
+      "the unchecked spawn",
+      'import { spawnBounded } from "./npm-command.ts";\nspawnBounded(["bunx", "tool"]);',
+    ],
   ])("the code guard refuses %s", (_, code) => {
     expect(codeViolations(code)).not.toEqual([]);
+  });
+});
+
+describe("registry deadlines", () => {
+  const source = (rel: string) => readFileSync(resolve(repository, rel), "utf8");
+
+  test("the release scripts reach npm only through the bounded spawn", () => {
+    const direct = /\bBun\s*\.\s*spawn(Sync)?\s*\(\s*\[\s*"npm"/;
+    const bounded = [
+      "scripts/get-sdk-publish-version.ts",
+      "scripts/sdk-release-verification.ts",
+      "scripts/registry-consistency.ts",
+      "scripts/published-playground.ts",
+    ];
+    for (const rel of [...bounded, "scripts/release-plan.ts"]) {
+      expect({ rel, direct: direct.test(source(rel)) }).toEqual({ rel, direct: false });
+    }
+    for (const rel of bounded) expect(source(rel)).toMatch(/from "\.\/npm-command(\.ts)?"/);
+    expect(source("scripts/release-plan.ts")).toMatch(
+      /import \{[^}]*\bnpmViewJson,[^}]*\bpublishedVersions,[^}]*\} from "\.\/get-sdk-publish-version\.ts"/,
+    );
   });
 });
 

@@ -1,4 +1,7 @@
 import { describe, expect, test } from "bun:test";
+import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   aztecDerivedOrder,
   baseVersionFor,
@@ -138,5 +141,45 @@ describe("aztecDerivedOrder", () => {
     expect(() =>
       aztecDerivedOrder(`6.0.0-rc.${"1".repeat(31)}`, `6.0.0-rc.${"9".repeat(30)}`),
     ).toThrow("not an aztec-derived version");
+  });
+});
+
+describe("published versions", () => {
+  // PATH changes run in a child process: set here, they would reach every concurrent test.
+  const versions = (bin: string, code: string, name: string) =>
+    Bun.spawnSync(
+      [
+        process.execPath,
+        "-e",
+        `import { publishedVersions } from ${JSON.stringify(join(import.meta.dir, "get-sdk-publish-version.ts"))};
+console.log(JSON.stringify(publishedVersions(${JSON.stringify(name)})));`,
+      ],
+      {
+        env: { ...process.env, PATH: `${bin}:${process.env.PATH}`, FAKE_NPM_CODE: code },
+        stdout: "pipe",
+        stderr: "pipe",
+      },
+    );
+
+  test("only a registry E404 reads as a name with no versions", () => {
+    const bin = mkdtempSync(join(tmpdir(), "presto-fake-npm-"));
+    try {
+      writeFileSync(
+        join(bin, "npm"),
+        '#!/bin/sh\necho "npm error code $FAKE_NPM_CODE" >&2\nexit 1\n',
+      );
+      chmodSync(join(bin, "npm"), 0o755);
+      const absent = versions(bin, "E404", "@alejoamiras/never-published");
+      expect(absent.stdout.toString().trim()).toBe("[]");
+      expect(absent.exitCode).toBe(0);
+      // The classification reads npm's stderr, never the command: this name carries "E404".
+      const failed = versions(bin, "E500", "presto-E404");
+      expect(failed.exitCode).not.toBe(0);
+      expect(failed.stderr.toString()).toContain(
+        "npm view presto-E404 versions --json failed (1): npm error code E500",
+      );
+    } finally {
+      rmSync(bin, { recursive: true, force: true });
+    }
   });
 });

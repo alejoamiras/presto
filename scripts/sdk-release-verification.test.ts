@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { afterAll, describe, expect, test } from "bun:test";
 import { NPM_PACKAGES } from "./npm-packages.ts";
 import {
+  fetchAttestationStatement,
   LEGACY_SDK_RELEASE_WORKFLOW,
   SDK_RELEASE_WORKFLOW,
   SDK_REPOSITORY,
@@ -133,5 +134,49 @@ describe("SDK provenance verification", () => {
         "cd".repeat(64),
       ),
     ).toThrow("tarball integrity");
+  });
+});
+
+describe("attestation fetch", () => {
+  const payload = Buffer.from(JSON.stringify(statement())).toString("base64");
+  const server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch(request) {
+      const { pathname } = new URL(request.url);
+      if (pathname === "/answered") {
+        return Response.json({
+          attestations: [
+            {
+              predicateType: "https://slsa.dev/provenance/v1",
+              bundle: { dsseEnvelope: { payload } },
+            },
+          ],
+        });
+      }
+      if (pathname === "/stalled-body") {
+        const opened = new ReadableStream({ start: (body) => body.enqueue(Buffer.from("{")) });
+        return new Response(opened, { headers: { "content-type": "application/json" } });
+      }
+      return new Promise<Response>(() => {});
+    },
+  });
+  afterAll(() => server.stop(true));
+  const at = (path: string) => new URL(path, server.url).href;
+
+  // A registry or proxy that accepts the connection and never answers, before or after its headers.
+  test.each(["/stalled-headers", "/stalled-body"])(
+    "a response that stalls (%s) fails, naming the URL, once its time is up",
+    async (path) => {
+      const started = performance.now();
+      await expect(fetchAttestationStatement(at(path), 200)).rejects.toThrow(
+        `GET ${at(path)} gave no answer within 0.2 s`,
+      );
+      expect(performance.now() - started).toBeLessThan(5_000);
+    },
+  );
+
+  test("a prompt answer yields its provenance statement", async () => {
+    expect(await fetchAttestationStatement(at("/answered"), 200)).toEqual(statement());
   });
 });

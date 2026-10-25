@@ -76,6 +76,7 @@ jobs:
               - 'scripts/aztec-manifest.ts'
               - 'scripts/get-sdk-publish-version.ts'
               - 'scripts/published-playground.ts'
+              - 'scripts/npm-command.ts'
               - 'scripts/npm-pack-result.ts'
               - 'scripts/npm-packages.ts'
               - 'scripts/sdk-release-verification.ts'
