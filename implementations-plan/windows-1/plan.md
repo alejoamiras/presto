@@ -177,7 +177,7 @@ the lane's geometry. (3) Give the app and wdio one scratch `HOME` (and `XDG_*`) 
 `DISPLAY=:N WDIO_SCREEN=<geometry> bunx wdio run wdio.conf.ts --spec <spec>`. Take the shot with `ffmpeg -f x11grab -video_size 1280x672 -i :N -frames:v 1 <png>`. Stop each owned
 group with `kill -- -<pgid>`, then release the rows. Never stop another run's process.
 
-### Phase 3: the PRIVACY.md sentence (P5-01, its own commit)
+### Phase 3: the PRIVACY.md sentence (P5-01, its own commit) ✓
 - Append the sentence, verbatim, as the last sentence of the paragraph at `PRIVACY.md:39`. Placed
   after the first sentence, it would make the next sentence's "It does capture" read as if "It" were
   the error. Rewording that sentence is outside the decision.
@@ -262,6 +262,10 @@ the verbatim review rules, the per-OS geometry facts and this ledger are the exc
   shrinks windows that fit by height, which is a visible choice outside P3-01's text, and the panel
   may not make it. Y leaves them as today (KL-2) and needs no owner ask. **D3**: one short Linux lane,
   the Linux dev lane as control, a macOS frame check, Windows log-only. **D4**: P5-01 needs no code.
+- **Post-implementation loop** (`lessons/codex-loop.md`). Round 1, Codex plus Opus: a Linux run
+  without `WDIO_SCREEN` threw at collection (fixed: null off CI, mandatory in CI); comments that
+  contradicted Facts 3 and 7 and KL-2 (rewritten); the macOS check now asserts containment on a screen
+  shorter than Settings. All adopted.
 
 ## Seeds (draft; orchestrator-owned, none will be run)
 
