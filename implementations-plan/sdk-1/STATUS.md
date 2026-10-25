@@ -7,3 +7,4 @@
 - 2026-10-25 final fresh Codex pass: 4 rounds, ends `approve`. D4 reverted (no server message in the log); server-side point tracked privately (GHSA-q9x2-p4gh-hw97); delivery uses merges and plain pushes, no gh stack sync.
 - 2026-10-25 gate: plan committed; auto-continue to arc 1 (no owner ask touches a1).
 - 2026-10-25 a1 start: Delivery amended to the implementer brief (sequential arcs, no PR based on a1; D16).
+- 2026-10-25 phase 1 gate: PASS (core 196, noir 40, bun run lint 0, bun run test 0, clean tree, no manifest/lock in diff).

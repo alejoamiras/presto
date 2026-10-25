@@ -220,7 +220,7 @@ derives from Aztec).
 
 ## Phases
 
-### Phase 1 (a1): `download-failed` in core, carried through both adapters (#102)
+### Phase 1 (a1): `download-failed` in core, carried through both adapters (#102) ✓
 
 Steps (tests first, so each new expectation is seen failing against the old classifier):
 1. In `presto-client.test.ts`, change row :335 to expect `download-failed`. Keep row :336. Add the row
