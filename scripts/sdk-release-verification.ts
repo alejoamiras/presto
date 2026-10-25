@@ -1,3 +1,4 @@
+import { NPM_TIMEOUT_MS, run } from "./npm-command.ts";
 import {
   NPM_PACKAGES,
   type NpmPackage,
@@ -8,7 +9,6 @@ import {
 
 export const SDK_PACKAGE = NPM_PACKAGES.presto.name;
 export const SDK_RELEASE_WORKFLOW = ".github/workflows/release-sdk.yml";
-export const LEGACY_SDK_RELEASE_WORKFLOW = ".github/workflows/publish-testnet.yml";
 export const SDK_REPOSITORY = "https://github.com/alejoamiras/presto";
 export const SDK_SOURCE_DEPENDENCY = "git+https://github.com/alejoamiras/presto@refs/heads/main";
 export const SDK_VERSION_PATTERN = VERSION_PATTERNS["aztec-derived"];
@@ -44,14 +44,7 @@ export interface VerifiedProvenance {
 }
 
 function npmView(spec: string, field: string): string {
-  const result = Bun.spawnSync(["npm", "view", spec, field], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if (result.exitCode !== 0) {
-    throw new Error(`npm view failed: ${result.stderr.toString().trim()}`);
-  }
-  const value = result.stdout.toString().trim();
+  const value = run(["npm", "view", spec, field]).trim();
   if (!value) throw new Error(`npm view ${spec} ${field} returned an empty value`);
   return value;
 }
@@ -81,7 +74,6 @@ export function verifyProvenanceStatement(
   statement: ProvenanceStatement,
   version: string,
   expectedCommit?: string,
-  allowedWorkflows: readonly string[] = [SDK_RELEASE_WORKFLOW],
   expectedSha512?: string,
   pkg: NpmPackage = NPM_PACKAGES.presto,
 ): VerifiedProvenance {
@@ -92,7 +84,7 @@ export function verifyProvenanceStatement(
   if (workflow?.repository !== SDK_REPOSITORY) {
     throw new Error(`unexpected provenance repository: ${workflow?.repository ?? "missing"}`);
   }
-  if (!workflow?.path || !allowedWorkflows.includes(workflow.path)) {
+  if (workflow.path !== SDK_RELEASE_WORKFLOW) {
     throw new Error(`unexpected provenance workflow: ${workflow.path ?? "missing"}`);
   }
   if (workflow.ref !== "refs/heads/main") {
@@ -118,6 +110,31 @@ export function verifyProvenanceStatement(
   };
 }
 
+/** The SLSA provenance statement in the registry's attestation response at `url`. */
+export async function fetchAttestationStatement(
+  url: string,
+  timeoutMs = NPM_TIMEOUT_MS,
+): Promise<ProvenanceStatement> {
+  let body: AttestationResponse;
+  try {
+    // One signal bounds the body as well as the headers: a stalled body would otherwise hang json().
+    const response = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    if (!response.ok) throw new Error(`attestation request failed: HTTP ${response.status}`);
+    body = (await response.json()) as AttestationResponse;
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "TimeoutError") {
+      throw new Error(`GET ${url} gave no answer within ${timeoutMs / 1000} s`, { cause: error });
+    }
+    throw error;
+  }
+  const attestation = body.attestations?.find(
+    (item) => item.predicateType === "https://slsa.dev/provenance/v1",
+  );
+  const payload = attestation?.bundle?.dsseEnvelope?.payload;
+  if (!payload) throw new Error("npm package has no SLSA provenance attestation payload");
+  return JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
+}
+
 /**
  * The registry's attestation payload checked against the registry's own `dist.integrity`: two
  * unauthenticated responses, consistent with each other. The signed statement is what
@@ -126,7 +143,6 @@ export function verifyProvenanceStatement(
 export async function fetchAndVerifySdkProvenance(
   version: string,
   expectedCommit?: string,
-  allowedWorkflows?: readonly string[],
   pkg: NpmPackage = NPM_PACKAGES.presto,
 ): Promise<VerifiedProvenance> {
   const spec = `${pkg.name}@${version}`;
@@ -137,20 +153,10 @@ export async function fetchAndVerifySdkProvenance(
   if (!encodedDigest) throw new Error(`unexpected npm integrity format: ${integrity}`);
   const expectedSha512 = Buffer.from(encodedDigest, "base64").toString("hex");
   if (expectedSha512.length !== 128) throw new Error("npm integrity is not a SHA-512 digest");
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`attestation request failed: HTTP ${response.status}`);
-  const body = (await response.json()) as AttestationResponse;
-  const attestation = body.attestations?.find(
-    (item) => item.predicateType === "https://slsa.dev/provenance/v1",
-  );
-  const payload = attestation?.bundle?.dsseEnvelope?.payload;
-  if (!payload) throw new Error("npm package has no SLSA provenance attestation payload");
-  const statement = JSON.parse(Buffer.from(payload, "base64").toString("utf8"));
   return verifyProvenanceStatement(
-    statement,
+    await fetchAttestationStatement(url),
     version,
     expectedCommit,
-    allowedWorkflows,
     expectedSha512,
     pkg,
   );
@@ -166,7 +172,7 @@ if (import.meta.main) {
     );
     process.exit(1);
   }
-  const verified = await fetchAndVerifySdkProvenance(version, expectedCommit, undefined, pkg);
+  const verified = await fetchAndVerifySdkProvenance(version, expectedCommit, pkg);
   console.log(
     `verified npm provenance for ${pkg.name}@${version}: ${verified.repository}/${verified.workflow}@${verified.ref} (${verified.commit})`,
   );

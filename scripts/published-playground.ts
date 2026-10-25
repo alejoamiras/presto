@@ -2,6 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { requireAztecDependency } from "./aztec-manifest";
+import { run } from "./npm-command";
 import { parseNpmPackResult } from "./npm-pack-result";
 import { NPM_PACKAGES, type NpmPackage } from "./npm-packages";
 import { readPlaygroundPin } from "./playground-pin";
@@ -111,24 +112,19 @@ export function sharedCorePin(manifests: PublishedManifest[]): string {
 if (import.meta.main) {
   const root = resolve(import.meta.dir, "..");
   const directory = await mkdtemp(join(tmpdir(), "presto-published-playground-"));
-  const run = (args: string[]) => {
-    const result = Bun.spawnSync(args, { cwd: directory, stdout: "pipe", stderr: "pipe" });
-    if (result.exitCode !== 0) throw new Error(result.stderr.toString());
-    return result.stdout.toString().trim();
-  };
   const readJson = (rel: string) => Bun.file(join(root, rel)).json();
   const fetchVerified = async (pkg: NpmPackage, version: string) => {
     const spec = `${pkg.name}@${version}`;
     const provenance = await verifySdkPackageSignatures(version, pkg);
     const packed = parseNpmPackResult(
-      JSON.parse(run(["npm", "pack", "--ignore-scripts", "--json", spec])),
+      JSON.parse(run(["npm", "pack", "--ignore-scripts", "--json", spec], directory)),
       pkg.name,
       version,
     );
     const tarball = join(directory, packed.filename);
     assertVerifiedTarball(await Bun.file(tarball).arrayBuffer(), provenance.integrity, spec);
     const manifest: PublishedManifest = JSON.parse(
-      run(["tar", "-xzOf", tarball, "package/package.json"]),
+      run(["tar", "-xzOf", tarball, "package/package.json"], directory),
     );
     return { tarball, manifest };
   };
