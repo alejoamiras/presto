@@ -5,6 +5,9 @@ lane may not add an allowlist entry without your pick.
 
 ## Ask 1: the blocked packages that no in-scope bump can fix (#172)
 
+**Answered: P4-01, Option A** (delegated by the owner, recorded by the orchestrator 2026-10-25). Arc 2
+adds both entries below verbatim.
+
 **Surface.** `scripts/dependency-audit-allowlist.json`. The `Dependency Audit` job gates both release
 workflows (`docs/RELEASE_RUNBOOK.md:142`). Until each row below is fixed or accepted, every release
 dispatch fails at `dependency-audit`.

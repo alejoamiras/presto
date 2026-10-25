@@ -58,6 +58,22 @@
       "upgrade": "Remove when get-uri accepts basic-ftp 6.2.1 or newer and WebdriverIO resolves it."
     },
     {
+      "ecosystem": "npm",
+      "id": "GHSA-mrhx-c7xc-m3w5",
+      "package": "zod",
+      "expires": "2026-11-30",
+      "reason": "Aztec 6.0.0 requires zod ~4.4.3 (fixed in 4.6.6). zod validates Aztec node answers; a hostile node or RPC could exhaust the client's memory with an oversized invalid collection. Residual risk: client denial of service; no data or key exposure is known.",
+      "upgrade": "Remove when the pinned Aztec release allows zod 4.6.6 or newer."
+    },
+    {
+      "ecosystem": "npm",
+      "id": "GHSA-xjj6-f33q-929c",
+      "package": "undici",
+      "expires": "2026-11-30",
+      "reason": "miniflare (wrangler 4.151.1) exact-pins undici 7.29.1 for local Workers tooling; npm 11.21.1 bundles undici 6.29.0 for node-gyp only, which the playground build never runs. Every other undici copy is 6.29.1 or 7.30.1.",
+      "upgrade": "Remove when wrangler's miniflare pins undici 7.30.1 or newer and the playground's npm pin bundles undici 6.29.1 or newer."
+    },
+    {
       "ecosystem": "rust",
       "id": "RUSTSEC-2026-0367",
       "package": "zip",
