@@ -257,6 +257,7 @@ Round 2 (resumed): `VERDICT: approve`. No regressions.
 scope and re-checked the upstream blobs live. Opus diff review alongside: none material. Two minor
 points adopted: the unpushed implementation commit's body said "only bundled dependencies moved",
 missing the module-init helper (reworded; same tree), and the close-out now fetches before merging.
+Round 2 (resumed): verified both fixes, no regressions, `MATERIAL FINDINGS: none`. Converged.
 
 ## Seeds (drafts; not run — the orchestrator owns execution)
 
