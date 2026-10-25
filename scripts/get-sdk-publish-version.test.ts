@@ -164,19 +164,20 @@ console.log(JSON.stringify(publishedVersions(${JSON.stringify(name)})));`,
   test("only a registry E404 reads as a name with no versions", () => {
     const bin = mkdtempSync(join(tmpdir(), "presto-fake-npm-"));
     try {
+      // npm's --json error object on stdout; stderr carries registry text that may say anything.
       writeFileSync(
         join(bin, "npm"),
-        '#!/bin/sh\necho "npm error code $FAKE_NPM_CODE" >&2\nexit 1\n',
+        `#!/bin/sh\nprintf '{"error":{"code":"%s"}}' "$FAKE_NPM_CODE"\necho "npm error 500 upstream E404" >&2\nexit 1\n`,
       );
       chmodSync(join(bin, "npm"), 0o755);
       const absent = versions(bin, "E404", "@alejoamiras/never-published");
       expect(absent.stdout.toString().trim()).toBe("[]");
       expect(absent.exitCode).toBe(0);
-      // The classification reads npm's stderr, never the command: this name carries "E404".
+      // Neither the name nor stderr decides absence, though both say "E404" here.
       const failed = versions(bin, "E500", "presto-E404");
       expect(failed.exitCode).not.toBe(0);
       expect(failed.stderr.toString()).toContain(
-        "npm view presto-E404 versions --json failed (1): npm error code E500",
+        "npm view presto-E404 versions --json failed (1, E500): npm error 500 upstream E404",
       );
     } finally {
       rmSync(bin, { recursive: true, force: true });

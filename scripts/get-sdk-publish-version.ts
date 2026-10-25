@@ -103,16 +103,25 @@ export function baseVersionFor(
   }
 }
 
-/** `npm view` output as JSON, or `undefined` when the registry has no such package or version. */
+/**
+ * `npm view` output as JSON, or `undefined` when the registry has no such package or version. Only
+ * the `error.code` npm reports under `--json` decides absence: stderr echoes text the registry
+ * controls, and a failed lookup read as absence would have release planning publish blind.
+ */
 export function npmViewJson(spec: string, field: string): unknown {
   const command = ["npm", "view", spec, field, "--json"];
   const result = spawnBounded(command);
-  if (result.exitCode !== 0) {
-    const stderr = result.stderr.toString();
-    if (stderr.includes("E404")) return undefined;
-    throw new Error(`${command.join(" ")} failed (${result.exitCode}): ${stderr.trim()}`);
-  }
   const text = result.stdout.toString().trim();
+  if (result.exitCode !== 0) {
+    let code: unknown;
+    try {
+      code = JSON.parse(text)?.error?.code;
+    } catch {}
+    if (code === "E404") return undefined;
+    throw new Error(
+      `${command.join(" ")} failed (${result.exitCode}, ${String(code ?? "no error code")}): ${result.stderr.toString().trim()}`,
+    );
+  }
   return text ? JSON.parse(text) : undefined;
 }
 

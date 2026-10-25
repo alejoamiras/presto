@@ -76,7 +76,7 @@ function jobViolations(text: string): string[] {
  * whose every call, in any module, passes one. The helper may be imported only by its own name, so
  * no alias escapes the call check. Syntax only: a call behind another binding is not seen.
  */
-function codeViolations(code: string): string[] {
+function codeViolations(code: string, dir = import.meta.dir): string[] {
   const violations: string[] = [];
   if (/\brequire\s*\(/.test(code)) violations.push("require");
   for (const [call] of code.matchAll(/\bimport\s*\([^)]*\)/g)) {
@@ -92,17 +92,33 @@ function codeViolations(code: string): string[] {
   for (const [call, array] of code.matchAll(/(?<!function )\brun\s*\(\s*(\[[^\]]*\])?/g)) {
     if (!isNpmRead(array)) violations.push(call);
   }
-  return [...violations, ...leafImportViolations(code)];
+  return [...violations, ...leafImportViolations(code, dir)];
 }
 
-/** Imports from the bounded-spawn module that name anything but `run` and its deadline, as written. */
-function leafImportViolations(code: string): string[] {
-  return [...code.matchAll(/\bimport\s+([^;]*?)\s+from\s+["']\.\/npm-command(?:\.ts)?["']/g)]
-    .filter(([, clause]) => {
-      const names = /^\{([^}]*)\}$/.exec(clause?.trim() ?? "")?.[1]?.split(",");
-      return !names?.every((name) => ["run", "NPM_TIMEOUT_MS", ""].includes(name.trim()));
-    })
+const BOUNDED_SPAWN = resolve(repository, "scripts/npm-command.ts");
+
+/**
+ * References to the bounded-spawn module, however its path is spelled, other than a static import of
+ * `run` and its deadline: a dynamic import, a re-export or any other name escapes the `run` check.
+ */
+function leafImportViolations(code: string, dir: string): string[] {
+  const leaf = (specifier = "") =>
+    specifier.startsWith(".") && Bun.resolveSync(specifier, dir) === BOUNDED_SPAWN;
+  const onlyRun = (clause = "") =>
+    /^\{([^}]*)\}$/
+      .exec(clause.trim())?.[1]
+      ?.split(",")
+      .every((name) => ["run", "NPM_TIMEOUT_MS", ""].includes(name.trim()));
+  const statements = [...code.matchAll(/\b(import|export)\s+([^;]*?)\s+from\s+["']([^"']+)["']/g)]
+    .filter(
+      ([, keyword, clause, specifier]) =>
+        leaf(specifier) && !(keyword === "import" && onlyRun(clause)),
+    )
     .map(([statement]) => statement);
+  const dynamic = [...code.matchAll(/\bimport\s*\(\s*["']([^"']+)["']\s*\)/g)]
+    .filter(([, specifier]) => leaf(specifier))
+    .map(([call]) => call);
+  return [...statements, ...dynamic];
 }
 
 /** Every module `entries` reach through static or dynamic imports, and each non-built-in specifier. */
@@ -261,10 +277,8 @@ describe("publish job isolation", () => {
     expect(modules.has(resolve(repository, "scripts/registry-consistency.ts"))).toBe(true);
     expect(publishJob).not.toContain("verify-sdk-package-signatures");
     for (const module of modules) {
-      expect({ module, violations: codeViolations(readFileSync(module, "utf8")) }).toEqual({
-        module,
-        violations: [],
-      });
+      const violations = codeViolations(readFileSync(module, "utf8"), dirname(module));
+      expect({ module, violations }).toEqual({ module, violations: [] });
     }
   });
 
@@ -538,6 +552,15 @@ describe("the credentialed-job guards", () => {
       "the unchecked spawn",
       'import { spawnBounded } from "./npm-command.ts";\nspawnBounded(["bunx", "tool"]);',
     ],
+    [
+      "the unchecked spawn by another path",
+      'import { spawnBounded } from "././npm-command.ts";\nspawnBounded(["bunx", "tool"]);',
+    ],
+    [
+      "the unchecked spawn by a dynamic import",
+      'const { spawnBounded } = await import("../scripts/npm-command.ts");',
+    ],
+    ["a re-export of the bounded spawn", 'export { spawnBounded } from "./npm-command.ts";'],
   ])("the code guard refuses %s", (_, code) => {
     expect(codeViolations(code)).not.toEqual([]);
   });
