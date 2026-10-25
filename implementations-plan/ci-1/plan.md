@@ -14,6 +14,23 @@ issues: none
 asks: [ask3]
 ---
 
+## Outcome
+
+- **Date**: 2026-10-25. **Status**: completed; delivered in PR #186, awaiting merge. Supersedes #169;
+  delivers ask3.
+- **Shipped**: Dependabot's #169 diff verbatim (`actions/create-github-app-token` v3.3.0 `64ab729a`,
+  `dtolnay/rust-toolchain` v1 `683b588c`) and the reviewed re-pin of
+  `scripts/verified-sites-workflows.test.ts:105-106`. The review (F3–F8, Security) is in the PR body.
+- **Dispositions**: deriving the pin from workflow text, rejected (the test would pass on any
+  commit); cherry-picking Dependabot's commit, rejected (its body fails commitlint); A1, Release Bot
+  Token Check not dispatched by the lane, offered to the owner in the PR body; A2, the `app-id`
+  deprecation predates this bump and has no removal date, so no migration and no issue.
+- **Lessons**: none promoted; `lessons.md` is over its budget and the bundle-review method is
+  specific to action bumps (`lessons/phase-0.md`).
+- **Known limits**: none.
+- **Open items**: none.
+- **Seeds**: the `/goal` and `/loop` drafts at the end of this plan are retired. Do not run them.
+
 # ci-1: land #169's action bumps with a reviewed re-pin of the App-key tripwire
 
 Dependabot's #169 moves `actions/create-github-app-token` from v3.2.0 to v3.3.0 and
