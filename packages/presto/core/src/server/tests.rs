@@ -2218,6 +2218,8 @@ async fn an_official_route_workspace_failure_keeps_its_path_off_the_wire() {
     let _home = crate::ScopedPrestoHome::new();
     let home = std::path::PathBuf::from(std::env::var_os("PRESTO_HOME").unwrap());
     std::fs::create_dir_all(home.join("data")).unwrap();
+    // A file at `data/prove-tmp` sends the workspace to the missing `TMPDIR` on Unix; Windows
+    // refuses instead, so there only the fixed message is proof.
     std::fs::write(home.join("data").join("prove-tmp"), "").unwrap();
     std::env::set_var("TMPDIR", home.join("no-tmp"));
     // The chonk route resolves bb before it creates the workspace; this one must never run.

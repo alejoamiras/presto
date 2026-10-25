@@ -183,9 +183,8 @@ async fn download_tarball(version: &AztecVersion) -> Result<Vec<u8>, DownloadErr
     Ok(bytes)
 }
 
-/// The GitHub release asset's published SHA-256 digest (hex) for this platform's tarball. Every
-/// failure is an error, never a skip: unverified code is never installed. The bundled sidecar path
-/// never reaches here.
+/// The GitHub release asset's published SHA-256 digest (hex) for this platform's tarball. The
+/// bundled sidecar path never reaches here.
 async fn expected_digest(version: &str) -> Result<String, DownloadError> {
     let asset_name = format!("barretenberg-{}.tar.gz", current_platform());
     fetch_github_asset_digest(version, &asset_name).await
@@ -935,8 +934,7 @@ mod tests {
         assert!(!version_bb_path(&version).unwrap().exists());
     }
 
-    /// Live: upstream never publishes this tag, so the metadata lookup answers 404. Gated like the
-    /// test below; run it with its own name filter, as that one is not serial.
+    /// Live: upstream never publishes this tag, so the metadata lookup answers 404.
     #[tokio::test]
     #[serial]
     async fn an_unpublished_release_is_reported_as_not_found() {
