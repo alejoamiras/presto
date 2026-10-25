@@ -16,6 +16,13 @@ on:
         required: false
         type: string
         default: "dev"
+      screen:
+        description: >-
+          Linux Xvfb geometry as WIDTHxHEIGHTx24. screen-fit.spec.ts reads it back as WDIO_SCREEN and
+          checks the window against it, so a short screen here is what proves the window fits one.
+        required: false
+        type: string
+        default: "1280x1024x24"
 
 jobs:
   e2e-webdriver:
@@ -45,9 +52,15 @@ jobs:
       - name: Setup display (Linux)
         if: runner.os == 'Linux'
         working-directory: .
+        env:
+          SCREEN: ${{ inputs.screen }}
         run: |
+          if [[ ! "$SCREEN" =~ ^[0-9]{3,4}x[0-9]{3,4}x24$ ]]; then
+            echo "::error::the screen input must be WIDTHxHEIGHTx24"
+            exit 1
+          fi
           sudo apt-get install -y xvfb stalonetray dbus-x11
-          Xvfb :99 -screen 0 1280x1024x24 &
+          Xvfb :99 -screen 0 "$SCREEN" &
           sleep 1
           eval "$(dbus-launch --sh-syntax)"
           stalonetray -d none --geometry 1x1+0+0 --kludges force_icons_size &
@@ -57,6 +70,7 @@ jobs:
             echo "NO_AT_BRIDGE=1"
             echo "DBUS_SESSION_BUS_ADDRESS=$DBUS_SESSION_BUS_ADDRESS"
             echo "DBUS_SESSION_BUS_PID=$DBUS_SESSION_BUS_PID"
+            echo "WDIO_SCREEN=$SCREEN"
           } >> "$GITHUB_ENV"
 
       # ── Build (release mode only) ──

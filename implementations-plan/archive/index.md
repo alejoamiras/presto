@@ -83,3 +83,7 @@ with `rg --no-ignore` / `git grep`.
 - [tests-1](tests-1/plan.md) — closed 2026-10-25 — the store and config lock probes run alone in a
   child test process, feed case_24 proves independence on one thread, and auth-flow closes its
   popup before awaiting (PR #176; known limits #177, #179).
+- [windows-1](windows-1/plan.md) — closed 2026-10-25 — a window that does not fit the screen's
+  usable area is built to fit it (Tauri's `prevent_overflow` on Windows and macOS, `fit_to_work_area`
+  on Linux), proven on a 1280×672 Linux WebDriver lane; the P5-01 privacy sentence (PR #182; known
+  limits #183, #184, #185).

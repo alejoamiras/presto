@@ -6,6 +6,8 @@ use presto::config;
 use std::sync::Arc;
 use tauri::webview::NewWindowResponse;
 use tauri::{AppHandle, Manager, Url, WebviewUrl, WebviewWindowBuilder};
+#[cfg(target_os = "linux")]
+use tauri::{LogicalPosition, LogicalRect, LogicalSize};
 use url::Host;
 
 /// True iff `url` is the app's OWN local asset origin. Tauri serves the bundled frontend from
@@ -106,6 +108,58 @@ struct WindowConfig<'a> {
     focus_on_create: bool,
 }
 
+/// Height Linux window managers add above a window's inner size. An allowance, not a measurement:
+/// Xvfb draws no title bar, and common X11 managers draw 24 to 37 px.
+#[cfg(target_os = "linux")]
+const LINUX_TITLE_BAR_HEIGHT: f64 = 32.0;
+
+/// The primary monitor's work area, where `.center()` puts a new window. GDK is main-thread only and
+/// `AppHandle::primary_monitor` reads on the calling thread, so the read hops to the main thread
+/// (inline when already on it). `None` with no primary monitor (GDK on Wayland) or no event loop.
+#[cfg(target_os = "linux")]
+fn primary_work_area(app: &AppHandle) -> Option<LogicalRect<f64, f64>> {
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        let area = handle.primary_monitor().ok().flatten().map(|monitor| {
+            let (scale, rect) = (monitor.scale_factor(), monitor.work_area());
+            LogicalRect {
+                position: rect.position.to_logical(scale),
+                size: rect.size.to_logical(scale),
+            }
+        });
+        let _ = tx.send(area);
+    })
+    .ok()?;
+    rx.recv().ok().flatten()
+}
+
+/// The inner size and frame top-left that fit `size`, plus a `title_bar` drawn above it, inside
+/// `area`; `None` when it already fits or the area has no room below a title bar, so the caller keeps
+/// `.center()`. A cut frame goes to the area's top: Tauri centres the inner size alone, which would
+/// hang the frame half a title bar past the bottom.
+#[cfg(target_os = "linux")]
+fn fit_to_work_area(
+    size: LogicalSize<f64>,
+    area: LogicalRect<f64, f64>,
+    title_bar: f64,
+) -> Option<(LogicalSize<f64>, LogicalPosition<f64>)> {
+    let bounds = area.size;
+    let fits = size.width <= bounds.width && size.height + title_bar <= bounds.height;
+    if fits || bounds.height <= title_bar {
+        return None;
+    }
+    let fitted = LogicalSize::new(
+        size.width.min(bounds.width),
+        size.height.min(bounds.height - title_bar),
+    );
+    let frame = LogicalPosition::new(
+        area.position.x + (bounds.width - fitted.width) / 2.0,
+        area.position.y + ((bounds.height - fitted.height - title_bar) / 2.0).max(0.0),
+    );
+    Some((fitted, frame))
+}
+
 /// Open a window with the given config, or handle an already-open one. Returns `Some(window)` for a
 /// FRESHLY-built window (so the caller can do post-build work — attach a close listener, arm a timer),
 /// or `None` if a window with `config.label` was already open (focused first iff `focus_if_open`).
@@ -135,15 +189,13 @@ fn open_or_focus_window(app: &AppHandle, config: WindowConfig) -> Option<tauri::
     } else {
         None
     };
-    match WebviewWindowBuilder::new(app, config.label, WebviewUrl::App(config.url.into()))
+    let builder = WebviewWindowBuilder::new(app, config.label, WebviewUrl::App(config.url.into()))
         .title(config.title)
         .initialization_script(commands::theme_script(
             theme,
             commands::ThemeSource::PreferStored,
         ))
-        .inner_size(config.width, config.height)
         .resizable(false)
-        .center()
         .always_on_top(config.always_on_top)
         // codex r2 #4: actually BUILD the window (un)focused. `focus_on_create` previously only gated a
         // post-build `set_focus`, but tao defaults new windows to focused — so a QUEUED auth popup was
@@ -165,9 +217,29 @@ fn open_or_focus_window(app: &AppHandle, config: WindowConfig) -> Option<tauri::
                 return;
             }
             reassert_theme(&window);
-        })
-        .build()
-    {
+        });
+    // A window taller or wider than the work area is built smaller to fit it. Tauri's fit holds on
+    // Windows, whose title bar it estimates a few px high for a fixed frame, and on macOS, which draws
+    // the title bar inside the inner size; on Linux it leaves the title bar out.
+    #[cfg(not(target_os = "linux"))]
+    let builder = builder
+        .inner_size(config.width, config.height)
+        .center()
+        .prevent_overflow();
+    #[cfg(target_os = "linux")]
+    let builder = match primary_work_area(app).and_then(|area| {
+        fit_to_work_area(
+            LogicalSize::new(config.width, config.height),
+            area,
+            LINUX_TITLE_BAR_HEIGHT,
+        )
+    }) {
+        Some((size, frame)) => builder
+            .inner_size(size.width, size.height)
+            .position(frame.x, frame.y),
+        None => builder.inner_size(config.width, config.height).center(),
+    };
+    match builder.build() {
         Ok(window) => {
             if config.focus_on_create {
                 focus_window(&window);
@@ -394,8 +466,63 @@ pub fn show_update_prompt_window(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "linux")]
+    use super::{fit_to_work_area, LINUX_TITLE_BAR_HEIGHT};
     use super::{is_allowed_navigation, is_local_asset_url, is_loopback_dev_origin};
     use tauri::Url;
+    #[cfg(target_os = "linux")]
+    use tauri::{LogicalPosition, LogicalRect, LogicalSize};
+
+    #[cfg(target_os = "linux")]
+    fn area(y: f64, width: f64, height: f64) -> LogicalRect<f64, f64> {
+        LogicalRect {
+            position: LogicalPosition::new(0.0, y),
+            size: LogicalSize::new(width, height),
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_window_whose_frame_fits_keeps_its_size_and_centring() {
+        let settings = LogicalSize::new(500.0, 680.0);
+        let exact = area(0.0, 1280.0, 680.0 + LINUX_TITLE_BAR_HEIGHT);
+        assert_eq!(
+            fit_to_work_area(settings, exact, LINUX_TITLE_BAR_HEIGHT),
+            None
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_window_taller_than_the_work_area_is_shrunk_with_its_frame_at_the_top() {
+        // A 1280x720 screen less a 48 px panel, starting below a 25 px top bar.
+        let fitted = fit_to_work_area(
+            LogicalSize::new(500.0, 680.0),
+            area(25.0, 1280.0, 672.0),
+            LINUX_TITLE_BAR_HEIGHT,
+        );
+        assert_eq!(
+            fitted,
+            Some((
+                LogicalSize::new(500.0, 640.0),
+                LogicalPosition::new(390.0, 25.0)
+            ))
+        );
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_work_area_with_no_room_below_a_title_bar_is_left_alone() {
+        let sliver = area(0.0, 1280.0, LINUX_TITLE_BAR_HEIGHT);
+        assert_eq!(
+            fit_to_work_area(
+                LogicalSize::new(500.0, 680.0),
+                sliver,
+                LINUX_TITLE_BAR_HEIGHT
+            ),
+            None
+        );
+    }
 
     #[test]
     fn navigation_guard_allows_only_the_local_asset_origin() {
