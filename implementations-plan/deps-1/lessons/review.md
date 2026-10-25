@@ -22,3 +22,7 @@
 - Opus diff review: **1 material**, phase 4's gate allowed a red audit, now fixed. Two minor:
   D15/D19 bookkeeping, and the `npm/undici` lock-only note. Also noted: `braces` is stale,
   queued for arc 3's close-out.
+
+## Arc 2, round 2
+
+- Codex resume on the fix diff (a84a4ae): **clean**. The loop converged in 2 rounds.

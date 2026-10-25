@@ -359,6 +359,7 @@ read the source). Rejected.
 | arc 1 r2 | Codex resume `01a170fd` (fix diff cfaf6a1) | clean | converged | — |
 | arc 2 r1 | Codex gpt-6.1-sol high, `01a172ed` (diff b85134c..a8fcf05) | 0 material, 1 doc note | stale arc references after D19 in `OWNER-ASKS.md` and the plan, fixed | — |
 | arc 2 r1 | Opus diff review (fresh) | 1 material, 2 minor | phase 4's gate would have passed a red audit: it now requires 0 blocked; D15 marked superseded and D19 reordered; phase-3 lesson notes that `npm/undici` is lock-only; the stale `braces` exception goes in arc 3's close-out | — |
+| arc 2 r2 | Codex resume `01a172ed` (fix diff a84a4ae) | clean | converged | — |
 
 ## Post-implementation
 
