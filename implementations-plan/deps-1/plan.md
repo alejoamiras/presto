@@ -255,7 +255,7 @@ registrator in both packages. Phase 5 adds the allowlist entries the owner picke
     the bundle source. The lock audit alone misses the first, which proves the gap in #167 is closed.
   - Its `BLOCKED` keys equal the phase 1 keys.
 
-## Phase 3: re-resolve the caret `undici` copies (#172)
+## Phase 3: re-resolve the caret `undici` copies (#172) ✓
 
 1. Warning: never edit `bun.lock` by hand or by script. A hand edit hides the real constraint, and
    the next resolution reverts it.
