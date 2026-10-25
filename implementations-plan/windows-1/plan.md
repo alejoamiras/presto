@@ -135,7 +135,7 @@ dependency is added.
 
 ## Phases (arc a1)
 
-### Phase 1: the failing e2e (#116)
+### Phase 1: the failing e2e (#116) ✓
 - `_e2e-webdriver.yml`: add the input `screen` (default `1280x1024x24`). The Linux display step takes
   it through `env: SCREEN`, validates it, starts `Xvfb :99 -screen 0 "$SCREEN"` and exports
   `WDIO_SCREEN`. `presto.yml`'s `e2e-webdriver-builtdebug` passes `1280x672x24` (the issue's
@@ -155,7 +155,7 @@ dependency is added.
   run locally at 1280×672 against today's code, fails on the frame assertion. Layers: lint,
   typecheck, unit, e2e (red).
 
-### Phase 2: fit at creation (#116)
+### Phase 2: fit at creation (#116) ✓
 - `packages/presto/src-tauri/src/windows.rs` as above, with its three tests. No configured size
   changes. `CLAUDE.md`: one clause in the Presto bullet; the Testing line counts the new spec.
 - **Validation gate**:
@@ -182,6 +182,16 @@ group with `kill -- -<pgid>`, then release the rows. Never stop another run's pr
   after the first sentence, it would make the next sentence's "It does capture" read as if "It" were
   the error. Rewording that sentence is outside the decision.
 - **Validation gate**: `bun run lint` exits 0; `git diff main -- PRIVACY.md` adds exactly that sentence.
+
+## Deviations
+
+- The scroll assertion opens Advanced and scrolls to the end, the page's tallest state, instead of
+  scrolling the collapsed `#advanced > summary` into view: it proves the end of the longest page is
+  reachable. (At 640 px the collapsed page also overflows, by 32 px.)
+- Fact 7's 701-px outer height did not hold on Xvfb without a window manager: there the frame equals
+  the inner size (680 before, 640 after). The shots lead's figure included decorations.
+- `origin/main` (b85134c) was merged in before Phase 1, and the plan commit was amended with its
+  `STATUS.md` line before any push (138e947, not 1be908d).
 
 ## Delivery
 
