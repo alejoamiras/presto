@@ -21,7 +21,7 @@ Dependabot's #169 moves `actions/create-github-app-token` from v3.2.0 to v3.3.0 
 the action holding the release-bot App key. This plan applies #169's diff byte for byte, records a
 review of the new action commit, re-pins the two test strings, and ships one PR that supersedes #169.
 
-Size: about 240 lines against the `light` target of 150. The written-out Post-implementation steps
+Size: about 265 lines against the `light` target of 150. The written-out Post-implementation steps
 (no repo standard to cite) and the review evidence, which is the deliverable, account for the excess.
 
 ## Outcome & Quality Bar
@@ -128,14 +128,15 @@ one test; no surface a person sees.
   workflow change outside scope. **Decision (Codex R1):** a disposition line in the Outcome, no issue;
   an issue only if the owner accepts the migration as work.
 
-## Phase 1 (a1): apply #169 and re-pin the tripwire
+## Phase 1 (a1): apply #169 and re-pin the tripwire ✓
 
 Warning: change no line that #169 does not change, except the two test strings.
 
 1. Run `git fetch origin pull/169/head`. Check that `FETCH_HEAD` is 49110f1 and that
    `git merge-base origin/main FETCH_HEAD` is `main`'s head. If #169 moved, re-run F3–F6 on its new
    commits first, and use its new head and base for 49110f1 and f8a9f3b everywhere below.
-2. Run `git diff $(git merge-base origin/main FETCH_HEAD) FETCH_HEAD | git apply --index -`.
+2. Run `git diff f8a9f3b 49110f1 | git apply --index -` (explicit SHAs: any later fetch rewrites
+   `FETCH_HEAD`).
 3. Run `bun test scripts/verified-sites-workflows.test.ts`. It must fail on the one test, with only
    the two app-token strings in the diff (the tripwire control).
 4. Replace `bcd2ba49218906704ab6c1aa796996da409d3eb1` with `64ab729a6294000f5aa4a4bc0b73d1f32bc45510`
