@@ -12,6 +12,22 @@ trunk: main
 baseline: 80b562e
 ---
 
+## Outcome
+
+- **Date**: 2026-10-25. **Status**: completed. Delivered in PR #174, awaiting merge.
+- **Shipped**:
+  - #132: one bounded spawn, `scripts/npm-command.ts`, under every registry call in the release
+    scripts. Absence is read from npm's `error.code`. The duplicate verify-job install is removed.
+    The credentialed-job guard is tightened.
+  - #133: the `publish-testnet.yml` allowance and the `allowedWorkflows` parameter are removed.
+- **Deviations**:
+  - E404 is classified on npm's `--json` `error.code`, not on stderr (Codex round 1).
+  - The guard also resolves import paths and allows a literal array only as a whole argument
+    (rounds 1-3 and the same-family review).
+- **Known limits**: none.
+- **Open items**: #173 (shell-step and tool registry calls on the release path).
+- The `/goal` and `/loop` seeds below are retired.
+
 # release-1: deadlines for the release scripts' registry calls; no dead rollback allowance
 
 One arc, one PR: **a1** closes #132 and #133. Asks: none. **UI impact: none.** The recorded owner
