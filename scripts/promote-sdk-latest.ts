@@ -6,11 +6,7 @@ import {
   releaseTag,
 } from "./npm-packages.ts";
 import { RELEASE_SIGNERS, ROLLBACK_SIGNERS } from "./provenance-identity.ts";
-import {
-  fetchAndVerifySdkProvenance,
-  LEGACY_SDK_RELEASE_WORKFLOW,
-  SDK_RELEASE_WORKFLOW,
-} from "./sdk-release-verification.ts";
+import { fetchAndVerifySdkProvenance } from "./sdk-release-verification.ts";
 import { verifySdkPackageSignatures } from "./verify-sdk-package-signatures.ts";
 
 function run(command: string[], options: { inherit?: boolean } = {}): string {
@@ -178,16 +174,12 @@ async function verifyPromotionCandidate(
     }
   }
 
-  const allowedWorkflows = rollback
-    ? [SDK_RELEASE_WORKFLOW, LEGACY_SDK_RELEASE_WORKFLOW]
-    : undefined;
-  await fetchAndVerifySdkProvenance(version, undefined, allowedWorkflows, pkg);
+  await fetchAndVerifySdkProvenance(version, undefined, pkg);
   // The signed statement's commit is the one the tag must match.
   const provenance = await verifySdkPackageSignatures(
     version,
     pkg,
     undefined,
-    allowedWorkflows,
     rollback ? ROLLBACK_SIGNERS : RELEASE_SIGNERS,
   );
   const gitTag = releaseTag(pkg, version);

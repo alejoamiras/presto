@@ -302,12 +302,11 @@ describe("publish job isolation", () => {
     expect(source("scripts/release-plan.ts")).toContain(
       "verifySdkPackageSignatures(version, pkg, tagCommit)",
     );
-    // Promotion: the tag is compared against the signed commit, and a rollback's legacy-workflow
-    // allowance reaches the signed verification too.
+    // Promotion: the tag is compared against the signed commit.
     const promote = source("scripts/promote-sdk-latest.ts");
     // Only a rollback may accept the reusable workflow's earlier name as signer.
     expect(promote).toMatch(
-      /const provenance = await verifySdkPackageSignatures\(\s*version,\s*pkg,\s*undefined,\s*allowedWorkflows,\s*rollback \? ROLLBACK_SIGNERS : RELEASE_SIGNERS,?\s*\)/,
+      /const provenance = await verifySdkPackageSignatures\(\s*version,\s*pkg,\s*undefined,\s*rollback \? ROLLBACK_SIGNERS : RELEASE_SIGNERS,?\s*\)/,
     );
     expect(promote).toContain("tagCommit !== provenance.commit");
   });

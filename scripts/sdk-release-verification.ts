@@ -9,7 +9,6 @@ import {
 
 export const SDK_PACKAGE = NPM_PACKAGES.presto.name;
 export const SDK_RELEASE_WORKFLOW = ".github/workflows/release-sdk.yml";
-export const LEGACY_SDK_RELEASE_WORKFLOW = ".github/workflows/publish-testnet.yml";
 export const SDK_REPOSITORY = "https://github.com/alejoamiras/presto";
 export const SDK_SOURCE_DEPENDENCY = "git+https://github.com/alejoamiras/presto@refs/heads/main";
 export const SDK_VERSION_PATTERN = VERSION_PATTERNS["aztec-derived"];
@@ -75,7 +74,6 @@ export function verifyProvenanceStatement(
   statement: ProvenanceStatement,
   version: string,
   expectedCommit?: string,
-  allowedWorkflows: readonly string[] = [SDK_RELEASE_WORKFLOW],
   expectedSha512?: string,
   pkg: NpmPackage = NPM_PACKAGES.presto,
 ): VerifiedProvenance {
@@ -86,7 +84,7 @@ export function verifyProvenanceStatement(
   if (workflow?.repository !== SDK_REPOSITORY) {
     throw new Error(`unexpected provenance repository: ${workflow?.repository ?? "missing"}`);
   }
-  if (!workflow?.path || !allowedWorkflows.includes(workflow.path)) {
+  if (workflow.path !== SDK_RELEASE_WORKFLOW) {
     throw new Error(`unexpected provenance workflow: ${workflow.path ?? "missing"}`);
   }
   if (workflow.ref !== "refs/heads/main") {
@@ -145,7 +143,6 @@ export async function fetchAttestationStatement(
 export async function fetchAndVerifySdkProvenance(
   version: string,
   expectedCommit?: string,
-  allowedWorkflows?: readonly string[],
   pkg: NpmPackage = NPM_PACKAGES.presto,
 ): Promise<VerifiedProvenance> {
   const spec = `${pkg.name}@${version}`;
@@ -160,7 +157,6 @@ export async function fetchAndVerifySdkProvenance(
     await fetchAttestationStatement(url),
     version,
     expectedCommit,
-    allowedWorkflows,
     expectedSha512,
     pkg,
   );
@@ -176,7 +172,7 @@ if (import.meta.main) {
     );
     process.exit(1);
   }
-  const verified = await fetchAndVerifySdkProvenance(version, expectedCommit, undefined, pkg);
+  const verified = await fetchAndVerifySdkProvenance(version, expectedCommit, pkg);
   console.log(
     `verified npm provenance for ${pkg.name}@${version}: ${verified.repository}/${verified.workflow}@${verified.ref} (${verified.commit})`,
   );

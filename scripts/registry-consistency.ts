@@ -110,14 +110,12 @@ export async function verifyRegistryConsistency(
   version: string,
   pkg: NpmPackage = NPM_PACKAGES.presto,
   expectedCommit?: string,
-  allowedWorkflows?: readonly string[],
 ): Promise<VerifiedProvenance> {
   const report = await auditSignatures(version, pkg);
   return verifyProvenanceStatement(
     verifiedProvenanceStatement(report, version, pkg),
     version,
     expectedCommit,
-    allowedWorkflows,
     undefined,
     pkg,
   );

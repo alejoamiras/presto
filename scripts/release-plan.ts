@@ -342,7 +342,7 @@ async function releaseFacts(
   const tagCommit = remoteTagCommit(tag);
   if (!tagCommit) return { releaseVerified: false, releaseProblem: `no release tag ${tag}` };
   try {
-    const provenance = await fetchAndVerifySdkProvenance(version, tagCommit, undefined, pkg);
+    const provenance = await fetchAndVerifySdkProvenance(version, tagCommit, pkg);
     await verifySdkPackageSignatures(version, pkg, tagCommit);
     if (provenance.commit !== tagCommit) {
       return {

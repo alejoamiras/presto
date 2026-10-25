@@ -166,7 +166,7 @@ the next agent who edits a release script.
   - Pass: exit 0 everywhere.
   - Layers: lint, typecheck, unit.
 
-### Phase 2 — drop the dead rollback allowance (#133)
+### Phase 2 — drop the dead rollback allowance (#133) ✓
 1. Make the #133 deletions. Update the callers, the positional test calls and the promote regex
    (`sdk-release-contract.test.ts:296-299`).
 2. Keep one explicit test: a `.github/workflows/publish-testnet.yml` statement throws

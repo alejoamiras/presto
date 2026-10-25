@@ -34,14 +34,7 @@ describe("registry consistency", () => {
   test("the statement is decoded from the provenance bundle npm reported", async () => {
     const report = await realReport();
     const statement = verifiedProvenanceStatement(report, "1.0.0", core);
-    const verified = verifyProvenanceStatement(
-      statement,
-      "1.0.0",
-      undefined,
-      undefined,
-      undefined,
-      core,
-    );
+    const verified = verifyProvenanceStatement(statement, "1.0.0", undefined, undefined, core);
     expect(verified.commit).toBe("f331a7877a36d4704436023dce204ee92786a319");
     expect(verified.workflow).toBe(".github/workflows/release-sdk.yml");
     // sha512 hex from the statement, in npm's base64 integrity form.

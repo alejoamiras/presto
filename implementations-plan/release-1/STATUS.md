@@ -7,3 +7,4 @@
 - 2026-10-25 audit: final fresh Codex pass conditional approve (3 local conditions adopted); resumed verification: approve.
 - 2026-10-25 gate: plan approved by the panel; OWNER-ASKS none; committing plan.
 - 2026-10-25 gate: Phase 1 green (focused 83 pass; lint:actions 0; bun run test 0, after one lint fix: codeViolations complexity 17>15 -> extracted leafImportViolations).
+- 2026-10-25 gate: Phase 2 green (focused 81 pass/1 env skip; bun run test 0; both greps empty).

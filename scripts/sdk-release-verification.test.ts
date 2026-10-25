@@ -2,7 +2,6 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { NPM_PACKAGES } from "./npm-packages.ts";
 import {
   fetchAttestationStatement,
-  LEGACY_SDK_RELEASE_WORKFLOW,
   SDK_RELEASE_WORKFLOW,
   SDK_REPOSITORY,
   SDK_SOURCE_DEPENDENCY,
@@ -48,13 +47,7 @@ function statement(
 describe("SDK provenance verification", () => {
   test("accepts the exact repository, top-level workflow, main ref, and commit", () => {
     expect(
-      verifyProvenanceStatement(
-        statement(),
-        "5.2.0-revision.1",
-        "ab".repeat(20),
-        undefined,
-        "ab".repeat(64),
-      ),
+      verifyProvenanceStatement(statement(), "5.2.0-revision.1", "ab".repeat(20), "ab".repeat(64)),
     ).toEqual({
       commit: "ab".repeat(20),
       ref: "refs/heads/main",
@@ -82,15 +75,13 @@ describe("SDK provenance verification", () => {
     ).toThrow("unexpected provenance workflow");
   });
 
-  test("accepts the retired publish workflow only when rollback opts in explicitly", () => {
-    const legacyStatement = statement({ path: LEGACY_SDK_RELEASE_WORKFLOW });
-    expect(() => verifyProvenanceStatement(legacyStatement, "5.2.0-revision.1")).toThrow();
-    expect(
-      verifyProvenanceStatement(legacyStatement, "5.2.0-revision.1", undefined, [
-        SDK_RELEASE_WORKFLOW,
-        LEGACY_SDK_RELEASE_WORKFLOW,
-      ]).workflow,
-    ).toBe(LEGACY_SDK_RELEASE_WORKFLOW);
+  test("rejects the retired publish-testnet.yml workflow, whose identity no signer policy carries", () => {
+    expect(() =>
+      verifyProvenanceStatement(
+        statement({ path: ".github/workflows/publish-testnet.yml" }),
+        "5.2.0-revision.1",
+      ),
+    ).toThrow("unexpected provenance workflow");
   });
 
   test("rejects a statement that names a sibling package", () => {
@@ -101,14 +92,7 @@ describe("SDK provenance verification", () => {
       versionMode: "manifest" as const,
     };
     expect(() =>
-      verifyProvenanceStatement(
-        statement(),
-        "5.2.0-revision.1",
-        undefined,
-        undefined,
-        undefined,
-        core,
-      ),
+      verifyProvenanceStatement(statement(), "5.2.0-revision.1", undefined, undefined, core),
     ).toThrow("does not contain pkg:npm/%40alejoamiras/presto-core@5.2.0-revision.1");
   });
 
@@ -126,13 +110,7 @@ describe("SDK provenance verification", () => {
       ),
     ).toThrow("resolved git commit");
     expect(() =>
-      verifyProvenanceStatement(
-        statement(),
-        "5.2.0-revision.1",
-        undefined,
-        undefined,
-        "cd".repeat(64),
-      ),
+      verifyProvenanceStatement(statement(), "5.2.0-revision.1", undefined, "cd".repeat(64)),
     ).toThrow("tarball integrity");
   });
 });
