@@ -242,7 +242,10 @@ D-d: the test set plus `install_verified` and the chain control.
 
 **Post-implementation Codex loop** (`lessons/codex-loop.md`): round 1 found two Low issues (a
 custom `Unavailable` skipped the new log line; two doc comments restated their code), both fixed
-in 1fab632. Round 2 (resumed, after merging `origin/main`): clean.
+in 1fab632. Round 2 (resumed, after merging `origin/main`): clean. The same-family review (Opus)
+repeated the first finding, asked for two comment fixes and the trim of a third (done in ead6e9e),
+and proposed "could not install" for `UnpackFailed`. That was rejected: the lane brief fixes the
+four phrases. Round 3 (resumed): clean.
 
 **Deviations from the plan**: none in behaviour. The server test builds its path-bearing errors
 with `versions::unpack_error` (a `#[cfg(test)]` helper next to `make_targz`), not a re-export of

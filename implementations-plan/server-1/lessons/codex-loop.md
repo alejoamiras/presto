@@ -15,3 +15,4 @@
 | The gated test's comment holds a run instruction whose reason does not follow | fixed: trimmed to the invariant |
 | The workspace test's `prove-tmp` file trick needs a comment | fixed: one line, incl. why Windows proves only the fixed message |
 | Nits: `expected_digest` doc repeats the fail-closed paragraph; `for_status` doc restates its body | fixed (the second in 1fab632) |
+| 3 | Codex, resumed | verify the same-family fixes (ead6e9e) | clean |

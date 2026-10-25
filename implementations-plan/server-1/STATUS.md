@@ -10,3 +10,4 @@
 - 2026-10-25 phase 2 gate green: core cargo test 441 passed; lint:clippy, bun run lint, bun run test exit 0; src-tauri windows-gnu --lib check and core --tests windows-gnu check exit 0.
 - 2026-10-25 phase 3 gate green: bun run lint exit 0.
 - 2026-10-25 codex loop: round 1 two Low findings fixed (1fab632); merged origin/main (de828ab); round 2 clean.
+- 2026-10-25 same-family review: 4 findings; 1 already fixed, 2 fixed (ead6e9e), 1 rejected (brief fixes the cause phrases); codex round 3 clean. Final gates green: core 441 passed (one rerun: #141 flake under load ~100), lint:clippy, bun run test exit 0.
