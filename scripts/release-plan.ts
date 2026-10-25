@@ -20,7 +20,12 @@
  * Usage: bun scripts/release-plan.ts --packages <key|all> [--dry-run]
  */
 
-import { baseVersionFor, resolvePublishVersion } from "./get-sdk-publish-version.ts";
+import {
+  baseVersionFor,
+  npmViewJson,
+  publishedVersions,
+  resolvePublishVersion,
+} from "./get-sdk-publish-version.ts";
 import {
   isPackageKey,
   isValidVersion,
@@ -275,26 +280,6 @@ function run(command: string[]): string {
   return result.stdout.toString().trim();
 }
 
-/** `npm view` output as JSON, or `undefined` when the registry has no such package or version. */
-function npmViewJson(spec: string, field: string): unknown {
-  const result = Bun.spawnSync(["npm", "view", spec, field, "--json"], {
-    stdout: "pipe",
-    stderr: "pipe",
-  });
-  if (result.exitCode !== 0) {
-    if (result.stderr.toString().includes("E404")) return undefined;
-    throw new Error(`npm view ${spec} ${field} failed: ${result.stderr.toString().trim()}`);
-  }
-  const text = result.stdout.toString().trim();
-  return text ? JSON.parse(text) : undefined;
-}
-
-function publishedVersions(name: string): string[] {
-  const parsed = npmViewJson(name, "versions");
-  if (parsed === undefined) return [];
-  return Array.isArray(parsed) ? parsed : [parsed as string];
-}
-
 function remoteTagCommit(tag: string): string | undefined {
   const refs = run([
     "git",
@@ -357,7 +342,7 @@ async function releaseFacts(
   const tagCommit = remoteTagCommit(tag);
   if (!tagCommit) return { releaseVerified: false, releaseProblem: `no release tag ${tag}` };
   try {
-    const provenance = await fetchAndVerifySdkProvenance(version, tagCommit, undefined, pkg);
+    const provenance = await fetchAndVerifySdkProvenance(version, tagCommit, pkg);
     await verifySdkPackageSignatures(version, pkg, tagCommit);
     if (provenance.commit !== tagCommit) {
       return {

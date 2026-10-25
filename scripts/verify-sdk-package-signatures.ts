@@ -14,7 +14,6 @@ import { type VerifiedProvenance, verifyProvenanceStatement } from "./sdk-releas
 
 export interface SignedProvenanceOptions {
   expectedCommit?: string;
-  allowedWorkflows?: readonly string[];
   signers?: readonly string[];
   /** Tests inject trust material; production fetches Sigstore's public-good root through TUF. */
   trust?: TrustMaterial;
@@ -37,14 +36,7 @@ export async function verifySignedReport(
     options.trust,
   );
   return bindToSigningIdentity(
-    verifyProvenanceStatement(
-      statement,
-      version,
-      options.expectedCommit,
-      options.allowedWorkflows,
-      undefined,
-      pkg,
-    ),
+    verifyProvenanceStatement(statement, version, options.expectedCommit, undefined, pkg),
     identity,
   );
 }
@@ -54,12 +46,10 @@ export async function verifySdkPackageSignatures(
   version: string,
   pkg: NpmPackage = NPM_PACKAGES.presto,
   expectedCommit?: string,
-  allowedWorkflows?: readonly string[],
   signers: readonly string[] = RELEASE_SIGNERS,
 ): Promise<VerifiedProvenance> {
   return verifySignedReport(await auditSignatures(version, pkg), version, pkg, {
     expectedCommit,
-    allowedWorkflows,
     signers,
   });
 }

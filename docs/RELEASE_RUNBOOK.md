@@ -518,7 +518,7 @@ bun run sdk:promote -- <PREVIOUS_GOOD> --rollback --dry-run
 bun run sdk:promote -- <PREVIOUS_GOOD> --rollback
 ```
 
-Rollback accepts provenance from the current `release-sdk.yml` identity or the retired, exact `publish-testnet.yml` identity so pre-migration releases remain usable. Ordinary forward promotion accepts only `release-sdk.yml` provenance and still requires `testnet` to identify the candidate.
+Rollback and forward promotion both accept only `release-sdk.yml` provenance. A rollback also accepts `_publish-sdk.yml`, the reusable workflow's earlier name, as the signer, so presto 5.2.0 stays a valid target. Ordinary forward promotion still requires `testnet` to identify the candidate.
 
 Never delete or re-publish an npm version. Fix forward under a new derived revision/version.
 
