@@ -94,8 +94,10 @@ not belong here. Sections are stable; append, never re-sort.
 - **tauri-plugin-updater verifies minisign inside `download()`, and its `Update` has no timeout**
   — assert which refusal fired; bound the download yourself. (2026-10, plugin 2.11)
   `archive/rc-update-channel/lessons/phase-4.md`
-- **Root `scripts/*.test.ts` pin workflow text** — a package's own tests miss them.
-  `archive/rc-update-channel/lessons/phase-7.md`
+- **Root `scripts/*.test.ts` pin workflow text and path filters** (by import graph) — a package's
+  own tests miss them. `archive/rc-update-channel/lessons/phase-7.md`
+- **A syntactic guard accepting a literal must allowlist what follows it** (`,` `)`), not denylist
+  `.map`. `archive/release-1/lessons/review-round-3.md`
 - **A lane that stages artifacts by a fixed name list drops a new one silently** — the Windows smoke
   never copied `smoke-latest-rc.json`; grep every per-OS lane when the signer adds a file. (#144)
 
@@ -108,6 +110,8 @@ not belong here. Sections are stable; append, never re-sort.
   `archive/rc-update-channel/lessons/arc-3-review.md`
 - **npm answers 404 for "not yet" and "forbidden", and caches reads** — wait, `npm whoami`, read
   uncached. `archive/presto-noir/lessons/arc-2-review.md`
+- **npm's stderr echoes registry text** — read absence from `npm view --json`'s `error.code`.
+  `archive/release-1/lessons/review-round-1.md`
 
 ## Windows
 

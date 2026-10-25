@@ -74,3 +74,6 @@ with `rg --no-ignore` / `git grep`.
 - [custom-bb](custom-bb/plan.md) — closed 2026-10-16 — developer mode pins one user-chosen,
   hash-pinned `bb` to one version label: core route and inspection, Settings review, test run
   and save, tray and popup lines; T13 proves it on three OSes (PRs #143, #145).
+- [release-1](release-1/plan.md) — closed 2026-10-25 — the release scripts' registry calls share one
+  bounded spawn and the 180 s deadline, the credentialed-job guard follows the move, and the dead
+  `publish-testnet.yml` rollback allowance goes (PR #174; open: #173).
