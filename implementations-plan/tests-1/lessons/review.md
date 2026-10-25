@@ -19,3 +19,7 @@
   in the child, the `#[tokio::test]` one included; the leak mutants failed again; 40 of 40 full
   runs clean; clippy exit 0. Rejected: renaming case_24; its name states the plan's invariant.
   It also saw this session's in-flight mutants in the tree; they were restored before every commit.
+
+## Round 2 (2026-10-25)
+
+- **Codex** (resumed): clean. It checked libtest 1.98's source: test threads are named in serial runs too, and filters, `--nocapture` and `--include-ignored` keep the naming. Converged in 2 rounds.

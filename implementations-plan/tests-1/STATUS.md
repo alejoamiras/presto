@@ -12,3 +12,5 @@
 - 2026-10-25: phase 3 gate green (runs a/b/d/e as required, c recorded as KL2; lint/test/typecheck 0).
 - 2026-10-25: review round 1 (Codex findings 2) fixed; feed 9/9, case_24 20/20, both mutants fail.
 - 2026-10-25: Opus review fixed (run_alone takes the test name from its thread); 40/40, mutants fail, clippy 0.
+- 2026-10-25: review round 2 Codex clean; loop converged in 2 rounds.
+- 2026-10-25: final head gates green (cargo core 441, server 14, src-tauri 193; lint, test, lint:actions; auth-flow spec 2 passing).
