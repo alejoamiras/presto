@@ -188,13 +188,16 @@ function classifyFinding(
 }
 
 function readManifest(dir: string): { name: unknown; version: unknown } {
-  let text: string;
+  let manifest: unknown;
   try {
-    text = readFileSync(join(dir, "package.json"), "utf8");
+    manifest = JSON.parse(readFileSync(join(dir, "package.json"), "utf8"));
   } catch {
     throw new Error(`${dir} has no readable package.json`);
   }
-  const { name, version } = JSON.parse(text);
+  if (!manifest || typeof manifest !== "object") {
+    throw new Error(`${dir}/package.json is not an object`);
+  }
+  const { name, version } = manifest as Record<string, unknown>;
   return { name, version };
 }
 
@@ -237,7 +240,9 @@ export function npmBundle(npmDir: string, pin: string): Record<string, string[]>
         continue;
       }
       refuseSymlink(path);
-      for (const scoped of readdirSync(path)) visit(join(path, scoped), `${entry}/${scoped}`);
+      for (const scoped of readdirSync(path)) {
+        if (!scoped.startsWith(".")) visit(join(path, scoped), `${entry}/${scoped}`);
+      }
     }
   };
   walk(join(npmDir, "node_modules"));
@@ -265,7 +270,10 @@ function bulkAdvisories(body: unknown): Record<string, BunAdvisory[]> {
   return body as Record<string, BunAdvisory[]>;
 }
 
-/** Audits `bundle` (name → versions) against the registry; each finding carries `source`. */
+/**
+ * Audits `bundle` (name → versions) against the registry; each finding carries `source`. Throws on a
+ * non-2xx status, an answer that is not JSON or not well formed, or no answer within 180 s.
+ */
 export async function auditNpmBundle(
   bundle: Record<string, string[]>,
   source: string,
@@ -278,7 +286,13 @@ export async function auditNpmBundle(
     signal: AbortSignal.timeout(BULK_ADVISORIES_TIMEOUT_MS),
   });
   if (!response.ok) throw new Error(`bulk advisory request failed: HTTP ${response.status}`);
-  return parseBunAudit(bulkAdvisories(await response.json())).map((finding) => ({
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    throw new Error("bulk advisory answer is not JSON");
+  }
+  return parseBunAudit(bulkAdvisories(body)).map((finding) => ({
     ...finding,
     source,
   }));

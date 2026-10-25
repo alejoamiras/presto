@@ -326,8 +326,8 @@ registrator in both packages. Phase 5 adds the allowlist entries the owner picke
 | D14 | live test T4 | env-gated | CI job alone: the owner's rule asks for an opt-in real-data test |
 | D15 | a3 grouping | its own PR, after 2026-10-27 | fold into arc 1: arc 1 would wait two days for the age gate |
 | D16 | `happy-dom` scope | playground and banners | playground only: banners' copy keeps the advisory (F8) |
-| D18 | arc 2 base | `origin/main` after arc 1 merges | stacking on arc 1: the implementer brief allows no stacked PRs |
 | D17 | the rest of F-red | an owner ask; nothing lands unpicked | entries the panel chooses: a risk acceptance belongs to the owner |
+| D18 | arc 2 base | `origin/main` after arc 1 merges | stacking on arc 1: the implementer brief allows no stacked PRs |
 
 **Outline B** (npm's own tooling): write a synthetic `package-lock.json` from the bundle, then run the
 pinned `npm audit --json --package-lock-only`. Two formats to keep in step, plus a spawn and a temp
@@ -344,6 +344,8 @@ read the source). Rejected.
 | 1 | Plan agent, Opus | conditional approve | S1 (= Codex); S2 Workers Builds checks (F6); S3 `bundleDependencies` scope + KL-1; S4 walk under the root's `node_modules`, symlinked `npmDir` in T1; S5 `.bun-version`/`bunfig.toml` paths pinned in `ci-filter-contract.test.ts`; pin 4.151.1; file #172 (done); export `PINNED_NPM_DIR`; pass `source`; print what was sent; D8 runbook sentence; trim | none |
 | — | ORCHY-STEER, after round 1 | arc a3 added | phases 3-5, `OWNER-ASKS.md` Ask 1, D15-D17 | — |
 | final | Codex gpt-6.1-sol high, fresh `01a170f1` | conditional approve, then **approve** after a verify-only resume | dropped the lock-splice fallback (phase 1 step 3); corrected the `zod` rationale in `OWNER-ASKS.md` (exhausting client memory goes beyond data trust); delivery is conditional on stacking | none |
+| arc 1 r1 | Codex gpt-6.1-sol high, `01a170fd` (diff 1298669..b43cbd5) | clean | none needed | — |
+| arc 1 r1 | Opus diff review (fresh) | clean, 3 minor | the walker names the file on a malformed or `null` manifest, and a non-JSON answer gets its own error (both tested); the doc comment states its failure contract; dot entries skipped inside `@scope` too; D18 reordered | symlinked files inside a package (needs a tampered tree, KL-2); the `lessons.md` citation is fixed in arc 2's close-out |
 
 ## Post-implementation
 

@@ -188,6 +188,9 @@ describe("npm bundle walk", () => {
     );
     expect(() => bundled({})).toThrow("bundles no packages");
     expect(() => bundled({ a: null })).toThrow("has no readable package.json");
+    const literalNull = installedNpm({ a: "1.0.0" });
+    writeFileSync(join(literalNull.real, "node_modules", "a", "package.json"), "null");
+    expect(() => npmBundle(literalNull.link, PIN)).toThrow("a/package.json is not an object");
     expect(() => bundled({ a: { name: "b", version: "1.0.0" } })).toThrow("declares the name b");
     expect(() => bundled({ a: { name: "a", version: "latest" } })).toThrow(
       "declares the version latest",
@@ -236,6 +239,10 @@ describe("bulk advisory audit", () => {
     expect(await auditNpmBundle(bundle, "npm 11.21.1 bundle", answer(200, {}))).toEqual([]);
 
     await expect(auditNpmBundle(bundle, "s", answer(503, {}))).rejects.toThrow("HTTP 503");
+    const html = () => Promise.resolve(new Response("<html>", { status: 200 }));
+    await expect(auditNpmBundle(bundle, "s", html)).rejects.toThrow(
+      "bulk advisory answer is not JSON",
+    );
     for (const body of [
       [],
       { error: "x" },
