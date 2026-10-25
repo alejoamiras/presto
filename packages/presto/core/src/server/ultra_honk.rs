@@ -229,7 +229,7 @@ fn inflate_dry_run(
     let mut total: u64 = 0;
     loop {
         if cancel.load(Ordering::Relaxed) {
-            return Err(ProveError::ProveFailed("request cancelled".into()));
+            return Err(ProveError::ProveFailed("request cancelled"));
         }
         let n = decoder
             .read(&mut sink)
@@ -295,7 +295,7 @@ where
     });
     let (held, out) = worker
         .await
-        .map_err(|_| ProveError::ProveFailed("blocking worker failed".into()))?;
+        .map_err(|_| ProveError::ProveFailed("blocking worker failed"))?;
     Ok((held, out?))
 }
 
@@ -338,7 +338,7 @@ pub(crate) async fn prove_ultra_honk(
         vk: decoded.vk,
         target,
     };
-    // A workspace error names the temp path, so the custom route must redact it too.
+    // A workspace error names its temp path, so it goes through `bb_failure` like a bb failure.
     let creating = state.clone();
     let (held, workspace) = on_worker(held, move |_| {
         UltraHonkWorkspace::create(&job).map_err(|e| bb_failure(&creating, custom, &e))

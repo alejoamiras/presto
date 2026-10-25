@@ -26,6 +26,9 @@ not belong here. Sections are stable; append, never re-sort.
   lock that writes it. `archive/custom-bb/lessons/phase-3.md`
 - **Linux cannot compile macOS `cfg` code** (`aws-lc-sys` needs a Darwin toolchain) — CI's macOS
   lane is the first compile; check `libc` bindings by hand. `archive/custom-bb/lessons/phase-1.md`
+- **An error's `to_string()` can name a local path and drop the OS reason** (tar, tempfile) — keep
+  it off the wire; log `error = &e as &dyn Error`, which prints `error.sources`.
+  `archive/server-1/recon.md`
 
 ## Build, bundling and dependencies
 
@@ -129,7 +132,8 @@ not belong here. Sections are stable; append, never re-sort.
 - **Local shellcheck 0.11 passes what CI's 0.9 fails** — use `koalaman/shellcheck:v0.9.0`.
   `archive/workers-builds/lessons/post-impl.md`
 - **A fresh worktree needs `frontend:build` and the `binaries/bb-<triple>` placeholders before any
-  `src-tauri` cargo command**; a `--features webdriver` build rewrites `gen/schemas/*.json`.
+  `src-tauri` cargo command**; a `src-tauri` build, even `lint:clippy`, can rewrite
+  `gen/schemas/*.json`.
   `archive/custom-bb/lessons/phase-1.md`
 - **wdio's tray host without root: `apt-get download stalonetray`, `dpkg -x` into a prefix,
   `dbus-run-session`.** `archive/custom-bb/lessons/phase-5.md`
