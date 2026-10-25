@@ -16,7 +16,7 @@ asks: none
 
 # deps-1: bump wrangler, drop the sharp override, audit npm's bundle, clear what bumps can clear
 
-Size: about 400 lines against the 350 target. It covers three issues in five phases over two arcs,
+Size: about 400 lines against the 350 target. It covers three issues in five phases over three arcs,
 with restatement already cut.
 
 ## Outcome & Quality Bar
@@ -43,7 +43,11 @@ change to how severity blocks lock findings.
 
 Recorded owner decisions for this lane: **none: nothing a person sees changes.** Merges redeploy
 both sites from identical assets; only the audit's terminal output gains lines. `OWNER-ASKS.md` holds
-one security-acceptance ask (allowlist entries); it concerns no surface a person sees.
+one security-acceptance ask (allowlist entries); it concerns no surface a person sees. It is now answered:
+**P4-01** (decision page 4, Release audit exceptions; delegated by the owner, recorded by the
+orchestrator 2026-10-25): **Option A** — the allowlist accepts the `zod` and `undici` entries until
+2026-11-30, each with its reason and removal condition (Ask 1 wording: one `zod` entry, one `undici`
+entry covering the miniflare and npm-bundle copies).
 
 ## Issue and ask map
 
@@ -51,11 +55,12 @@ one security-acceptance ask (allowlist entries); it concerns no surface a person
 |---|---|---|
 | #106 | arc 1, phase 1 | `Closes #106`. Its purpose holds: no override, and no `sharp` advisory. Its "audit green" step cannot hold (F-red) |
 | #167 | arc 1, phase 2 | `Closes #167` |
-| #172 (filed by this plan) | arc 2, phases 3-5 | `Closes #172` only if the audit is green, which needs the owner's picks; otherwise `Refs #172` with a comment |
+| #172 (filed by this plan) | arc 2 (phases 3, 5), arc 3 (phase 4) | arc 2 `Refs #172` (the audit stays red on `happy-dom`); arc 3 `Closes #172` once the audit is green |
 | asks | none | the lane brief names none |
 
-Arcs: arc 1 is the orchestrator's a1 and a2, and arc 2 is a3. A3 is its own PR because its
-`happy-dom` fix clears the age gate only on 2026-10-27, and arc 1 can ship now.
+Arcs: arc 1 (#175, merged as b85134c) is the orchestrator's a1 and a2. The orchestrator regrouped a3
+(D19): arc 2 is phases 3 and 5 now, and arc 3 is phase 4 plus the close-out, on or after
+2026-10-27T18:06Z, when `happy-dom` 21.0.4 clears the age gate.
 
 ## Assumptions
 
@@ -103,7 +108,7 @@ Arcs: arc 1 is the orchestrator's a1 and a2, and arc 2 is a3. A3 is its own PR b
   unit tests check it.
 
 **Asks** (settled on a working assumption, nobody to ask):
-- Ask 1. Clear F-red in arc 1? **No.** Arc 2 does what in-range bumps can do. The rest is the owner's
+- Ask 1. Clear F-red in arc 1? **No.** Arcs 2 and 3 do what in-range bumps can do. The rest is the owner's
   call (`OWNER-ASKS.md` Ask 1).
 - Ask 2. Which wrangler? **4.151.1, exact**: the trial covers it. If its install fails, take the next
   version that passes the gate and rerun phase 1 in full.
@@ -154,8 +159,9 @@ export async function auditNpmBundle(
   versions sent, <m> advisories`; push the findings. Gating, the allowlist and the exit code do not
   change.
 
-**Arc 2 (#172)** changes data only. Phase 3 runs `bun update undici` (F7). Phase 4 bumps the
-registrator in both packages. Phase 5 adds the allowlist entries the owner picked, verbatim, if any.
+**Arcs 2 and 3 (#172)** change data only. Arc 2: phase 3 runs `bun update undici` (F7), and phase 5
+adds the entries the owner picked (P4-01), verbatim. Arc 3: phase 4 bumps the registrator in both
+packages.
 
 **File-level change map.**
 
@@ -255,7 +261,7 @@ registrator in both packages. Phase 5 adds the allowlist entries the owner picke
     the bundle source. The lock audit alone misses the first, which proves the gap in #167 is closed.
   - Its `BLOCKED` keys equal the phase 1 keys.
 
-## Phase 3: re-resolve the caret `undici` copies (#172)
+## Phase 3: re-resolve the caret `undici` copies (#172) ✓
 
 1. Warning: never edit `bun.lock` by hand or by script. A hand edit hides the real constraint, and
    the next resolution reverts it.
@@ -280,17 +286,19 @@ registrator in both packages. Phase 5 adds the allowlist entries the owner picke
 **Validation gate.**
 - Commands: `bun install --frozen-lockfile`, `bun run --cwd packages/playground test:unit`,
   `bun run --cwd packages/banners test:unit`, `bun run lint`, `bun run test`, `bun run audit:dependencies`.
-- Pass criteria: every command exits 0 except the audit, and the audit prints no `happy-dom` line.
+- Pass criteria: every command exits 0, the audit included (0 blocked, so `Closes #172` holds).
 
-## Phase 5: the owner's picks (#172). Skip if none arrived
+## Phase 5: the owner's picks (#172) ✓
+
+P4-01, Option A: both entries, verbatim from `OWNER-ASKS.md` Ask 1.
 
 1. Add each entry that `OWNER-ASKS.md` Ask 1 records as picked, verbatim.
 2. Set `reviewed` to the day.
 
 **Validation gate.**
 - Commands: `bun run test`, `bun run audit:dependencies`.
-- Pass criteria: the audit exits 0 when both entries are picked. Otherwise its only `BLOCKED` keys are
-  the unpicked rows.
+- Pass criteria: `bun run test` exits 0. The audit prints both entries as `ACCEPTED until 2026-11-30`
+  (the bundle copy of `undici` too), and its only `BLOCKED` key is `happy-dom`, which phase 4 clears.
 
 ## Delivery
 
@@ -299,12 +307,13 @@ registrator in both packages. Phase 5 adds the allowlist entries the owner picke
   - Body: what and why, the validation runs, `Closes #106`, `Closes #167`. It says that
     `Audit dependencies` stays red because of #172, and that the merge redeploys both sites from
     identical assets.
-- **Arc 2** = phases 3-5, plus the plan's close-out.
-  - Branch `deps-1-a2`, taken from `origin/main` after arc 1 merges. No stacked PRs: the implementer
-    brief overrides the earlier stacking option.
-  - Title: `chore(deps): re-resolve the caret undici copies and bump happy-dom to 21`.
-  - Body: `Closes #172` if green, else `Refs #172`. It says the next banners release must bump its
-    version (F9).
+- **Arc 2** = phases 3 and 5, on `deps-1-a2` from `origin/main` at b85134c. No stacked PRs.
+  - Title: `chore(deps): re-resolve the caret undici copies, accept the zod and undici advisories`.
+  - Body: `Refs #172`; the audit's BLOCKED keys before and after, from a same-day run on `main`.
+- **Arc 3** = phase 4 plus the plan's close-out, on `deps-1-a3` from `origin/main` after arc 2
+  merges, not before 2026-10-27T18:06Z.
+  - Title: `chore(deps): bump happy-dom to 21 in the playground and banners`.
+  - Body: `Closes #172`; the next banners release must bump its version (F9).
 - `code_review: off`. One commit per phase. Parallelism: none; the arcs are serial by date.
 
 ## Decision ledger
@@ -324,10 +333,11 @@ registrator in both packages. Phase 5 adds the allowlist entries the owner picke
 | D12 | audit job install | unchanged | `--ignore-scripts` (Codex, "prefer"): F4 shows the same tree either way |
 | D13 | `{}` answer | passes | fail: a clean bundle is a real answer; a canary is new state |
 | D14 | live test T4 | env-gated | CI job alone: the owner's rule asks for an opt-in real-data test |
-| D15 | a3 grouping | its own PR, after 2026-10-27 | fold into arc 1: arc 1 would wait two days for the age gate |
+| D15 | a3 grouping | its own PR, after 2026-10-27 | fold into arc 1: arc 1 would wait two days for the age gate; superseded by D19 |
 | D16 | `happy-dom` scope | playground and banners | playground only: banners' copy keeps the advisory (F8) |
 | D17 | the rest of F-red | an owner ask; nothing lands unpicked | entries the panel chooses: a risk acceptance belongs to the owner |
 | D18 | arc 2 base | `origin/main` after arc 1 merges | stacking on arc 1: the implementer brief allows no stacked PRs |
+| D19 | a3 grouping | arc 2 = phases 3 + 5 now; arc 3 = phase 4 + close-out after the age gate (orchestrator) | one PR after 2026-10-27: holds the in-range fixes and the owner's picks two days for nothing |
 
 **Outline B** (npm's own tooling): write a synthetic `package-lock.json` from the bundle, then run the
 pinned `npm audit --json --package-lock-only`. Two formats to keep in step, plus a spawn and a temp
@@ -347,11 +357,15 @@ read the source). Rejected.
 | arc 1 r1 | Codex gpt-6.1-sol high, `01a170fd` (diff 1298669..b43cbd5) | clean | none needed | — |
 | arc 1 r1 | Opus diff review (fresh) | clean, 3 minor | the walker names the file on a malformed or `null` manifest, and a non-JSON answer gets its own error (both tested); the doc comment states its failure contract; dot entries skipped inside `@scope` too; D18 reordered | symlinked files inside a package (needs a tampered tree, KL-2); the `lessons.md` citation is fixed in arc 2's close-out |
 | arc 1 r2 | Codex resume `01a170fd` (fix diff cfaf6a1) | clean | converged | — |
+| arc 2 r1 | Codex gpt-6.1-sol high, `01a172ed` (diff b85134c..a8fcf05) | 0 material, 1 doc note | stale arc references after D19 in `OWNER-ASKS.md` and the plan, fixed | — |
+| arc 2 r1 | Opus diff review (fresh) | 1 material, 2 minor | phase 4's gate would have passed a red audit: it now requires 0 blocked; D15 marked superseded and D19 reordered; phase-3 lesson notes that `npm/undici` is lock-only; the stale `braces` exception goes in arc 3's close-out | — |
+| arc 2 r2 | Codex resume `01a172ed` (fix diff a84a4ae) | clean | converged | — |
 
 ## Post-implementation
 
 There is no `implementations-plan/README.md` standard here, so the steps are written out. They run
-**per arc**: arc 1 after phase 2, arc 2 after phase 5. The close-out goes on arc 2's PR.
+**per arc**: arc 1 after phase 2, arc 2 after phase 5, arc 3 after phase 4. The close-out goes on
+arc 3's PR.
 
 **While implementing.** Comments state invariants and whys only. Log each attempt in
 `lessons/phase-N.md`. Run `agent-worktree status deps-1 "phase N green: <next>"` at each gate. Stop
@@ -374,10 +388,10 @@ after 3 failures on one step.
    surface after 3 rounds. New state, a lifecycle, a protocol, a recovery policy or a public contract
    is a plan change: stop for approval.
 3. **Delivery.** Run `bun run test` and `bun run lint:actions`. Push the arc branch, then run
-   `gh pr create --base main` with the Delivery title and body. Arc 2 starts only after arc 1 merges.
+   `gh pr create --base main` with the Delivery title and body. Each later arc starts only after the previous one merges.
    Arc 1 only: comment on #106 that its
    "green" step did not hold, because of #172. Watch `gh pr checks`, bounded inside one tool call.
-4. **Close-out** (arc 2's final commits):
+4. **Close-out** (arc 3's final commits):
    - Merge `origin/main` first, and read what changed in `lessons.md`, `follow-ups.md` and
      `archive/index.md`. Never use a union merge.
    - Write `## Outcome` after the front matter: date, status, shipped (PR numbers), dropped,
@@ -393,6 +407,7 @@ after 3 failures on one step.
    - Put every other open item in its home: an issue with a `Record` link; `owner-decision` or
      `blocked:external`; a private draft advisory for a suspected exploitable weakness; an Outcome line
      for what was rejected or done.
+   - Drop the `braces` exception if the audit still prints it as STALE.
    - Delete `STATUS.md`.
    - In its own commit, run `git mv implementations-plan/deps-1 implementations-plan/archive/deps-1`.
      Add one line to `archive/index.md`, and none to `index.md`. Repair what `git grep -n deps-1` finds.
@@ -407,7 +422,7 @@ after 3 failures on one step.
 Not run by this lane; the orchestrator drives implementation.
 
 ```
-/goal Phases 1-5 of implementations-plan/deps-1/plan.md are ✓ (phase 5 may be ✓-skipped with no owner pick), each backed by its gate passing in the transcript, with LESSONS_FILE=implementations-plan/deps-1/lessons/phase-N.md printed per phase; /code-review NOT run; the Codex loop converged per arc (a resumed pass with no new material finding, quoted); both PRs exist against main (arc 2 branched from main after arc 1 merged), each opened after its loop, the second carrying the close-out (git show --stat of the archive move); bun run test and bun run lint:actions exit 0.
+/goal Phases 1-5 of implementations-plan/deps-1/plan.md are ✓ (phase 5 may be ✓-skipped with no owner pick), each backed by its gate passing in the transcript, with LESSONS_FILE=implementations-plan/deps-1/lessons/phase-N.md printed per phase; /code-review NOT run; the Codex loop converged per arc (a resumed pass with no new material finding, quoted); all three PRs exist against main (each later arc branched from main after the previous merged), each opened after its loop, the third carrying the close-out (git show --stat of the archive move); bun run test and bun run lint:actions exit 0.
 ```
 
 ```
