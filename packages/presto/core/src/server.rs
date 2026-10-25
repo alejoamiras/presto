@@ -548,13 +548,16 @@ pub(crate) enum ProveError {
     /// The request named the custom bb's label, and that file may not run now (changed, missing,
     /// withdrawn, overridden). A 503, which every published SDK degrades on; Settings has the detail.
     CustomBbUnavailable,
+    /// The requested bb could not be fetched, verified or installed. The site learns only which
+    /// step failed: the error itself can name local paths.
     DownloadFailed {
         version: String,
-        detail: String,
+        failure: versions::DownloadFailure,
     },
     /// This origin (or the app as a whole) started too many uncached bb downloads recently.
     DownloadBudgetExhausted,
-    ProveFailed(String),
+    /// Fixed text only: a bb error's own text can name local paths, so it goes to the log instead.
+    ProveFailed(&'static str),
     InvalidOrigin,
     OriginDenied(String),
     TooManyRequests,
@@ -695,12 +698,24 @@ impl ProveError {
                 "custom_bb_unavailable",
                 "The custom bb for this version is unavailable".to_string(),
             ),
-            ProveError::DownloadFailed { version, detail } => (
+            ProveError::DownloadFailed { version, failure } => {
+                let cause = match failure {
+                    versions::DownloadFailure::ReleaseNotFound => "release not found",
+                    versions::DownloadFailure::RequestFailed => "request failed",
+                    versions::DownloadFailure::IntegrityCheckFailed => "integrity check failed",
+                    versions::DownloadFailure::UnpackFailed => "could not unpack",
+                };
+                (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "download_failed",
+                    format!("Failed to download bb v{version}: {cause}"),
+                )
+            }
+            ProveError::ProveFailed(e) => (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                "download_failed",
-                format!("Failed to download bb v{version}: {detail}"),
+                "prove_failed",
+                e.to_string(),
             ),
-            ProveError::ProveFailed(e) => (StatusCode::INTERNAL_SERVER_ERROR, "prove_failed", e),
             ProveError::InvalidRequest(detail) => (
                 StatusCode::BAD_REQUEST,
                 "invalid_request",

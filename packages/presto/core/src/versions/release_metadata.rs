@@ -2,8 +2,8 @@
 //! asset-digest lookup (SEC-02 caveat inline). q7e3-F-07: split from the `versions` module root; the
 //! root re-exports keep external paths unchanged.
 
+use super::download_error::{DownloadError, DownloadFailure};
 use super::version_policy::AztecVersion;
-use std::error::Error;
 use std::time::Duration;
 
 /// Shared timeouts and agent for every outbound call here, so the two clients cannot drift.
@@ -144,12 +144,10 @@ fn refusal_reason(status: reqwest::StatusCode, authenticated: bool) -> String {
 /// GitHub stores a `digest` field (e.g. `"sha256:abcd..."`) on every release asset. This catches
 /// download corruption and CDN issues.
 ///
-/// `Ok(None)` means the release answered but lists no asset of that name, or lists one carrying no
-/// `sha256:`-prefixed digest. (A prefixed but malformed value is returned as-is and fails later,
-/// against the downloaded bytes.) A refused request is an `Err` carrying the status instead. The
-/// caller rejects both, so the distinction is diagnostic rather than behavioural: only `Ok(None)`
-/// says anything about what the release publishes, and reporting a throttled lookup as one points
-/// debugging at the wrong system.
+/// **Fail-closed:** every outcome but a digest is an error, never a skip. A refused request
+/// carries its status (404 reads as a missing release); a release that answers is judged by
+/// [`asset_digest`]. Keeping a throttled lookup apart from what the release publishes keeps
+/// debugging pointed at the right system.
 ///
 /// SECURITY (SEC-02, deferred — circular trust): the digest is fetched from the SAME GitHub control
 /// plane (`api.github.com`) that serves the binary, so an attacker who compromises the upstream
@@ -163,7 +161,7 @@ fn refusal_reason(status: reqwest::StatusCode, authenticated: bool) -> String {
 pub(crate) async fn fetch_github_asset_digest(
     version: &str,
     asset_name: &str,
-) -> Result<Option<String>, Box<dyn Error + Send + Sync>> {
+) -> Result<String, DownloadError> {
     let api_url =
         format!("https://api.github.com/repos/{BB_RELEASE_REPO}/releases/tags/v{version}");
     let token = github_api_token();
@@ -171,31 +169,53 @@ pub(crate) async fn fetch_github_asset_digest(
         .send()
         .await?;
 
-    if !response.status().is_success() {
+    let status = response.status();
+    if !status.is_success() {
         tracing::warn!(
             version,
-            status = %response.status(),
+            %status,
             authenticated = token.is_some(),
             "Release metadata request refused"
         );
-        return Err(refusal_reason(response.status(), token.is_some()).into());
+        return Err(DownloadError::new(
+            DownloadFailure::for_status(status),
+            refusal_reason(status, token.is_some()),
+        ));
     }
 
     let release: serde_json::Value = response.json().await?;
-    let assets = release["assets"].as_array();
-    if let Some(assets) = assets {
-        for asset in assets {
-            if asset["name"].as_str() == Some(asset_name) {
-                if let Some(digest) = asset["digest"].as_str() {
-                    // Format: "sha256:abcdef..."
-                    if let Some(hex) = digest.strip_prefix("sha256:") {
-                        return Ok(Some(hex.to_string()));
-                    }
-                }
-            }
-        }
-    }
-    Ok(None)
+    asset_digest(&release, version, asset_name)
+}
+
+/// The hex digest a release-by-tag answer publishes for `asset_name`. No such asset means no
+/// release for this platform; an asset without a `sha256:`-prefixed digest cannot be verified. (A
+/// prefixed but malformed value is returned as-is and fails later, against the downloaded bytes.)
+fn asset_digest(
+    release: &serde_json::Value,
+    version: &str,
+    asset_name: &str,
+) -> Result<String, DownloadError> {
+    let asset = release["assets"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .find(|asset| asset["name"].as_str() == Some(asset_name))
+        .ok_or_else(|| {
+            DownloadError::new(
+                DownloadFailure::ReleaseNotFound,
+                format!("Cannot verify bb v{version}: the release lists no {asset_name}"),
+            )
+        })?;
+    asset["digest"]
+        .as_str()
+        .and_then(|digest| digest.strip_prefix("sha256:"))
+        .map(str::to_string)
+        .ok_or_else(|| {
+            DownloadError::new(
+                DownloadFailure::IntegrityCheckFailed,
+                format!("Cannot verify bb v{version}: no digest available from GitHub API"),
+            )
+        })
 }
 #[cfg(test)]
 mod tests {
@@ -360,5 +380,46 @@ mod tests {
         let b = sha256_hex(b"world");
         assert_ne!(a, b);
         assert_eq!(a.len(), 64); // 32 bytes = 64 hex chars
+    }
+
+    #[test]
+    fn each_lookup_outcome_maps_to_its_cause() {
+        use reqwest::StatusCode;
+        use DownloadFailure::*;
+        assert_eq!(
+            DownloadFailure::for_status(StatusCode::NOT_FOUND),
+            ReleaseNotFound
+        );
+        for status in [
+            StatusCode::FORBIDDEN,
+            StatusCode::TOO_MANY_REQUESTS,
+            StatusCode::INTERNAL_SERVER_ERROR,
+        ] {
+            assert_eq!(
+                DownloadFailure::for_status(status),
+                RequestFailed,
+                "{status}"
+            );
+        }
+
+        let name = "barretenberg-amd64-linux.tar.gz";
+        let lookup = |release: serde_json::Value| {
+            asset_digest(&release, "6.0.0", name).map_err(|error| error.failure())
+        };
+        let other = serde_json::json!({
+            "name": "barretenberg-arm64-darwin.tar.gz",
+            "digest": "sha256:ab",
+        });
+        assert_eq!(
+            lookup(serde_json::json!({ "assets": [other] })),
+            Err(ReleaseNotFound)
+        );
+        assert_eq!(lookup(serde_json::json!({})), Err(ReleaseNotFound));
+        for digest in [serde_json::Value::Null, "md5:ab".into()] {
+            let release = serde_json::json!({ "assets": [{ "name": name, "digest": digest }] });
+            assert_eq!(lookup(release), Err(IntegrityCheckFailed));
+        }
+        let release = serde_json::json!({ "assets": [{ "name": name, "digest": "sha256:ab" }] });
+        assert_eq!(lookup(release), Ok("ab".to_string()));
     }
 }

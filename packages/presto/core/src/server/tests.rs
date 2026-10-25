@@ -2170,3 +2170,80 @@ mod custom_bb {
         ));
     }
 }
+
+/// `TMPDIR` and `BB_BINARY_PATH` are process-wide, so the test re-runs itself alone in a child
+/// process.
+#[tokio::test]
+#[serial]
+async fn an_official_route_workspace_failure_keeps_its_path_off_the_wire() {
+    const CHILD: &str = "PRESTO_TEST_OFFICIAL_WORKSPACE_FAILURE_CHILD";
+    const ORIGIN: &str = "https://dapp.example";
+    if std::env::var_os(CHILD).is_none() {
+        let name = concat!(
+            module_path!(),
+            "::an_official_route_workspace_failure_keeps_its_path_off_the_wire"
+        );
+        let name = name.split_once("::").unwrap().1;
+        let child = std::process::Command::new(std::env::current_exe().unwrap())
+            .args(["--exact", name, "--test-threads=1"])
+            .env(CHILD, "1")
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&child.stdout);
+        assert!(
+            child.status.success() && stdout.contains("1 passed"),
+            "{stdout}{}",
+            String::from_utf8_lossy(&child.stderr)
+        );
+        return;
+    }
+
+    let _home = crate::ScopedPrestoHome::new();
+    let home = std::path::PathBuf::from(std::env::var_os("PRESTO_HOME").unwrap());
+    std::fs::create_dir_all(home.join("data")).unwrap();
+    // A file at `data/prove-tmp` sends the workspace to the missing `TMPDIR` on Unix; Windows
+    // refuses instead, so there only the fixed message is proof.
+    std::fs::write(home.join("data").join("prove-tmp"), "").unwrap();
+    std::env::set_var("TMPDIR", home.join("no-tmp"));
+    // The chonk route resolves bb before it creates the workspace; this one must never run.
+    let ran = home.join("ran");
+    let bb = home.join(versions::bb_binary_name());
+    std::fs::write(&bb, format!("#!/bin/sh\ntouch '{}'\n", ran.display())).unwrap();
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::set_permissions(&bb, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    std::env::set_var("BB_BINARY_PATH", &bb);
+
+    let chonk = Request::builder()
+        .header("host", "127.0.0.1:59833")
+        .header("origin", ORIGIN)
+        .method("POST")
+        .uri("/prove")
+        .header("content-type", "application/octet-stream")
+        .body(Body::from(vec![0u8; 16]))
+        .unwrap();
+    let ultra_honk = ultra_honk_request(ultra_honk_body(false), Some(ORIGIN));
+    for request in [chonk, ultra_honk] {
+        let uri = request.uri().to_string();
+        let response = router(state_with_approved(&[ORIGIN]))
+            .oneshot(request)
+            .await
+            .unwrap();
+        assert_eq!(
+            response.status(),
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "{uri}"
+        );
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = String::from_utf8_lossy(&body);
+        assert!(!text.contains("no-tmp"), "{uri}: {text}");
+        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(json["error"], "prove_failed", "{uri}");
+        assert_eq!(json["message"], "bb prove failed", "{uri}");
+    }
+    assert!(!ran.exists());
+}
