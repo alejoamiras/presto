@@ -1,7 +1,7 @@
 ---
 plan: tests-1
 tier: light
-status: approved by the panel (Codex final: approve) 2026-10-25
+status: completed 2026-10-25 (PR #176)
 base: 80b562e
 driver: claude-code
 claude_model: opus
@@ -12,6 +12,28 @@ eli5_mode: skipped (orchestrator-owned)
 harden: not scheduled
 delivery: one PR (arc a1)
 ---
+
+## Outcome
+
+- **2026-10-25: completed**, one PR, #176, closing #141, #136 and #98.
+- **Shipped**:
+  - `run_alone()` in core, which takes the test's name from libtest's thread. The four store lock
+    probes, the config lock probe and the TMPDIR test run through it. 40 of 40 full core runs were
+    clean, where 7 of 40 failed before.
+  - case_24 on one thread, with a count floor and a window bound in place of the 250 ms gap. It
+    now fails two blocking mutants the old test passed.
+  - auth-flow's `afterEach` closes the popup before awaiting, and the Deny test has its own origin.
+    A failure after the popup opens stays one failure, proven by local WebDriver runs (a), (b),
+    (d) and (e).
+- **Changed in review**: the case_24 window bound (Codex round 1). `run_alone` takes no name,
+  after the Opus review found a call site could name another test.
+- **Rejected**: the issue's bounded wait for #141 (it passes a delayed release); a raised bound, a
+  median or a paused clock for #136; `AbortController` or a detached promise for #98.
+- **Known limits:** #177 (case_24's wall-clock window), #179 (a popup that opens after the hook's
+  snapshot).
+- **Open items:** none. `lessons.md` is at ~8.7 KiB, over its 8 KiB budget. It was already over
+  (8.6 KiB) before this promotion, which merged into existing lines; the next promotion prunes.
+- **Seeds retired**: the `/goal` and `/loop` lines below are not instructions.
 
 # tests-1: three deterministic tests
 
