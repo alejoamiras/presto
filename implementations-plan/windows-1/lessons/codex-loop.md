@@ -22,3 +22,9 @@ Codex: `findings: 2`. Opus: 4 findings, two shared with Codex. All adopted.
 Gates after the fixes: typecheck, `bun run lint`, `bun run test` (362 pass, 3 skip), `cargo fmt
 --check`, `cargo test --bin Presto windows::tests` (5), local runs at 1280x672 (screen-fit 4, smoke
 3, settings 3) and 1280x1024 (screen-fit 3).
+
+## Round 2 (resumed)
+
+`clean`. Codex re-ran collection in memory: an unnamed local Linux run collects, an unnamed CI run
+and a malformed geometry fail, and the short and tall geometries collect four and three tests.
+Converged in two rounds.

@@ -9,3 +9,4 @@
 - 2026-10-25 a1 phase 2 green: test, lint:clippy, cargo test windows::tests (5), windows-gnu --bin check; local screen-fit+smoke+settings at 1280x672 and screen-fit at 1280x1024 pass
 - 2026-10-25 a1 phase 3 green: lint exit 0; PRIVACY.md diff vs main is the one sentence
 - 2026-10-25 a1 codex r1 + opus: 2+4 findings, all adopted; typecheck, lint, test, windows::tests, local screen-fit short+tall green
+- 2026-10-25 a1 codex r2 clean: converged in 2 rounds

@@ -266,6 +266,7 @@ the verbatim review rules, the per-OS geometry facts and this ledger are the exc
   without `WDIO_SCREEN` threw at collection (fixed: null off CI, mandatory in CI); comments that
   contradicted Facts 3 and 7 and KL-2 (rewritten); the macOS check now asserts containment on a screen
   shorter than Settings. All adopted.
+  Round 2 (resumed): `clean`. Converged in two rounds.
 
 ## Seeds (draft; orchestrator-owned, none will be run)
 
