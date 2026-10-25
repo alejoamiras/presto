@@ -325,8 +325,9 @@ The SDK is designed to be fail-safe:
 - **Browser HTTPS unavailable**: status includes `secure-connection-unavailable` plus a diagnosis;
   the phase is emitted before `fallback`, and proving continues through WASM without enabling HTTP
 - **Presto returns a RECOGNISED error**: falls back to WASM — a denial (`denied` phase), a version
-  refusal (`version-mismatch` phase), an authorization cooldown, and capacity/transient errors (408, 413,
-  429, 503, `500 download_failed`/`prove_failed`)
+  refusal (`version-mismatch` phase), an authorization cooldown, capacity/transient errors (408, 413,
+  429, 503, `500 prove_failed`), and a failed `bb` download (`500 download_failed`, logged as
+  `download-failed` through LogTape under the `["presto"]` category)
 - **Version mismatch**: modern prestos auto-download the right bb version
 
 The cases that THROW are: corrupted execution steps, simulator unavailability, and — new in the typed
