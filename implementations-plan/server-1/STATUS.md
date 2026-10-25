@@ -9,3 +9,4 @@
 - 2026-10-25 phase 1 gate green: core cargo test 440 passed (one rerun: `verified_sites::store` `a_directory_never_blocks_and_fails_the_save` failed its `lock_is_free` check under full-suite load, passed alone 3/3 and on the rerun; not this lane's code); lint:clippy, bun run lint, bun run test exit 0; gated live 404 test ran and passed.
 - 2026-10-25 phase 2 gate green: core cargo test 441 passed; lint:clippy, bun run lint, bun run test exit 0; src-tauri windows-gnu --lib check and core --tests windows-gnu check exit 0.
 - 2026-10-25 phase 3 gate green: bun run lint exit 0.
+- 2026-10-25 codex loop: round 1 two Low findings fixed (1fab632); merged origin/main (de828ab); round 2 clean.

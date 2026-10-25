@@ -240,6 +240,14 @@ argued for fixed text. Fixed text won: it enforces the boundary and reuses the c
 rule. D-b: typed causes, shared types in their own file. D-c: the token hint leaves the body.
 D-d: the test set plus `install_verified` and the chain control.
 
+**Post-implementation Codex loop** (`lessons/codex-loop.md`): round 1 found two Low issues (a
+custom `Unavailable` skipped the new log line; two doc comments restated their code), both fixed
+in 1fab632. Round 2 (resumed, after merging `origin/main`): clean.
+
+**Deviations from the plan**: none in behaviour. The server test builds its path-bearing errors
+with `versions::unpack_error` (a `#[cfg(test)]` helper next to `make_targz`), not a re-export of
+`extract_bb_from_tarball`.
+
 ## Seeds (draft; none will be run)
 
 - `/goal` Phases 1-3 marked ✓ in implementations-plan/server-1/plan.md, each gate reported passing;
