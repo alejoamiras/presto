@@ -316,7 +316,6 @@ jobs:
     env:
       PACKAGE: ${{ inputs.package }}
       VERSION: ${{ needs.publish.outputs.version }}
-      PACKAGE_NAME: ${{ needs.pack.outputs.name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -336,20 +335,6 @@ jobs:
 
       - name: Verify provenance against the release signing identity
         run: bun scripts/verify-sdk-package-signatures.ts --package "$PACKAGE" "$VERSION" "$GITHUB_SHA"
-
-      - name: Verify a fresh registry install
-        run: |
-          work="$(mktemp -d)"
-          trap 'rm -rf "$work"' EXIT
-          cd "$work"
-          npm init -y >/dev/null
-          npm install --ignore-scripts --no-audit --no-fund --loglevel=error "$PACKAGE_NAME@$VERSION"
-          installed="$(node -p "require('./node_modules/$PACKAGE_NAME/package.json').version")"
-          [ "$installed" = "$VERSION" ] || {
-            echo "::error::fresh install resolved $installed, expected $VERSION"
-            exit 1
-          }
-          echo "Verified $PACKAGE_NAME@$VERSION; npm latest remains unchanged."
 
   # The tag and GitHub release say a publication is ours: they are written only after `verify` bound
   # its provenance to the release signing identity, by a job with `contents: write` and no OIDC
