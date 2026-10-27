@@ -46,3 +46,23 @@
   - the close-out commit's retirement count, reworded before any push.
 - The Opus reviewer re-ran both suites against happy-dom 20.12.0. The `expect()` counts were the
   same (181 and 321), so the bump lost no assertion.
+
+## Arc 3, round 2
+
+- Codex resume (fix diff 97c4af7): **1 material**. #187's revised reopening condition was already
+  met. `cli.js` inlines `shell-quote` 1.10.0, under critical GHSA-pqg4-j6r4-53mv, and no exception
+  covers it.
+- To end the piecemeal discovery, a one-off pass sent all 204 inlined names (221 store entries,
+  from esbuild's path comments) to the bulk advisory endpoint. High and critical results:
+  - `shell-quote` 1.10.0;
+  - `fast-xml-parser` 4.4.1 (critical GHSA-m7jm-9gc2-mpf2, two high), parsing the inlined AWS SDK's
+    XML answers;
+  - `brace-expansion` 2.0.1 and 5.0.5, and `minimatch` 5.1.6, on patterns from the repository or
+    the command line;
+  - `undici` 7.29.1 and `zod` 4.6.5.
+- The `shell-quote` path is unreachable: wrangler's `quote` wrapper passes `args.map(String)`, its
+  `parse` wrapper drops comment tokens, and the only `quote()` output is logged.
+- #187 now carries the baseline. It is re-taken on every wrangler bump, and it reopens on an
+  advisory whose input an outsider controls during a build.
+- An audit of the path comments stays out of scope: it would be a new source, with no completeness
+  check.

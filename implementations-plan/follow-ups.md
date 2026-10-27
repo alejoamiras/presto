@@ -15,8 +15,8 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
     `upgrade` says when it goes.
   - `zod` and `undici` are the owner's P4-01 acceptance (#172): `zod` waits for an Aztec release that
     allows 4.6.6, `undici` for miniflare and the pinned npm to ship the fix. Before dropping
-    either, check wrangler's `cli.js` path comments: 4.151.1 inlines `zod` 4.6.5 and `undici`
-    7.29.1, which no audit sees (#187).
+    either, and on every wrangler bump, re-take #187's baseline of what wrangler's `cli.js` inlines,
+    which no audit sees: 4.151.1 inlines `zod` 4.6.5 and `undici` 7.29.1 among 221 entries.
   - **Verified 2026-10-27** against the allowlist, after `braces` was dropped (GitHub withdrew
     GHSA-vfj7-8cjw-p6xm on 2026-10-23).
 

@@ -42,7 +42,8 @@ not belong here. Sections are stable; append, never re-sort.
 - **`bun --config /dev/null <script>` exits 0 without running it**; only `--config=/dev/null` works.
   (2026-10, Bun 1.4.2) `archive/verified-sites-feed/lessons/phase-2.md`
 - **`bun.lock` records a bundling package's declared deps, not its `bundleDependencies`** — `bun
-  audit` misses the copy Node loads. (2026-10, Bun 1.4.2) `archive/deps-1/recon.md`
+  audit` misses the copy Node loads, and all that esbuild inlined (wrangler's `cli.js`, #187).
+  (2026-10, Bun 1.4.2) `archive/deps-1/recon.md`
 - **`bun update <transitive>` re-resolves every copy within its ranges**; a scripted edit that
   breaks its JSON makes Bun re-resolve the whole tree. (2026-10, Bun 1.4.2)
   `archive/deps-1/lessons/phase-0.md`
