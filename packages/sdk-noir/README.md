@@ -148,6 +148,7 @@ adapter must prove natively against a headless presto built with the real `bb`):
 
 | `@alejoamiras/presto-noir` | bb.js (peer, exact) | `bbVersion` (default) | Presto |
 |---|---|---|---|
+| 2.1.0 | `@aztec-foundation/bb.js` 6.0.0 | 6.0.0 | ≥ 1.1.3 |
 | 2.0.0 | `@aztec-foundation/bb.js` 6.0.0 | 6.0.0 | ≥ 1.1.3 |
 | 2.0.0-rc.3 | `@aztec-foundation/bb.js` 6.0.0-rc.7 | 6.0.0-rc.7 | ≥ 1.1.3 |
 | 2.0.0-rc.2 | `@aztec-foundation/bb.js` 6.0.0-rc.6 | 6.0.0-rc.6 | ≥ 1.1.3 |
