@@ -277,7 +277,7 @@ packages.
 - After the PR opens: the routed SDK E2E and WebDriver lanes pass. They load `@aztec-labs/foundation`'s
   and webdriverio's `undici`.
 
-## Phase 4: bump `happy-dom` (#172). Do not start before 2026-10-27T18:06Z
+## Phase 4: bump `happy-dom` (#172) ✓
 
 1. Set `@happy-dom/global-registrator` to `^21.0.4` in `packages/playground` and `packages/banners`.
 2. Run `bun install`. The lock diff must be the registrator's and `happy-dom`'s closure only. If it is
