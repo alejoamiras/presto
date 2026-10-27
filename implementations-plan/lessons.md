@@ -18,7 +18,7 @@ not belong here. Sections are stable; append, never re-sort.
 - **Tauri menu callbacks have no Tokio context** — use `tauri::async_runtime::spawn`; hold no lock
   across a menu setter; run read-then-set on the main thread.
   `archive/update-check-schedule/lessons/phase-3.md`, `archive/custom-bb/lessons/phase-3.md`
-- **A path that skips the lock must still read what it guards**.
+- **A path that skips the lock must still read what the lock guards**.
   `archive/verified-sites-feed/lessons/pr-2-review.md`
 - **Tauri runs each async command as its own task** — two saves take the lock in either order.
   `archive/rc-update-channel/lessons/arc-2-review.md`
@@ -28,7 +28,7 @@ not belong here. Sections are stable; append, never re-sort.
 - **Linux cannot compile macOS `cfg` code** (`aws-lc-sys` needs Darwin) — CI's macOS lane is the
   first compile; check `libc` bindings by hand. `archive/custom-bb/lessons/phase-1.md`
 - **An error's `to_string()` can name a local path and drop the OS reason** (tar, tempfile) — keep
-  it off the wire; log `error = &e as &dyn Error`. `archive/server-1/recon.md`
+  it off the wire; log `error = &e as &dyn Error` (prints `error.sources`). `archive/server-1/recon.md`
 - **On Linux, Tauri's `.center()` and `prevent_overflow()` ignore the title bar, and
   `primary_monitor()` must run on the main thread** (GDK). `archive/windows-1/recon.md`
 
@@ -37,14 +37,14 @@ not belong here. Sections are stable; append, never re-sort.
 - **`minimumReleaseAge` is npm-only** — `cargo update` took 27 crates under 7 days old; diff a fresh
   `.crate` against its tag. `archive/presto-rustls-fix/lessons/phase-1.md`
 - **Wrangler: any bump fails `release-feed`'s typecheck** until `worker-configuration.d.ts` is
-  regenerated (2026-10, 4.151); `kv key get --remote` errors on a missing key (4.135).
+  regenerated (2026-10, 4.151); `kv key get --remote` errors on a missing key, so list first (4.135).
   `archive/deps-1/lessons/phase-1.md`, `archive/rc-update-channel/lessons/phase-7.md`
 - **`bun --config /dev/null <script>` exits 0 without running it**; only `--config=/dev/null` works.
   (2026-10, Bun 1.4.2) `archive/verified-sites-feed/lessons/phase-2.md`
 - **`bun.lock` records a bundling package's declared deps, not its `bundleDependencies`** — `bun
   audit` misses the copy Node loads. (2026-10, Bun 1.4.2) `archive/deps-1/recon.md`
-- **`bun update <transitive>` re-resolves every copy within its ranges**; a script deleting lock
-  entries corrupts it and re-resolves the whole tree. (2026-10, Bun 1.4.2)
+- **`bun update <transitive>` re-resolves every copy within its ranges**; a scripted edit that
+  breaks its JSON makes Bun re-resolve the whole tree. (2026-10, Bun 1.4.2)
   `archive/deps-1/lessons/phase-0.md`
 
 ## Types and package boundaries
