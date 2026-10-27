@@ -8,12 +8,17 @@ dropped rather than carried — see "Closed by the sweep" at the bottom for what
 
 ## Dated — 2026-11-30
 
-- **The ten dependency-audit exceptions expire on 2026-11-30.**
+- **The eleven dependency-audit exceptions expire on 2026-11-30.**
   `scripts/dependency-audit-allowlist.json` accepts `@opentelemetry/propagator-jaeger`, `basic-ftp`,
-  `braces`, `deepmerge-ts`, `extract-zip` (×2), `serialize-javascript` and `zip` (×3, RustSec).
-  - The audit gate goes red on 2026-12-01 on them. Each entry's `reason` says what pins it.
-  - **Verified 2026-10-25** against the allowlist, after the wrangler 4.151.1 bump retired the two
-    `undici` exceptions (miniflare now pins undici 7.29.1).
+  `deepmerge-ts`, `extract-zip` (×2), `serialize-javascript`, `undici`, `zod` and `zip` (×3, RustSec).
+  - The audit gate goes red on 2026-12-01 on them. Each entry's `reason` says what pins it, and its
+    `upgrade` says when it goes.
+  - `zod` and `undici` are the owner's P4-01 acceptance (#172): `zod` waits for an Aztec release that
+    allows 4.6.6, `undici` for miniflare and the pinned npm to ship the fix. Before dropping
+    either, and on every wrangler bump, re-take #187's baseline of what wrangler's `cli.js` inlines,
+    which no audit sees: 4.151.1 inlines `zod` 4.6.5 and `undici` 7.29.1 among 221 entries.
+  - **Verified 2026-10-27** against the allowlist, after `braces` was dropped (GitHub withdrew
+    GHSA-vfj7-8cjw-p6xm on 2026-10-23).
 
 ## Owner actions
 

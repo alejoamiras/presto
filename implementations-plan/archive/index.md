@@ -89,3 +89,7 @@ with `rg --no-ignore` / `git grep`.
   limits #183, #184, #185).
 - [ci-1](ci-1/plan.md) — closed 2026-10-25 — Dependabot's create-github-app-token v3.3.0 and
   rust-toolchain v1 bumps, with a reviewed re-pin of the App-key tripwire test (PR #186, supersedes #169).
+- [deps-1](deps-1/plan.md) — closed 2026-10-27 — wrangler 4.151.1 without the `sharp` override, the
+  audit covers the pinned npm's bundled tree and fails closed, and #172's red audit is cleared by
+  bumps plus the owner's dated `zod` and `undici` acceptance (PRs #175, #181, #189; known limits
+  #187, #188).

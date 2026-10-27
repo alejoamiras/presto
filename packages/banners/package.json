@@ -28,7 +28,7 @@
   },
   "devDependencies": {
     "@alejoamiras/presto": "workspace:*",
-    "@happy-dom/global-registrator": "^20.12.0"
+    "@happy-dom/global-registrator": "^21.0.4"
   },
   "publishConfig": {
     "access": "public"
