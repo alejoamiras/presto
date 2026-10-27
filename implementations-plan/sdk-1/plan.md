@@ -103,10 +103,10 @@ case, including `429 download_budget_exhausted`; banners and playground copy.
 | a1 | `packages/sdk-noir/src/lib/presto-ultra-honk-backend.test.ts` | one row: `500 download_failed` → `download-failed`, no phase |
 | a1 | `packages/sdk-noir/README.md` | a `download-failed` row in the reason table (:113-124); the `transient` row says `500 prove_failed` and names the bb download budget |
 | a1 | `packages/sdk/README.md` (:358), `packages/sdk/.claude/skills/presto/SKILL.md` (:325-329) | the degrade list names the failed download, logged as `download-failed` under LogTape's `["presto"]` category |
-| a2 | `packages/sdk-core/package.json`, `packages/sdk-noir/package.json` | `1.2.1` → `1.3.0`; `2.0.0` → `2.1.0` |
-| a2 | `bun.lock` | the two workspace `version` lines (:124, :135) only |
+| a2 | `packages/sdk-core/package.json`, `packages/sdk-noir/package.json`, `packages/banners/package.json` | `1.2.1` → `1.3.0`; `2.0.0` → `2.1.0`; `1.2.0` → `1.2.1` (D17, D18) |
+| a2 | `bun.lock` | the three workspace `version` lines only |
 | a2 | `packages/sdk-noir/README.md` | tested-pairs row `2.1.0` above :150, with the same peer, default and Presto range as 2.0.0 |
-| a2 | `CLAUDE.md` | core line: `(1.2.1)` → `(1.3.0)` |
+| a2 | `CLAUDE.md` | core line `(1.2.1)` → `(1.3.0)`; banners line `manifest-versioned, 1.1.0` → `1.2.1` |
 | a2 | `implementations-plan/` | the close-out |
 
 **Not changed:** `sdk-core/src/lib/errors.ts:4` and `packages/sdk/MIGRATION.md:266-270` (they list
@@ -252,21 +252,21 @@ Steps (tests first, so each new expectation is seen failing against the old clas
 - Layers: lint, typecheck, unit. No e2e: no spec covers a failed download, and the classifier is a
   pure function of status and code.
 
-### Phase 2 (a2): the version transition
+### Phase 2 (a2): the version transition ✓
 
 Steps:
 1. After a1 merges: `git fetch origin main && git checkout -b sdk-1-a2 origin/main && bun install`.
-2. Set core to `1.3.0` and presto-noir to `2.1.0`. Run `bun install`. Then `git diff -- bun.lock`
-   must show exactly the two version lines. If it shows more, restore the file and edit the two
-   lines by hand.
-3. Add the presto-noir `2.1.0` tested-pairs row. Change CLAUDE.md's core version. Commit.
+2. Set core to `1.3.0`, presto-noir to `2.1.0` and presto-banners to `1.2.1`. Run `bun install`.
+   Then `git diff -- bun.lock` must show exactly the three version lines. If it shows more, restore
+   the file and edit the three lines by hand.
+3. Add the presto-noir `2.1.0` tested-pairs row. Change CLAUDE.md's core and banners versions. Commit.
 
 **Validation gate.**
 - Commands: `bun install --frozen-lockfile`; `bun run lint`; `bun run test`;
   `git status --porcelain`; `git diff --name-only origin/main...HEAD -- . ':!implementations-plan'`.
 - Pass criteria: every command exits 0, and `git status` prints nothing. The name list is exactly
-  the two manifests, `bun.lock` (2 changed lines), the noir README (one row) and `CLAUDE.md` (one
-  line). None of them is a `published` path in `app.yml:71-87`.
+  the three manifests, `bun.lock` (3 changed lines), the noir README (one row) and `CLAUDE.md` (two
+  lines). None of them is a `published` path in `app.yml`'s `published` filter.
 - Layers: lint, typecheck, unit.
 
 ## Delivery
@@ -274,14 +274,14 @@ Steps:
 | Arc | Phases | Branch | Base | PR | `code_review` |
 |---|---|---|---|---|---|
 | a1 | 1 | `worktree-sdk-1` (the plan commit first) | `main` | `fix(sdk-core): report a failed bb download as download-failed`; ready; `Closes #102` | off |
-| a2 | 2 + close-out | `sdk-1-a2`, from `origin/main` after a1 merges | `main` | `build(sdk): presto-core 1.3.0 and presto-noir 2.1.0 for the download-failed release`; draft | off |
+| a2 | 2 + close-out | `sdk-1-a2`, from `origin/main` after a1 merges | `main` | `build(sdk): presto-core 1.3.0, presto-noir 2.1.0, presto-banners 1.2.1 for download-failed` (D19); draft | off |
 
 - Arcs are sequential, one PR each against `main`, no stacked PRs (the program's implementer
   rule). a2 starts only after a1 merges, so the plan it archives is already on `main`.
 - a2 carries the close-out, so the plan closes when a2 merges.
 - No pushed branch is rewritten (no rebase, no `gh stack sync`, no force-push). When `main` moves
   under an open PR, merge `origin/main` into it, run its gate, and push.
-- Parallelism: none. a2 is five small file edits.
+- Parallelism: none. a2 is six small file edits.
 - The orchestrator merges a1 when it is green. It merges a2 only under the Ask above.
 
 ## Post-implementation
@@ -376,6 +376,9 @@ failures on one step.
 | D14 | No log assertion in tests | final Codex F5 | rejected (see Trade-offs) |
 | D15 | Plain branches, merges and `git push`; no `gh stack sync`/`rebase` (they force-push) | final Codex R2; program hard rule | adopted |
 | D16 | a2 starts from `origin/main` after a1 merges, PR against `main`; no PR based on a1 | the program's implementer brief (no stacked PRs) | adopted at implementation; removes the post-squash plan-folder step |
+| D17 | Regroup: a2 also bumps presto-banners. #189 changed `packages/banners` (the happy-dom dev dependency, `src/test-setup.ts`) and its `bun.lock` slice after its last tag, and `release-plan.ts` refuses that reuse, which would fail the `packages=all` release's plan job | the orchestrator, 2026-10-27; verified with `release-plan.ts`'s own `lockfileSlice` and the tag diff | adopted |
+| D18 | Banners goes `1.2.0` → `1.2.1`, not `1.1.0` → `1.1.1` as the regroup said. `1.2.0` is the manifest, the tag (`b46898f`) and on npm. CLAUDE.md's "1.1.0" was stale, and a `1.1.1` would sort below the published `1.2.0` | the tree | adopted (deviation) |
+| D19 | The a2 PR title is shortened to fit the program's 93-character cap; the given title was 105 | program hard rule | adopted (deviation) |
 | D5 | Tests first. Change core row :335; add `429 download_budget_exhausted` and one noir row; no union doc-sync test | Codex F3, F4; Opus F5 | adopted |
 | D6 | Docs: core README, noir table, SDK README and skill (naming `["presto"]`); in a2, the noir tested-pairs row and CLAUDE.md. Not MIGRATION.md or the `errors.ts` lists | draft; Codex F5; Opus F8 | adopted |
 | D7 | `429 download_budget_exhausted` stays `transient`, and the docs name the budget | lane brief; Codex F4 | adopted |

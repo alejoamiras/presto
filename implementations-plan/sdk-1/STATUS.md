@@ -10,3 +10,4 @@
 - 2026-10-25 phase 1 gate: PASS (core 196, noir 40, bun run lint 0, bun run test 0, clean tree, no manifest/lock in diff).
 - 2026-10-25 a1 codex loop: converged in 2 rounds (R1 clean; Opus 1 doc fix; R2 clean).
 - 2026-10-25 a1 final gates after merging origin/main @ 0b938f4: bun run test 0 (incl. lint), lint:actions 0, clean tree.
+- 2026-10-27 a2 phase 2 gate: PASS (frozen 0, lint 0, test 0, clean, scope = 3 manifests + bun.lock + noir README + CLAUDE.md, no published path). Regroup D17 verified; banners 1.2.0 -> 1.2.1 (D18), PR title shortened (D19).
