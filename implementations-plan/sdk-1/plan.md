@@ -7,13 +7,37 @@ code_review: off
 claude_model: opus
 codex_model: sol
 explainer: off
-status: approved 2026-10-25 (final Codex: approve; auto-continue); a1 implementing
+status: completed 2026-10-27 (a1 #178 merged; a2 #190 a draft until the release)
 created: 2026-10-25
 worktree: .claude/worktrees/sdk-1
 branch: worktree-sdk-1 (a1), sdk-1-a2 (a2, from origin/main after a1 merges)
 base: main @ 80b562e
 budget: recon 1 agent (Sonnet); code-review off; Codex gpt-6.1-sol at high (program brief)
 ---
+
+## Outcome
+
+- **2026-10-27: completed** in two PRs: #178 (a1, closed #102) and #190 (a2, with this close-out).
+  #190 stays a draft and merges right before the owner's `release-sdk.yml packages=all` dispatch.
+- **Shipped**:
+  - a1: presto-core returns `download-failed`, with no phase, for exactly `500 download_failed`;
+    `prove_failed`, the download budget's 429 and the other statuses stay `transient`. Both adapters
+    carry it unchanged; core and noir tests and the four reason docs moved with it.
+  - a2: core 1.3.0, presto-noir 2.1.0 and presto-banners 1.2.1, with noir's 2.1.0 tested-pairs row.
+    The release planner returns publish for all four `packages=all` descriptors.
+- **Changed in delivery**:
+  - banners joined a2, because #189 changed its build inputs after its tag (D17); it goes from 1.2.0,
+    not 1.1.0 (D18);
+  - a2's title was shortened to the 93-character cap (D19);
+  - noir's never-published `2.0.0-rc.3` row was removed (D20);
+  - the classifier comment gives D4's reason as it stands after #180 (D21).
+- **Dropped**: logging the server `message` (D4, D14); stacked PRs and `gh stack` (D15, D16).
+- **Known limits:** none.
+- **Lessons:** none promoted. The early-bump window is the runbook's "Expected fail-closed window",
+  and CLAUDE.md states the forced bump.
+- **Open items:** tracked privately: GHSA-q9x2-p4gh-hw97 (D12), for the owner's triage. #190's merge
+  timing is the orchestrator's.
+- **Seeds retired**: the `/goal` and `/loop` lines below are not instructions.
 
 ## Summary
 
