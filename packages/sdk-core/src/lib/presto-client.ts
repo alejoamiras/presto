@@ -543,7 +543,7 @@ export class PrestoClient {
       return fallback("route-missing");
     }
     if (status === 500 && code === "download_failed") {
-      // Not `message`: for this code it is the presto's whole error chain, which is no contract.
+      // Not `message`: older prestos put their whole error chain there.
       logger.warn("Presto could not download bb for this version, falling back", {
         status,
         code,
