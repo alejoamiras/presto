@@ -379,6 +379,8 @@ failures on one step.
 | D17 | Regroup: a2 also bumps presto-banners. #189 changed `packages/banners` (the happy-dom dev dependency, `src/test-setup.ts`) and its `bun.lock` slice after its last tag, and `release-plan.ts` refuses that reuse, which would fail the `packages=all` release's plan job | the orchestrator, 2026-10-27; verified with `release-plan.ts`'s own `lockfileSlice` and the tag diff | adopted |
 | D18 | Banners goes `1.2.0` → `1.2.1`, not `1.1.0` → `1.1.1` as the regroup said. `1.2.0` is the manifest, the tag (`b46898f`) and on npm. CLAUDE.md's "1.1.0" was stale, and a `1.1.1` would sort below the published `1.2.0` | the tree | adopted (deviation) |
 | D19 | The a2 PR title is shortened to fit the program's 93-character cap; the given title was 105 | program hard rule | adopted (deviation) |
+| D20 | a2 removes noir's tested-pairs row for `2.0.0-rc.3`, which was never published (npm E404; no tag or release) | a2 Opus review | adopted: one line in the table a2 edits, shipped to npm with 2.1.0 |
+| D21 | The classifier comment now gives D4's reason as it stands after #180: older apps send their whole error chain; new ones send fixed text | cross-arc Codex R1 | adopted; D4 unchanged |
 | D5 | Tests first. Change core row :335; add `429 download_budget_exhausted` and one noir row; no union doc-sync test | Codex F3, F4; Opus F5 | adopted |
 | D6 | Docs: core README, noir table, SDK README and skill (naming `["presto"]`); in a2, the noir tested-pairs row and CLAUDE.md. Not MIGRATION.md or the `errors.ts` lists | draft; Codex F5; Opus F8 | adopted |
 | D7 | `429 download_budget_exhausted` stays `transient`, and the docs name the budget | lane brief; Codex F4 | adopted |
@@ -418,6 +420,10 @@ window) and D4 (Opus would log `message`; the final Codex pass showed why not).
   all verified and adopted (Delivery, close-out step 1, the seeds). No committable file still
   describes the advisory.
 - **Final pass, round 4** (resumed): `approve`.
+- **Arc a2 fix loop** (gpt-6.1-sol `high`, session `01a17eff-00eb-75c1-80b3-71b315c04c70`): R1
+  `clean`. The Opus diff review found the a2 diff clean, plus one pre-existing row (D20). The fresh
+  cross-arc pass (session `01a17f01-5e01-7300-9d58-7b930e43c12f`) found 1 in R1 (D21) and was
+  `clean` in R2. Converged in 2 rounds.
 - **Arc a1 fix loop** (gpt-6.1-sol `high`, session `01a17108-93dd-79e2-8acf-0c8a9767f48c`): R1 `clean`.
   The Opus diff review found 1 doc slip: core README filed `500 prove_failed` under "capacity". It is
   fixed. R2 `clean`. Converged in 2 rounds.
