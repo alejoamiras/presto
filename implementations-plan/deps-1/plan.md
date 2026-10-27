@@ -14,6 +14,35 @@ issues: [106, 167, 172]
 asks: none
 ---
 
+## Outcome
+
+- **2026-10-27: completed** in three PRs: #175 (arc 1), #181 (arc 2) and #189 (arc 3, with this
+  close-out). Together they close #106, #167 and #172.
+- **Shipped**:
+  - #106: wrangler 4.151.1 and no `sharp` override; miniflare's own pin supplies `sharp` 0.35.5. The
+    two `undici` exceptions that the bump cleared are removed.
+  - #167: `audit:dependencies` also audits the pinned npm's `bundleDependencies` tree (141 packages)
+    through the registry's bulk advisory endpoint. It fails closed on every malformed input.
+  - #172:
+    - `bun update undici` moved every caret copy to its fixed release;
+    - `happy-dom` is 21.0.4 in the playground and banners;
+    - the owner's P4-01 accepts `zod` and `undici` until 2026-11-30.
+    The audit on the final head reports 0 blocked.
+  - The stale `braces` exception is gone: GitHub withdrew GHSA-vfj7-8cjw-p6xm on 2026-10-23.
+- **Changed in review**:
+  - named errors for a malformed manifest and a non-JSON answer (arc 1);
+  - phase 4's gate requires 0 blocked (arc 2).
+- **Dropped**:
+  - a hand splice of `bun.lock` and a root `undici` override (D3);
+  - a stacked arc 2 (D18);
+  - a canary against registry omissions (D13).
+- **Known limits:**
+  - #187 (KL-1): code that esbuild inlined into wrangler's `cli.js`;
+  - #188 (KL-2): same-version tampering, and registry omissions.
+- **Open items:** none. The eleven exceptions that expire on 2026-11-30 are in `follow-ups.md`. The
+  next banners release must bump its version (F9), which `release-plan.ts` enforces.
+- **Seeds retired**: the `/goal` and `/loop` lines below are not instructions.
+
 # deps-1: bump wrangler, drop the sharp override, audit npm's bundle, clear what bumps can clear
 
 Size: about 400 lines against the 350 target. It covers three issues in five phases over three arcs,
