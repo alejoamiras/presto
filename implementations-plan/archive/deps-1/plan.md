@@ -31,13 +31,16 @@ asks: none
   - The stale `braces` exception is gone: GitHub withdrew GHSA-vfj7-8cjw-p6xm on 2026-10-23.
 - **Changed in review**:
   - named errors for a malformed manifest and a non-JSON answer (arc 1);
-  - phase 4's gate requires 0 blocked (arc 2).
+  - phase 4's gate requires 0 blocked (arc 2);
+  - #187 records a baseline of what wrangler's `cli.js` inlines, re-taken on every wrangler bump
+    (arc 3).
 - **Dropped**:
   - a hand splice of `bun.lock` and a root `undici` override (D3);
   - a stacked arc 2 (D18);
   - a canary against registry omissions (D13).
 - **Known limits:**
-  - #187 (KL-1): code that esbuild inlined into wrangler's `cli.js`;
+  - #187 (KL-1): code that esbuild inlined into wrangler's `cli.js`. At 4.151.1 that is 2 critical and
+    4 high-severity packages, none on an input an outsider controls;
   - #188 (KL-2): same-version tampering, and registry omissions.
 - **Open items:** none. The eleven exceptions that expire on 2026-11-30 are in `follow-ups.md`. The
   next banners release must bump its version (F9), which `release-plan.ts` enforces.
@@ -392,6 +395,7 @@ read the source). Rejected.
 | arc 3 r1 | Codex gpt-6.1-sol high, `01a17eab` (diff c1d1f6f..28a82f6) | clean, 1 minor | #187's "no `package.json` names them" was too broad (wrangler's `devDependencies`, `cli.js` path comments); the issue now says no authoritative inventory exists | — |
 | arc 3 r1 | Opus diff review (fresh) | 1 material, 6 minor | #187 now records the inlined `zod` 4.6.5 and `undici` 7.29.1, both inside accepted advisories, and a narrower reopening condition; `follow-ups.md` says to check them before dropping either exception; three `lessons.md` compressions restored, and the `bun update` line matches its source; the Outcome's bullet renders right; banners' setup comment no longer says happy-dom fetches CSS (off by default in 21); the close-out commit's retirement count reworded before push | the allowlist's `undici` reason is the owner's verbatim text; it describes the copies the audit sees |
 | arc 3 r2 | Codex resume `01a17eab` (fix diff 97c4af7) | 1 material | the revised #187 condition was already met: `cli.js` inlines `shell-quote` 1.10.0 (critical GHSA-pqg4-j6r4-53mv). A one-off pass over all 204 inlined names found 2 critical and 4 high-severity packages; #187 now records the baseline with each copy's input (`shell-quote` unreachable through wrangler's wrappers; the rest need the repository's own files or Cloudflare's endpoints) and reopens on an advisory whose input an outsider controls; `follow-ups.md` re-takes it on every wrangler bump | an audit of the path comments: a new source with no completeness check, outside this arc |
+| arc 3 r3 | Codex resume `01a17eab` (fix diff 19718f3) | clean | converged; it re-derived the 221 entries and the high and critical baseline | — |
 
 ## Post-implementation
 

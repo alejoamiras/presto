@@ -66,3 +66,9 @@
   advisory whose input an outsider controls during a build.
 - An audit of the path comments stays out of scope: it would be a new source, with no completeness
   check.
+
+## Arc 3, round 3
+
+- Codex resume (fix diff 19718f3): **clean**. It re-derived the 221 entries, the 204 names and
+  the high and critical baseline, and found no outsider-controlled input. The loop converged in 3
+  rounds.
