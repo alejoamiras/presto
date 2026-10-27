@@ -5,6 +5,12 @@ rendered in Shadow DOM with Presto's own tokens, type and motion, so the "get Pr
 the same on every site. Six surfaces, one state model, keyed to the SDK's `PrestoStatus`, plus a
 `connect` state that asks before the first request to Presto.
 
+> **Before you integrate.** Presto's app version is not an Aztec version: Presto proves with the
+> `bb` release your SDK adapter sends, and fetches that `bb` on first use
+> ([Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions)).
+> To ask users to install or connect Presto, use `<presto-banner>` from this package instead of
+> designing your own prompt.
+
 | Variant     | Shape                                  | Shows for                              |
 |-------------|----------------------------------------|----------------------------------------|
 | `ribbon`    | 44px full-width strip                  | every state (connect, install, fix-it, connected) |

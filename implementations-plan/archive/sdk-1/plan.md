@@ -31,6 +31,8 @@ budget: recon 1 agent (Sonnet); code-review off; Codex gpt-6.1-sol at high (prog
   - a2's title was shortened to the 93-character cap (D19);
   - noir's never-published `2.0.0-rc.3` row was removed (D20);
   - the classifier comment gives D4's reason as it stands after #180 (D21).
+  - core's and banners' READMEs open with the two integrator pointers noir's carries, closing
+    bundle-v6's follow-up in these packages' next real release (D22).
 - **Dropped**: logging the server `message` (D4, D14); stacked PRs and `gh stack` (D15, D16).
 - **Known limits:** none.
 - **Lessons:** none promoted. The early-bump window is the runbook's "Expected fail-closed window",
@@ -405,6 +407,7 @@ failures on one step.
 | D19 | The a2 PR title is shortened to fit the program's 93-character cap; the given title was 105 | program hard rule | adopted (deviation) |
 | D20 | a2 removes noir's tested-pairs row for `2.0.0-rc.3`, which was never published (npm E404; no tag or release) | a2 Opus review | adopted: one line in the table a2 edits, shipped to npm with 2.1.0 |
 | D21 | The classifier comment now gives D4's reason as it stands after #180: older apps send their whole error chain; new ones send fixed text | cross-arc Codex R1 | adopted; D4 unchanged |
+| D22 | a2 adds the two integrator pointers (the Aztec version model, presto-banners for install UI) to core's and banners' README openings, worded as noir's; core's says an omitted `aztecVersion` is version-agnostic; no test pins noir's opening, so none is added | bundle-v6 follow-up, raised in the a2 report; the orchestrator, 2026-10-27; Codex (session `01a17f20-dadc-7bb2-b4e3-46a69b4b537b`) R1 1 finding, the omitted case | adopted |
 | D5 | Tests first. Change core row :335; add `429 download_budget_exhausted` and one noir row; no union doc-sync test | Codex F3, F4; Opus F5 | adopted |
 | D6 | Docs: core README, noir table, SDK README and skill (naming `["presto"]`); in a2, the noir tested-pairs row and CLAUDE.md. Not MIGRATION.md or the `errors.ts` lists | draft; Codex F5; Opus F8 | adopted |
 | D7 | `429 download_budget_exhausted` stays `transient`, and the docs name the budget | lane brief; Codex F4 | adopted |
