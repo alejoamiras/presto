@@ -7,11 +7,25 @@ code_review: off
 claude_model: opus
 codex_model: sol
 explainer: off
-status: arc 1 implemented 2026-10-28; Codex loop converged in 2 rounds
+status: completed 2026-10-28 (#191)
 created: 2026-10-28
 base: main @ 8d4098b, worktree .claude/worktrees/release-2, branch worktree-release-2
 budget: recon 1 agent (Sonnet); code-review off; Codex gpt-6.1-sol at high
 ---
+
+## Outcome
+
+- **2026-10-28: completed** in one PR, #191 (`Delivers ask11`), with this close-out.
+- **Shipped**: `updater-smoke-linux.sh` creates `${XDG_CACHE_HOME:-$HOME/.cache}` before any launch,
+  pinned by a contract test; the allowlist accepts GHSA-4w7w-5xrc-9h26, GHSA-2m5v-pch6-74hx and
+  GHSA-qrxm-fqhp-jwvm until 2026-11-30 with GHSA-xjj6-f33q-929c's reason and removal condition.
+  The audit on the final head reports 0 blocked. The next release dispatch is the smoke's first
+  real run, and only its release lane proves the fix.
+- **Rejected**: a `ubuntu-24.04` pin (D1); a literal `$HOME/.cache` (D2); scoping allowlist keys by
+  version or source (a schema change, out of scope; the runbook documents package-wide keys).
+- **Known limits:** #192.
+- **Open items:** none.
+- The `/goal` and `/loop` seeds below are retired; never run them.
 
 ## Outcome & Quality Bar
 
@@ -189,4 +203,4 @@ against `main` with `Delivers ask11` and the archive commit; `bun run test`, `bu
 `/loop 15m` Drive `implementations-plan/release-2`: read plan.md, do the next unchecked step, run
 its gate, mark ✓, then Post-implementation in order; never merge.
 
-Over the 150-line target (192 lines): the review rules must stay verbatim and the audit stays inline.
+Over the 150-line target (206 lines): the review rules must stay verbatim and the audit stays inline.
