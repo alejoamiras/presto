@@ -9,6 +9,14 @@ adapters for different proof systems can build on it without pulling in each oth
 [![npm version](https://img.shields.io/npm/v/@alejoamiras/presto-core)](https://www.npmjs.com/package/@alejoamiras/presto-core)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
+> **Before you integrate.** Presto's app version is not an Aztec version: when a client sets
+> `aztecVersion`, Presto proves with that `bb` release (sent as `x-aztec-version`) and fetches it on
+> first use; omit it for a version-agnostic route
+> ([Presto and Aztec versions](https://github.com/alejoamiras/presto#presto-and-aztec-versions)).
+> To ask users to install or connect Presto, use `<presto-banner>` from
+> [`@alejoamiras/presto-banners`](https://github.com/alejoamiras/presto/tree/main/packages/banners)
+> instead of designing your own prompt.
+
 You normally do not install this package directly:
 
 - Aztec transactions: [`@alejoamiras/presto`](../sdk/README.md) (`PrestoProver`).

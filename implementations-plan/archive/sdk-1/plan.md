@@ -7,13 +7,39 @@ code_review: off
 claude_model: opus
 codex_model: sol
 explainer: off
-status: approved 2026-10-25 (final Codex: approve; auto-continue); a1 implementing
+status: completed 2026-10-27 (a1 #178 merged; a2 #190 a draft until the release)
 created: 2026-10-25
 worktree: .claude/worktrees/sdk-1
 branch: worktree-sdk-1 (a1), sdk-1-a2 (a2, from origin/main after a1 merges)
 base: main @ 80b562e
 budget: recon 1 agent (Sonnet); code-review off; Codex gpt-6.1-sol at high (program brief)
 ---
+
+## Outcome
+
+- **2026-10-27: completed** in two PRs: #178 (a1, closed #102) and #190 (a2, with this close-out).
+  #190 stays a draft and merges right before the owner's `release-sdk.yml packages=all` dispatch.
+- **Shipped**:
+  - a1: presto-core returns `download-failed`, with no phase, for exactly `500 download_failed`;
+    `prove_failed`, the download budget's 429 and the other statuses stay `transient`. Both adapters
+    carry it unchanged; core and noir tests and the four reason docs moved with it.
+  - a2: core 1.3.0, presto-noir 2.1.0 and presto-banners 1.2.1, with noir's 2.1.0 tested-pairs row.
+    The release planner returns publish for all four `packages=all` descriptors.
+- **Changed in delivery**:
+  - banners joined a2, because #189 changed its build inputs after its tag (D17); it goes from 1.2.0,
+    not 1.1.0 (D18);
+  - a2's title was shortened to the 93-character cap (D19);
+  - noir's never-published `2.0.0-rc.3` row was removed (D20);
+  - the classifier comment gives D4's reason as it stands after #180 (D21).
+  - core's and banners' READMEs open with the two integrator pointers noir's carries, closing
+    bundle-v6's follow-up in these packages' next real release (D22).
+- **Dropped**: logging the server `message` (D4, D14); stacked PRs and `gh stack` (D15, D16).
+- **Known limits:** none.
+- **Lessons:** none promoted. The early-bump window is the runbook's "Expected fail-closed window",
+  and CLAUDE.md states the forced bump.
+- **Open items:** tracked privately: GHSA-q9x2-p4gh-hw97 (D12), for the owner's triage. #190's merge
+  timing is the orchestrator's.
+- **Seeds retired**: the `/goal` and `/loop` lines below are not instructions.
 
 ## Summary
 
@@ -103,10 +129,10 @@ case, including `429 download_budget_exhausted`; banners and playground copy.
 | a1 | `packages/sdk-noir/src/lib/presto-ultra-honk-backend.test.ts` | one row: `500 download_failed` → `download-failed`, no phase |
 | a1 | `packages/sdk-noir/README.md` | a `download-failed` row in the reason table (:113-124); the `transient` row says `500 prove_failed` and names the bb download budget |
 | a1 | `packages/sdk/README.md` (:358), `packages/sdk/.claude/skills/presto/SKILL.md` (:325-329) | the degrade list names the failed download, logged as `download-failed` under LogTape's `["presto"]` category |
-| a2 | `packages/sdk-core/package.json`, `packages/sdk-noir/package.json` | `1.2.1` → `1.3.0`; `2.0.0` → `2.1.0` |
-| a2 | `bun.lock` | the two workspace `version` lines (:124, :135) only |
+| a2 | `packages/sdk-core/package.json`, `packages/sdk-noir/package.json`, `packages/banners/package.json` | `1.2.1` → `1.3.0`; `2.0.0` → `2.1.0`; `1.2.0` → `1.2.1` (D17, D18) |
+| a2 | `bun.lock` | the three workspace `version` lines only |
 | a2 | `packages/sdk-noir/README.md` | tested-pairs row `2.1.0` above :150, with the same peer, default and Presto range as 2.0.0 |
-| a2 | `CLAUDE.md` | core line: `(1.2.1)` → `(1.3.0)` |
+| a2 | `CLAUDE.md` | core line `(1.2.1)` → `(1.3.0)`; banners line `manifest-versioned, 1.1.0` → `1.2.1` |
 | a2 | `implementations-plan/` | the close-out |
 
 **Not changed:** `sdk-core/src/lib/errors.ts:4` and `packages/sdk/MIGRATION.md:266-270` (they list
@@ -252,21 +278,21 @@ Steps (tests first, so each new expectation is seen failing against the old clas
 - Layers: lint, typecheck, unit. No e2e: no spec covers a failed download, and the classifier is a
   pure function of status and code.
 
-### Phase 2 (a2): the version transition
+### Phase 2 (a2): the version transition ✓
 
 Steps:
 1. After a1 merges: `git fetch origin main && git checkout -b sdk-1-a2 origin/main && bun install`.
-2. Set core to `1.3.0` and presto-noir to `2.1.0`. Run `bun install`. Then `git diff -- bun.lock`
-   must show exactly the two version lines. If it shows more, restore the file and edit the two
-   lines by hand.
-3. Add the presto-noir `2.1.0` tested-pairs row. Change CLAUDE.md's core version. Commit.
+2. Set core to `1.3.0`, presto-noir to `2.1.0` and presto-banners to `1.2.1`. Run `bun install`.
+   Then `git diff -- bun.lock` must show exactly the three version lines. If it shows more, restore
+   the file and edit the three lines by hand.
+3. Add the presto-noir `2.1.0` tested-pairs row. Change CLAUDE.md's core and banners versions. Commit.
 
 **Validation gate.**
 - Commands: `bun install --frozen-lockfile`; `bun run lint`; `bun run test`;
   `git status --porcelain`; `git diff --name-only origin/main...HEAD -- . ':!implementations-plan'`.
 - Pass criteria: every command exits 0, and `git status` prints nothing. The name list is exactly
-  the two manifests, `bun.lock` (2 changed lines), the noir README (one row) and `CLAUDE.md` (one
-  line). None of them is a `published` path in `app.yml:71-87`.
+  the three manifests, `bun.lock` (3 changed lines), the noir README (one row) and `CLAUDE.md` (two
+  lines). None of them is a `published` path in `app.yml`'s `published` filter.
 - Layers: lint, typecheck, unit.
 
 ## Delivery
@@ -274,14 +300,14 @@ Steps:
 | Arc | Phases | Branch | Base | PR | `code_review` |
 |---|---|---|---|---|---|
 | a1 | 1 | `worktree-sdk-1` (the plan commit first) | `main` | `fix(sdk-core): report a failed bb download as download-failed`; ready; `Closes #102` | off |
-| a2 | 2 + close-out | `sdk-1-a2`, from `origin/main` after a1 merges | `main` | `build(sdk): presto-core 1.3.0 and presto-noir 2.1.0 for the download-failed release`; draft | off |
+| a2 | 2 + close-out | `sdk-1-a2`, from `origin/main` after a1 merges | `main` | `build(sdk): presto-core 1.3.0, presto-noir 2.1.0, presto-banners 1.2.1 for download-failed` (D19); draft | off |
 
 - Arcs are sequential, one PR each against `main`, no stacked PRs (the program's implementer
   rule). a2 starts only after a1 merges, so the plan it archives is already on `main`.
 - a2 carries the close-out, so the plan closes when a2 merges.
 - No pushed branch is rewritten (no rebase, no `gh stack sync`, no force-push). When `main` moves
   under an open PR, merge `origin/main` into it, run its gate, and push.
-- Parallelism: none. a2 is five small file edits.
+- Parallelism: none. a2 is six small file edits.
 - The orchestrator merges a1 when it is green. It merges a2 only under the Ask above.
 
 ## Post-implementation
@@ -376,6 +402,12 @@ failures on one step.
 | D14 | No log assertion in tests | final Codex F5 | rejected (see Trade-offs) |
 | D15 | Plain branches, merges and `git push`; no `gh stack sync`/`rebase` (they force-push) | final Codex R2; program hard rule | adopted |
 | D16 | a2 starts from `origin/main` after a1 merges, PR against `main`; no PR based on a1 | the program's implementer brief (no stacked PRs) | adopted at implementation; removes the post-squash plan-folder step |
+| D17 | Regroup: a2 also bumps presto-banners. #189 changed `packages/banners` (the happy-dom dev dependency, `src/test-setup.ts`) and its `bun.lock` slice after its last tag, and `release-plan.ts` refuses that reuse, which would fail the `packages=all` release's plan job | the orchestrator, 2026-10-27; verified with `release-plan.ts`'s own `lockfileSlice` and the tag diff | adopted |
+| D18 | Banners goes `1.2.0` → `1.2.1`, not `1.1.0` → `1.1.1` as the regroup said. `1.2.0` is the manifest, the tag (`b46898f`) and on npm. CLAUDE.md's "1.1.0" was stale, and a `1.1.1` would sort below the published `1.2.0` | the tree | adopted (deviation) |
+| D19 | The a2 PR title is shortened to fit the program's 93-character cap; the given title was 105 | program hard rule | adopted (deviation) |
+| D20 | a2 removes noir's tested-pairs row for `2.0.0-rc.3`, which was never published (npm E404; no tag or release) | a2 Opus review | adopted: one line in the table a2 edits, shipped to npm with 2.1.0 |
+| D21 | The classifier comment now gives D4's reason as it stands after #180: older apps send their whole error chain; new ones send fixed text | cross-arc Codex R1 | adopted; D4 unchanged |
+| D22 | a2 adds the two integrator pointers (the Aztec version model, presto-banners for install UI) to core's and banners' README openings, worded as noir's; core's says an omitted `aztecVersion` is version-agnostic; no test pins noir's opening, so none is added | bundle-v6 follow-up, raised in the a2 report; the orchestrator, 2026-10-27; Codex (session `01a17f20-dadc-7bb2-b4e3-46a69b4b537b`) R1 1 finding, the omitted case | adopted |
 | D5 | Tests first. Change core row :335; add `429 download_budget_exhausted` and one noir row; no union doc-sync test | Codex F3, F4; Opus F5 | adopted |
 | D6 | Docs: core README, noir table, SDK README and skill (naming `["presto"]`); in a2, the noir tested-pairs row and CLAUDE.md. Not MIGRATION.md or the `errors.ts` lists | draft; Codex F5; Opus F8 | adopted |
 | D7 | `429 download_budget_exhausted` stays `transient`, and the docs name the budget | lane brief; Codex F4 | adopted |
@@ -415,6 +447,10 @@ window) and D4 (Opus would log `message`; the final Codex pass showed why not).
   all verified and adopted (Delivery, close-out step 1, the seeds). No committable file still
   describes the advisory.
 - **Final pass, round 4** (resumed): `approve`.
+- **Arc a2 fix loop** (gpt-6.1-sol `high`, session `01a17eff-00eb-75c1-80b3-71b315c04c70`): R1
+  `clean`. The Opus diff review found the a2 diff clean, plus one pre-existing row (D20). The fresh
+  cross-arc pass (session `01a17f01-5e01-7300-9d58-7b930e43c12f`) found 1 in R1 (D21) and was
+  `clean` in R2. Converged in 2 rounds.
 - **Arc a1 fix loop** (gpt-6.1-sol `high`, session `01a17108-93dd-79e2-8acf-0c8a9767f48c`): R1 `clean`.
   The Opus diff review found 1 doc slip: core README filed `500 prove_failed` under "capacity". It is
   fixed. R2 `clean`. Converged in 2 rounds.

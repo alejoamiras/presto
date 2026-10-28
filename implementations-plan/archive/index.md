@@ -93,6 +93,9 @@ with `rg --no-ignore` / `git grep`.
   audit covers the pinned npm's bundled tree and fails closed, and #172's red audit is cleared by
   bumps plus the owner's dated `zod` and `undici` acceptance (PRs #175, #181, #189; known limits
   #187, #188).
+- [sdk-1](sdk-1/plan.md) — closed 2026-10-27 — presto-core reports a `500 download_failed` as
+  `download-failed` instead of `transient`, through both adapters; core 1.3.0, presto-noir 2.1.0 and
+  presto-banners 1.2.1, merged right before their release (PRs #178, #190; known limits none).
 - [release-2](release-2/plan.md) — closed 2026-10-28 — the Linux updater smoke creates the XDG
   cache dir that tauri-plugin-updater's AppImage swap needs on ubuntu-26.04, and the owner's dated
   acceptance of three undici advisories turns the audit green (PR #191; known limit #192).
