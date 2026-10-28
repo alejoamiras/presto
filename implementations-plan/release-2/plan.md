@@ -7,7 +7,7 @@ code_review: off
 claude_model: opus
 codex_model: sol
 explainer: off
-status: plan approved by the final Codex pass 2026-10-28; awaiting the orchestrator
+status: arc 1 implemented 2026-10-28; Codex loop converged in 2 rounds
 created: 2026-10-28
 base: main @ 8d4098b, worktree .claude/worktrees/release-2, branch worktree-release-2
 budget: recon 1 agent (Sonnet); code-review off; Codex gpt-6.1-sol at high
@@ -137,6 +137,12 @@ prevalence. (4) Anchor the test on the `mkdir` line before `source`, not on five
 exposure; the test asserts both lines exist before it compares their order. It upheld D2's
 rejection, the known limit, and the qrxm and 2m5v/4w7w risk statements.
 
+**Fix loop (arc 1).** Codex round 1: clean. Opus diff review: approve; accepted moving the test
+to its own `describe` and naming `tauri-plugin-updater` in the comment; no change for the
+allowlist key's package-wide scope (the schema's documented property); recorded that the
+ephemeral lane probably has `~/.cache` from its builds, so only the release lane proves the fix.
+Codex round 2 (resumed, over the fixes): clean. Detail: `lessons/arc-1-review.md`.
+
 ## Delivery
 
 One arc, one branch, one PR against `main`: the plan commit, Phases 1-2, the close-out. Title:
@@ -183,4 +189,4 @@ against `main` with `Delivers ask11` and the archive commit; `bun run test`, `bu
 `/loop 15m` Drive `implementations-plan/release-2`: read plan.md, do the next unchecked step, run
 its gate, mark ✓, then Post-implementation in order; never merge.
 
-Over the 150-line target (186 lines): the review rules must stay verbatim and the audit stays inline.
+Over the 150-line target (192 lines): the review rules must stay verbatim and the audit stays inline.

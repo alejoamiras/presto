@@ -9,3 +9,4 @@
 - 2026-10-28 phase 2 gate green: audit:dependencies exit 0 (0 blocked, 17 accepted, no STALE/INVALID), dependency-audit.test.ts 7 pass 1 skip (the env-gated registry test), lint:actions exit 0, bun run test exit 0.
 - 2026-10-28 codex fix loop round 1: clean (no findings); Opus diff review running alongside.
 - 2026-10-28 opus diff review: approve; test moved to its own describe and plugin named in the comment; key-scope note left as the schema's documented property; ephemeral-lane caveat recorded. Gates rerun green (46 pass, shellcheck 0.9, bun run test).
+- 2026-10-28 codex round 2 (resumed): clean; loop converged in 2 rounds.
