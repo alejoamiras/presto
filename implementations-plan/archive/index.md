@@ -93,3 +93,6 @@ with `rg --no-ignore` / `git grep`.
   audit covers the pinned npm's bundled tree and fails closed, and #172's red audit is cleared by
   bumps plus the owner's dated `zod` and `undici` acceptance (PRs #175, #181, #189; known limits
   #187, #188).
+- [release-2](release-2/plan.md) — closed 2026-10-28 — the Linux updater smoke creates the XDG
+  cache dir that tauri-plugin-updater's AppImage swap needs on ubuntu-26.04, and the owner's dated
+  acceptance of three undici advisories turns the audit green (PR #191; known limit #192).

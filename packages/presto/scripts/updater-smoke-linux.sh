@@ -71,7 +71,9 @@ CA_ID="updater-smoke-local-CA-${GITHUB_RUN_ID:-$$}-${GITHUB_RUN_ATTEMPT:-0}"
 CA_DEST="/usr/local/share/ca-certificates/${CA_ID}.crt"
 WORK="$(mktemp -d)"
 SERVE_DIR="$WORK/serve"
-mkdir -p "$SERVE_DIR" "$APP_DIR"
+# tauri-plugin-updater backs the AppImage up on its own device, trying the temp dir, then the XDG
+# cache dir, and aborts the swap if the cache dir is missing; a runner's /tmp can be another device.
+mkdir -p "$SERVE_DIR" "$APP_DIR" "${XDG_CACHE_HOME:-$HOME/.cache}"
 
 FEED_PID=""
 APP_PID=""

@@ -98,6 +98,8 @@ not belong here. Sections are stable; append, never re-sort.
   `.map`. `archive/release-1/lessons/review-round-3.md`
 - **A lane staging artifacts by a fixed name list drops a new one silently** — grep every per-OS
   lane when the signer adds a file. (#144)
+- **`ubuntu-latest` is Ubuntu 26.04, with `/tmp` on its own device** — tauri-plugin-updater 2.11's
+  AppImage swap then aborts unless the XDG cache dir exists. (2026-10) `archive/release-2/recon.md`
 
 ## npm publishing
 
