@@ -1,4 +1,4 @@
 {
-  "@alejoamiras/presto": "6.0.0",
-  "@alejoamiras/presto-noir": "2.0.0"
+  "@alejoamiras/presto": "6.0.0-revision.1",
+  "@alejoamiras/presto-noir": "2.1.0"
 }
