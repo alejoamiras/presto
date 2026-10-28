@@ -112,7 +112,7 @@ Assumptions: Facts 1-3, Inferences 1-2.
 step 3); `docker run --rm -v "$PWD:/mnt" -w /mnt koalaman/shellcheck:v0.9.0
 packages/presto/scripts/updater-smoke-linux.sh` (exit 0); `bun run lint`; `bun run test`.
 
-## Phase 2: accept the three undici advisories
+## Phase 2: accept the three undici advisories ✓
 
 Assumptions: Facts 4-5, Ask 1.
 
