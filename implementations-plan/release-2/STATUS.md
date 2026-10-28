@@ -5,3 +5,4 @@
 - 2026-10-28 phase 1 (draft): plan.md drafted (D1 mkdir over runner pin); Codex audit next.
 - 2026-10-28 audit round 1: Codex conditional approve; 4 findings accepted, XDG-literal finding rejected (D2); plan trimmed.
 - 2026-10-28 final Codex pass: approve; two wording notes applied. Plan committed; OWNER-ASKS none, so auto-continue into arc 1.
+- 2026-10-28 phase 1 gate green: release-contract 46 pass (new test red on both mutations), shellcheck 0.9 exit 0, bun run lint exit 0, bun run test exit 0 (first run red: TS2532 on an indexed read, fixed by reading the script by name; a biome noTemplateCurlyInString warning fixed with an escaped template, no suppression).

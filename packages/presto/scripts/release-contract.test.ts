@@ -783,6 +783,20 @@ describe("release-machinery hardening (2026-08-17 GitHub asset-CDN incident)", (
     }
   });
 
+  test("the Linux updater smoke creates the XDG cache dir before any launch", () => {
+    // The AppImage swap aborts when /tmp is another device and the cache dir is missing; every mode
+    // launches after the modes `source`. [mut: drop the operand, or move the mkdir below the `source`]
+    const linux = fs
+      .readFileSync(path.join(REPO, "packages/presto/scripts/updater-smoke-linux.sh"), "utf8")
+      .split("\n");
+    const mkdir = linux.findIndex((line) => line.startsWith('mkdir -p "$SERVE_DIR" "$APP_DIR"'));
+    const modes = linux.findIndex((line) => /^source .*\/updater-smoke-modes\.sh"$/.test(line));
+    expect(mkdir).toBeGreaterThan(-1);
+    expect(modes).toBeGreaterThan(-1);
+    expect(linux[mkdir]).toContain(`"\${XDG_CACHE_HOME:-$HOME/.cache}"`);
+    expect(mkdir).toBeLessThan(modes);
+  });
+
   test("prerelease publish DAG is scheduled (own status fn) yet still can't publish an ungated draft", () => {
     // A skipped prerequisite once poisoned the IMPLICIT success() of the packaged gate / tag / finalize,
     // so the first RC to reach them drafted but never published. Each MUST carry its own status function

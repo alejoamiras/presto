@@ -97,7 +97,7 @@ one-sentence comment. `packages/presto/scripts/release-contract.test.ts`: one `t
   changes, and the tampered-AppImage `negative` leg is untouched.
 - **Supply chain.** `bun.lock` does not change; the 7-day gate and frozen lockfile hold.
 
-## Phase 1: the Linux smoke creates the cache dir
+## Phase 1: the Linux smoke creates the cache dir ✓
 
 Assumptions: Facts 1-3, Inferences 1-2.
 
