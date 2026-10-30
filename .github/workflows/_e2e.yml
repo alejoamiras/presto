@@ -67,7 +67,7 @@ jobs:
       # server/target. Cache that dir only. Use the SAME `shared-key` as the
       # other linux server builds (smoke / release-smoke / release build-headless
       # + setup-presto) so they cross-warm one shared server cache.
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         if: inputs.build_presto
         with:
           workspaces: packages/presto/server -> target
