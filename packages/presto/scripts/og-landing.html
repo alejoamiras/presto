@@ -1,0 +1,83 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!-- presto.build's link-preview scene: og-image.png is its frame at t=0, og-video.mp4 the loop.
+     Rendered by og-landing.ts; every pixel is a function of window.seek(t). -->
+<style>
+  @font-face { font-family: Bricolage; font-weight: 800; src: url("../src-tauri/frontend/fonts/bricolage-grotesque-latin-800-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 600; src: url("../src-tauri/frontend/fonts/figtree-latin-600-normal.woff2") format("woff2"); }
+  @font-face { font-family: Figtree; font-weight: 700; src: url("../src-tauri/frontend/fonts/figtree-latin-700-normal.woff2") format("woff2"); }
+  @font-face { font-family: Fragment; font-weight: 400; src: url("../src-tauri/frontend/fonts/fragment-mono-latin-400-normal.woff2") format("woff2"); }
+  :root {
+    --bg: #fffaf1; --surface: #ffffff; --wash: #fff3dd; --border: #ece3d4;
+    --text: #241b33; --muted: #6e6580; --accent: #3b4fe0; --gold: #ffc53d; --gold-text: #7a5a00;
+  }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { width: 1200px; height: 630px; overflow: hidden; background: var(--bg); color: var(--text); }
+  .abs { position: absolute; will-change: transform, opacity; }
+
+  #mark { left: 96px; top: 165px; width: 300px; height: 300px; transform-origin: 0 0; }
+  #wordmark { left: 130px; top: 38px; font: 800 48px/1 Bricolage, sans-serif; letter-spacing: -.02em; }
+
+  #copy { left: 460px; top: 179px; font-family: Bricolage, sans-serif; }
+  #copy .line { display: block; font-size: 96px; font-weight: 800; line-height: 1.04; letter-spacing: -.02em; white-space: nowrap; }
+  #copy .meta { display: block; font: 400 30px/1.2 Fragment, monospace; color: var(--muted); margin-top: 36px; }
+  .star { color: var(--gold); display: inline-block; }
+
+  #race {
+    left: 64px; top: 130px; width: 1072px; padding: 38px 48px 44px;
+    background: var(--surface); border: 1.5px solid var(--border); border-radius: 28px;
+    box-shadow: 0 24px 60px -28px rgba(36, 27, 51, .32);
+  }
+  .race-head { display: flex; justify-content: space-between; align-items: center; height: 52px; }
+  .race-label { font: 700 30px/1 Figtree, sans-serif; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  #chip {
+    font: 700 34px/1 Figtree, sans-serif; color: var(--gold-text); padding: 9px 22px; border-radius: 999px;
+    background: color-mix(in srgb, var(--gold) 26%, var(--surface)); transform-origin: 100% 50%;
+  }
+  .row { margin-top: 38px; }
+  .row-top { display: flex; justify-content: space-between; align-items: baseline; }
+  .name { font: 600 46px/1 Figtree, sans-serif; color: var(--muted); }
+  .name.strong { font-weight: 700; color: var(--text); }
+  .num { font: 400 60px/1 Fragment, monospace; font-variant-numeric: tabular-nums; color: var(--muted); }
+  .track { position: relative; height: 36px; margin-top: 18px; border-radius: 999px; background: var(--wash); }
+  .track.accent { background: color-mix(in srgb, var(--accent) 10%, var(--surface)); }
+  .bar { position: absolute; left: 0; top: 0; bottom: 0; width: 0; border-radius: 999px; }
+  #w-bar { background: color-mix(in srgb, var(--muted) 42%, var(--surface)); }
+  #p-bar { background: var(--accent); }
+  #p-star { position: absolute; right: -8px; top: -12px; font-size: 60px; line-height: 1; color: var(--gold); opacity: 0; }
+</style>
+</head>
+<body>
+  <svg id="mark" class="abs" viewBox="0 0 120 120" fill="none">
+    <path d="M64 24 L38 66 H56 L52 94 L86 50 H64 Z" fill="#3B4FE0" stroke="#3B4FE0" stroke-width="8" stroke-linejoin="round"/>
+    <g id="mark-spark"><path d="M88 22 l4 8.4 8.4 4 -8.4 4 -4 8.4 -4-8.4 -8.4-4 8.4-4 Z" fill="#FFC53D"/></g>
+    <circle cx="30" cy="34" r="4" fill="#F04E42"/>
+  </svg>
+  <div id="wordmark" class="abs">presto</div>
+
+  <div id="copy" class="abs">
+    <span class="line">Fast proofs.</span>
+    <span class="line">Like magic <span id="copy-star" class="star">✦</span></span>
+    <span class="meta">presto.build · free · open source</span>
+  </div>
+
+  <div id="race" class="abs">
+    <div class="race-head">
+      <span class="race-label">Same proof, timed: one token flow</span>
+      <span id="chip">9.4× faster ✦</span>
+    </div>
+    <div class="row">
+      <div class="row-top"><span class="name">In-browser</span><span id="w-num" class="num">0.0s</span></div>
+      <div class="track"><div id="w-bar" class="bar"></div></div>
+    </div>
+    <div class="row">
+      <div class="row-top"><span class="name strong">With Presto</span><span id="p-num" class="num">0.0s</span></div>
+      <div class="track accent"><div id="p-bar" class="bar"></div><span id="p-star">✦</span></div>
+    </div>
+  </div>
+
+  <script type="module" src="./og-landing-scene.js"></script>
+</body>
+</html>

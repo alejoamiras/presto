@@ -3,7 +3,8 @@
  *
  *   bun scripts/generate-brand-assets.ts --target app-icons   # icns/ico/png ladder via `tauri icon`
  *   bun scripts/generate-brand-assets.ts --target tray        # tray-idle + 24 orbit frames (SVG+PNG)
- *   bun scripts/generate-brand-assets.ts --target og-landing | og-playground   # 1200×630 via chromium
+ *   bun scripts/generate-brand-assets.ts --target og-landing    # og-image.png + og-video.mp4 (og-landing.ts)
+ *   bun scripts/generate-brand-assets.ts --target og-playground # 1200×630 via chromium
  *   bun scripts/generate-brand-assets.ts --check              # byte-reproduce the TRAY assets
  *                                                             # (app icons: sha256 manifest test)
  *   bun scripts/generate-brand-assets.ts --write-manifest     # refresh brand-assets.sha256.json
@@ -15,6 +16,7 @@
 import { cpSync, existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { genOgLanding } from "./og-landing";
 import { icnsChunks, icoEntries, isTemplatePure, pngInfo } from "./png-inspect";
 
 const PKG_DIR = resolve(import.meta.dir, "..");
@@ -147,11 +149,11 @@ async function genAppIcons(outDir: string): Promise<void> {
   console.log(`icon.ico entries: ${ico.map((e) => `${e.width}x${e.height}@${e.bpp}`).join(",")}`);
 }
 
-function ogHtml(variant: "landing" | "playground"): string {
+function ogHtml(): string {
   const font = (file: string) => `url("file://${join(FONTS_DIR, file)}") format("woff2")`;
-  const domain = variant === "landing" ? "presto.build" : "playground.presto.build";
-  const line1 = variant === "landing" ? "Fast proofs." : "Try it live.";
-  const line2 = variant === "landing" ? "Like magic" : "The playground";
+  const domain = "playground.presto.build";
+  const line1 = "Try it live.";
+  const line2 = "The playground";
   return `<!doctype html><html><head><meta charset="utf-8"><style>
   @font-face{font-family:Bricolage;font-weight:800;src:${font("bricolage-grotesque-latin-800-normal.woff2")}}
   @font-face{font-family:Fragment;font-weight:400;src:${font("fragment-mono-latin-400-normal.woff2")}}
@@ -159,9 +161,9 @@ function ogHtml(variant: "landing" | "playground"): string {
   body{width:1200px;height:630px;background:#FFFAF1;display:flex;align-items:center;gap:64px;
     padding:0 96px;font-family:Bricolage,sans-serif;color:#241B33}
   .mark{flex:none}
-  h1{font-size:${variant === "landing" ? 96 : 72}px;font-weight:800;line-height:1.04;letter-spacing:-.02em}
+  h1{font-size:72px;font-weight:800;line-height:1.04;letter-spacing:-.02em}
   h1 .c{color:#3B4FE0}.h1 .g{color:#FFC53D}
-  .meta{font-family:Fragment,monospace;font-size:${variant === "landing" ? 30 : 22}px;color:#6E6580;margin-top:36px}
+  .meta{font-family:Fragment,monospace;font-size:22px;color:#6E6580;margin-top:36px}
   </style></head><body>
   <svg class="mark" width="300" height="300" viewBox="0 0 120 120" fill="none">
     <path d="M64 24 L38 66 H56 L52 94 L86 50 H64 Z" fill="#3B4FE0" stroke="#3B4FE0" stroke-width="8" stroke-linejoin="round"/>
@@ -173,8 +175,8 @@ function ogHtml(variant: "landing" | "playground"): string {
   </body></html>`;
 }
 
-async function genOg(variant: "landing" | "playground"): Promise<void> {
-  const outPath = resolve(PKG_DIR, "..", variant, "public", "og-image.png");
+async function genOgPlayground(): Promise<void> {
+  const outPath = resolve(PKG_DIR, "..", "playground", "public", "og-image.png");
   const { chromium } = await import("@playwright/test");
   const browser = await chromium.launch({ headless: true }).catch((err) => {
     console.error(`chromium launch failed (run \`bunx playwright install chromium\` once): ${err}`);
@@ -182,7 +184,7 @@ async function genOg(variant: "landing" | "playground"): Promise<void> {
   });
   try {
     const page = await browser.newPage({ viewport: { width: 1200, height: 630 } });
-    await page.setContent(ogHtml(variant), { waitUntil: "networkidle" });
+    await page.setContent(ogHtml(), { waitUntil: "networkidle" });
     await page.evaluate(
       () => (document as unknown as { fonts: { ready: Promise<unknown> } }).fonts.ready,
     );
@@ -217,9 +219,13 @@ async function manifestEntries(): Promise<Record<string, string>> {
       await add(join(FONTS_DIR, f), `packages/presto/src-tauri/frontend/fonts/${f}`);
     }
   }
-  for (const v of ["landing", "playground"] as const) {
-    const p = resolve(PKG_DIR, "..", v, "public", "og-image.png");
-    if (existsSync(p)) await add(p, `packages/${v}/public/og-image.png`);
+  for (const rel of [
+    "landing/public/og-image.png",
+    "landing/public/og-video.mp4",
+    "playground/public/og-image.png",
+  ]) {
+    const p = resolve(PKG_DIR, "..", rel);
+    if (existsSync(p)) await add(p, `packages/${rel}`);
   }
   return entries;
 }
@@ -259,8 +265,8 @@ if (args.has("--check")) {
   if (target === "tray") await genTray(ICONS_DIR);
   else if (target === "app-icons") await genAppIcons(ICONS_DIR);
   else if (target === "fonts") await genFonts(FONTS_DIR);
-  else if (target === "og-landing") await genOg("landing");
-  else if (target === "og-playground") await genOg("playground");
+  else if (target === "og-landing") await genOgLanding();
+  else if (target === "og-playground") await genOgPlayground();
   else {
     console.error(`unknown target ${target}`);
     process.exit(1);
