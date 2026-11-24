@@ -10,12 +10,20 @@
   <meta name="theme-color" media="(prefers-color-scheme: dark)" content="#191226" />
   <link rel="canonical" href="https://presto.build" />
 
-  <!-- Open Graph -->
-  <meta property="og:type" content="website" />
+  <!-- Open Graph. video.other is what makes Discord play og:video inline (with og:image as its
+       poster, and no description line); X and LinkedIn ignore the video and show og:image. -->
+  <meta property="og:type" content="video.other" />
   <meta property="og:url" content="https://presto.build" />
   <meta property="og:title" content="Presto: Fast Proofs for Aztec Apps" />
   <meta property="og:description" content="Presto sits in your menu bar. Any Aztec app you open just gets faster. No setup, no accounts, nothing to configure." />
   <meta property="og:image" content="https://presto.build/og-image.png" />
+  <meta property="og:image:width" content="1200" />
+  <meta property="og:image:height" content="630" />
+  <meta property="og:video" content="https://presto.build/og-video.mp4" />
+  <meta property="og:video:secure_url" content="https://presto.build/og-video.mp4" />
+  <meta property="og:video:type" content="video/mp4" />
+  <meta property="og:video:width" content="1200" />
+  <meta property="og:video:height" content="630" />
 
   <!-- Twitter Card -->
   <meta name="twitter:card" content="summary_large_image" />
